@@ -1,8 +1,8 @@
-# Install script for directory: E:/Programming/Projects/Convolution/Convolution
+# Install script for directory: E:/Programming/Projects/Convolution
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
-  set(CMAKE_INSTALL_PREFIX "E:/Programming/Projects/Convolution/Convolution/out/install/x64-debug")
+  set(CMAKE_INSTALL_PREFIX "E:/Programming/Projects/Convolution/out/install/x64-debug")
 endif()
 string(REGEX REPLACE "/$" "" CMAKE_INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}")
 
@@ -32,12 +32,6 @@ if(NOT DEFINED CMAKE_CROSSCOMPILING)
   set(CMAKE_CROSSCOMPILING "FALSE")
 endif()
 
-if(NOT CMAKE_INSTALL_LOCAL_ONLY)
-  # Include the install script for each subdirectory.
-  include("E:/Programming/Projects/Convolution/Convolution/out/build/x64-debug/Convolution/cmake_install.cmake")
-
-endif()
-
 if(CMAKE_INSTALL_COMPONENT)
   set(CMAKE_INSTALL_MANIFEST "install_manifest_${CMAKE_INSTALL_COMPONENT}.txt")
 else()
@@ -46,5 +40,5 @@ endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
-file(WRITE "E:/Programming/Projects/Convolution/Convolution/out/build/x64-debug/${CMAKE_INSTALL_MANIFEST}"
+file(WRITE "E:/Programming/Projects/Convolution/out/build/x64-debug/${CMAKE_INSTALL_MANIFEST}"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")

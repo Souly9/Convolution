@@ -1,6 +1,17 @@
 {
   "ExpandedNodes": [
-    ""
+    "",
+    "\\External",
+    "\\External\\DirectXMath",
+    "\\External\\DirectXMath\\Inc",
+    "\\External\\glfw3",
+    "\\External\\glfw3\\lib-vc2022",
+    "\\External\\imgui",
+    "\\External\\imgui\\misc\\cpp",
+    "\\External\\VulkanSDK",
+    "\\External\\VulkanSDK\\1.3.224.1",
+    "\\src"
   ],
+  "SelectedNode": "\\External\\DirectXMath\\CMakeLists.txt",
   "PreviewInSolutionExplorer": false
 }
