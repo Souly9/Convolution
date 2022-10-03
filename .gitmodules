@@ -4,3 +4,6 @@
 [submodule "External/DirectXMath"]
 	path = External/DirectXMath
 	url = https://github.com/microsoft/DirectXMath.git
+[submodule "External/EASTL"]
+	path = External/EASTL
+	url = https://github.com/electronicarts/EASTL.git
