@@ -1,17 +1,24 @@
 {
+  "OutputFoldersPerTargetSystem": {
+    "Local Machine": [
+      "bin\\build\\x64-Clang-Debug",
+      "out\\install\\x64-Clang-Debug",
+      "bin\\build\\x64-Clang-Release",
+      "out\\install\\x64-Clang-Release"
+    ]
+  },
   "ExpandedNodes": [
     "",
     "\\External",
-    "\\External\\DirectXMath",
-    "\\External\\DirectXMath\\Inc",
-    "\\External\\glfw3",
-    "\\External\\glfw3\\lib-vc2022",
-    "\\External\\imgui",
-    "\\External\\imgui\\misc\\cpp",
-    "\\External\\VulkanSDK",
-    "\\External\\VulkanSDK\\1.3.224.1",
-    "\\src"
+    "\\External\\EASTL\\include",
+    "\\External\\EASTL\\include\\EASTL",
+    "\\Src",
+    "\\Src\\Core",
+    "\\Src\\Core\\Global",
+    "\\Src\\Core\\Rendering",
+    "\\Src\\Core\\Rendering\\Backend",
+    "\\Src\\Core\\UI"
   ],
-  "SelectedNode": "\\External\\DirectXMath\\CMakeLists.txt",
+  "SelectedNode": "\\Src\\Core\\Rendering\\RenderInformation.h",
   "PreviewInSolutionExplorer": false
 }

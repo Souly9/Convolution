@@ -1,35 +1,26 @@
-#define GLFW_INCLUDE_VULKAN
-#include <glfw3/glfw3.h>
+#include <EASTL/string_view.h>
+#include <EASTL/type_traits.h>
+#include "Core/Rendering/Backend/VulkanBackend.h"
+#include "Core/Rendering/RenderLayer.h"
+#include "Core/GlobalDefines.h"
+#include "Core/WindowManager.h"
+#include "Core/UI/UIManager.h"
+#include "Core/TimeData.h"
+#include "Core/Application.h"
 
-#define GLM_FORCE_RADIANS
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#include <glm/vec4.hpp>
-#include <glm/mat4x4.hpp>
-
-#include <iostream>
+void* __cdecl operator new[](size_t size, const char* pName, int flags, unsigned debugFlags, const char* file, int line)
+{
+    return new uint8_t[size];
+}
+void* __cdecl operator new[](size_t size, size_t alignment, size_t alignmentOffset, const char* pName, int flags, unsigned debugFlags, const char* file, int line)
+{
+    return new uint8_t[size];
+}
 
 int main() {
-    glfwInit();
-
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    GLFWwindow* window = glfwCreateWindow(800, 600, "Vulkan window", nullptr, nullptr);
-
-    uint32_t extensionCount = 0;
-    vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
-
-    std::cout << extensionCount << " extensions supported\n";
-
-    glm::mat4 matrix;
-    glm::vec4 vec;
-    auto test = matrix * vec;
-
-    while (!glfwWindowShouldClose(window)) {
-        glfwPollEvents();
-    }
-
-    glfwDestroyWindow(window);
-
-    glfwTerminate();
-
+    stltype::string_view title("Vulkan");
+    Application app(1280, 720, title);
+    app.Run();
+    
     return 0;
 }

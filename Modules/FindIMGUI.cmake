@@ -7,7 +7,6 @@ file(GLOB IMGUI_SOURCE
 "${CMAKE_SOURCE_DIR}/External/imgui/imgui*.cpp"
 
 "${CMAKE_SOURCE_DIR}/External/imgui/backends/imgui_impl_vulkan.cpp"
-"${CMAKE_SOURCE_DIR}/External/imgui/backends/imgui_impl_sdl.cpp"
 
 )
 
