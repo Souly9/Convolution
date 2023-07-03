@@ -1,6 +1,7 @@
 set(glfw3_SEARCH_DIRS
 ${CMAKE_SOURCE_DIR}/External/
 ${CMAKE_SOURCE_DIR}/External/glfw3/lib-vc2022
+${CMAKE_SOURCE_DIR}/External/additional_libs/lib-vc2022
 )
 
 find_path(GLFW3_INCLUDE_DIR "glfw3/glfw3.h" PATHS ${glfw3_SEARCH_DIRS})
