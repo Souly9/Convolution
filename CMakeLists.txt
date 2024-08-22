@@ -1,5 +1,12 @@
 ﻿
-cmake_minimum_required (VERSION 3.8)
+cmake_minimum_required (VERSION 3.28)
+include(FetchContent)
+Set(FETCHCONTENT_QUIET FALSE)
+ 
+find_package(Git REQUIRED)
+if(Git_FOUND)
+  message("Git found: ${GIT_EXECUTABLE}")
+endif()
 
 project ("Convolution")
 set(NAME "Convolution")
@@ -9,6 +16,44 @@ set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/Modules)
 set(LLVM_ENABLE_RTTI ON) 
 set(LLVM_ENABLE_EH ON)
 
+set(FETCHCONTENT_BASE_DIR "${CMAKE_SOURCE_DIR}/External/")
+
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED on)
+
+option(CONNECT_TO_GIT "Fetch dependancies from git" ON)
+
+FetchContent_Declare(
+  EASTL
+  GIT_REPOSITORY "https://github.com/electronicarts/EASTL.git"
+  GIT_TAG "7fadbf0da01e6f6e0e7038b1b34343a069b8fc51" #master
+  SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/EASTL"
+  GIT_PROGRESS TRUE
+)
+FetchContent_Declare(
+  GLFW3
+  GIT_REPOSITORY "https://github.com/glfw/glfw.git"
+  GIT_TAG "3.4" 
+  SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/glfw3/src"
+  GIT_PROGRESS TRUE
+)
+FetchContent_Declare(
+  IMGUI
+  GIT_REPOSITORY "https://github.com/ocornut/imgui.git"
+  GIT_TAG "v1.91.0" 
+  SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/imgui"
+  GIT_PROGRESS TRUE
+)
+FetchContent_Declare(
+  DIRECTXMATH
+  GIT_REPOSITORY "https://github.com/microsoft/DirectXMath.git"
+  GIT_TAG "58f045a6caaaad6ce15049bba3cd075ed419c85e" # feb2024b
+  SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/DirectXMath"
+  GIT_PROGRESS TRUE
+)
+
+FetchContent_MakeAvailable(EASTL GLFW3 IMGUI DIRECTXMATH)
+
 find_package(DIRECTXMATH REQUIRED)
 message(STATUS "DirectXMath found at ${DIRECTXMATH_INCLUDE_DIR}")
 find_package(GLFW3 REQUIRED)
@@ -17,13 +62,11 @@ find_package(Vulkan REQUIRED)
 message(STATUS "Vulkan found at ${Vulkan_LIBRARIES}")
 find_package(IMGUI REQUIRED)
 message(STATUS "ImGui found at ${IMGUI_INCLUDE_DIR}")
-find_package(EASTL REQUIRED)
-message(STATUS "EASTL found at ${EASTL_ROOT_DIR}")
 
 file(GLOB_RECURSE ADD_LIBS 
 	"${CMAKE_SOURCE_DIR}/External/additonal_libs/*"
 )
-set(LIBS ${GLFW3_LIBRARY} ${Vulkan_LIBRARIES} ${ADD_LIBS} ${EASTL_LIBRARY})
+set(LIBS ${GLFW3_LIBRARY} ${Vulkan_LIBRARIES} ${ADD_LIBS} EASTL)
 
 link_directories(${CMAKE_SOURCE_DIR}/External/additional_libs)
 
@@ -36,30 +79,24 @@ file(GLOB_RECURSE HEADERS
 file(GLOB_RECURSE SHADERS    
     "${CMAKE_SOURCE_DIR}/Shaders/*.*"
 )
+add_executable(${NAME} ${SOURCE} ${HEADERS} "Src/Core/Global/Typedefs.h" "Src/Core/Global/GobalVariables.cpp")
 
-add_executable(${NAME} ${SOURCE} ${HEADERS})
+set_target_properties(${NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin")
+set_target_properties(${NAME} PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/bin/Debug")
 
-set_property(TARGET ${NAME} PROPERTY CXX_STANDARD 23)
-
-include_directories(${NAME}
+target_include_directories(${NAME}
+PUBLIC
 ${CMAKE_SOURCE_DIR}/Src
 SYSTEM
-${CMAKE_SOURCE_DIR}/configuration
+	${CMAKE_SOURCE_DIR}/configuration
 	${IMGUI_INCLUDE_DIR}
 	${DIRECTXMATH_INCLUDE_DIR}
 	${Vulkan_INCLUDE_DIRS}
 	${GLFW3_INCLUDE_DIR}
+	${EASTL_ROOT_DIR}
 )
 
 target_link_libraries(${NAME} ${LIBS})
 
-target_compile_options(${NAME} PRIVATE
-     $<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>,$<CXX_COMPILER_ID:GNU>>:
-          -Wall -Wno-deprecated-declarations
--Wno-unused-parameter
--Wno-pre-c++17-compat
--Wno-c++98-compat-extra-semi
--Wno-c++98-compat-pedantic
--Wno-c++98-compat
--Wno-undefined-reinterpret-cast
--Wno-old-style-cast>)
+install(FILES ${LIBS}
+     DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
