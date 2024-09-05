@@ -1,12 +1,12 @@
 #pragma once
 #include <EASTL/type_traits.h>
-#include "../GlobalDefines.h"
+#include "Core/Global/GlobalDefines.h"
 #include "Backend/RenderBackend.h"
 
 class RenderInformation;
 
 // Communicates between Application and Vulkan
-template<class BackendAPI> requires stltype::is_base_of_v<RenderBackend, BackendAPI>
+IMPLEMENT_GRAPHICS_API
 class RenderLayer 
 {
 public:
@@ -18,12 +18,12 @@ public:
 
 	void CleanUp()
 	{
-		m_backend.CleanUp();
+		m_backend.Cleanup();
 	}
 
 private:
 	RenderLayer(const RenderLayer&) = delete;
 	RenderLayer(RenderLayer&&) noexcept = delete;
 
-	BackendAPI m_backend;
+	RenderBackend<RenderAPI> m_backend;
 };

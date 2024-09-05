@@ -21,7 +21,7 @@ private:
 	WindowManager(const WindowManager& copy) = delete;
 	WindowManager& operator=(const WindowManager& other) = delete;
 
-	std::unique_ptr<GLFWwindow, DestroyglfwWin> m_pWindow;
+	stltype::unique_ptr<GLFWwindow, DestroyglfwWin> m_pWindow{nullptr};
 	uint32_t m_screenHeight;
 	uint32_t m_screenWidth;
 };
