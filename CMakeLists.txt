@@ -76,17 +76,14 @@ file(GLOB_RECURSE SOURCE
 file(GLOB_RECURSE HEADERS
 	"${CMAKE_SOURCE_DIR}/Src/*.h"
 )
-file(GLOB_RECURSE SHADERS    
-    "${CMAKE_SOURCE_DIR}/Shaders/*.*"
-)
-add_executable(${NAME} ${SOURCE} ${HEADERS} "Src/Core/Global/Typedefs.h" "Src/Core/Global/GobalVariables.cpp")
+add_executable(${NAME} ${SOURCE} ${HEADERS})
 
 set_target_properties(${NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin")
-set_target_properties(${NAME} PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/bin/Debug")
+set_target_properties(${NAME} PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/bin/")
 
 target_include_directories(${NAME}
 PUBLIC
-${CMAKE_SOURCE_DIR}/Src
+	${CMAKE_SOURCE_DIR}/Src
 SYSTEM
 	${CMAKE_SOURCE_DIR}/configuration
 	${IMGUI_INCLUDE_DIR}
@@ -96,7 +93,22 @@ SYSTEM
 	${EASTL_ROOT_DIR}
 )
 
+target_compile_definitions(${NAME} PRIVATE CONV_DEBUG=1)
+
 target_link_libraries(${NAME} ${LIBS})
 
-install(FILES ${LIBS}
-     DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+
+if(WIN32)
+add_custom_target(
+    my_custom_target_that_always_runs ALL
+    DEPENDS ${CMAKE_SOURCE_DIR}/Shaders/Compiled/__header.h 
+	${CMAKE_SOURCE_DIR}/bin/Shaders/___header.h
+)
+add_custom_command(OUTPUT ${CMAKE_SOURCE_DIR}/Shaders/Compiled/__header.h
+					COMMAND cmd /C ${CMAKE_SOURCE_DIR}/Scripts/CompileShaders.bat	
+					VERBATIM)
+add_custom_command(OUTPUT ${CMAKE_SOURCE_DIR}/bin/Shaders/___header.h
+					COMMAND cmd /C ${CMAKE_SOURCE_DIR}/Scripts/CopyShaders.bat
+					DEPENDS ${CMAKE_SOURCE_DIR}/Shaders/Compiled/__header.h
+					VERBATIM)
+endif()

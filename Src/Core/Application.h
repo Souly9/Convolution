@@ -1,7 +1,6 @@
 #pragma once
 #include "Rendering/RenderLayer.h"
 
-class WindowManager;
 class UI;
 class TimeData;
 
@@ -10,14 +9,16 @@ class Application
 public:
 	Application(uint32_t screenWidth, uint32_t screenHeight, stltype::string_view title);
 
+	~Application();
+
 	void Run();
 	void Update();
 
 	void Render();
 
-private:
-	WindowManager m_windowManager;
+	void ConsolePrintDebug() const;
 
+private:
 	TimeData m_time{};
 	UI m_ui{};
 

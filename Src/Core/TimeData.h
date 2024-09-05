@@ -1,5 +1,5 @@
 #pragma once
-#include "GlobalDefines.h"
+#include "Core/Global/GlobalDefines.h"
 #include <EASTL/chrono.h>
 
 class TimeData

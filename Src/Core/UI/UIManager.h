@@ -1,8 +1,7 @@
 #pragma once
-#include "UIData.h"
+#include "LogData.h"
 #include <EASTL/functional.h>
-
-class RenderInformation;
+#include "Core/ConsoleLogger.h"
 
 class UI
 {
@@ -11,7 +10,7 @@ public:
 
 	void DrawUI(float dt, ApplicationInfos& renderInfos);
 
+	void PrintConsoleLog() const;
 private:
-	stltype::vector<
-		stltype::function<void(float, ApplicationInfos&)>> m_uiElements;
+	ConsoleLogger m_consoleLogger;
 };
