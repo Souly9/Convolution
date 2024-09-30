@@ -1,39 +1,25 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
-#include "Core/Rendering/Core/Texture.h"
 #include "BackendDefines.h"
+#include "Core/Rendering/Core/Texture.h"
 
-enum VkFormat;
-
-struct TextureCreationInfoVulkan : public TextureCreationInfoBase
-{
-	VkFormat format;
-}; 
-
-struct TextureCreationInfoVulkanImage
-{
-	VkFormat format;
-	VkImage image;
-};
-
-template<>
-class TexImpl<Vulkan>
+class TextureVulkan : public Tex
 {
 public:
-	TexImpl() = default;
-	~TexImpl();
+	friend class TextureMan;
+	friend class VkTextureManager;
 
-	static TexImpl<Vulkan> CreateFromImage(const TextureCreationInfoVulkanImage& info);
+	TextureVulkan();
+	TextureVulkan(const TextureInfo&) = delete;
+	TextureVulkan(const VkImageViewCreateInfo&, const TextureInfo&);
+	
 
-private:
-	TexImpl(const VkImageView& info);
-	static VkImageView CreateImageView(const VkImageViewCreateInfo& createInfo);
+	VkImageView GetImageView() const { return m_imageView; }
+	const TextureInfo& GetInfo() const { return m_info; }
 
-	static void SetNoMipMap(VkImageViewCreateInfo& createInfo);
-	static void SetMipMap(VkImageViewCreateInfo& createInfo);
-	static void SetNoSwizzle(VkImageViewCreateInfo& createInfo);
+	void SetDebugName(const stltype::string& name);
+protected:
 
 	VkImageView m_imageView;
 };
 
-using VulkanTex = TexImpl<Vulkan>;

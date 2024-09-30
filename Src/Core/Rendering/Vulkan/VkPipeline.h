@@ -1,29 +1,38 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
-#include "Core/Rendering/Core/Pipeline.h"
 #include "BackendDefines.h"
-#include "VkAttachment.h"
-#include "VkRenderPass.h"
-#include "VkShader.h"
+#include "Core/Rendering/Core/Pipeline.h"
+#include "Core/Rendering/Core/Resource.h"
+#include "Core/Rendering/Core/VertexDefines.h"
+
+struct PipeVertInfo
+{
+	VkVertexInputBindingDescription vertexInputDescription{};
+	stltype::vector<VkVertexInputAttributeDescription> attributeDescriptions{};
+	u32 bindingDescriptionCount{ 1 };
+};
 
 // Implementation of a dynamic pipeline state object 
-template<>
-class Pipeline<Vulkan>
+class PipelineVulkan : public TrackedResource
 {
 public:
-	static Pipeline<Vulkan> CreatePipeline(const ShaderImpl<Vulkan>& vertShader, const ShaderImpl<Vulkan>& fragShader,
-		const PipelineVertexInputs& vertexInputs, const PipelineInfo& pipeInfo, const RPass<Vulkan>& renderPass);
+	PipelineVulkan(const ShaderVulkan& vertShader, const ShaderVulkan& fragShader,
+		const PipeVertInfo& vertexInputs, const PipelineInfo& pipeInfo, const RenderPassVulkan& renderPass);
 
-	~Pipeline();
+	PipelineVulkan() = default;
+	~PipelineVulkan();
 
+	void CleanUp();
+
+	bool HasDynamicViewScissorState() const;
+	bool NeedsVertexBuffers() const;
+
+	VkPipeline GetRef();
 private:
-	Pipeline();
-
-	void SetShaderStages(stltype::vector<VkPipelineShaderStageCreateInfo>&& shaderStages);
 
 	VkPipelineDynamicStateCreateInfo CreateDynamicPipelineInfo(const stltype::vector<VkDynamicState>& dynamicStates);
 
-	VkPipelineVertexInputStateCreateInfo CreateVertexInputInfo(const PipelineVertexInputs& vertexInputs);
+	VkPipelineVertexInputStateCreateInfo CreateVertexInputInfo(const PipeVertInfo& vertexInputs);
 	VkPipelineVertexInputStateCreateInfo CreateEmptyVertexInputInfo();
 
 	VkPipelineInputAssemblyStateCreateInfo CreateInputAssemblyInfo(const Topology& topology);
@@ -39,10 +48,12 @@ private:
 	VkPipelineColorBlendStateCreateInfo CreateColorBlendInfo(const ColorBlendInfo& info, VkPipelineColorBlendAttachmentState colorBlendAttachment);
 
 	VkPipelineLayout CreatePipelineLayout(const PipelineUniformLayout& layoutInfo);
-	
-	stltype::vector<VkPipelineShaderStageCreateInfo> m_shaderStages;
 
 	VkPipelineLayout m_pipelineLayout;
 
 	VkPipeline m_pipeline;
+
+	PipelineInfo m_info;
+
+	PipeVertInfo m_vertexInfo;
 };

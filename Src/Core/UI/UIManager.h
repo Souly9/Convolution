@@ -12,5 +12,4 @@ public:
 
 	void PrintConsoleLog() const;
 private:
-	ConsoleLogger m_consoleLogger;
 };

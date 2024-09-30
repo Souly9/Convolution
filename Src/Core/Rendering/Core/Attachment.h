@@ -16,20 +16,12 @@ struct ColorAttachmentInfo
 };
 
 // Generic attachment for render passes
-IMPLEMENT_GRAPHICS_API
-class Attachment
+class AttachmentBase
 {
 };
 
-IMPLEMENT_GRAPHICS_API
-class ColorAttachment : public Attachment<BackendAPI>
+class ColorAttachment : public AttachmentBase
 {
 };
 
 
-using RenderPassAttachment = Attachment<RenderAPI>;
-using RenderPassAttachmentColor = ColorAttachment<RenderAPI>;
-
-#ifdef USE_VULKAN
-#include "Core/Rendering/Vulkan/VkAttachment.h"
-#endif

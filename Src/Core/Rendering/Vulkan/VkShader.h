@@ -1,17 +1,15 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
 #include "BackendDefines.h"
-#include "Core/Rendering/Core/Shader.h"
 
-template<>
-class ShaderImpl<Vulkan>
+class ShaderVulkan
 {
 public:
-	ShaderImpl(const stltype::string_view& filePath, stltype::string&& name);
-	ShaderImpl(const char* filePath, const char* name);
-	~ShaderImpl();
+	ShaderVulkan(const stltype::string_view& filePath, stltype::string&& name);
+	ShaderVulkan(const char* filePath, const char* name);
+	~ShaderVulkan();
 
-	VkShaderModule GetHandle() const;
+	VkShaderModule GetDesc() const;
 	const stltype::string& GetName() const;
 
 private:

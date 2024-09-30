@@ -2,11 +2,6 @@
 #include "Core/Global/GlobalDefines.h"
 #include "Utils/MemoryUtilities.h"
 
-struct PipelineVertexInputs
-{
-	
-};
-
 enum class Topology
 {
 	TriangleList,
@@ -79,17 +74,6 @@ struct PipelineInfo
 	MultisampleInfo multisampleInfo{};
 	RasterizerInfo rasterizerInfo{};
 	DirectX::XMFLOAT4 viewPortExtents;
-	Topology topology = Topology::TriangleList;
+	Topology topology{ Topology::TriangleList };
+	bool dynamicViewScissor{ true };
 };
-
-IMPLEMENT_GRAPHICS_API
-class Pipeline
-{
-
-};
-
-#ifdef USE_VULKAN
-#include "Core/Rendering/Vulkan/VkPipeline.h"
-#endif
-
-using PSO = Pipeline<RenderAPI>;

@@ -1,35 +1,35 @@
+#include "VkShader.h"
 #include <vulkan/vulkan.h>
 #include "Core/IO/FileReader.h"
 #include "BackendDefines.h"
 #include "VkGlobals.h"
-#include "VkShader.h"
 
-ShaderImpl<Vulkan>::ShaderImpl(const stltype::string_view& filePath, stltype::string&& name) : m_name{ name }
+ShaderVulkan::ShaderVulkan(const stltype::string_view& filePath, stltype::string&& name) : m_name{ name }
 {
 	CreateShaderModule(filePath.data());
 }
 
-ShaderImpl<Vulkan>::ShaderImpl(const char* filePath, const char* name) : m_name{ name }
+ShaderVulkan::ShaderVulkan(const char* filePath, const char* name) : m_name{ name }
 {
 	CreateShaderModule(filePath);
 }
 
-ShaderImpl<Vulkan>::~ShaderImpl()
+ShaderVulkan::~ShaderVulkan()
 {
 	vkDestroyShaderModule(VkGlobals::GetLogicalDevice(), m_shaderModule, VulkanAllocator());
 }
 
-VkShaderModule ShaderImpl<Vulkan>::GetHandle() const
+VkShaderModule ShaderVulkan::GetDesc() const
 {
 	return m_shaderModule;
 }
 
-const stltype::string& ShaderImpl<Vulkan>::GetName() const
+const stltype::string& ShaderVulkan::GetName() const
 {
 	return m_name;
 }
 
-void ShaderImpl<Vulkan>::CreateShaderModule(const char* filePath)
+void ShaderVulkan::CreateShaderModule(const char* filePath)
 {
 	const auto byteCode = FileReader::ReadFileAsGenericBytes(filePath);
 

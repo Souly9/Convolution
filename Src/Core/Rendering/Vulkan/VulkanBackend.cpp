@@ -2,13 +2,17 @@
 #include <glfw3/glfw3.h>
 #include <EASTL/set.h>
 #include "Core/Global/GlobalDefines.h"
-#include "Core/Global/GlobalVariables.h"
 #include "Core/Global/LogDefines.h"
+#include "Core/Rendering/RenderLayer.h"
+#include "Core/Rendering/Core/Attachment.h"
+#include "Core/Rendering/Core/TextureManager.h"
 #include "Core/Rendering/Vulkan/BackendDefines.h"
 #include "VulkanBackend.h"
 #include "VkGlobals.h"
+#include "VkTextureManager.h"
+#include "Core/Global/GlobalVariables.h"
 
-bool RenderBackend<Vulkan>::Init(uint32_t screenWidth, uint32_t screenHeight, stltype::string_view title)
+bool RenderBackendImpl<Vulkan>::Init(uint32_t screenWidth, uint32_t screenHeight, stltype::string_view title)
 {
 	if(!CreateInstance(screenWidth, screenHeight, title))
 	{
@@ -42,14 +46,16 @@ bool RenderBackend<Vulkan>::Init(uint32_t screenWidth, uint32_t screenHeight, st
 			DEBUG_LOG_ERR("Vulkan swapchain couldn't be created!");
 			return false;
 		}
+
+		UpdateGlobals();
 		CreateSwapChainImages();
 	}
-	UpdateGlobals();
 
+	UpdateGlobals();
 	return true;
 }
 
-bool RenderBackend<Vulkan>::Cleanup()
+bool RenderBackendImpl<Vulkan>::Cleanup()
 {
 	vkDestroySwapchainKHR(m_logicalDevice, m_swapChain, VulkanAllocator());
 	vkDestroySurfaceKHR(m_instance, m_surface, VulkanAllocator());
@@ -59,7 +65,7 @@ bool RenderBackend<Vulkan>::Cleanup()
 	return true;
 }
 
-bool RenderBackend<Vulkan>::AreValidationLayersAvailable(const stltype::vector<VkLayerProperties>& availableLayers)
+bool RenderBackendImpl<Vulkan>::AreValidationLayersAvailable(const stltype::vector<VkLayerProperties>& availableLayers)
 {
 	uint32_t available = 0;
 	for (const auto& extension : availableLayers)
@@ -75,7 +81,7 @@ bool RenderBackend<Vulkan>::AreValidationLayersAvailable(const stltype::vector<V
 	return available == g_validationLayers.size();
 }
 
-bool RenderBackend<Vulkan>::CreateInstance(uint32_t screenWidth, uint32_t screenHeight, stltype::string_view title)
+bool RenderBackendImpl<Vulkan>::CreateInstance(uint32_t screenWidth, uint32_t screenHeight, stltype::string_view title)
 {
 	VkApplicationInfo appInfo{};
 	appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -129,10 +135,10 @@ bool RenderBackend<Vulkan>::CreateInstance(uint32_t screenWidth, uint32_t screen
 	return vkCreateInstance(&createInfo, VulkanAllocator(), &m_instance) == VK_SUCCESS;
 }
 
-bool RenderBackend<Vulkan>::CreateLogicalDevice()
+bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
 {
 	stltype::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
-	stltype::set<u32> uniqueQueueFamilies = { m_indices.graphicsFamily.value(), m_indices.presentFamily.value() };
+	stltype::set<u32> uniqueQueueFamilies = { m_indices.graphicsFamily.value(), m_indices.presentFamily.value(), m_indices.transferFamily.value(), m_indices.computeFamily.value() };
 
 	float queuePriority = 1.0f;
 	for (u32 queueFamily : uniqueQueueFamilies)
@@ -162,11 +168,13 @@ bool RenderBackend<Vulkan>::CreateLogicalDevice()
 
 	 vkGetDeviceQueue(m_logicalDevice, m_indices.graphicsFamily.value(), 0, &m_graphicsQueue);
 	 vkGetDeviceQueue(m_logicalDevice, m_indices.presentFamily.value(), 0, &m_presentQueue);
+	 vkGetDeviceQueue(m_logicalDevice, m_indices.transferFamily.value(), 0, &m_transferQueue);
+	 vkGetDeviceQueue(m_logicalDevice, m_indices.computeFamily.value(), 0, &m_computeQueue);
 
 	 return true;
 }
 
-bool RenderBackend<Vulkan>::PickPhysicalDevice()
+bool RenderBackendImpl<Vulkan>::PickPhysicalDevice()
 {
 	uint32_t deviceCount = 0;
 	vkEnumeratePhysicalDevices(m_instance, &deviceCount, nullptr);
@@ -191,7 +199,7 @@ bool RenderBackend<Vulkan>::PickPhysicalDevice()
 	return false;
 }
 
-bool RenderBackend<Vulkan>::IsDeviceSuitable(VkPhysicalDevice device)
+bool RenderBackendImpl<Vulkan>::IsDeviceSuitable(VkPhysicalDevice device)
 {
 	if(device == VK_NULL_HANDLE)
 		return false;
@@ -200,7 +208,8 @@ bool RenderBackend<Vulkan>::IsDeviceSuitable(VkPhysicalDevice device)
 	vkGetPhysicalDeviceProperties(device, &deviceProperties);
 	vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
 
-	DEBUG_LOG("Found Device: " + *deviceProperties.deviceName);
+	stltype::string deviceName(deviceProperties.deviceName);
+	DEBUG_LOG("Found Device: " + deviceName);
 
 	m_indices = FindQueueFamilies(device);
 	bool swapChainAdequate = false;
@@ -215,7 +224,7 @@ bool RenderBackend<Vulkan>::IsDeviceSuitable(VkPhysicalDevice device)
 		swapChainAdequate;
 }
 
-bool RenderBackend<Vulkan>::AreExtensionsSupported(VkPhysicalDevice device)
+bool RenderBackendImpl<Vulkan>::AreExtensionsSupported(VkPhysicalDevice device)
 {
 	uint32_t extensionCount;
 	vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
@@ -225,19 +234,17 @@ bool RenderBackend<Vulkan>::AreExtensionsSupported(VkPhysicalDevice device)
 
 	stltype::set<stltype::string> requiredExtensions(g_deviceExtensions.begin(), g_deviceExtensions.end());
 
-	stltype::string logString;
-	logString.reserve(256);
 	for (const auto& extension : availableExtensions)
 	{
+		stltype::string extensionName(extension.extensionName);
 		requiredExtensions.erase(extension.extensionName);
-		snprintf(logString.data(), 256, "Required extension %s is not available!", extension.extensionName);
-		DEBUG_LOG(logString);
+		DEBUG_LOG("Required extension" + extensionName + "is supported!");
 	}
 
 	return requiredExtensions.empty();
 }
 
-RenderBackend<Vulkan>::SwapChainSupportDetails RenderBackend<Vulkan>::QuerySwapChainSupport(VkPhysicalDevice device)
+RenderBackendImpl<Vulkan>::SwapChainSupportDetails RenderBackendImpl<Vulkan>::QuerySwapChainSupport(VkPhysicalDevice device)
 {
 	SwapChainSupportDetails details;
 	vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, m_surface, &details.capabilities); 
@@ -260,7 +267,7 @@ RenderBackend<Vulkan>::SwapChainSupportDetails RenderBackend<Vulkan>::QuerySwapC
 	return details;
 }
 
-VkSurfaceFormatKHR RenderBackend<Vulkan>::ChooseSwapSurfaceFormat(const stltype::vector<VkSurfaceFormatKHR>& availableFormats)
+VkSurfaceFormatKHR RenderBackendImpl<Vulkan>::ChooseSwapSurfaceFormat(const stltype::vector<VkSurfaceFormatKHR>& availableFormats)
 {
 	for (const auto& availableFormat : availableFormats)
 	{
@@ -273,7 +280,7 @@ VkSurfaceFormatKHR RenderBackend<Vulkan>::ChooseSwapSurfaceFormat(const stltype:
 	return availableFormats[0];
 }
 
-VkPresentModeKHR RenderBackend<Vulkan>::ChooseSwapPresentMode(const stltype::vector<VkPresentModeKHR>& availablePresentModes)
+VkPresentModeKHR RenderBackendImpl<Vulkan>::ChooseSwapPresentMode(const stltype::vector<VkPresentModeKHR>& availablePresentModes)
 {
 	for (const auto& availablePresentMode : availablePresentModes)
 	{
@@ -286,38 +293,42 @@ VkPresentModeKHR RenderBackend<Vulkan>::ChooseSwapPresentMode(const stltype::vec
 	return VK_PRESENT_MODE_FIFO_KHR;
 }
 
-VkExtent2D RenderBackend<Vulkan>::ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities)
+DirectX::XMUINT2 RenderBackendImpl<Vulkan>::ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities)
 {
 	if (capabilities.currentExtent.width != stltype::numeric_limits<u32>::max())
 	{
-		return capabilities.currentExtent;
+		DirectX::XMUINT2 extents = {
+			static_cast<uint32_t>(capabilities.currentExtent.width),
+			static_cast<uint32_t>(capabilities.currentExtent.height)
+		};
+		return extents;
 	}
 	else
 	{
 		int width, height;
 		glfwGetFramebufferSize(g_pWindowManager->GetWindow(), &width, &height);
 
-		VkExtent2D actualExtent = {
+		DirectX::XMUINT2 actualExtent = {
 			static_cast<uint32_t>(width),
 			static_cast<uint32_t>(height)
 		};
 
-		actualExtent.width = stltype::clamp(actualExtent.width, 
+		actualExtent.x = stltype::clamp(actualExtent.x, 
 			capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
-		actualExtent.height = stltype::clamp(actualExtent.height,
+		actualExtent.y = stltype::clamp(actualExtent.y,
 			capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
 
 		return actualExtent;
 	}
 }
 
-bool RenderBackend<Vulkan>::CreateSwapChain()
+bool RenderBackendImpl<Vulkan>::CreateSwapChain()
 {
 	SwapChainSupportDetails swapChainSupport = QuerySwapChainSupport(m_physicalDevice);
 
 	VkSurfaceFormatKHR surfaceFormat = ChooseSwapSurfaceFormat(swapChainSupport.formats);
 	VkPresentModeKHR presentMode = ChooseSwapPresentMode(swapChainSupport.presentModes);
-	VkExtent2D extent = ChooseSwapExtent(swapChainSupport.capabilities);
+	DirectX::XMUINT2 extent = ChooseSwapExtent(swapChainSupport.capabilities);
 
 	u32 imageCount = swapChainSupport.capabilities.minImageCount + 1;
 	if (swapChainSupport.capabilities.maxImageCount > 0 && 
@@ -332,7 +343,7 @@ bool RenderBackend<Vulkan>::CreateSwapChain()
 	createInfo.minImageCount = imageCount;
 	createInfo.imageFormat = surfaceFormat.format;
 	createInfo.imageColorSpace = surfaceFormat.colorSpace;
-	createInfo.imageExtent = extent;
+	createInfo.imageExtent = Conv(extent);
 	createInfo.imageArrayLayers = 1;
 	createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT; //TODO: change this if not rendering directly to it
 
@@ -367,32 +378,40 @@ bool RenderBackend<Vulkan>::CreateSwapChain()
 	return true;
 }
 
-void RenderBackend<Vulkan>::CreateSwapChainImages()
+void RenderBackendImpl<Vulkan>::CreateSwapChainImages()
 {
-	m_swapChainTextures.resize(m_swapChainImages.size());
+	m_swapChainTextures.reserve(m_swapChainImages.size());
 	for (auto& image : m_swapChainImages)
 	{
-		m_swapChainTextures.push_back(VulkanTex::CreateFromImage({ m_swapChainImageFormat, image }));
+		const Texture tex = g_pTexManager->CreateFromImage({ m_swapChainImageFormat, image }, { VkGlobals::GetSwapChainExtent() });
+		m_swapChainTextures.push_back(tex);
 	}
 }
 
-bool RenderBackend<Vulkan>::CreateSurface()
+bool RenderBackendImpl<Vulkan>::CreateSurface()
 {
 	return glfwCreateWindowSurface(m_instance, g_pWindowManager->GetWindow(), nullptr, &m_surface) == VK_SUCCESS;
 }
 
-bool RenderBackend<Vulkan>::CreateGraphicsPipeline()
+bool RenderBackendImpl<Vulkan>::CreateGraphicsPipeline()
 {
 	return false;
 }
 
-void RenderBackend<Vulkan>::UpdateGlobals() const
+void RenderBackendImpl<Vulkan>::UpdateGlobals() const
 {
 	VkGlobals::SetSwapChainImageFormat(m_swapChainImageFormat);
 	VkGlobals::SetSwapChainExtent(m_swapChainExtent);
+	VkGlobals::SetMainSwapChain(m_swapChain);
+	VkGlobals::SetPresentQueue(m_presentQueue);
+	VkGlobals::SetGraphicsQueue(m_graphicsQueue);
+	VkGlobals::SetSwapChainImages(m_swapChainTextures);
+	VkGlobals::SetQueueFamilyIndices(m_indices);
+	VkGlobals::SetAllQueues(Queues{ m_graphicsQueue, m_presentQueue, m_transferQueue, m_computeQueue });
+	VkGlobals::SetPhysicalDevice(m_physicalDevice);
 }
 
-RenderBackend<Vulkan>::QueueFamilyIndices RenderBackend<Vulkan>::FindQueueFamilies(VkPhysicalDevice device)
+QueueFamilyIndices RenderBackendImpl<Vulkan>::FindQueueFamilies(VkPhysicalDevice device)
 {
 	QueueFamilyIndices m_indices;
 
@@ -405,9 +424,17 @@ RenderBackend<Vulkan>::QueueFamilyIndices RenderBackend<Vulkan>::FindQueueFamili
 	s32 i = 0;
 	for (const auto& queueFamily : queueFamilies)
 	{
-		if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
+		if (m_indices.graphicsFamily.has_value() == false && queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
 		{
 			m_indices.graphicsFamily = i;
+		}
+		else if (m_indices.transferFamily.has_value() == false && queueFamily.queueFlags & VK_QUEUE_TRANSFER_BIT)
+		{
+			m_indices.transferFamily = i;
+		}
+		else if (m_indices.computeFamily.has_value() == false && queueFamily.queueFlags & VK_QUEUE_COMPUTE_BIT)
+		{
+			m_indices.computeFamily = i;
 		}
 		VkBool32 presentSupport = false;
 		vkGetPhysicalDeviceSurfaceSupportKHR(device, i, m_surface, &presentSupport);
@@ -422,4 +449,14 @@ RenderBackend<Vulkan>::QueueFamilyIndices RenderBackend<Vulkan>::FindQueueFamili
 		++i;
 	}
 	return m_indices;
+}
+
+QueueFamilyIndices RenderBackendImpl<Vulkan>::GetQueueFamilies() const
+{
+	return m_indices;
+}
+
+const stltype::vector<Texture>& RenderBackendImpl<Vulkan>::GetSwapChainTextures() const
+{
+	return m_swapChainTextures;
 }

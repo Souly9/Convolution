@@ -1,6 +1,7 @@
 #pragma once
 #include "Core/Rendering/Core/Pipeline.h"
 #include "Core/Rendering/Core/Texture.h"
+#include "Core/Rendering/Core/Buffer.h"
 
 inline VkPolygonMode Conv(const PolygonMode& m)
 {
@@ -166,4 +167,32 @@ inline VkSampleCountFlagBits Conv(const u32& m)
 	}
 
 	return VK_SAMPLE_COUNT_1_BIT;
+}
+
+inline VkBufferUsageFlags Conv(const BufferUsage& m)
+{
+	switch (m)
+	{
+		case BufferUsage::Vertex:
+			return VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+		case BufferUsage::Staging:
+			return VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+		default:
+			DEBUG_ASSERT(false);
+	}
+	return VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+}
+
+inline VkMemoryPropertyFlags Conv2MemFlags(const BufferUsage& m)
+{
+	switch (m)
+	{
+		case BufferUsage::Vertex:
+			return VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+		case BufferUsage::Staging:
+			return VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+		default:
+			DEBUG_ASSERT(false);
+	}
+	return VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
 }
