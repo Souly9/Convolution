@@ -1,35 +1,32 @@
 #include <glfw3/glfw3.h>
-#include "Core/Global/GlobalDefines.h"
-#include "Core/Global/GlobalVariables.h"
-#include "Rendering/Vulkan/VulkanBackend.h"
-#include "Rendering/RenderLayer.h"
-#include "Rendering/Core/Shader.h"
-#include "Rendering/Core/Pipeline.h"
-#include "Rendering/Core/Attachment.h"
-#include "Rendering/Core/RenderPass.h"
-#include "WindowManager.h"
+#include "Application.h"
+#include "Rendering/Passes/StaticMeshPass.h"
 #include "Core/UI/UIManager.h"
 #include "TimeData.h"
-#include "Application.h"
 
 Application::Application(uint32_t screenWidth, uint32_t screenHeight, stltype::string_view title)
 	: m_renderLayer{}
 {
 	g_pWindowManager = stltype::make_unique<WindowManager>(screenWidth, screenHeight, title);
 	bool bCanRender = m_renderLayer.InitRenderLayer(screenWidth, screenHeight, title);
-	m_ui.Setup(!bCanRender);
+	DEBUG_ASSERT(bCanRender);
 
-	auto mainVert = Shader("Shaders/Simple.vert.spv", "main");
-	auto mainFrag = Shader("Shaders/Simple.frag.spv", "main");
-	ColorAttachmentInfo colorAttachmentInfo{};
-	colorAttachmentInfo.format = TexFormat::SWAPCHAIN;
-	auto colorAttachment = RenderPassAttachmentColor::CreateColorAttachment(colorAttachmentInfo);
-	auto renderPass = RenderPass::CreateFullScreenRenderPassSimple(colorAttachment);
-	PSO mainPSO = PSO::CreatePipeline(mainVert, mainFrag, PipelineVertexInputs{}, PipelineInfo{}, renderPass);
+	m_ui.Setup(!bCanRender);
+	CreateMainPSO();
+}
+
+void Application::CreateMainPSO()
+{
+	m_staticMeshPass = stltype::make_unique<StaticMainMeshPass>(3);
+	m_staticMeshPass->SetVertexInputDescriptions(VertexInputDefines::VertexAttributeTemplates::Complete);
+	m_staticMeshPass->CreatePipeline();
+
 }
 
 Application::~Application()
 {
+	m_staticMeshPass.reset();
+	g_pTexManager.reset();
 	m_renderLayer.CleanUp();
 }
 
@@ -45,6 +42,7 @@ void Application::Run()
 
 		glfwPollEvents();
 	}
+	vkDeviceWaitIdle(VkGlobals::GetLogicalDevice());
 }
 
 void Application::Update()
@@ -54,8 +52,9 @@ void Application::Update()
 
 void Application::Render()
 {
-
 	m_ui.DrawUI(0.16f, LogData::Get()->GetApplicationInfos());
+
+	m_staticMeshPass->Render();
 }
 
 void Application::ConsolePrintDebug() const

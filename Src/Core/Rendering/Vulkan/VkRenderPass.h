@@ -1,20 +1,24 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
-#include "Core/Rendering/Core/RenderPass.h"
 #include "BackendDefines.h"
-#include "VkShader.h"
-#include "VkAttachment.h"
 
+class VertexBufferVulkan;
 
-template<>
-class RPass<Vulkan>
+class RenderPassVulkan : public TrackedResource
 {
 public:
-	static RPass<Vulkan> CreateFullScreenRenderPassSimple(const RenderPassAttachment& colorAttachment);
+	static RenderPassVulkan CreateFullScreenRenderPassSimple(const RenderPassAttachment& colorAttachment);
 
-	~RPass();
+	RenderPassVulkan() = default;
+	~RenderPassVulkan();
+	virtual void CleanUp() override;
 
-	VkRenderPass GetHandle() const;
+	const VkRenderPass& GetRef() const;
+
+	void SetVertexBuffer(const VertexBufferVulkan& buffer);
+	VkBuffer GetVertexBuffer() const;
+
 private:
-	VkRenderPass m_renderPass;
+	VkRenderPass m_renderPass{ VK_NULL_HANDLE };
+	VertexBufferVulkan m_vertexBuffer{};
 };

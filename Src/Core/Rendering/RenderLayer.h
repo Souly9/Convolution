@@ -1,7 +1,8 @@
 #pragma once
-#include <EASTL/type_traits.h>
 #include "Core/Global/GlobalDefines.h"
+#include <EASTL/type_traits.h>
 #include "Backend/RenderBackend.h"
+#include "LayerDefines.h"
 
 class RenderInformation;
 
@@ -16,14 +17,18 @@ public:
 		return m_backend.Init(screenWidth, screenHeight, title);
 	}
 
+	const stltype::vector<Texture>& GetSwapChainTextures() const;
+	TexFormat GetSwapChainFormat() const;
+
+	QueueFamilyIndices GetQueueFamilies() const;
+
 	void CleanUp()
 	{
 		m_backend.Cleanup();
 	}
-
 private:
 	RenderLayer(const RenderLayer&) = delete;
 	RenderLayer(RenderLayer&&) noexcept = delete;
 
-	RenderBackend<RenderAPI> m_backend;
+	RenderBackendImpl<RenderAPI> m_backend;
 };

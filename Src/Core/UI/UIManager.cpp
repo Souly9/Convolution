@@ -12,5 +12,5 @@ void UI::DrawUI(float dt, ApplicationInfos& renderInfos)
 
 void UI::PrintConsoleLog() const
 {
-	m_consoleLogger.Show(LogData::Get()->GetApplicationInfos());
+	g_pConsoleLogger->Show(LogData::Get()->GetApplicationInfos());
 }

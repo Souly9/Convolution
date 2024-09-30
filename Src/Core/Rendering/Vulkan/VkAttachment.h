@@ -2,24 +2,22 @@
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Rendering/Core/Attachment.h"
 
-template<>
-class Attachment<Vulkan>
+class AttachmentBaseVulkan : public AttachmentBase
 {
 public:
-	const VkAttachmentDescription& GetHandle() const;
+	const VkAttachmentDescription& GetDesc() const;
 
 protected:
-	Attachment<Vulkan>(const VkAttachmentDescription& attachmentDesc);
+	AttachmentBaseVulkan(const VkAttachmentDescription& attachmentDesc);
 
 	VkAttachmentDescription m_attachmentDesc{};
 };
 
-template<>
-class ColorAttachment<Vulkan> : public Attachment<Vulkan>
+class ColorAttachmentVulkan : public AttachmentBaseVulkan
 {
 public:
-	static ColorAttachment<Vulkan> CreateColorAttachment(const ColorAttachmentInfo& createInfo);
+	static ColorAttachmentVulkan CreateColorAttachment(const ColorAttachmentInfo& createInfo);
 
 protected:
-	ColorAttachment<Vulkan>(const VkAttachmentDescription& attachmentDesc);
+	ColorAttachmentVulkan(const VkAttachmentDescription& attachmentDesc);
 };

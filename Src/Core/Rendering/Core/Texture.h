@@ -1,13 +1,7 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
-GLOBAL_INCLUDES
-
-enum TexFormat : u32
-{
-	R8G8B8A8_UNORM = 0,
-
-	SWAPCHAIN = 999
-};
+#include "Core/Rendering/LayerDefines.h"
+#include "Resource.h"
 
 enum class ImageLayout
 {
@@ -30,30 +24,27 @@ enum class StoreOp
 	IDC
 };
 
-struct TextureCreationInfoBase
+struct TextureInfoBase
 {
-	u32 width = 0;
-	u32 height = 0;
+	DirectX::XMUINT2 extents;
 };
 
-struct TextureCreationInfo : TextureCreationInfoBase
+struct TextureInfo : TextureInfoBase
 {
-	TexFormat format = TexFormat::R8G8B8A8_UNORM;
+	TexFormat format;
 };
 
-IMPLEMENT_GRAPHICS_API
-class TexImpl
+class Tex : public TrackedResource
 {
 public:
-	static TexImpl CreateFromFile() {}
-	static TexImpl CreateFromMemory(const void* data, const TextureCreationInfo& info);
+	Tex() = default;
+	Tex(const TextureInfo& info) : m_info{ info } {}
 
-private:
-	TexImpl<BackendAPI> m_implementation;
-};
+	virtual void CleanUp() override {}
+protected:
+	TextureInfo m_info;
 
-#ifdef USE_VULKAN
-#include "Core/Rendering/Vulkan/VkTexture.h"
+#ifdef CONV_DEBUG
+	stltype::string m_debugString;
 #endif
-
-using Texture = TexImpl<RenderAPI>;
+};

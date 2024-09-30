@@ -16,9 +16,9 @@ public:
 	ApplicationInfos& GetApplicationInfos();
 	void Clear();
 
-	void AddError(stltype::string error);
-	void AddWarning(stltype::string warning);
-	void AddInfo(stltype::string info);
+	void AddError(stltype::string&& error);
+	void AddWarning(stltype::string&& warning);
+	void AddInfo(stltype::string&& info);
 
 private:
 	ApplicationInfos m_logData{};

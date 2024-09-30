@@ -75,6 +75,7 @@ file(GLOB_RECURSE SOURCE
 )
 file(GLOB_RECURSE HEADERS
 	"${CMAKE_SOURCE_DIR}/Src/*.h"
+	"${CMAKE_SOURCE_DIR}/Src/*.inl"
 )
 add_executable(${NAME} ${SOURCE} ${HEADERS})
 

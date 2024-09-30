@@ -1,13 +1,15 @@
 #pragma once
 #include <vulkan/vulkan.h>
 #include "Core/Rendering/Backend/RenderBackend.h"
+#include "Core/Rendering/Vulkan/VkPipeline.h"
+#include "Core/Rendering/Vulkan/VkFramebuffer.h"
 #include "Core/Rendering/Vulkan/VkTexture.h"
 
 template<>
-class RenderBackend<Vulkan>
+class RenderBackendImpl<Vulkan>
 {
 public:
-	virtual ~RenderBackend() = default;
+	virtual ~RenderBackendImpl() = default;
 	bool Init(uint32_t screenWidth, uint32_t screenHeight, stltype::string_view title);
 
 	bool Cleanup();
@@ -15,17 +17,6 @@ public:
 	bool AreValidationLayersAvailable(const stltype::vector<VkLayerProperties>& availableExtensions);
 
 	void ErrorCallback();
-
-	struct QueueFamilyIndices
-	{
-		stltype::optional<u32> graphicsFamily;
-		stltype::optional<u32> presentFamily;
-
-		bool IsComplete()
-		{
-			return graphicsFamily.has_value() && presentFamily.has_value();
-		}
-	}; 
 	struct SwapChainSupportDetails
 	{
 		VkSurfaceCapabilitiesKHR capabilities;
@@ -33,6 +24,8 @@ public:
 		stltype::vector<VkPresentModeKHR> presentModes;
 	};
 	QueueFamilyIndices FindQueueFamilies(VkPhysicalDevice device);
+	QueueFamilyIndices GetQueueFamilies() const;
+	const stltype::vector<Texture>& GetSwapChainTextures() const;
 
 private:
 	bool CreateInstance(uint32_t screenWidth, uint32_t screenHeight, stltype::string_view title);
@@ -44,7 +37,7 @@ private:
 	SwapChainSupportDetails QuerySwapChainSupport(VkPhysicalDevice device);
 	VkSurfaceFormatKHR ChooseSwapSurfaceFormat(const stltype::vector<VkSurfaceFormatKHR>& availableFormats);
 	VkPresentModeKHR ChooseSwapPresentMode(const stltype::vector<VkPresentModeKHR>& availablePresentModes);
-	VkExtent2D ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
+	DirectX::XMUINT2 ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
 	bool CreateSwapChain();
 	void CreateSwapChainImages();
 
@@ -58,14 +51,16 @@ private:
 
 	VkInstance m_instance;
 	VkDevice m_logicalDevice;
-	VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;
+	VkPhysicalDevice m_physicalDevice{ VK_NULL_HANDLE };
 	VkQueue m_graphicsQueue;
 	VkSurfaceKHR m_surface; ///< Surface that establishes connection to the glfw window.
 	VkQueue m_presentQueue;
+	VkQueue m_transferQueue;
+	VkQueue m_computeQueue;
 	QueueFamilyIndices m_indices;
 	VkSwapchainKHR m_swapChain;
 	stltype::vector<VkImage> m_swapChainImages;
 	VkFormat m_swapChainImageFormat;
-	VkExtent2D m_swapChainExtent;
-	stltype::vector<TexImpl<Vulkan>> m_swapChainTextures;
+	DirectX::XMUINT2 m_swapChainExtent;
+	stltype::vector<Texture> m_swapChainTextures;
 };

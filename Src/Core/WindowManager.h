@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Global/GlobalDefines.h"
 #include <glfw3/glfw3.h>
 #include "../Utils/MemoryUtilities.h"
 
