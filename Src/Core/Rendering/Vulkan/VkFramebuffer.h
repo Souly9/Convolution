@@ -1,10 +1,10 @@
 #pragma once
 #include "BackendDefines.h"
 
-class FrameBufferVulkan : public TextureVulkan
+class FrameBufferVulkan : public Tex
 {
 public:
-	FrameBufferVulkan(const TextureVulkan& attachmentDesc, const RenderPassVulkan& renderPass, const DirectX::XMUINT2& extents);
+	FrameBufferVulkan(const TextureVulkan* attachmentDesc, const RenderPassVulkan& renderPass, const DirectX::XMUINT3& extents);
 	~FrameBufferVulkan();
 
 	const VkFramebuffer& GetRef() const;

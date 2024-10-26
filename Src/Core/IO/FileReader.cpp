@@ -1,5 +1,7 @@
 #include <fstream>
 #include <filesystem>
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb/stb_image.h>
 #include "FileReader.h"
 
 stltype::vector<char> FileReader::ReadFileAsGenericBytes(const stltype::string_view& filePath)
@@ -23,4 +25,18 @@ stltype::vector<char> FileReader::ReadFileAsGenericBytes(const char* filePath)
 
 	fileStream.close();
 	return buffer;
+}
+
+FileReader::ReadTextureInfo FileReader::ReadImageFile(const char* filePath)
+{
+	ReadTextureInfo info{};
+	info.pixels = stbi_load(filePath, &info.extents.x, &info.extents.y, &info.texChannels, STBI_rgb_alpha);
+	DEBUG_ASSERT(info.pixels);
+
+	return info;
+}
+
+void FileReader::FreeImageData(unsigned char* pixels)
+{
+	stbi_image_free(pixels);
 }

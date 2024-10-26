@@ -2,6 +2,7 @@
 #include "Core/Rendering/Core/Pipeline.h"
 #include "Core/Rendering/Core/Texture.h"
 #include "Core/Rendering/Core/Buffer.h"
+#include "Core/Rendering/Core/UBODefines.h"
 
 inline VkPolygonMode Conv(const PolygonMode& m)
 {
@@ -134,6 +135,9 @@ inline VkImageLayout Conv(const ImageLayout& m)
 		case ImageLayout::TRANSFER_DST_OPTIMAL:
 			return VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 			break;
+		case ImageLayout::SHADER_READ_OPTIMAL:
+			return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+			break;
 		case ImageLayout::PRESENT:
 			return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 			break;
@@ -175,8 +179,14 @@ inline VkBufferUsageFlags Conv(const BufferUsage& m)
 	{
 		case BufferUsage::Vertex:
 			return VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+		case BufferUsage::Index:
+			return VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+		case BufferUsage::Texture:
+			return VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
 		case BufferUsage::Staging:
 			return VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+		case BufferUsage::Uniform:
+			return VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
 		default:
 			DEBUG_ASSERT(false);
 	}
@@ -188,11 +198,32 @@ inline VkMemoryPropertyFlags Conv2MemFlags(const BufferUsage& m)
 	switch (m)
 	{
 		case BufferUsage::Vertex:
+		case BufferUsage::Index:
+		case BufferUsage::Texture:
 			return VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 		case BufferUsage::Staging:
+			return VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+		case BufferUsage::Uniform:
 			return VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 		default:
 			DEBUG_ASSERT(false);
 	}
 	return VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+}
+
+inline VkShaderStageFlagBits Conv(const ShaderTypeBits& m)
+{
+	u32 vkBits = 0;
+	if ((u32)m & (u32)ShaderTypeBits::Vertex)
+		vkBits = (vkBits | VK_SHADER_STAGE_VERTEX_BIT);
+	if ((u32)m & (u32)ShaderTypeBits::Fragment)
+		vkBits = (vkBits | VK_SHADER_STAGE_FRAGMENT_BIT);
+	if((u32)m & (u32)ShaderTypeBits::Compute)
+		vkBits = (vkBits | VK_SHADER_STAGE_COMPUTE_BIT);
+	if ((u32)m & (u32)ShaderTypeBits::Geometry)
+		vkBits = (vkBits | VK_SHADER_STAGE_GEOMETRY_BIT);
+	if ((u32)m & (u32)ShaderTypeBits::All)
+		vkBits = VK_SHADER_STAGE_ALL;
+
+	return (VkShaderStageFlagBits)vkBits;
 }

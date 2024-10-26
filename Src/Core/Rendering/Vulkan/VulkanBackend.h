@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Global/GlobalDefines.h"
 #include <vulkan/vulkan.h>
 #include "Core/Rendering/Backend/RenderBackend.h"
 #include "Core/Rendering/Vulkan/VkPipeline.h"
@@ -25,7 +26,6 @@ public:
 	};
 	QueueFamilyIndices FindQueueFamilies(VkPhysicalDevice device);
 	QueueFamilyIndices GetQueueFamilies() const;
-	const stltype::vector<Texture>& GetSwapChainTextures() const;
 
 private:
 	bool CreateInstance(uint32_t screenWidth, uint32_t screenHeight, stltype::string_view title);
@@ -49,18 +49,17 @@ private:
 
 	void UpdateGlobals() const;
 
-	VkInstance m_instance;
-	VkDevice m_logicalDevice;
+	VkInstance m_instance{ VK_NULL_HANDLE };
+	VkDevice m_logicalDevice{ VK_NULL_HANDLE };
 	VkPhysicalDevice m_physicalDevice{ VK_NULL_HANDLE };
 	VkQueue m_graphicsQueue;
-	VkSurfaceKHR m_surface; ///< Surface that establishes connection to the glfw window.
+	VkSurfaceKHR m_surface{ VK_NULL_HANDLE }; ///< Surface that establishes connection to the glfw window.
 	VkQueue m_presentQueue;
 	VkQueue m_transferQueue;
 	VkQueue m_computeQueue;
 	QueueFamilyIndices m_indices;
-	VkSwapchainKHR m_swapChain;
+	VkSwapchainKHR m_swapChain{ VK_NULL_HANDLE };
 	stltype::vector<VkImage> m_swapChainImages;
 	VkFormat m_swapChainImageFormat;
 	DirectX::XMUINT2 m_swapChainExtent;
-	stltype::vector<Texture> m_swapChainTextures;
 };

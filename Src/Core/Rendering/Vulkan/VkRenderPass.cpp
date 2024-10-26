@@ -44,9 +44,19 @@ void RenderPassVulkan::SetVertexBuffer(const VertexBufferVulkan& buffer)
 	m_vertexBuffer = buffer;
 }
 
+void RenderPassVulkan::SetIndexBuffer(const IndexBufferVulkan& buffer)
+{
+	m_indexBuffer = buffer;
+}
+
 VkBuffer RenderPassVulkan::GetVertexBuffer() const
 { 
 	return m_vertexBuffer.GetRef(); 
+}
+
+VkBuffer RenderPassVulkan::GetIndexBuffer() const
+{
+	return m_indexBuffer.GetRef();
 }
 
 RenderPassVulkan::~RenderPassVulkan()

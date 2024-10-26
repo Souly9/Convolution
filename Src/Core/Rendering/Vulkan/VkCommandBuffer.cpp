@@ -1,5 +1,7 @@
 #include "VkCommandBuffer.h"
 #include "VkGlobals.h"
+#include "Utils/VkEnumHelpers.h"
+#include "VkDescriptorPool.h"
 
 namespace CommandHelpers
 {
@@ -20,6 +22,22 @@ namespace CommandHelpers
             cmd.firstVert, cmd.firstInstance);
     }
 
+    static void RecordCommand(GenericIndexedDrawCmd& cmd, CBufferVulkan& buffer, bool& needsBegin)
+    {
+        if (needsBegin)
+        {
+            buffer.BeginRPass(cmd);
+            needsBegin = false;
+        }
+        
+        stltype::vector<VkDescriptorSet> sets(cmd.descriptorSets.size());
+		for (u32 i = 0; i < sets.size(); ++i)
+			sets[i] = cmd.descriptorSets[i]->GetRef();
+
+        vkCmdBindDescriptorSets(buffer.GetRef(), VK_PIPELINE_BIND_POINT_GRAPHICS, cmd.pso.GetLayout(), 0, cmd.descriptorSets.size(), sets.data(), 0, nullptr);
+        vkCmdDrawIndexed(buffer.GetRef(), cmd.vertCount, cmd.instanceCount, cmd.indexOffset,
+            cmd.firstVert, cmd.firstInstance);
+    }
     static void RecordCommand(SimpleBufferCopyCmd& cmd, CBufferVulkan& buffer, bool& needsBegin)
     {
         DEBUG_ASSERT(cmd.srcBuffer->GetRef() != VK_NULL_HANDLE && cmd.dstBuffer->GetRef() != VK_NULL_HANDLE);
@@ -31,13 +49,66 @@ namespace CommandHelpers
         vkCmdCopyBuffer(buffer.GetRef(), cmd.srcBuffer->GetRef(), cmd.dstBuffer->GetRef(), 1, &copyRegion);
 
         if(cmd.optionalCallback)
-            buffer.AddCallback(std::move(cmd.optionalCallback));
+            buffer.AddExecutionFinishedCallback(std::move(cmd.optionalCallback));
+    }
+
+    static void RecordCommand(ImageBuffyCopyCmd& cmd, CBufferVulkan& buffer, bool& needsBegin)
+    {
+        DEBUG_ASSERT(cmd.srcBuffer->GetRef() != VK_NULL_HANDLE && cmd.dstImage->GetImage() != VK_NULL_HANDLE);
+
+        VkBufferImageCopy copyRegion{};
+		copyRegion.bufferOffset = cmd.srcOffset;
+        copyRegion.bufferRowLength = cmd.bufferRowLength;
+		copyRegion.bufferImageHeight = cmd.bufferImageHeight;
+
+        copyRegion.imageSubresource.aspectMask = cmd.aspectFlagBits;
+		copyRegion.imageSubresource.mipLevel = cmd.mipLevel;
+		copyRegion.imageSubresource.baseArrayLayer = cmd.baseArrayLayer;
+		copyRegion.imageSubresource.layerCount = cmd.layerCount;
+
+		copyRegion.imageOffset = Conv(cmd.imageOffset);
+		copyRegion.imageExtent = Conv(cmd.imageExtent);
+        vkCmdCopyBufferToImage(buffer.GetRef(), cmd.srcBuffer->GetRef(), cmd.dstImage->GetImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+
+        if (cmd.optionalCallback)
+            buffer.AddExecutionFinishedCallback(std::move(cmd.optionalCallback));
+    }
+
+    static void RecordCommand(ImageLayoutTransitionCmd& cmd, CBufferVulkan& buffer, bool& needsBegin)
+    {
+        DEBUG_ASSERT(cmd.pImage->GetImage() != VK_NULL_HANDLE);
+
+        VkImageMemoryBarrier memoryBarrier{};
+        memoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        memoryBarrier.oldLayout = Conv(cmd.oldLayout);
+        memoryBarrier.newLayout = Conv(cmd.newLayout);
+        memoryBarrier.srcQueueFamilyIndex = cmd.srcQueueFamilyIdx < 0 ? VK_QUEUE_FAMILY_IGNORED : cmd.srcQueueFamilyIdx;
+        memoryBarrier.dstQueueFamilyIndex = cmd.dstQueueFamilyIdx < 0 ? VK_QUEUE_FAMILY_IGNORED : cmd.dstQueueFamilyIdx;
+        memoryBarrier.image = cmd.pImage->GetImage();
+        memoryBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        memoryBarrier.subresourceRange.baseArrayLayer = cmd.baseArrayLayer;
+        memoryBarrier.subresourceRange.layerCount = cmd.layerCount;
+		memoryBarrier.subresourceRange.levelCount = cmd.levelCount;
+		memoryBarrier.subresourceRange.baseMipLevel = cmd.mipLevel;
+
+        memoryBarrier.srcAccessMask = cmd.srcAccessMask;
+		memoryBarrier.dstAccessMask = cmd.dstAccessMask;
+
+        vkCmdPipelineBarrier(buffer.GetRef(), cmd.srcStage, cmd.dstStage,
+			0,
+			0, nullptr,
+			0, nullptr,
+			1, &memoryBarrier);
     }
 }
+
+CBufferVulkan::~CBufferVulkan()
+{
+    ReturnToPool();
+}
+
 void CBufferVulkan::Bake()
 {
-    BeginBuffer();
-
     bool needsBegin = true;
     for (auto& cmd : m_commands)
     {
@@ -59,20 +130,31 @@ void CBufferVulkan::BeginBuffer()
 {
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT; // Optional
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT; 
+    beginInfo.pInheritanceInfo = nullptr; // Optional
+    DEBUG_ASSERT(vkBeginCommandBuffer(GetRef(), &beginInfo) == VK_SUCCESS);
+}
+
+void CBufferVulkan::BeginBufferForSingleSubmit()
+{
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT; 
     beginInfo.pInheritanceInfo = nullptr; // Optional
     DEBUG_ASSERT(vkBeginCommandBuffer(GetRef(), &beginInfo) == VK_SUCCESS);
 }
 
 void CBufferVulkan::BeginRPass(GenericDrawCmd& cmd)
 {
-    const auto& fbExtents = cmd.frameBuffer.GetInfo().extents;
+    const auto& fbExt = cmd.frameBuffer.GetInfo().extents;
+    const auto fbExtents = VkExtent2D(fbExt.x, fbExt.y);
+
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassInfo.renderPass = cmd.renderPass.GetRef();
     renderPassInfo.framebuffer = cmd.frameBuffer.GetRef();
     renderPassInfo.renderArea.offset = Conv(cmd.offset);
-    renderPassInfo.renderArea.extent = Conv(fbExtents);
+    renderPassInfo.renderArea.extent = fbExtents;
 
     renderPassInfo.clearValueCount = 1;
     renderPassInfo.pClearValues = &g_BlackCLearColor;
@@ -86,22 +168,22 @@ void CBufferVulkan::BeginRPass(GenericDrawCmd& cmd)
         VkViewport viewport{};
         viewport.x = 0.0f;
         viewport.y = 0.0f;
-        viewport.width = static_cast<float>(fbExtents.x);
-        viewport.height = static_cast<float>(fbExtents.y);
+        viewport.width = static_cast<float>(fbExtents.width);
+        viewport.height = static_cast<float>(fbExtents.height);
         viewport.minDepth = 0.0f;
         viewport.maxDepth = 1.0f;
         vkCmdSetViewport(GetRef(), 0, 1, &viewport);
 
         VkRect2D scissor{};
         scissor.offset = { 0, 0 };
-        scissor.extent = Conv(fbExtents);
+        scissor.extent = fbExtents;
         vkCmdSetScissor(GetRef(), 0, 1, &scissor);
     }
     VkBuffer vertexBuffers[] = { cmd.renderPass.GetVertexBuffer()};
     VkDeviceSize offsets[] = { 0 };
     vkCmdBindVertexBuffers(GetRef(), 0, 1, vertexBuffers, offsets);
 
-    vkCmdDraw(GetRef(), 3, 1, 0, 0);
+	vkCmdBindIndexBuffer(GetRef(), cmd.renderPass.GetIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
 }
 
 void CBufferVulkan::EndRPass()
@@ -119,6 +201,12 @@ void CBufferVulkan::ResetBuffer()
     vkResetCommandBuffer(GetRef(), /*VkCommandBufferResetFlagBits*/ 0);
     CallCallbacks();
     m_commands.clear();
+}
+
+void CBufferVulkan::ReturnToPool()
+{
+    ResetBuffer();
+    m_pool->ReturnBuffer(this);
 }
 
 void CBufferVulkan::Destroy(VkCommandPool pool)

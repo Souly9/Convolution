@@ -17,9 +17,6 @@ public:
 		return m_backend.Init(screenWidth, screenHeight, title);
 	}
 
-	const stltype::vector<Texture>& GetSwapChainTextures() const;
-	TexFormat GetSwapChainFormat() const;
-
 	QueueFamilyIndices GetQueueFamilies() const;
 
 	void CleanUp()

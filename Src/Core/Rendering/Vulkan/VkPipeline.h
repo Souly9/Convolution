@@ -7,8 +7,8 @@
 
 struct PipeVertInfo
 {
-	VkVertexInputBindingDescription vertexInputDescription{};
-	stltype::vector<VkVertexInputAttributeDescription> attributeDescriptions{};
+	VkVertexInputBindingDescription m_vertexInputDescription{};
+	stltype::vector<VkVertexInputAttributeDescription> m_attributeDescriptions{};
 	u32 bindingDescriptionCount{ 1 };
 };
 
@@ -28,6 +28,9 @@ public:
 	bool NeedsVertexBuffers() const;
 
 	VkPipeline GetRef();
+	VkPipelineLayout GetLayout() const { return m_pipelineLayout; }
+	VkDescriptorSetLayout GetPipelineSpecificLayout() const { return m_descriptorSetLayout; }
+
 private:
 
 	VkPipelineDynamicStateCreateInfo CreateDynamicPipelineInfo(const stltype::vector<VkDynamicState>& dynamicStates);
@@ -45,11 +48,14 @@ private:
 
 	VkPipelineColorBlendAttachmentState CreateColorBlendAttachmentInfo(const ColorBlendAttachmentInfo& info);
 
-	VkPipelineColorBlendStateCreateInfo CreateColorBlendInfo(const ColorBlendInfo& info, VkPipelineColorBlendAttachmentState colorBlendAttachment);
+	VkPipelineColorBlendStateCreateInfo CreateColorBlendInfo(const ColorBlendInfo& info, const VkPipelineColorBlendAttachmentState& colorBlendAttachment);
 
-	VkPipelineLayout CreatePipelineLayout(const PipelineUniformLayout& layoutInfo);
+	VkPipelineLayout CreatePipelineLayout(const DescriptorSetLayout& layoutInfo);
 
-	VkPipelineLayout m_pipelineLayout;
+	VkPipelineLayout m_pipelineLayout; 
+
+	stltype::vector<VkDescriptorSetLayout> m_sharedDescriptorSetLayouts;
+	VkDescriptorSetLayout m_descriptorSetLayout;
 
 	VkPipeline m_pipeline;
 

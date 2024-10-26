@@ -31,6 +31,27 @@ FetchContent_Declare(
   GIT_PROGRESS TRUE
 )
 FetchContent_Declare(
+  EAStdC
+  GIT_REPOSITORY "https://github.com/electronicarts/EAStdC.git"
+  GIT_TAG "04253396f7253c0356163cfa955cdf598ff9ed1c" #no tests
+  SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/EAStdC"
+  GIT_PROGRESS TRUE
+)
+FetchContent_Declare(
+  EAAssert
+  GIT_REPOSITORY "https://github.com/electronicarts/EAAssert.git"
+  GIT_TAG "0f5090d856a558a846fb161991533fcd48493fe7" #no tests
+  SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/EAAssert"
+  GIT_PROGRESS TRUE
+)
+FetchContent_Declare(
+  EATHREAD
+  GIT_REPOSITORY "https://github.com/electronicarts/EAThread"
+  GIT_TAG "2816d1582ed075c2c95d2839cc7924115465a9a0" #no tests
+  SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/EAThread"
+  GIT_PROGRESS TRUE
+)
+FetchContent_Declare(
   GLFW3
   GIT_REPOSITORY "https://github.com/glfw/glfw.git"
   GIT_TAG "3.4" 
@@ -52,7 +73,7 @@ FetchContent_Declare(
   GIT_PROGRESS TRUE
 )
 
-FetchContent_MakeAvailable(EASTL GLFW3 IMGUI DIRECTXMATH)
+FetchContent_MakeAvailable(EASTL EAStdC EAAssert EAThread GLFW3 IMGUI DIRECTXMATH)
 
 find_package(DIRECTXMATH REQUIRED)
 message(STATUS "DirectXMath found at ${DIRECTXMATH_INCLUDE_DIR}")
@@ -66,7 +87,7 @@ message(STATUS "ImGui found at ${IMGUI_INCLUDE_DIR}")
 file(GLOB_RECURSE ADD_LIBS 
 	"${CMAKE_SOURCE_DIR}/External/additonal_libs/*"
 )
-set(LIBS ${GLFW3_LIBRARY} ${Vulkan_LIBRARIES} ${ADD_LIBS} EASTL)
+set(LIBS ${GLFW3_LIBRARY} ${Vulkan_LIBRARIES} ${ADD_LIBS} EASTL EAStdC EAAssert EAThread)
 
 link_directories(${CMAKE_SOURCE_DIR}/External/additional_libs)
 
@@ -92,6 +113,10 @@ SYSTEM
 	${Vulkan_INCLUDE_DIRS}
 	${GLFW3_INCLUDE_DIR}
 	${EASTL_ROOT_DIR}
+	${CMAKE_SOURCE_DIR}/External/EAStdC/include/
+	${CMAKE_SOURCE_DIR}/External/EAAssert/include/
+	${CMAKE_SOURCE_DIR}/External/EAThread/include/
+	${CMAKE_SOURCE_DIR}/External/stb/
 )
 
 target_compile_definitions(${NAME} PRIVATE CONV_DEBUG=1)
@@ -104,6 +129,7 @@ add_custom_target(
     my_custom_target_that_always_runs ALL
     DEPENDS ${CMAKE_SOURCE_DIR}/Shaders/Compiled/__header.h 
 	${CMAKE_SOURCE_DIR}/bin/Shaders/___header.h
+	${CMAKE_SOURCE_DIR}/bin/Shaders/____header.h
 )
 add_custom_command(OUTPUT ${CMAKE_SOURCE_DIR}/Shaders/Compiled/__header.h
 					COMMAND cmd /C ${CMAKE_SOURCE_DIR}/Scripts/CompileShaders.bat	
@@ -111,5 +137,8 @@ add_custom_command(OUTPUT ${CMAKE_SOURCE_DIR}/Shaders/Compiled/__header.h
 add_custom_command(OUTPUT ${CMAKE_SOURCE_DIR}/bin/Shaders/___header.h
 					COMMAND cmd /C ${CMAKE_SOURCE_DIR}/Scripts/CopyShaders.bat
 					DEPENDS ${CMAKE_SOURCE_DIR}/Shaders/Compiled/__header.h
+					VERBATIM)
+add_custom_command(OUTPUT ${CMAKE_SOURCE_DIR}/bin/Shaders/____header.h
+					COMMAND cmd /C ${CMAKE_SOURCE_DIR}/Scripts/CopyTextures.bat
 					VERBATIM)
 endif()

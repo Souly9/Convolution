@@ -13,6 +13,7 @@ Application::Application(uint32_t screenWidth, uint32_t screenHeight, stltype::s
 
 	m_ui.Setup(!bCanRender);
 	CreateMainPSO();
+	g_pGlobalTimeData->Reset();
 }
 
 void Application::CreateMainPSO()
@@ -27,6 +28,7 @@ Application::~Application()
 {
 	m_staticMeshPass.reset();
 	g_pTexManager.reset();
+	g_pGPUMemoryManager.reset();
 	m_renderLayer.CleanUp();
 }
 
@@ -47,7 +49,7 @@ void Application::Run()
 
 void Application::Update()
 {
-	//float dt = m_time.Step();
+	g_pGlobalTimeData->Step();
 }
 
 void Application::Render()
