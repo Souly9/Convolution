@@ -5,19 +5,26 @@
 class TimeData
 {
 public:
-	TimeData()
+	static inline void Reset()
 	{
-		m_lastStep = stltype::chrono::steady_clock::now();
+		s_lastStep = stltype::chrono::steady_clock::now();
 	}
 
-	// Returns the milliseconds between this and last step
-	float Step()
+	// Steps the clock and returns the milliseconds between this and last step
+	static inline f32 Step()
 	{
 		auto nowStep = stltype::chrono::steady_clock::now();
-		return stltype::chrono::duration_cast<stltype::chrono::microseconds>
-			(nowStep - m_lastStep).count();
+		s_lastDt = stltype::chrono::duration<f32, stltype::chrono::seconds::period>(nowStep - s_lastStep).count();
+		s_lastStep = nowStep;
+		return s_lastDt;
+	}
+
+	static inline float GetDeltaTime()
+	{
+		return s_lastDt;
 	}
 
 private:
-	stltype::chrono::steady_clock::time_point m_lastStep;
+	static inline stltype::chrono::steady_clock::time_point s_lastStep{};
+	static inline f32 s_lastDt{ 0.f }; // in seconds
 };

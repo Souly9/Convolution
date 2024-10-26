@@ -6,8 +6,8 @@
 
 struct BufferInfo
 {
-	u64 size;
-
+	u64 size{ 0 };
+	BufferUsage usage;
 };
 class VertexBufferVulkan;
 class StagingBuffer;
@@ -28,16 +28,19 @@ public:
 	// Fill buffer using staging buffer
 	void FillAndTransfer(StagingBuffer& stgBuffer, CommandBuffer* transferBuffer, const void* data, bool freeStagingBuffer = false);
 
+	GPUMappedMemoryHandle MapMemory();
+	void UnmapMemory();
+
 	VkBuffer GetRef() const { return m_buffer; }
 	GPUMemoryHandle GetMemoryHandle() const { return m_allocatedMemory; }
 	BufferInfo GetInfo() const { return m_info; }
+	BufferUsage GetUsage() const { return m_info.usage; }
 
 protected:
 	GenBufferVulkan() {}
 
 	void MapAndCopyToMemory(const GPUMemoryHandle& memory, const void* data, u64 size, u64 offset);
 	void CheckCopyArgs(const void* data, u64 size, u64 offset);
-
 	BufferInfo m_info{};
 	VkBuffer m_buffer{ VK_NULL_HANDLE };
 	GPUMemoryHandle m_allocatedMemory { VK_NULL_HANDLE };
@@ -48,6 +51,22 @@ class VertexBufferVulkan : public GenBufferVulkan
 public:
 	VertexBufferVulkan(u64 size);
 	VertexBufferVulkan() {}
+
+};
+
+class IndexBufferVulkan : public GenBufferVulkan
+{
+public:
+	IndexBufferVulkan(u64 size);
+	IndexBufferVulkan() {}
+
+};
+
+class UniformBuffer : public GenBufferVulkan
+{
+public:
+	UniformBuffer(u64 size);
+	UniformBuffer() {}
 
 };
 

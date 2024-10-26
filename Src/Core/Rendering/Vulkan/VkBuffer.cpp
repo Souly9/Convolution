@@ -1,5 +1,5 @@
 #include "VkGlobals.h"
-#include "VkEnumHelpers.h"
+#include "Utils/VkEnumHelpers.h"
 #include "VkBuffer.h"
 
 GenBufferVulkan::GenBufferVulkan(BufferCreateInfo& info)
@@ -31,6 +31,7 @@ void GenBufferVulkan::Create(BufferCreateInfo& info)
     DEBUG_ASSERT(vkCreateBuffer(VK_LOGICAL_DEVICE, &bufferInfo, VulkanAllocator(), &m_buffer) == VK_SUCCESS);
 
     m_info.size = size;
+    m_info.usage = info.usage;
 
     VkMemoryRequirements memRequirements;
     vkGetBufferMemoryRequirements(VK_LOGICAL_DEVICE, m_buffer, &memRequirements);
@@ -50,10 +51,10 @@ void GenBufferVulkan::CleanUp()
 void GenBufferVulkan::FillImmediate(const void* data)
 {
     CheckCopyArgs(data, UINT64_MAX, 0);
-    MapAndCopyToMemory(m_allocatedMemory, data, m_info.size, 0);
+    MapAndCopyToMemory(GetMemoryHandle(), data, GetInfo().size, 0);
 }
 
-void GenBufferVulkan::FillAndTransfer(StagingBuffer& stgBuffer, CommandBuffer* transferBuffer, const void* data, bool freeStagingBuffer )
+void GenBufferVulkan::FillAndTransfer(StagingBuffer& stgBuffer, CommandBuffer* transferBuffer, const void* data, bool freeStagingBuffer)
 {
     CheckCopyArgs(data, UINT64_MAX, 0);
     DEBUG_ASSERT(stgBuffer.GetRef() != VK_NULL_HANDLE);
@@ -78,13 +79,21 @@ void GenBufferVulkan::FillAndTransfer(StagingBuffer& stgBuffer, CommandBuffer* t
     transferBuffer->RecordCommand(copyCmd);
 }
 
+GPUMappedMemoryHandle GenBufferVulkan::MapMemory()
+{
+    return g_pGPUMemoryManager->MapMemory(m_allocatedMemory, m_info.size);
+}
+
+void GenBufferVulkan::UnmapMemory()
+{
+    g_pGPUMemoryManager->UnmapMemory(m_allocatedMemory);
+}
+
 void GenBufferVulkan::MapAndCopyToMemory(const GPUMemoryHandle& memory, const void* data, u64 size, u64 offset)
 {
-    const auto& device = VK_LOGICAL_DEVICE;
-    void* bufferData;
-    vkMapMemory(device, memory, 0, m_info.size, 0, &bufferData);
+    const auto bufferData = g_pGPUMemoryManager->MapMemory(memory, m_info.size);
     memcpy(bufferData, data, (size_t)m_info.size);
-    vkUnmapMemory(device, memory);
+    g_pGPUMemoryManager->UnmapMemory(memory);
 }
 
 void GenBufferVulkan::CheckCopyArgs(const void* data, u64 size, u64 offset)
@@ -107,5 +116,21 @@ StagingBuffer::StagingBuffer(u64 size)
     BufferCreateInfo info{};
     info.size = size;
     info.usage = BufferUsage::Staging;
+    Create(info);
+}
+
+IndexBufferVulkan::IndexBufferVulkan(u64 size)
+{
+    BufferCreateInfo info{};
+    info.size = size;
+    info.usage = BufferUsage::Index;
+    Create(info);
+}
+
+UniformBuffer::UniformBuffer(u64 size)
+{
+    BufferCreateInfo info{};
+    info.size = size;
+    info.usage = BufferUsage::Uniform;
     Create(info);
 }

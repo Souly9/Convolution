@@ -1,6 +1,6 @@
 #include "VkAttachment.h"
 #include "VkRenderPass.h"
-#include "VkEnumHelpers.h"
+#include "Utils/VkEnumHelpers.h"
 
 AttachmentBaseVulkan::AttachmentBaseVulkan(const VkAttachmentDescription& attachmentDesc) : m_attachmentDesc(attachmentDesc)
 {

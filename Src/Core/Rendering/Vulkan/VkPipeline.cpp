@@ -1,7 +1,8 @@
 #include "VkPipeline.h"
 #include "VkGlobals.h"
 #include "VkTextureManager.h"
-#include "VkEnumHelpers.h"
+#include "Utils/VkEnumHelpers.h"
+#include "Utils/DescriptorSetLayoutConverters.h"
 
 
 PipelineVulkan::PipelineVulkan(const ShaderVulkan& vertShader, const ShaderVulkan& fragShader,
@@ -27,9 +28,8 @@ PipelineVulkan::PipelineVulkan(const ShaderVulkan& vertShader, const ShaderVulka
 	const auto viewport = CreateViewportInfo(pipeInfo.viewPortExtents);
 	const auto rasterizer = CreateRasterizerInfo(pipeInfo.viewPortExtents, pipeInfo.rasterizerInfo);
 	const auto multisampling = CreateMultisampleInfo(pipeInfo.multisampleInfo);
-	const auto colorBlendAttachment = CreateColorBlendAttachmentInfo(pipeInfo.colorBlendInfo);
-	const auto colorBlending = CreateColorBlendInfo(pipeInfo.colorInfo, colorBlendAttachment);
-	m_pipelineLayout = CreatePipelineLayout(pipeInfo.uniformLayout);
+	auto colorBlending = CreateColorBlendInfo(pipeInfo.colorInfo, CreateColorBlendAttachmentInfo(pipeInfo.colorBlendInfo));
+	m_pipelineLayout = CreatePipelineLayout(pipeInfo.descriptorSetLayout);
 
 	VkGraphicsPipelineCreateInfo pipelineInfo{};
 	pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -59,8 +59,13 @@ PipelineVulkan::~PipelineVulkan()
 
 void PipelineVulkan::CleanUp()
 {
-	VK_FREE_IF(m_pipelineLayout, vkDestroyPipelineLayout(VkGlobals::GetLogicalDevice(), m_pipelineLayout, VulkanAllocator()))
-	VK_FREE_IF(m_pipeline, vkDestroyPipeline(VkGlobals::GetLogicalDevice(), m_pipeline, VulkanAllocator()))
+	VK_FREE_IF(m_pipelineLayout, vkDestroyPipelineLayout(VK_LOGICAL_DEVICE, m_pipelineLayout, VulkanAllocator()))
+	VK_FREE_IF(m_pipeline, vkDestroyPipeline(VK_LOGICAL_DEVICE, m_pipeline, VulkanAllocator()))
+	VK_FREE_IF(m_descriptorSetLayout, vkDestroyDescriptorSetLayout(VK_LOGICAL_DEVICE, m_descriptorSetLayout, VulkanAllocator()));
+	for(auto& layout : m_sharedDescriptorSetLayouts)
+	{
+		VK_FREE_IF(layout, vkDestroyDescriptorSetLayout(VK_LOGICAL_DEVICE, layout, VulkanAllocator()));
+	}
 }
 
 bool PipelineVulkan::HasDynamicViewScissorState() const
@@ -93,9 +98,9 @@ VkPipelineVertexInputStateCreateInfo PipelineVulkan::CreateVertexInputInfo(const
 	VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
 	vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
 	vertexInputInfo.vertexBindingDescriptionCount = vertexInputs.bindingDescriptionCount;
-	vertexInputInfo.pVertexBindingDescriptions = &vertexInputs.vertexInputDescription; 
-	vertexInputInfo.vertexAttributeDescriptionCount = vertexInputs.attributeDescriptions.size();
-	vertexInputInfo.pVertexAttributeDescriptions = vertexInputs.attributeDescriptions.data(); 
+	vertexInputInfo.pVertexBindingDescriptions = &vertexInputs.m_vertexInputDescription; 
+	vertexInputInfo.vertexAttributeDescriptionCount = vertexInputs.m_attributeDescriptions.size();
+	vertexInputInfo.pVertexAttributeDescriptions = vertexInputs.m_attributeDescriptions.data(); 
 
 	m_vertexInfo = vertexInputs;
 
@@ -174,7 +179,7 @@ VkPipelineColorBlendAttachmentState PipelineVulkan::CreateColorBlendAttachmentIn
 	return colorBlendAttachment;
 }
 
-VkPipelineColorBlendStateCreateInfo PipelineVulkan::CreateColorBlendInfo(const ColorBlendInfo& info, VkPipelineColorBlendAttachmentState colorBlendAttachment)
+VkPipelineColorBlendStateCreateInfo PipelineVulkan::CreateColorBlendInfo(const ColorBlendInfo& info, const VkPipelineColorBlendAttachmentState& colorBlendAttachment)
 {
 	VkPipelineColorBlendStateCreateInfo colorBlending{};
 	colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -190,16 +195,26 @@ VkPipelineColorBlendStateCreateInfo PipelineVulkan::CreateColorBlendInfo(const C
 	return colorBlending;
 }
 
-VkPipelineLayout PipelineVulkan::CreatePipelineLayout(const PipelineUniformLayout& layoutInfo)
+VkPipelineLayout PipelineVulkan::CreatePipelineLayout(const DescriptorSetLayout& layoutInfo)
 {
-	VkPipelineLayout pipelineLayout; 
+	for (const auto& layout : layoutInfo.sharedDescriptors)
+	{
+		m_sharedDescriptorSetLayouts.push_back(DescriptorLaytoutUtils::CreateOneDescriptorSetLayout(layout));
+	}
+	m_descriptorSetLayout = DescriptorLaytoutUtils::CreateOneDescriptorSetForAll(layoutInfo.pipelineSpecificDescriptors);
+
+	stltype::vector<VkDescriptorSetLayout> descriptorSetLayouts(m_sharedDescriptorSetLayouts.size());
+	stltype::copy(m_sharedDescriptorSetLayouts.begin(), m_sharedDescriptorSetLayouts.end(), descriptorSetLayouts.begin());
+	descriptorSetLayouts.push_back(m_descriptorSetLayout);
+
+	VkPipelineLayout pipelineLayout;
 	VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
 	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipelineLayoutInfo.setLayoutCount = 0; // Optional
-	pipelineLayoutInfo.pSetLayouts = nullptr; // Optional
+	pipelineLayoutInfo.setLayoutCount = descriptorSetLayouts.size();
+	pipelineLayoutInfo.pSetLayouts = descriptorSetLayouts.data();
 	pipelineLayoutInfo.pushConstantRangeCount = 0; // Optional
 	pipelineLayoutInfo.pPushConstantRanges = nullptr; // Optional
-
+	
 	DEBUG_ASSERT(vkCreatePipelineLayout(VkGlobals::GetLogicalDevice(), &pipelineLayoutInfo, VulkanAllocator(), &pipelineLayout) == VK_SUCCESS);
 	return pipelineLayout;
 }

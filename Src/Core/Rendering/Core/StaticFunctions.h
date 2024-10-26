@@ -15,6 +15,8 @@ namespace SRF
 	IMPLEMENT_GRAPHICS_API
 	static inline void SubmitCommandBufferToTransferQueue(const CommandBuffer* cmdBuffer, const Fence& transferFinishedFence);
 
+	IMPLEMENT_GRAPHICS_API
+	static inline void SubmitCommandBufferToGraphicsQueue(const CommandBuffer* cmdBuffer, const Fence& transferFinishedFence);
 }
 
 #ifdef USE_VULKAN

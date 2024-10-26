@@ -32,7 +32,7 @@ public:
 
 	virtual void CleanUp() override;
 
-	void WaitFor(const u64& timeout = UINT64_MAX);
+	void WaitFor(const u64& timeout = UINT64_MAX) const;
 	void Reset();
 
 	VkFence GetRef() const;

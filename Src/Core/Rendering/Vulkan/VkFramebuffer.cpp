@@ -17,12 +17,12 @@ void FrameBufferVulkan::CreateVkBuffer(const VkFramebufferCreateInfo& createInfo
 	DEBUG_ASSERT(vkCreateFramebuffer(VkGlobals::GetLogicalDevice(), &createInfo, nullptr, &m_framebuffer) == VK_SUCCESS);
 }
 
-FrameBufferVulkan::FrameBufferVulkan(const TextureVulkan& attachmentDesc, const RenderPassVulkan& renderPass, const DirectX::XMUINT2& extents)
+FrameBufferVulkan::FrameBufferVulkan(const TextureVulkan* attachmentDesc, const RenderPassVulkan& renderPass, const DirectX::XMUINT3& extents)
 {
 	VkFramebufferCreateInfo framebufferInfo{};
 	framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
 	framebufferInfo.renderPass = renderPass.GetRef();
-	stltype::vector<VkImageView> attachments{ attachmentDesc.GetImageView() };
+	stltype::vector<VkImageView> attachments{ attachmentDesc->GetImageView() };
 	framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
 	framebufferInfo.pAttachments = attachments.data();
 	framebufferInfo.width = extents.x;
@@ -32,7 +32,7 @@ FrameBufferVulkan::FrameBufferVulkan(const TextureVulkan& attachmentDesc, const 
 	CreateVkBuffer(framebufferInfo);
 
 	m_info.extents = extents;
-	m_info.format = attachmentDesc.GetInfo().format;
+	m_info.format = attachmentDesc->GetInfo().format;
 }
 
 FrameBufferVulkan::~FrameBufferVulkan()

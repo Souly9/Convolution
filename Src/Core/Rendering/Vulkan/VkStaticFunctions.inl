@@ -61,4 +61,14 @@ namespace SRF
 
 		vkQueueSubmit(VkGlobals::GetAllQueues().transfer, 1, &submitInfo, transferFinishedFence.GetRef());
 	}
+	template<>
+	static inline void SubmitCommandBufferToGraphicsQueue<Vulkan>(const CommandBuffer* cmdBuffer, const Fence& transferFinishedFence)
+	{
+		VkSubmitInfo submitInfo{};
+		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		submitInfo.commandBufferCount = 1;
+		submitInfo.pCommandBuffers = &cmdBuffer->GetRef();
+
+		vkQueueSubmit(VkGlobals::GetAllQueues().graphics, 1, &submitInfo, transferFinishedFence.GetRef());
+	}
 }

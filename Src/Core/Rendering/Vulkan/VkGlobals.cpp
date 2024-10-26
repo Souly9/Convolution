@@ -8,10 +8,11 @@ DirectX::XMUINT2 VkGlobals::s_swapChainExtent{};
 VkSwapchainKHR VkGlobals::s_mainSwapChain{};
 VkQueue VkGlobals::s_presentQueue{};
 VkQueue VkGlobals::s_graphicsQueue{};
-stltype::vector<Texture> VkGlobals::s_swapChainImages{};
+stltype::vector<Texture*> VkGlobals::s_swapChainImages{};
 QueueFamilyIndices VkGlobals::s_indices{};
 Queues VkGlobals::s_queues{};
 VkPhysicalDevice VkGlobals::s_physicalDevice = VK_NULL_HANDLE;
+VkPhysicalDeviceProperties VkGlobals::s_physicalDeviceProperties{};
 extern stltype::unique_ptr<VkTextureManager> g_pTexManager = stltype::make_unique<VkTextureManager>();
 extern stltype::unique_ptr<GPUMemManager<Vulkan>> g_pGPUMemoryManager = stltype::make_unique<GPUMemManager<Vulkan>>();
 
@@ -29,6 +30,11 @@ VkFormat VkGlobals::GetSwapChainImageFormat()
 DirectX::XMUINT2 VkGlobals::GetSwapChainExtent()
 {
 	return s_swapChainExtent;
+}
+
+f32 VkGlobals::GetScreenAspectRatio()
+{
+	return s_swapChainExtent.x / (f32)s_swapChainExtent.y;
 }
 
 VkSwapchainKHR VkGlobals::GetMainSwapChain()
@@ -51,7 +57,7 @@ Queues VkGlobals::GetAllQueues()
 	return s_queues;
 }
 
-const stltype::vector<Texture>& VkGlobals::GetSwapChainImages()
+const stltype::vector<Texture*>& VkGlobals::GetSwapChainImages()
 {
 	return s_swapChainImages;
 }
@@ -63,7 +69,18 @@ QueueFamilyIndices VkGlobals::GetQueueFamilyIndices()
 
 VkPhysicalDevice VkGlobals::GetPhysicalDevice()
 {
+	DEBUG_ASSERT(s_physicalDevice != nullptr);
 	return s_physicalDevice;
+}
+
+const VkPhysicalDeviceProperties& VkGlobals::GetPhysicalDeviceProperties()
+{
+	return s_physicalDeviceProperties;
+}
+
+void VkGlobals::SetPhysicalDeviceProperties(const VkPhysicalDeviceProperties& physDeviceProps)
+{
+	s_physicalDeviceProperties = physDeviceProps;
 }
 
 void VkGlobals::SetLogicalDevice(VkDevice physDevice)
@@ -111,7 +128,7 @@ void VkGlobals::SetPhysicalDevice(const VkPhysicalDevice& physDevice)
 	s_physicalDevice = physDevice;
 }
 
-void VkGlobals::SetSwapChainImages(const stltype::vector<Texture>& images)
+void VkGlobals::SetSwapChainImages(const stltype::vector<Texture*>& images)
 {
 	s_swapChainImages = images;
 }

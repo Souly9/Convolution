@@ -11,7 +11,11 @@ public:
 
 	u32 GetMemoryTypeIndex(VkMemoryPropertyFlags properties, u32 filter);
 
+	GPUMappedMemoryHandle MapMemory(GPUMemoryHandle memory, size_t size);
+	void UnmapMemory(GPUMemoryHandle memory);
+
 	void TryFreeMemory(GPUMemoryHandle memoryHandle);
 private:
 	stltype::vector<GPUMemoryHandle> m_memoryHandles;
+	stltype::vector<GPUMemoryHandle> m_mappedMemoryHandles; // Mostly just for debugging
 };

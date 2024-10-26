@@ -16,9 +16,12 @@ public:
 	const VkRenderPass& GetRef() const;
 
 	void SetVertexBuffer(const VertexBufferVulkan& buffer);
+	void SetIndexBuffer(const IndexBufferVulkan& buffer);
 	VkBuffer GetVertexBuffer() const;
+	VkBuffer GetIndexBuffer() const;
 
 private:
 	VkRenderPass m_renderPass{ VK_NULL_HANDLE };
 	VertexBufferVulkan m_vertexBuffer{};
+	IndexBufferVulkan m_indexBuffer{};
 };

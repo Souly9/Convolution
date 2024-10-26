@@ -1,5 +1,6 @@
 #pragma once
 #include <EASTL/allocator.h>
+#include <EAStdC/EAString.h>
 #include <EASTL/string.h>
 #include <EASTL/string_view.h>
 #include <EASTL/variant.h>
@@ -14,16 +15,16 @@
 #include <cassert>
 #include <functional>
 #include <EASTL/hash_map.h>
+#include <EASTL/fixed_vector.h>
+#include <EASTL/fixed_string.h>
 
-#define GLFW_INCLUDE_VULKAN
-
-#define DEBUG_ASSERT(x) assert(x)
-
-#ifdef CONV_DEBUG
+#ifndef NDEBUG
 #define ASSERT(x) assert(x)
 #else 
+#undef CONV_DEBUG
 #define ASSERT(x) x
 #endif
+#define DEBUG_ASSERT(x) ASSERT(x)
 
 namespace eastl {}
 
@@ -32,9 +33,8 @@ namespace stltype = eastl;
 #include "Typedefs.h"
 
 const static inline stltype::string ENGINE_NAME = "Convolution";
-constexpr static inline u32 CONVOLUTION_MAJOR = 1;
 constexpr static inline u32 FRAMES_IN_FLIGHT = 2u;
-
+constexpr static inline u32 MAX_BINDLESS_TEXTURES = 16536;
 // memory
 // Want to switch to custom allocators one day
 struct VkAllocationCallbacks;
@@ -45,7 +45,15 @@ class Vulkan : AvailableRenderBackends {};
 using RenderAPI = Vulkan;
 
 #define USE_VULKAN
+
+#ifdef USE_VULKAN
+
 #define SEPERATE_TRANSFERQUEUE true
+#define GLFW_INCLUDE_VULKAN
+#define CONV_MIN_VULKAN_VERSION VK_API_VERSION_1_1
+#define CONV_DESIRED_VULKAN_VERSION VK_API_VERSION_1_3
+
+#endif
 
 #define IMPLEMENT_GRAPHICS_API template<class BackendAPI> requires stltype::is_base_of_v<AvailableRenderBackends, BackendAPI>
 #define GLOBAL_INCLUDES 

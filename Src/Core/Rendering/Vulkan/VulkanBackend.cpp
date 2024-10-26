@@ -16,7 +16,7 @@ bool RenderBackendImpl<Vulkan>::Init(uint32_t screenWidth, uint32_t screenHeight
 {
 	if(!CreateInstance(screenWidth, screenHeight, title))
 	{
-		DEBUG_LOG_ERR("Vulkan Instance couldn't be created!");
+		DEBUG_ASSERT(false, "Vulkan Instance couldn't be created!");
 		return false;
 	}
 	DEBUG_LOG("Vulkan Instance created!");
@@ -59,7 +59,6 @@ bool RenderBackendImpl<Vulkan>::Cleanup()
 {
 	vkDestroySwapchainKHR(m_logicalDevice, m_swapChain, VulkanAllocator());
 	vkDestroySurfaceKHR(m_instance, m_surface, VulkanAllocator());
-	m_swapChainTextures.clear();
 	vkDestroyDevice(m_logicalDevice, VulkanAllocator());
 	vkDestroyInstance(m_instance, VulkanAllocator());
 	return true;
@@ -83,13 +82,17 @@ bool RenderBackendImpl<Vulkan>::AreValidationLayersAvailable(const stltype::vect
 
 bool RenderBackendImpl<Vulkan>::CreateInstance(uint32_t screenWidth, uint32_t screenHeight, stltype::string_view title)
 {
+	u32 maxSupportedAPI;
+
+	DEBUG_ASSERT(vkEnumerateInstanceVersion(&maxSupportedAPI) == VK_SUCCESS, "This application requires at least vulkan 1.1 support!");
+
 	VkApplicationInfo appInfo{};
 	appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
 	appInfo.pApplicationName = title.data();
-	appInfo.applicationVersion = VK_MAKE_API_VERSION(1, 0, 0, 0);
+	appInfo.applicationVersion = maxSupportedAPI;
 	appInfo.pEngineName = ENGINE_NAME.data();
-	appInfo.engineVersion = VK_MAKE_VERSION(CONVOLUTION_MAJOR, 0, 0);
-	appInfo.apiVersion = VK_API_VERSION_1_0;
+	appInfo.engineVersion = CONV_MIN_VULKAN_VERSION;
+	appInfo.apiVersion = maxSupportedAPI;
 
 	VkInstanceCreateInfo createInfo{};
 	createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -112,7 +115,7 @@ bool RenderBackendImpl<Vulkan>::CreateInstance(uint32_t screenWidth, uint32_t sc
 
 	for (const auto& extension : extensions)
 	{
-		DEBUG_LOG(extension.extensionName);
+		DEBUG_LOG("Supported extension: " + stltype::string(extension.extensionName));
 	}
 
 	uint32_t layerCount;
@@ -122,7 +125,7 @@ bool RenderBackendImpl<Vulkan>::CreateInstance(uint32_t screenWidth, uint32_t sc
 	vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
 	for (const auto& layer : availableLayers)
 	{
-		DEBUG_LOG(layer.layerName);
+		DEBUG_LOG("Supported layer: " + stltype::string(layer.layerName));
 	}
 	if (AreValidationLayersAvailable(availableLayers))
 	{
@@ -130,7 +133,10 @@ bool RenderBackendImpl<Vulkan>::CreateInstance(uint32_t screenWidth, uint32_t sc
 		createInfo.ppEnabledLayerNames = g_validationLayers.data();
 	}
 	else
+	{
+		DEBUG_ASSERT(false);
 		DEBUG_LOG_ERR("Validation Layers not available!");
+	}
 
 	return vkCreateInstance(&createInfo, VulkanAllocator(), &m_instance) == VK_SUCCESS;
 }
@@ -151,14 +157,30 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
 		queueCreateInfos.push_back(queueCreateInfo);
 	}
 
-	VkPhysicalDeviceFeatures deviceFeatures{};
 
 	VkDeviceCreateInfo createInfo{};
-	createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO; 
+	createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 	createInfo.queueCreateInfoCount = static_cast<u32>(queueCreateInfos.size());
 	createInfo.pQueueCreateInfos = queueCreateInfos.data();
 	createInfo.enabledExtensionCount = static_cast<u32>(g_deviceExtensions.size());
 	createInfo.ppEnabledExtensionNames = g_deviceExtensions.data();
+
+	// Enabling bindless textures and other extensions 
+	VkPhysicalDeviceDescriptorIndexingFeatures indexingFeaturesBindlessTextures{};
+	indexingFeaturesBindlessTextures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
+	indexingFeaturesBindlessTextures.descriptorBindingPartiallyBound = VK_TRUE;
+	indexingFeaturesBindlessTextures.runtimeDescriptorArray = VK_TRUE;
+	indexingFeaturesBindlessTextures.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
+	indexingFeaturesBindlessTextures.descriptorBindingVariableDescriptorCount = VK_TRUE;
+	indexingFeaturesBindlessTextures.descriptorBindingUniformBufferUpdateAfterBind = VK_TRUE;
+	indexingFeaturesBindlessTextures.pNext = nullptr;
+
+	VkPhysicalDeviceFeatures2 deviceFeatures2{};
+	deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+	vkGetPhysicalDeviceFeatures2(m_physicalDevice, &deviceFeatures2);
+	deviceFeatures2.pNext = &indexingFeaturesBindlessTextures;
+	createInfo.pNext = &deviceFeatures2;
+
 
 	createInfo.enabledLayerCount = 0; // No old vulkan versions here mister
 
@@ -166,12 +188,12 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
 		!= VK_SUCCESS)
 		return false;
 
-	 vkGetDeviceQueue(m_logicalDevice, m_indices.graphicsFamily.value(), 0, &m_graphicsQueue);
-	 vkGetDeviceQueue(m_logicalDevice, m_indices.presentFamily.value(), 0, &m_presentQueue);
-	 vkGetDeviceQueue(m_logicalDevice, m_indices.transferFamily.value(), 0, &m_transferQueue);
-	 vkGetDeviceQueue(m_logicalDevice, m_indices.computeFamily.value(), 0, &m_computeQueue);
+	vkGetDeviceQueue(m_logicalDevice, m_indices.graphicsFamily.value(), 0, &m_graphicsQueue);
+	vkGetDeviceQueue(m_logicalDevice, m_indices.presentFamily.value(), 0, &m_presentQueue);
+	vkGetDeviceQueue(m_logicalDevice, m_indices.transferFamily.value(), 0, &m_transferQueue);
+	vkGetDeviceQueue(m_logicalDevice, m_indices.computeFamily.value(), 0, &m_computeQueue);
 
-	 return true;
+	return true;
 }
 
 bool RenderBackendImpl<Vulkan>::PickPhysicalDevice()
@@ -219,9 +241,15 @@ bool RenderBackendImpl<Vulkan>::IsDeviceSuitable(VkPhysicalDevice device)
 		swapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
 	}
 
-	return deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU &&
-		m_indices.IsComplete() && 
-		swapChainAdequate;
+	bool isSuitable = deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU &&
+		m_indices.IsComplete() &&
+		swapChainAdequate && deviceFeatures.samplerAnisotropy;
+
+	if (!isSuitable)
+		return false;
+
+	VkGlobals::SetPhysicalDeviceProperties(deviceProperties);
+	return true ;
 }
 
 bool RenderBackendImpl<Vulkan>::AreExtensionsSupported(VkPhysicalDevice device)
@@ -380,11 +408,12 @@ bool RenderBackendImpl<Vulkan>::CreateSwapChain()
 
 void RenderBackendImpl<Vulkan>::CreateSwapChainImages()
 {
-	m_swapChainTextures.reserve(m_swapChainImages.size());
+	const auto ex = DirectX::XMUINT3(VkGlobals::GetSwapChainExtent().x, VkGlobals::GetSwapChainExtent().y, 0);
+	TextureInfoBase info{};
+	info.extents = ex;
 	for (auto& image : m_swapChainImages)
 	{
-		const Texture tex = g_pTexManager->CreateFromImage({ m_swapChainImageFormat, image }, { VkGlobals::GetSwapChainExtent() });
-		m_swapChainTextures.push_back(tex);
+		g_pTexManager->CreateSwapchainTextures({ m_swapChainImageFormat, image }, info);
 	}
 }
 
@@ -405,7 +434,6 @@ void RenderBackendImpl<Vulkan>::UpdateGlobals() const
 	VkGlobals::SetMainSwapChain(m_swapChain);
 	VkGlobals::SetPresentQueue(m_presentQueue);
 	VkGlobals::SetGraphicsQueue(m_graphicsQueue);
-	VkGlobals::SetSwapChainImages(m_swapChainTextures);
 	VkGlobals::SetQueueFamilyIndices(m_indices);
 	VkGlobals::SetAllQueues(Queues{ m_graphicsQueue, m_presentQueue, m_transferQueue, m_computeQueue });
 	VkGlobals::SetPhysicalDevice(m_physicalDevice);
@@ -454,9 +482,4 @@ QueueFamilyIndices RenderBackendImpl<Vulkan>::FindQueueFamilies(VkPhysicalDevice
 QueueFamilyIndices RenderBackendImpl<Vulkan>::GetQueueFamilies() const
 {
 	return m_indices;
-}
-
-const stltype::vector<Texture>& RenderBackendImpl<Vulkan>::GetSwapChainTextures() const
-{
-	return m_swapChainTextures;
 }

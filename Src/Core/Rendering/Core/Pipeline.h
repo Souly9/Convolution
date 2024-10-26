@@ -1,6 +1,7 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
 #include "Utils/MemoryUtilities.h"
+#include "DescriptorLayoutDefines.h"
 
 enum class Topology
 {
@@ -47,11 +48,6 @@ struct ColorBlendInfo
 
 };
 
-struct PipelineUniformLayout
-{
-
-};
-
 struct RasterizerInfo
 {
 	PolygonMode polyMode = PolygonMode::Fill; // GPU Feature required except for fill
@@ -66,14 +62,20 @@ struct RasterizerInfo
 	bool depthBias = false;
 };
 
+struct DescriptorSetLayout
+{
+	stltype::vector<PipelineDescriptorLayout> sharedDescriptors;
+	stltype::vector<PipelineDescriptorLayout> pipelineSpecificDescriptors;
+};
+
 struct PipelineInfo
 {
-	PipelineUniformLayout uniformLayout;
 	ColorBlendInfo colorInfo{};
 	ColorBlendAttachmentInfo colorBlendInfo{};
 	MultisampleInfo multisampleInfo{};
 	RasterizerInfo rasterizerInfo{};
 	DirectX::XMFLOAT4 viewPortExtents;
+	DescriptorSetLayout descriptorSetLayout;
 	Topology topology{ Topology::TriangleList };
 	bool dynamicViewScissor{ true };
 };

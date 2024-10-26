@@ -21,14 +21,17 @@ public:
 	static VkDevice GetLogicalDevice();
 	static VkFormat GetSwapChainImageFormat();
 	static DirectX::XMUINT2 GetSwapChainExtent();
+	static f32 GetScreenAspectRatio();
 	static VkSwapchainKHR GetMainSwapChain();
 	static VkQueue GetPresentQueue();
 	static VkQueue GetGraphicsQueue();
 	static Queues GetAllQueues();
-	static const stltype::vector<Texture>& GetSwapChainImages();
+	static const stltype::vector<Texture*>& GetSwapChainImages();
 	static QueueFamilyIndices GetQueueFamilyIndices();
 	static VkPhysicalDevice GetPhysicalDevice();
+	static const VkPhysicalDeviceProperties& GetPhysicalDeviceProperties();
 
+	static void SetPhysicalDeviceProperties(const VkPhysicalDeviceProperties& physDeviceProps);
 	static void SetLogicalDevice(VkDevice physDevice);
 	static void SetSwapChainImageFormat(VkFormat physDevice);
 	static void SetSwapChainExtent(const DirectX::XMUINT2& physDevice);
@@ -36,11 +39,11 @@ public:
 	static void SetPresentQueue(const VkQueue presentQueue);
 	static void SetGraphicsQueue(const VkQueue graphicsQueue);
 	static void SetAllQueues(const Queues& queues);
-	static void SetSwapChainImages(const stltype::vector<Texture>& images);
+	static void SetSwapChainImages(const stltype::vector<Texture*>& images);
 	static void SetQueueFamilyIndices(const QueueFamilyIndices& indices);
 	static void SetPhysicalDevice(const VkPhysicalDevice& physDevice);
 private:
-	static stltype::vector<Texture> s_swapChainImages;
+	static stltype::vector<Texture*> s_swapChainImages;
 	static QueueFamilyIndices s_indices;
 	static VkDevice s_logicalDevice;
 	static VkFormat s_swapChainImageFormat;
@@ -50,4 +53,5 @@ private:
 	static VkQueue s_graphicsQueue;
 	static Queues s_queues;
 	static VkPhysicalDevice s_physicalDevice;
+	static VkPhysicalDeviceProperties s_physicalDeviceProperties;
 };

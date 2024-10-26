@@ -26,7 +26,6 @@ private:
 
 	void CreateMainPSO();
 
-	TimeData m_time{};
 	UI m_ui{};
 
 	RenderLayer<RenderAPI> m_renderLayer;

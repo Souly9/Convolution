@@ -8,18 +8,25 @@ class TextureVulkan : public Tex
 public:
 	friend class TextureMan;
 	friend class VkTextureManager;
-
-	TextureVulkan();
-	TextureVulkan(const TextureInfo&) = delete;
-	TextureVulkan(const VkImageViewCreateInfo&, const TextureInfo&);
 	
+	TextureVulkan();
+	TextureVulkan(const VkImageCreateInfo&, const TextureInfo&);
+	TextureVulkan(const TextureInfo&);
+	
+	~TextureVulkan();
+	virtual void CleanUp() override;
+
+	void SetImageView(VkImageView view) { m_imageView = view; }
+	void SetSampler(VkSampler sampler) { m_sampler = sampler; }
 
 	VkImageView GetImageView() const { return m_imageView; }
-	const TextureInfo& GetInfo() const { return m_info; }
+	VkImage GetImage() const { return m_image; }
+	VkSampler GetSampler() const { return m_sampler; }
 
-	void SetDebugName(const stltype::string& name);
 protected:
-
-	VkImageView m_imageView;
+	VkImage m_image{ VK_NULL_HANDLE };
+	GPUMemoryHandle m_imageMemory{ VK_NULL_HANDLE };
+	VkSampler m_sampler{ VK_NULL_HANDLE };
+	VkImageView m_imageView{ VK_NULL_HANDLE };
 };
 

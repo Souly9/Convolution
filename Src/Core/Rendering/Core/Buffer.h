@@ -6,9 +6,12 @@
 enum class BufferUsage
 {
 	Vertex,
+	Index,
 	Staging,
+	Uniform,
 	GenericHostVisible,
-	GenericDeviceVisible
+	GenericDeviceVisible,
+	Texture
 };
 struct BufferCreateInfo
 {

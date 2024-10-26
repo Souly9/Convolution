@@ -14,15 +14,11 @@ class SemaphoreImpl : public GPUSyncer
 
 class CPUSyncer : public TrackedResource
 {
-public:
-	virtual void CleanUp() override {}
 };
 
 IMPLEMENT_GRAPHICS_API
 class FenceImpl : public CPUSyncer
 {
-public:
-	virtual void CleanUp() override {}
 };
 
 

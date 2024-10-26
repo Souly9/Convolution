@@ -41,7 +41,7 @@ void FenceImpl<Vulkan>::CleanUp()
     VK_FREE_IF(m_fence, vkDestroyFence(VkGlobals::GetLogicalDevice(), m_fence, VulkanAllocator()))
 }
 
-void FenceImpl<Vulkan>::WaitFor(const u64& timeout)
+void FenceImpl<Vulkan>::WaitFor(const u64& timeout) const
 {
     vkWaitForFences(VkGlobals::GetLogicalDevice(), 1, &m_fence, VK_TRUE, timeout);
 }

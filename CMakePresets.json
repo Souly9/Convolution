@@ -34,7 +34,7 @@
       "displayName": "x64 Release",
       "description": "Target Windows (64-bit) with the Visual Studio development environment. (RelWithDebInfo)",
       "inherits": "x64-debug",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo" }
     },
     {
       "name": "x86-debug",
@@ -52,7 +52,7 @@
       "displayName": "x86 Release",
       "description": "Target Windows (32-bit) with the Visual Studio development environment. (RelWithDebInfo)",
       "inherits": "x86-debug",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo" }
     }
   ]
 }
