@@ -1,5 +1,4 @@
 #pragma once
-#include "Core/Global/GlobalDefines.h"
 
 #define TRACKED_DESC_IMPL DecRef(); if(ShouldDestroy()) { CleanUp(); }
 
@@ -36,7 +35,7 @@ public:
 	}
 	TrackedResource(const TrackedResource& other)
 	{
-		m_refCounter = other.m_refCounter;
+		m_refCounter = other.m_refCounter.load();
 #ifdef CONV_DEBUG
 		m_debugName = other.m_debugName;
 #endif
@@ -45,7 +44,7 @@ public:
 	TrackedResource& operator=(const TrackedResource& other)
 	{
 		TrackedResource res;
-		res.m_refCounter = other.m_refCounter;
+		res.m_refCounter = other.m_refCounter.load();
 #ifdef CONV_DEBUG
 		res.m_debugName = other.m_debugName;
 #endif
@@ -54,7 +53,7 @@ public:
 	}
 	TrackedResource(TrackedResource&& other) noexcept
 	{
-		m_refCounter = other.m_refCounter;
+		m_refCounter = other.m_refCounter.load();
 #ifdef CONV_DEBUG
 		m_debugName = other.m_debugName;
 #endif
@@ -64,7 +63,7 @@ public:
 	TrackedResource& operator=(TrackedResource&& other) noexcept
 	{
 		TrackedResource res;
-		res.m_refCounter = other.m_refCounter;
+		res.m_refCounter = other.m_refCounter.load();
 #ifdef CONV_DEBUG
 		res.m_debugName = other.m_debugName;
 #endif
@@ -97,5 +96,5 @@ protected:
 	stltype::string m_debugName;
 #endif
 
-	mutable u32 m_refCounter{ 1 };
+	mutable stltype::atomic<u32> m_refCounter{ 1 };
 };

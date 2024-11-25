@@ -28,11 +28,11 @@ struct PipelineDescriptorLayout
 	ShaderTypeBits shaderStagesToBind;
 	u32 descriptorCount{ 1 };
 
-	PipelineDescriptorLayout(UBO::UBOType typeTemplate)
+	PipelineDescriptorLayout(UBO::BufferType typeTemplate)
 	{
 		DEBUG_ASSERT(UBO::s_UBOTypeToBindingSlot.find(typeTemplate) != UBO::s_UBOTypeToBindingSlot.end());
 
-		type = DescriptorType::UniformBuffer;
+		type = GetDescriptorType(typeTemplate);
 		bindingSlot = UBO::s_UBOTypeToBindingSlot.at(typeTemplate);
 		shaderStagesToBind = (ShaderTypeBits)UBO::s_UBOTypeToShaderStages.at(typeTemplate);
 	}

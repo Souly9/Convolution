@@ -1,6 +1,7 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
 #include "VertexDefines.h"
+#include "View.h"
 
 #ifdef USE_VULKAN
 class GenBufferVulkan;
@@ -17,6 +18,7 @@ class PipelineVulkan;
 class ShaderVulkan;
 class DescriptorSetVulkan;
 class DescriptorPoolVulkan;
+class DescriptorSetLayoutVulkan;
 
 using GenericBuffer = GenBufferVulkan;
 using VertexBuffer = VertexBufferVulkan;
@@ -32,18 +34,19 @@ using PSO = PipelineVulkan;
 using Shader = ShaderVulkan;
 using GPUMemoryHandle = VkDeviceMemory;
 using GPUMappedMemoryHandle = void*;
-using DescriptorSet = DescriptorSetVulkan;
 using DescriptorPool = DescriptorPoolVulkan;
 using TextureHandle = u64;
+using DescriptorSetLayout = DescriptorSetLayoutVulkan;
 
 #include "Core/Rendering/Vulkan/VkShader.h"
 #include "Core/Rendering/Vulkan/VkBuffer.h"
 #include "Core/Rendering/Vulkan/VkTexture.h"
 #include "Core/Rendering/Vulkan/VkAttachment.h"
-#include "Core/Rendering/Vulkan/VkFramebuffer.h"
-#include "Core/Rendering/Vulkan/VkRenderPass.h"
 #include "Core/Rendering/Vulkan/VkCommandBuffer.h"
 #include "Core/Rendering/Vulkan/VkCommandPool.h"
-#include "Core/Rendering/Vulkan/VkPipeline.h"
 #include "Core/Rendering/Vulkan/VkDescriptorPool.h"
+#include "Core/Rendering/Vulkan/VkPipeline.h"
+#include "Core/Rendering/Vulkan/VkFramebuffer.h"
+#include "Core/Rendering/Vulkan/VkRenderPass.h"
+#include "Core/Rendering/Vulkan/VkDescriptorSetLayout.h"
 #endif

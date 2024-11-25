@@ -103,7 +103,7 @@ inline VkAttachmentLoadOp Conv(const LoadOp& m)
 			return VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 			break;
 	}
-
+	DEBUG_ASSERT(false);
 	return VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 }
 
@@ -141,8 +141,14 @@ inline VkImageLayout Conv(const ImageLayout& m)
 		case ImageLayout::PRESENT:
 			return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 			break;
+		case ImageLayout::COLOR_ATTACHMENT:
+			return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+			break;
+		case ImageLayout::DEPTH_STENCIL:
+			return VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+			break;
 	}
-
+	DEBUG_ASSERT(false);
 	return VK_IMAGE_LAYOUT_UNDEFINED;
 }
 
@@ -187,6 +193,8 @@ inline VkBufferUsageFlags Conv(const BufferUsage& m)
 			return VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 		case BufferUsage::Uniform:
 			return VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+		case BufferUsage::SSBO:
+			return VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
 		default:
 			DEBUG_ASSERT(false);
 	}
@@ -204,6 +212,7 @@ inline VkMemoryPropertyFlags Conv2MemFlags(const BufferUsage& m)
 		case BufferUsage::Staging:
 			return VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 		case BufferUsage::Uniform:
+		case BufferUsage::SSBO:
 			return VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 		default:
 			DEBUG_ASSERT(false);
@@ -226,4 +235,19 @@ inline VkShaderStageFlagBits Conv(const ShaderTypeBits& m)
 		vkBits = VK_SHADER_STAGE_ALL;
 
 	return (VkShaderStageFlagBits)vkBits;
+}
+
+inline VkClearValue AttachTypeToClearVal(const AttachmentType& m)
+{
+	switch (m)
+	{
+		case AttachmentType::GBufferColor:
+			return g_BlackCLearColor;
+		case AttachmentType::DepthStencil:
+			return g_WhiteCLearColor;
+		default:
+			DEBUG_ASSERT(false);
+			break;
+	}
+	return g_BlackCLearColor;
 }

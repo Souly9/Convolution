@@ -1,6 +1,6 @@
+#include "Core/Global/GlobalDefines.h"
 #include "VkDescriptorPool.h"
 #include "VkGlobals.h"
-
 
 DescriptorPoolVulkan::DescriptorPoolVulkan()
 {
@@ -15,24 +15,25 @@ void DescriptorPoolVulkan::Create(const DescriptorPoolCreateInfo& createInfo)
 {
 	stltype::vector<VkDescriptorPoolSize> poolSizes;
 
-	VkDescriptorPoolSize poolSizeUBO{};
-	poolSizeUBO.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	poolSizeUBO.descriptorCount = MAX_DESCRIPTOR_SETS;
-	poolSizes.push_back(poolSizeUBO);
+	poolSizes.push_back(CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, MAX_DESCRIPTOR_SETS));
 
 	if (createInfo.enableBindlessTextureDescriptors)
 	{
-		VkDescriptorPoolSize poolSizeBindlessTextures{};
-		poolSizeBindlessTextures.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		poolSizeBindlessTextures.descriptorCount = MAX_BINDLESS_TEXTURES;
-		poolSizes.push_back(poolSizeBindlessTextures);
+		poolSizes.push_back(CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_BINDLESS_TEXTURES));
+	}
+	if (createInfo.enableStorageBufferDescriptors)
+	{
+		poolSizes.push_back(CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, MAX_DESCRIPTOR_SETS));
 	}
 
 	VkDescriptorPoolCreateInfo poolInfo{};
 	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 
 	if (createInfo.enableBindlessTextureDescriptors)
-		poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT_EXT;
+		poolInfo.flags |= VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT_EXT;
+
+	if (createInfo.freeDescriptorSet)
+		poolInfo.flags |= VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
 
 	poolInfo.poolSizeCount = poolSizes.size();
 	poolInfo.pPoolSizes = poolSizes.data();
@@ -67,7 +68,7 @@ stltype::vector<DescriptorSetVulkan*> DescriptorPoolVulkan::CreateDescriptorSets
 	return rslt;
 }
 
-DescriptorSetVulkan* DescriptorPoolVulkan::CreateDescriptorSet(VkDescriptorSetLayout& layout)
+DescriptorSetVulkan* DescriptorPoolVulkan::CreateDescriptorSet(const VkDescriptorSetLayout& layout)
 {
 	DEBUG_ASSERT(m_descriptorSetCount + 1 < MAX_DESCRIPTOR_SETS);
 
@@ -87,6 +88,19 @@ DescriptorSetVulkan* DescriptorPoolVulkan::CreateDescriptorSet(VkDescriptorSetLa
 	return &set;
 }
 
+DescriptorSetVulkan* DescriptorPoolVulkan::CreateDescriptorSet(const DescriptorSetLayout& layout)
+{
+	return CreateDescriptorSet(layout.GetRef());
+}
+
+VkDescriptorPoolSize DescriptorPoolVulkan::CreateNewPoolSizeForType(VkDescriptorType type, u32 count) const
+{
+	VkDescriptorPoolSize poolSize{};
+	poolSize.type = type;
+	poolSize.descriptorCount = count;
+	return poolSize;
+}
+
 DescriptorSetVulkan::DescriptorSetVulkan()
 {
 }
@@ -103,10 +117,15 @@ VkDescriptorSet DescriptorSetVulkan::GetRef() const
 
 void DescriptorSetVulkan::WriteBufferUpdate(const GenericBuffer& buffer)
 {
-	WriteBufferUpdate(buffer, buffer.GetInfo().size, 0);
+	WriteBufferUpdate(buffer, true, buffer.GetInfo().size, 0);
 }
 
-void DescriptorSetVulkan::WriteBufferUpdate(const GenericBuffer& buffer, u32 size, u32 offset)
+void DescriptorSetVulkan::WriteSSBOUpdate(const GenericBuffer& buffer)
+{
+	WriteBufferUpdate(buffer, false, buffer.GetInfo().size, 0);
+}
+
+void DescriptorSetVulkan::WriteBufferUpdate(const GenericBuffer& buffer, bool isUBO, u32 size, u32 offset)
 {
 	DEBUG_ASSERT(m_bindingSlot != 0);
 
@@ -120,7 +139,7 @@ void DescriptorSetVulkan::WriteBufferUpdate(const GenericBuffer& buffer, u32 siz
 	descriptorWrite.dstSet = GetRef();
 	descriptorWrite.dstBinding = m_bindingSlot;
 	descriptorWrite.dstArrayElement = 0;
-	descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	descriptorWrite.descriptorType = isUBO ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 	descriptorWrite.descriptorCount = 1; 
 	descriptorWrite.pBufferInfo = &bufferInfo;
 	descriptorWrite.pImageInfo = nullptr; // Optional

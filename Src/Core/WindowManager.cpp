@@ -1,11 +1,11 @@
 #include <vulkan/vulkan.h>
 #define GLFW_INCLUDE_VULKAN
-#include <glfw3/glfw3.h>
+#include <GLFW/glfw3.h>
 #include <EASTL/string_view.h>
 #include "Global/GlobalDefines.h"
 #include "./WindowManager.h"
 
-WindowManager::WindowManager(uint32_t width, uint32_t height, stltype::string_view title)
+WindowManager::WindowManager(uint32_t width, uint32_t height, stltype::string_view title) : m_title{title}
 {
 	glfwInit();
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);

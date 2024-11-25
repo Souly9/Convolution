@@ -1,65 +1,37 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
-#include "Core/ECS/RenderComponent.h"
+#include "Core/ECS/Components/RenderComponent.h"
 #include "Core/Rendering/Core/RenderingTypeDefs.h"
 #include "Core/Rendering/Core/Synchronization.h"
 #include "Core/Rendering/Core/StaticFunctions.h"
+#include "PassManager.h"
 
-class MainRenderPasses
+namespace RenderPasses
 {
-public:
-	virtual void AddToRenderPass(const RenderComponent& renderComponent) = 0;
-	virtual void BuildBuffers() = 0;
+	class StaticMainMeshPass : public ConvolutionRenderPass
+	{
+	public:
+		StaticMainMeshPass();
 
-	virtual void SetVertexInputDescriptions(VertexInputDefines::VertexAttributeTemplates vertexInputType);
+		virtual void BuildBuffers() override;
 
-	virtual void CreatePipeline() = 0;
+		virtual void Init(const RendererAttachmentInfo& attachmentInfo) override;
 
-	virtual void Render() = 0;
+		virtual void RebuildInternalData(const stltype::vector<PassMeshData>& meshes) override;
 
-	virtual void CreateSharedDescriptorLayout() = 0;
+		virtual void Render(const MainPassData& data, const FrameRendererContext& ctx) override;
 
-protected:
-	// Sets all vulkan vertex input attributes and returns the size of a vertex
-	u32 SetVertexAttributes(const stltype::vector<VertexInputDefines::VertexAttributes>& vertexAttributes);
+		void UpdateViewUBOs(u32 currentFrame);
 
-	stltype::vector<VkVertexInputAttributeDescription> m_attributeDescriptions{};
-	stltype::vector<PipelineDescriptorLayout> m_sharedDescriptors{};
+		virtual void CreateSharedDescriptorLayout() override;
 
-	// Every pass should only have one pipeline as we're working with uber shaders + bindless 
-	PSO m_mainPSO;
-	VkVertexInputBindingDescription m_vertexInputDescription{};
-};
+	protected:
+		// Every pass should only have one pipeline as we're working with uber shaders + bindless 
+		PSO m_mainPSO;
+		RenderPass m_mainPass;
+		CommandPool m_mainPool;
+		stltype::vector<CommandBuffer*> m_cmdBuffers;
 
-class StaticMainMeshPass : public MainRenderPasses
-{
-public:
-	StaticMainMeshPass(u64 size);
-	~StaticMainMeshPass();
-
-	virtual void AddToRenderPass(const RenderComponent& renderComponent) override;
-	virtual void BuildBuffers() override;
-
-	virtual void CreatePipeline() override;
-
-	virtual void Render() override;
-
-	void UpdateViewUBOs(u32 currentFrame);
-
-	virtual void CreateSharedDescriptorLayout() override;
-
-protected:
-	RenderPass m_mainPass;
-	CommandPool m_mainPool;
-	stltype::vector<CommandBuffer*> m_cmdBuffers;
-
-	stltype::vector<UniformBuffer> uniformBuffers;
-	stltype::vector<GPUMappedMemoryHandle> uniformBuffersMapped;
-	DescriptorPool m_descriptorPool;
-	stltype::vector<DescriptorSet*> m_viewDescriptorSets;
-
-	stltype::vector<Semaphore> m_imageAvailableSemaphores, m_renderFinishedSemaphores;
-	stltype::vector<Fence> m_inflightFences;
-	stltype::vector<FrameBuffer> m_mainPSOFramebuffers;
-	u32 m_currentFrame{ 0 };
-};
+		stltype::vector<FrameBuffer> m_mainPSOFrameBuffers;
+	};
+}

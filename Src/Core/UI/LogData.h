@@ -20,6 +20,7 @@ public:
 	void AddWarning(stltype::string&& warning);
 	void AddInfo(stltype::string&& info);
 
+	void Format(stltype::string& str);
 private:
 	ApplicationInfos m_logData{};
 };

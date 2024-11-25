@@ -1,8 +1,7 @@
 #pragma once
 #include <EASTL/stack.h>
-#include "Core/Global/GlobalDefines.h"
-#include "Core/Rendering/Core/CommandPool.h"
 #include "BackendDefines.h"
+#include "Core/Rendering/Core/CommandPool.h"
 
 class CommandPoolVulkan : public TrackedResource
 {
@@ -17,21 +16,16 @@ public:
 	stltype::vector<CommandBuffer*> CreateCommandBuffers(const CommandBufferCreateInfo& createInfo, const u32& count);
 
 	VkCommandPool GetRef() const { return m_commandPool; }
-	
-	void ReturnBuffer(CBufferVulkan* buffer);
 
 	bool IsValid() const { return m_commandPool != VK_NULL_HANDLE; }
+
+	void ReturnCommandBuffer(CommandBuffer* commandBuffer);
 protected:
 	CommandPoolVulkan(u32 graphicsFamilyIdx);
 	CommandPoolVulkan(u32 graphicsFamilyIdx, VkCommandPoolCreateFlagBits flags);
 
-	bool AreBuffersAvailable(size_t count = 1) const;
-	CBufferVulkan* GetAvailableBuffer();
-	stltype::vector<CommandBuffer*> GetAvailableBuffers(size_t count);
-
 	VkCommandPool m_commandPool { VK_NULL_HANDLE };
 	stltype::vector<CBufferVulkan> m_commandBuffers;
-	stltype::stack<CBufferVulkan*> m_availableBuffers;
 };
 
 class TransferCommandPoolVulkan : public CommandPoolVulkan

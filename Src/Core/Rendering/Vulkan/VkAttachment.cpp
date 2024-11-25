@@ -1,3 +1,4 @@
+#include "Core/Global/GlobalDefines.h"
 #include "VkAttachment.h"
 #include "VkRenderPass.h"
 #include "Utils/VkEnumHelpers.h"
@@ -15,7 +16,7 @@ const VkAttachmentDescription& AttachmentBaseVulkan::GetDesc() const
 	return m_attachmentDesc;
 }
 
-ColorAttachmentVulkan ColorAttachmentVulkan::CreateColorAttachment(const ColorAttachmentInfo& createInfo)
+ColorAttachmentVulkan ColorAttachmentVulkan::Create(const ColorAttachmentInfo& createInfo)
 {
     VkAttachmentDescription colorAttachment{};
     colorAttachment.format = createInfo.format;
@@ -28,4 +29,22 @@ ColorAttachmentVulkan ColorAttachmentVulkan::CreateColorAttachment(const ColorAt
     colorAttachment.finalLayout = Conv(createInfo.finalLayout);
 
 	return { colorAttachment };
+}
+
+DepthBufferAttachmentVulkan DepthBufferAttachmentVulkan::Create(const DepthBufferAttachmentInfo& createInfo)
+{
+    VkAttachmentDescription depthAttachment{};
+    depthAttachment.format = createInfo.format;
+    depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    return { depthAttachment };
+}
+
+DepthBufferAttachmentVulkan::DepthBufferAttachmentVulkan(const VkAttachmentDescription& attachmentDesc) : AttachmentBaseVulkan(attachmentDesc)
+{
 }

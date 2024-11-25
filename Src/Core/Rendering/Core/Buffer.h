@@ -9,6 +9,7 @@ enum class BufferUsage
 	Index,
 	Staging,
 	Uniform,
+	SSBO,
 	GenericHostVisible,
 	GenericDeviceVisible,
 	Texture

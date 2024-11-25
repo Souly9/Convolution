@@ -17,6 +17,10 @@
 #include <EASTL/hash_map.h>
 #include <EASTL/fixed_vector.h>
 #include <EASTL/fixed_string.h>
+#include <EAThread/eathread_thread.h>
+#include <EAThread/eathread_futex.h>
+#include <EASTL/bitset.h>
+#include <EASTL/fixed_function.h>
 
 #ifndef NDEBUG
 #define ASSERT(x) assert(x)
@@ -29,12 +33,17 @@
 namespace eastl {}
 
 namespace stltype = eastl;
+namespace threadSTL = EA::Thread;
 
 #include "Typedefs.h"
 
 const static inline stltype::string ENGINE_NAME = "Convolution";
 constexpr static inline u32 FRAMES_IN_FLIGHT = 2u;
 constexpr static inline u32 MAX_BINDLESS_TEXTURES = 16536;
+constexpr static inline u32 MAX_MESHES = 4096;
+constexpr static inline u32 MAX_MATERIALS = 1024;
+constexpr static inline u32 MAX_ENTITIES = 8096;
+
 // memory
 // Want to switch to custom allocators one day
 struct VkAllocationCallbacks;
@@ -58,5 +67,11 @@ using RenderAPI = Vulkan;
 #define IMPLEMENT_GRAPHICS_API template<class BackendAPI> requires stltype::is_base_of_v<AvailableRenderBackends, BackendAPI>
 #define GLOBAL_INCLUDES 
 
+#include "Core/ECS/Entity.h"
+#include "Core/Global/State/States.h"
+
 #include "LogDefines.h"
 #include "GlobalVariables.h"
+#include "State/ApplicationState.h"
+
+#define CUR_FRAME FrameGlobals::GetFrameNumber()

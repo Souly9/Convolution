@@ -5,5 +5,9 @@ layout(set = 1, binding = ViewUBOBindingSlot) uniform ViewUBO
 {
     mat4 view;
     mat4 proj;
-    mat4 model;
 } ubo;
+
+layout(std140, set = 2, binding = GlobalTransformDataSSBOSlot) readonly buffer GlobalTransformSSBO
+{
+    mat4 modelMatrices[];
+} transformSSBO;

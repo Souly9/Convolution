@@ -1,5 +1,4 @@
 #pragma once
-#include "Core/Global/GlobalDefines.h"
 #include "Core/Rendering/LayerDefines.h"
 #include "Resource.h"
 
@@ -9,6 +8,8 @@ enum class ImageLayout
 	TRANSFER_SRC_OPTIMAL,
 	TRANSFER_DST_OPTIMAL,
 	SHADER_READ_OPTIMAL,
+	COLOR_ATTACHMENT,
+	DEPTH_STENCIL,
 	PRESENT,
 };
 

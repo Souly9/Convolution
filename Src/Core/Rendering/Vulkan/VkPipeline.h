@@ -4,6 +4,7 @@
 #include "Core/Rendering/Core/Pipeline.h"
 #include "Core/Rendering/Core/Resource.h"
 #include "Core/Rendering/Core/VertexDefines.h"
+#include "Core/Rendering/Vulkan/VkDescriptorSetLayout.h"
 
 struct PipeVertInfo
 {
@@ -27,9 +28,9 @@ public:
 	bool HasDynamicViewScissorState() const;
 	bool NeedsVertexBuffers() const;
 
-	VkPipeline GetRef();
+	VkPipeline GetRef() const;
 	VkPipelineLayout GetLayout() const { return m_pipelineLayout; }
-	VkDescriptorSetLayout GetPipelineSpecificLayout() const { return m_descriptorSetLayout; }
+	const VkDescriptorSetLayout& GetPipelineSpecificLayout() const { return m_descriptorSetLayout.GetRef(); }
 
 private:
 
@@ -50,12 +51,13 @@ private:
 
 	VkPipelineColorBlendStateCreateInfo CreateColorBlendInfo(const ColorBlendInfo& info, const VkPipelineColorBlendAttachmentState& colorBlendAttachment);
 
-	VkPipelineLayout CreatePipelineLayout(const DescriptorSetLayout& layoutInfo);
+	VkPipelineDepthStencilStateCreateInfo CreateDepthStencilLayout();
+	VkPipelineLayout CreatePipelineLayout(const DescriptorSetLayoutInfo& layoutInfo);
 
 	VkPipelineLayout m_pipelineLayout; 
 
-	stltype::vector<VkDescriptorSetLayout> m_sharedDescriptorSetLayouts;
-	VkDescriptorSetLayout m_descriptorSetLayout;
+	stltype::vector<DescriptorSetLayout> m_sharedDescriptorSetLayouts;
+	DescriptorSetLayout m_descriptorSetLayout;
 
 	VkPipeline m_pipeline;
 

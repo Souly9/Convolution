@@ -1,6 +1,4 @@
 #pragma once
-#include "Core/Global/GlobalDefines.h"
-#include "Utils/MemoryUtilities.h"
 #include "Texture.h"
 
 struct ColorAttachmentInfo
@@ -14,14 +12,15 @@ struct ColorAttachmentInfo
 	ImageLayout initialLayout = ImageLayout::UNDEFINED;
 	ImageLayout finalLayout = ImageLayout::PRESENT;
 };
-
-// Generic attachment for render passes
-class AttachmentBase
+struct DepthBufferAttachmentInfo
 {
+	TexFormat format;
+	LoadOp loadOp = LoadOp::CLEAR;
+	StoreOp storeOp = StoreOp::IDC;
+	u32 samples = 1u;
+	LoadOp stencilLoadOp = LoadOp::IDC;
+	StoreOp stencilStoreOp = StoreOp::IDC;
+	ImageLayout initialLayout = ImageLayout::UNDEFINED;
+	ImageLayout finalLayout = ImageLayout::DEPTH_STENCIL;
 };
-
-class ColorAttachment : public AttachmentBase
-{
-};
-
 

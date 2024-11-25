@@ -1,7 +1,3 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
-
-class Component
-{
-
-};
+#include "Core/Rendering/Core/RenderingTypeDefs.h"

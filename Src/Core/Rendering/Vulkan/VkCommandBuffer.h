@@ -19,13 +19,14 @@ public:
 	void BeginBuffer();
 	void BeginBufferForSingleSubmit();
 	void BeginRPass(GenericDrawCmd& cmd);
+	void BeginRPassGeneric(const DrawCmdDummy& cmd);
+
 	void EndRPass();
 	void EndBuffer();
 
 	void ResetBuffer();
-	void ReturnToPool();
 
-	void Destroy(VkCommandPool pool);
+	void Destroy();
 
 protected:
 	CommandPoolVulkan* m_pool;
