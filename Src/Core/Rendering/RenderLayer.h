@@ -23,6 +23,8 @@ public:
 	{
 		m_backend.Cleanup();
 	}
+
+	const RenderBackendImpl<RenderAPI>& GetBackend() const { return m_backend; }
 private:
 	RenderLayer(const RenderLayer&) = delete;
 	RenderLayer(RenderLayer&&) noexcept = delete;

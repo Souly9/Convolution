@@ -6,7 +6,8 @@ GPUMemManager<Vulkan>::~GPUMemManager()
 {
     for (auto& handle : m_memoryHandles)
     {
-        TryFreeMemory(handle);
+        UnmapMemory(handle);
+        vkFreeMemory(VK_LOGICAL_DEVICE, handle, VulkanAllocator());
     }
 }
 
@@ -55,8 +56,8 @@ GPUMappedMemoryHandle GPUMemManager<Vulkan>::MapMemory(GPUMemoryHandle memory, s
 void GPUMemManager<Vulkan>::UnmapMemory(GPUMemoryHandle memory)
 {
 	auto it = std::find(m_mappedMemoryHandles.begin(), m_mappedMemoryHandles.end(), memory);
-    DEBUG_ASSERT(it != m_mappedMemoryHandles.end());
-
+    if (it == m_mappedMemoryHandles.end())
+        return;
 	vkUnmapMemory(VK_LOGICAL_DEVICE, *it);
 	m_mappedMemoryHandles.erase(it);
 }
@@ -64,5 +65,9 @@ void GPUMemManager<Vulkan>::UnmapMemory(GPUMemoryHandle memory)
 void GPUMemManager<Vulkan>::TryFreeMemory(GPUMemoryHandle memoryHandle)
 {
     if(memoryHandle != VK_NULL_HANDLE)
+    {
+        UnmapMemory(memoryHandle);
         vkFreeMemory(VK_LOGICAL_DEVICE, memoryHandle, VulkanAllocator());
+        m_memoryHandles.erase(std::find(m_memoryHandles.begin(), m_memoryHandles.end(), memoryHandle));
+    }
 }

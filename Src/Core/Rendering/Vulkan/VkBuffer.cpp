@@ -67,8 +67,10 @@ void GenBufferVulkan::FillAndTransfer(StagingBuffer& stgBuffer, CommandBuffer* t
 
     if (freeStagingBuffer)
     {
-        auto callback = [&stgBuffer]() { 
-            stgBuffer.CleanUp(); 
+        auto buffer = stgBuffer.GetRef();
+        auto callback = [buffer]() {
+
+            vkDestroyBuffer(VK_LOGICAL_DEVICE, buffer, VulkanAllocator());
             };
         copyCmd.optionalCallback = std::bind(callback);
 
@@ -132,5 +134,13 @@ UniformBuffer::UniformBuffer(u64 size)
     BufferCreateInfo info{};
     info.size = size;
     info.usage = BufferUsage::Uniform;
+    Create(info);
+}
+
+StorageBuffer::StorageBuffer(u64 size)
+{
+    BufferCreateInfo info{};
+    info.size = size;
+    info.usage = BufferUsage::SSBO;
     Create(info);
 }

@@ -1,17 +1,23 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
-#include "Core/UI/UIManager.h"
+#include "Core/UI/ImGui/ImGuiManager.h"
+#include "Core/UI/ImGui/MainMenuBar.h"
 #include "TimeData.h"
 #include "Rendering/RenderLayer.h"
+#include "Core/Rendering/Passes/PassManager.h"
+#include "Core/Events/EventSystem.h"
 
 class UI;
 class TimeData;
-class StaticMainMeshPass;
+namespace RenderPasses
+{
+	class PassManager;
+}
 
 class Application
 {
 public:
-	Application(uint32_t screenWidth, uint32_t screenHeight, stltype::string_view title);
+	Application(bool canRender, RenderLayer<RenderAPI>& m_layer);
 
 	~Application();
 
@@ -20,15 +26,13 @@ public:
 
 	void Render();
 
-	void ConsolePrintDebug() const;
-
 private:
 
 	void CreateMainPSO();
 
-	UI m_ui{};
+	ImGuiManager m_imGuiManager{};
+	RenderPasses::PassManager m_passManager;
 
-	RenderLayer<RenderAPI> m_renderLayer;
+	ApplicationStateManager m_applicationState{};
 
-	stltype::unique_ptr<StaticMainMeshPass> m_staticMeshPass;
 };

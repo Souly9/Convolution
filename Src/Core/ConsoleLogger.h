@@ -1,12 +1,13 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
 #include "UI/LogData.h"
-#include "UI/Logger.h"
 
-class ConsoleLogger : public Logger
+class ConsoleLogger
 {
 public:
-	virtual void Show(const ApplicationInfos& infos) const override;
+	void ShowInfo(const stltype::string& message);
+	void ShowError(const stltype::string& message);
+	void ShowWarning(const stltype::string& message);
 
-	virtual void Clear() override {}
+	void Clear() {}
 };

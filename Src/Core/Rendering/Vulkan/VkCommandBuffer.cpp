@@ -1,5 +1,6 @@
 #include "VkCommandBuffer.h"
 #include "VkGlobals.h"
+#include "Core/Rendering/Core/TextureManager.h"
 #include "Utils/VkEnumHelpers.h"
 #include "VkDescriptorPool.h"
 
@@ -40,6 +41,7 @@ namespace CommandHelpers
     }
     static void RecordCommand(SimpleBufferCopyCmd& cmd, CBufferVulkan& buffer, bool& needsBegin)
     {
+        needsBegin = true;
         DEBUG_ASSERT(cmd.srcBuffer->GetRef() != VK_NULL_HANDLE && cmd.dstBuffer->GetRef() != VK_NULL_HANDLE);
 
         VkBufferCopy copyRegion{};
@@ -54,6 +56,7 @@ namespace CommandHelpers
 
     static void RecordCommand(ImageBuffyCopyCmd& cmd, CBufferVulkan& buffer, bool& needsBegin)
     {
+        needsBegin = true;
         DEBUG_ASSERT(cmd.srcBuffer->GetRef() != VK_NULL_HANDLE && cmd.dstImage->GetImage() != VK_NULL_HANDLE);
 
         VkBufferImageCopy copyRegion{};
@@ -76,6 +79,7 @@ namespace CommandHelpers
 
     static void RecordCommand(ImageLayoutTransitionCmd& cmd, CBufferVulkan& buffer, bool& needsBegin)
     {
+        needsBegin = true;
         DEBUG_ASSERT(cmd.pImage->GetImage() != VK_NULL_HANDLE);
 
         VkImageMemoryBarrier memoryBarrier{};
@@ -104,11 +108,16 @@ namespace CommandHelpers
 
 CBufferVulkan::~CBufferVulkan()
 {
-    ReturnToPool();
+    CallCallbacks();
+
+    vkFreeCommandBuffers(VK_LOGICAL_DEVICE, m_pool->GetRef(), 1, &GetRef());
+    m_commands.clear();
 }
 
 void CBufferVulkan::Bake()
 {
+    BeginBuffer();
+
     bool needsBegin = true;
     for (auto& cmd : m_commands)
     {
@@ -139,14 +148,14 @@ void CBufferVulkan::BeginBufferForSingleSubmit()
 {
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT; 
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     beginInfo.pInheritanceInfo = nullptr; // Optional
     DEBUG_ASSERT(vkBeginCommandBuffer(GetRef(), &beginInfo) == VK_SUCCESS);
 }
 
 void CBufferVulkan::BeginRPass(GenericDrawCmd& cmd)
 {
-    const auto& fbExt = cmd.frameBuffer.GetInfo().extents;
+    const auto& fbExt = cmd.frameBuffer.GetExtents();
     const auto fbExtents = VkExtent2D(fbExt.x, fbExt.y);
 
     VkRenderPassBeginInfo renderPassInfo{};
@@ -156,8 +165,17 @@ void CBufferVulkan::BeginRPass(GenericDrawCmd& cmd)
     renderPassInfo.renderArea.offset = Conv(cmd.offset);
     renderPassInfo.renderArea.extent = fbExtents;
 
-    renderPassInfo.clearValueCount = 1;
-    renderPassInfo.pClearValues = &g_BlackCLearColor;
+    // Only first subpass attachments need clear for now
+    const auto& attachments = cmd.renderPass.GetAttachmentTypes().at(0);
+    stltype::vector<VkClearValue> clearValues{};
+    
+    for(auto type : attachments)
+	{
+        clearValues.push_back(AttachTypeToClearVal(type));
+	}
+
+    renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+    renderPassInfo.pClearValues = clearValues.data();
 
     vkCmdBeginRenderPass(GetRef(), &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
@@ -186,6 +204,30 @@ void CBufferVulkan::BeginRPass(GenericDrawCmd& cmd)
 	vkCmdBindIndexBuffer(GetRef(), cmd.renderPass.GetIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
 }
 
+void CBufferVulkan::BeginRPassGeneric(const DrawCmdDummy& cmd)
+{
+    const auto& fbExt = cmd.frameBuffer.GetExtents();
+    const auto fbExtents = VkExtent2D(fbExt.x, fbExt.y);
+
+    const auto& attachments = cmd.renderPass.GetAttachmentTypes().at(0);
+    stltype::vector<VkClearValue> clearValues{};
+    for (const auto& type : attachments)
+    {
+        clearValues.push_back(AttachTypeToClearVal(type));
+    }
+
+    VkRenderPassBeginInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassInfo.renderPass = cmd.renderPass.GetRef();
+    renderPassInfo.framebuffer = cmd.frameBuffer.GetRef();
+    renderPassInfo.renderArea.offset = VkOffset2D(0,0);
+    renderPassInfo.renderArea.extent = fbExtents;
+    renderPassInfo.clearValueCount = clearValues.size();
+    renderPassInfo.pClearValues = clearValues.data();
+
+    vkCmdBeginRenderPass(GetRef(), &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+}
+
 void CBufferVulkan::EndRPass()
 {
     vkCmdEndRenderPass(GetRef());
@@ -203,15 +245,10 @@ void CBufferVulkan::ResetBuffer()
     m_commands.clear();
 }
 
-void CBufferVulkan::ReturnToPool()
-{
-    ResetBuffer();
-    m_pool->ReturnBuffer(this);
-}
-
-void CBufferVulkan::Destroy(VkCommandPool pool)
+void CBufferVulkan::Destroy()
 {
     CallCallbacks();
-
-    vkFreeCommandBuffers(VK_LOGICAL_DEVICE, pool, 1, &GetRef());
+    if(m_pool)
+        m_pool->ReturnCommandBuffer(this);
+    m_commands.clear();
 }

@@ -77,3 +77,10 @@ public:
 
 private:
 };
+
+class StorageBuffer : public GenBufferVulkan
+{
+public:
+	StorageBuffer(u64 size);
+	StorageBuffer() {}
+};

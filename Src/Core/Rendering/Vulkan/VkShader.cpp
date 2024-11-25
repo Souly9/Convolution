@@ -6,12 +6,18 @@
 
 ShaderVulkan::ShaderVulkan(const stltype::string_view& filePath, stltype::string&& name) : m_name{ name }
 {
-	CreateShaderModule(filePath.data());
+	IORequest req{};
+	req.filePath = filePath;
+	req.requestType = RequestType::Bytes;
+	req.callback = IOByteReadCallback([this](const ReadBytesInfo& result)
+		{
+			CreateShaderModule(result.bytes);
+		});
+	g_pFileReader->SubmitIORequest(req);
 }
 
-ShaderVulkan::ShaderVulkan(const char* filePath, const char* name) : m_name{ name }
+ShaderVulkan::ShaderVulkan(const char* filePath, const char* name) : ShaderVulkan{ stltype::string(filePath), stltype::string(name) }
 {
-	CreateShaderModule(filePath);
 }
 
 ShaderVulkan::~ShaderVulkan()
@@ -29,10 +35,8 @@ const stltype::string& ShaderVulkan::GetName() const
 	return m_name;
 }
 
-void ShaderVulkan::CreateShaderModule(const char* filePath)
+void ShaderVulkan::CreateShaderModule(const stltype::vector<char>& byteCode)
 {
-	const auto byteCode = FileReader::ReadFileAsGenericBytes(filePath);
-
 	VkShaderModuleCreateInfo createInfo{};
 	createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
 	createInfo.codeSize = byteCode.size();

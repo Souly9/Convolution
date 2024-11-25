@@ -8,6 +8,8 @@
 PipelineVulkan::PipelineVulkan(const ShaderVulkan& vertShader, const ShaderVulkan& fragShader,
 	const PipeVertInfo& vertexInputs, const PipelineInfo& pipeInfo, const RenderPassVulkan& renderPass)
 {
+	if (vertShader.GetDesc() == VK_NULL_HANDLE || fragShader.GetDesc() == VK_NULL_HANDLE)
+		g_pFileReader->FinishAllRequests();
 	VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
 	vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
@@ -43,6 +45,13 @@ PipelineVulkan::PipelineVulkan(const ShaderVulkan& vertShader, const ShaderVulka
 	pipelineInfo.pDepthStencilState = nullptr; // Optional
 	pipelineInfo.pColorBlendState = &colorBlending;
 	pipelineInfo.pDynamicState = &dymState;
+
+	if (pipeInfo.hasDepth)
+	{
+		const auto depthStencil = CreateDepthStencilLayout();
+		pipelineInfo.pDepthStencilState = &depthStencil;
+	}
+
 	pipelineInfo.layout = m_pipelineLayout;
 	pipelineInfo.renderPass = renderPass.GetRef();
 	pipelineInfo.subpass = 0;
@@ -61,11 +70,6 @@ void PipelineVulkan::CleanUp()
 {
 	VK_FREE_IF(m_pipelineLayout, vkDestroyPipelineLayout(VK_LOGICAL_DEVICE, m_pipelineLayout, VulkanAllocator()))
 	VK_FREE_IF(m_pipeline, vkDestroyPipeline(VK_LOGICAL_DEVICE, m_pipeline, VulkanAllocator()))
-	VK_FREE_IF(m_descriptorSetLayout, vkDestroyDescriptorSetLayout(VK_LOGICAL_DEVICE, m_descriptorSetLayout, VulkanAllocator()));
-	for(auto& layout : m_sharedDescriptorSetLayouts)
-	{
-		VK_FREE_IF(layout, vkDestroyDescriptorSetLayout(VK_LOGICAL_DEVICE, layout, VulkanAllocator()));
-	}
 }
 
 bool PipelineVulkan::HasDynamicViewScissorState() const
@@ -78,7 +82,7 @@ bool PipelineVulkan::NeedsVertexBuffers() const
 	return m_vertexInfo.bindingDescriptionCount > 0;
 }
 
-VkPipeline PipelineVulkan::GetRef()
+VkPipeline PipelineVulkan::GetRef() const
 {
 	return m_pipeline;
 }
@@ -195,7 +199,23 @@ VkPipelineColorBlendStateCreateInfo PipelineVulkan::CreateColorBlendInfo(const C
 	return colorBlending;
 }
 
-VkPipelineLayout PipelineVulkan::CreatePipelineLayout(const DescriptorSetLayout& layoutInfo)
+VkPipelineDepthStencilStateCreateInfo PipelineVulkan::CreateDepthStencilLayout()
+{
+	VkPipelineDepthStencilStateCreateInfo depthStencil{};
+	depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+	depthStencil.depthTestEnable = VK_TRUE;
+	depthStencil.depthWriteEnable = VK_TRUE;
+	depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+	depthStencil.depthBoundsTestEnable = VK_FALSE;
+	depthStencil.minDepthBounds = 0.0f; // Optional
+	depthStencil.maxDepthBounds = 1.0f; // Optional
+	depthStencil.stencilTestEnable = VK_FALSE;
+	depthStencil.front = {}; // Optional
+	depthStencil.back = {}; // Optional
+	return depthStencil;
+}
+
+VkPipelineLayout PipelineVulkan::CreatePipelineLayout(const DescriptorSetLayoutInfo& layoutInfo)
 {
 	for (const auto& layout : layoutInfo.sharedDescriptors)
 	{
@@ -203,9 +223,13 @@ VkPipelineLayout PipelineVulkan::CreatePipelineLayout(const DescriptorSetLayout&
 	}
 	m_descriptorSetLayout = DescriptorLaytoutUtils::CreateOneDescriptorSetForAll(layoutInfo.pipelineSpecificDescriptors);
 
-	stltype::vector<VkDescriptorSetLayout> descriptorSetLayouts(m_sharedDescriptorSetLayouts.size());
-	stltype::copy(m_sharedDescriptorSetLayouts.begin(), m_sharedDescriptorSetLayouts.end(), descriptorSetLayouts.begin());
-	descriptorSetLayouts.push_back(m_descriptorSetLayout);
+	stltype::vector<VkDescriptorSetLayout> descriptorSetLayouts;
+	descriptorSetLayouts.reserve(m_sharedDescriptorSetLayouts.size());
+	for (const auto& layout : m_sharedDescriptorSetLayouts)
+	{
+		descriptorSetLayouts.emplace_back(layout.GetRef());
+	}
+	descriptorSetLayouts.emplace_back(m_descriptorSetLayout.GetRef());
 
 	VkPipelineLayout pipelineLayout;
 	VkPipelineLayoutCreateInfo pipelineLayoutInfo{};

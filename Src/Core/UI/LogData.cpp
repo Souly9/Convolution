@@ -25,21 +25,27 @@ void LogData::Clear()
 
 void LogData::AddError(stltype::string&& error)
 {
+	Format(error);
 	m_logData.errors.push_back(error);
-	g_pConsoleLogger->Show(GetApplicationInfos());
-	Clear();
+	g_pConsoleLogger->ShowError(error);
 }
 
 void LogData::AddWarning(stltype::string&& warning)
 {
+	Format(warning);
 	m_logData.warnings.push_back(warning);
-	g_pConsoleLogger->Show(GetApplicationInfos());
-	Clear();
+	g_pConsoleLogger->ShowWarning(warning);
 }
 
 void LogData::AddInfo(stltype::string&& info)
 {
+	Format(info);
 	m_logData.infos.push_back(info);
-	g_pConsoleLogger->Show(GetApplicationInfos());
-	Clear();
+	g_pConsoleLogger->ShowInfo(info);
+}
+
+void LogData::Format(stltype::string& str)
+{
+	if(str.at(str.size() - 1) != '\n')
+		str += '\n';
 }

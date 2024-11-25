@@ -13,9 +13,9 @@ public:
 	const stltype::string& GetName() const;
 
 private:
-	void CreateShaderModule(const char* filePath);
+	void CreateShaderModule(const stltype::vector<char>& byteCode);
 
-	VkShaderModule m_shaderModule;
+	VkShaderModule m_shaderModule{};
 
 	stltype::string m_name;
 };

@@ -3,6 +3,9 @@
 #include "Core/Rendering/Core/Texture.h"
 #include "Core/Rendering/Core/Buffer.h"
 #include "Core/Rendering/Core/UBODefines.h"
+#include "Core/Rendering/Vulkan/VkGlobals.h"
+#include "Core/Rendering/Vulkan/VkDescriptorSetLayout.h"
+#include "VkEnumHelpers.h"
 
 static inline VkDescriptorType Conv(const DescriptorType& m)
 {
@@ -43,7 +46,7 @@ static inline VkDescriptorBindingFlags ConvFlags(const DescriptorType& m)
 
 namespace DescriptorLaytoutUtils
 {
-	static VkDescriptorSetLayout CreateOneDescriptorSetForAll(const stltype::vector<PipelineDescriptorLayout>& layoutInfo)
+	static DescriptorSetLayoutVulkan CreateOneDescriptorSetForAll(const stltype::vector<PipelineDescriptorLayout>& layoutInfo)
 	{
 		stltype::vector<VkDescriptorSetLayoutBinding> bindings;
 		stltype::vector<VkDescriptorBindingFlags> flags;
@@ -91,7 +94,7 @@ namespace DescriptorLaytoutUtils
 		return setLayout;
 	}
 
-	static VkDescriptorSetLayout CreateOneDescriptorSetLayout(const PipelineDescriptorLayout& layoutInfo)
+	static DescriptorSetLayoutVulkan CreateOneDescriptorSetLayout(const PipelineDescriptorLayout& layoutInfo)
 	{
 		return CreateOneDescriptorSetForAll(stltype::vector<PipelineDescriptorLayout>(1, layoutInfo));
 	}

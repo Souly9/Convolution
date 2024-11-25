@@ -1,5 +1,5 @@
 #define GLFW_INCLUDE_VULKAN
-#include <glfw3/glfw3.h>
+#include <GLFW/glfw3.h>
 #include <EASTL/set.h>
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Global/LogDefines.h"
@@ -20,6 +20,9 @@ bool RenderBackendImpl<Vulkan>::Init(uint32_t screenWidth, uint32_t screenHeight
 		return false;
 	}
 	DEBUG_LOG("Vulkan Instance created!");
+#ifdef CONV_DEBUG
+	CreateDebugMessenger();
+#endif
 	if (!CreateSurface())
 	{
 		DEBUG_LOG_ERR("Vulkan surface couldn't be created!");
@@ -57,6 +60,9 @@ bool RenderBackendImpl<Vulkan>::Init(uint32_t screenWidth, uint32_t screenHeight
 
 bool RenderBackendImpl<Vulkan>::Cleanup()
 {
+#ifdef CONV_DEBUG
+	vkDestroyDebugUtilsMessengerEXT(m_instance, VulkanAllocator(), &m_debugMessenger);
+#endif
 	vkDestroySwapchainKHR(m_logicalDevice, m_swapChain, VulkanAllocator());
 	vkDestroySurfaceKHR(m_instance, m_surface, VulkanAllocator());
 	vkDestroyDevice(m_logicalDevice, VulkanAllocator());
@@ -78,6 +84,39 @@ bool RenderBackendImpl<Vulkan>::AreValidationLayersAvailable(const stltype::vect
 		}
 	}
 	return available == g_validationLayers.size();
+}
+
+void RenderBackendImpl<Vulkan>::CreateDebugMessenger()
+{
+	PFN_vkCreateDebugReportCallbackEXT CreateDebugReportCallback = VK_NULL_HANDLE;
+	CreateDebugReportCallback = (PFN_vkCreateDebugReportCallbackEXT)vkGetInstanceProcAddr(m_instance, "vkCreateDebugReportCallbackEXT");
+
+	VkDebugUtilsMessengerCreateInfoEXT createInfo{};
+	createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+	createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+	createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+	createInfo.pfnUserCallback = DebugCallback;
+	createInfo.pUserData = nullptr; // Optional
+
+	if (vkCreateDebugUtilsMessengerEXT(m_instance, &createInfo, VulkanAllocator(), &m_debugMessenger) != VK_SUCCESS)
+	{
+		DEBUG_LOG_ERR("Failed to set up debug messenger!");
+	}
+}
+
+VKAPI_ATTR VkBool32 VKAPI_CALL RenderBackendImpl<Vulkan>::DebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData)
+{
+	if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
+	{
+		DEBUG_LOG_WARN(stltype::string(pCallbackData->pMessage));
+		return VK_TRUE;
+	}
+	if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
+	{
+		DEBUG_LOG_ERR(stltype::string(pCallbackData->pMessage));
+		return VK_TRUE;
+	}
+	return VK_FALSE;
 }
 
 bool RenderBackendImpl<Vulkan>::CreateInstance(uint32_t screenWidth, uint32_t screenHeight, stltype::string_view title)
@@ -214,7 +253,14 @@ bool RenderBackendImpl<Vulkan>::PickPhysicalDevice()
 		if (IsDeviceSuitable(device))
 		{
 			DEBUG_LOG("Picked this device");
+			DEBUG_ASSERT(g_pApplicationState != nullptr);
+
 			m_physicalDevice = device;
+			VkPhysicalDeviceProperties deviceProperties;
+			vkGetPhysicalDeviceProperties(m_physicalDevice, &deviceProperties);
+
+			stltype::string deviceName(deviceProperties.deviceName);
+			g_pApplicationState->RegisterUpdateFunction([deviceName](ApplicationState& state) { state.renderState.physicalRenderDeviceName = deviceName; });
 			return true;
 		}
 	}
@@ -266,7 +312,7 @@ bool RenderBackendImpl<Vulkan>::AreExtensionsSupported(VkPhysicalDevice device)
 	{
 		stltype::string extensionName(extension.extensionName);
 		requiredExtensions.erase(extension.extensionName);
-		DEBUG_LOG("Required extension" + extensionName + "is supported!");
+		DEBUG_LOG("Required extension " + extensionName + "is supported!");
 	}
 
 	return requiredExtensions.empty();
@@ -408,7 +454,7 @@ bool RenderBackendImpl<Vulkan>::CreateSwapChain()
 
 void RenderBackendImpl<Vulkan>::CreateSwapChainImages()
 {
-	const auto ex = DirectX::XMUINT3(VkGlobals::GetSwapChainExtent().x, VkGlobals::GetSwapChainExtent().y, 0);
+	const auto ex = DirectX::XMUINT3(FrameGlobals::GetSwapChainExtent().x, FrameGlobals::GetSwapChainExtent().y, 0);
 	TextureInfoBase info{};
 	info.extents = ex;
 	for (auto& image : m_swapChainImages)
@@ -430,13 +476,19 @@ bool RenderBackendImpl<Vulkan>::CreateGraphicsPipeline()
 void RenderBackendImpl<Vulkan>::UpdateGlobals() const
 {
 	VkGlobals::SetSwapChainImageFormat(m_swapChainImageFormat);
-	VkGlobals::SetSwapChainExtent(m_swapChainExtent);
+	FrameGlobals::SetSwapChainExtent(m_swapChainExtent);
 	VkGlobals::SetMainSwapChain(m_swapChain);
 	VkGlobals::SetPresentQueue(m_presentQueue);
 	VkGlobals::SetGraphicsQueue(m_graphicsQueue);
 	VkGlobals::SetQueueFamilyIndices(m_indices);
 	VkGlobals::SetAllQueues(Queues{ m_graphicsQueue, m_presentQueue, m_transferQueue, m_computeQueue });
 	VkGlobals::SetPhysicalDevice(m_physicalDevice);
+	VulkanContext ctx;
+	ctx.Device = m_logicalDevice;
+	ctx.Instance = m_instance;
+	ctx.PhysicalDevice = m_physicalDevice;
+	ctx.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+	VkGlobals::SetContext(ctx);
 }
 
 QueueFamilyIndices RenderBackendImpl<Vulkan>::FindQueueFamilies(VkPhysicalDevice device)

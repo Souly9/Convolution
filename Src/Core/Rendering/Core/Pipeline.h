@@ -62,7 +62,7 @@ struct RasterizerInfo
 	bool depthBias = false;
 };
 
-struct DescriptorSetLayout
+struct DescriptorSetLayoutInfo
 {
 	stltype::vector<PipelineDescriptorLayout> sharedDescriptors;
 	stltype::vector<PipelineDescriptorLayout> pipelineSpecificDescriptors;
@@ -75,7 +75,8 @@ struct PipelineInfo
 	MultisampleInfo multisampleInfo{};
 	RasterizerInfo rasterizerInfo{};
 	DirectX::XMFLOAT4 viewPortExtents;
-	DescriptorSetLayout descriptorSetLayout;
+	DescriptorSetLayoutInfo descriptorSetLayout;
 	Topology topology{ Topology::TriangleList };
 	bool dynamicViewScissor{ true };
+	bool hasDepth{ true };
 };

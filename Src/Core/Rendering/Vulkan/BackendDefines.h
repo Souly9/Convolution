@@ -1,14 +1,18 @@
 #pragma once
 #include <vulkan/vulkan_core.h>
 #include "Core/Rendering/Core/RenderingTypeDefs.h"
+#include "Core/WindowManager.h"
+#include "Core/Memory/MemoryManager.h"
 
 static inline constexpr u64 MAX_TEXTURES = 512;
 
 #define VK_LOGICAL_DEVICE VkGlobals::GetLogicalDevice()
 #define VK_PHYS_DEVICE VkGlobals::GetPhysicalDevice()
 #define VK_FREE_IF(res, freeFunc) if(res != VK_NULL_HANDLE) { freeFunc; res = VK_NULL_HANDLE; }
+#define DEPTH_BUFFER_FORMAT VK_FORMAT_D32_SFLOAT
 
 static inline constexpr VkClearValue g_BlackCLearColor = { {{0.0f, 0.0f, 0.0f, 1.0f}} };
+static inline constexpr VkClearValue g_WhiteCLearColor = { {{1.0f, 1.0f, 1.0f, 1.0f}} };
 
 struct RequiredDeviceFeatures
 {
@@ -34,7 +38,7 @@ static inline const stltype::vector<VkDynamicState> g_dynamicStates = {
 
 #define SWAPCHAINFORMAT VK_FORMAT_B8G8R8A8_SRGB
 #define SWAPCHAINCOLORSPACE VK_COLOR_SPACE_SRGB_NONLINEAR_KHR
-#define SWAPCHAINPRESENTMODE VK_PRESENT_MODE_MAILBOX_KHR
+#define SWAPCHAINPRESENTMODE VK_PRESENT_MODE_FIFO_KHR
 
 #ifdef NDEBUG
 static inline constexpr bool ENABLE_VALIDATION_LAYERS = false;

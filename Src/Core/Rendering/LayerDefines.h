@@ -1,6 +1,6 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
-
+;
 struct QueueFamilyIndices
 {
 	stltype::optional<u32> graphicsFamily;

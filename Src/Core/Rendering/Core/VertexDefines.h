@@ -4,14 +4,10 @@
 struct SimpleVertex
 {
 	DirectX::XMFLOAT3 position;
+	DirectX::XMFLOAT3 normal;
 };
 
-struct ColoredVertex : SimpleVertex
-{
-	DirectX::XMFLOAT3 color;
-};
-
-struct CompleteVertex : ColoredVertex
+struct CompleteVertex : SimpleVertex
 {
 	DirectX::XMFLOAT2 texCoord;
 };

@@ -4,7 +4,6 @@
 
 VkDevice VkGlobals::s_logicalDevice = nullptr;
 VkFormat VkGlobals::s_swapChainImageFormat{};
-DirectX::XMUINT2 VkGlobals::s_swapChainExtent{};
 VkSwapchainKHR VkGlobals::s_mainSwapChain{};
 VkQueue VkGlobals::s_presentQueue{};
 VkQueue VkGlobals::s_graphicsQueue{};
@@ -13,8 +12,9 @@ QueueFamilyIndices VkGlobals::s_indices{};
 Queues VkGlobals::s_queues{};
 VkPhysicalDevice VkGlobals::s_physicalDevice = VK_NULL_HANDLE;
 VkPhysicalDeviceProperties VkGlobals::s_physicalDeviceProperties{};
-extern stltype::unique_ptr<VkTextureManager> g_pTexManager = stltype::make_unique<VkTextureManager>();
 extern stltype::unique_ptr<GPUMemManager<Vulkan>> g_pGPUMemoryManager = stltype::make_unique<GPUMemManager<Vulkan>>();
+Texture* VkGlobals::s_pDepthStencilBuffer = nullptr;
+VulkanContext VkGlobals::s_context{};
 
 VkDevice VkGlobals::GetLogicalDevice()
 {
@@ -25,16 +25,6 @@ VkDevice VkGlobals::GetLogicalDevice()
 VkFormat VkGlobals::GetSwapChainImageFormat()
 {
 	return s_swapChainImageFormat;
-}
-
-DirectX::XMUINT2 VkGlobals::GetSwapChainExtent()
-{
-	return s_swapChainExtent;
-}
-
-f32 VkGlobals::GetScreenAspectRatio()
-{
-	return s_swapChainExtent.x / (f32)s_swapChainExtent.y;
 }
 
 VkSwapchainKHR VkGlobals::GetMainSwapChain()
@@ -78,6 +68,16 @@ const VkPhysicalDeviceProperties& VkGlobals::GetPhysicalDeviceProperties()
 	return s_physicalDeviceProperties;
 }
 
+Texture* VkGlobals::GetDepthStencilBuffer()
+{
+	return s_pDepthStencilBuffer;
+}
+
+void VkGlobals::SetContext(const VulkanContext& context)
+{
+	s_context = context;
+}
+
 void VkGlobals::SetPhysicalDeviceProperties(const VkPhysicalDeviceProperties& physDeviceProps)
 {
 	s_physicalDeviceProperties = physDeviceProps;
@@ -91,11 +91,6 @@ void VkGlobals::SetLogicalDevice(VkDevice physDevice)
 void VkGlobals::SetSwapChainImageFormat(VkFormat imageFormat)
 {
 	s_swapChainImageFormat = imageFormat;
-}
-
-void VkGlobals::SetSwapChainExtent(const DirectX::XMUINT2& extent)
-{
-	s_swapChainExtent = extent;
 }
 
 void VkGlobals::SetMainSwapChain(const VkSwapchainKHR swapChain)
@@ -126,6 +121,16 @@ void VkGlobals::SetQueueFamilyIndices(const QueueFamilyIndices& indices)
 void VkGlobals::SetPhysicalDevice(const VkPhysicalDevice& physDevice)
 {
 	s_physicalDevice = physDevice;
+}
+
+void VkGlobals::SetDepthStencilBuffer(Texture* pDepthTex)
+{
+	s_pDepthStencilBuffer = pDepthTex;
+}
+
+const VulkanContext& VkGlobals::GetContext()
+{
+	return s_context;
 }
 
 void VkGlobals::SetSwapChainImages(const stltype::vector<Texture*>& images)

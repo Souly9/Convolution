@@ -55,13 +55,13 @@ FetchContent_Declare(
   GLFW3
   GIT_REPOSITORY "https://github.com/glfw/glfw.git"
   GIT_TAG "3.4" 
-  SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/glfw3/src"
+  SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/GLFW/src"
   GIT_PROGRESS TRUE
 )
 FetchContent_Declare(
   IMGUI
   GIT_REPOSITORY "https://github.com/ocornut/imgui.git"
-  GIT_TAG "v1.91.0" 
+  GIT_TAG "v1.91.5-docking" 
   SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/imgui"
   GIT_PROGRESS TRUE
 )
@@ -72,8 +72,15 @@ FetchContent_Declare(
   SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/DirectXMath"
   GIT_PROGRESS TRUE
 )
+FetchContent_Declare(
+  ASSIMP
+  GIT_REPOSITORY "https://github.com/assimp/assimp.git"
+  GIT_TAG "ec563823b63c084101e947278f451268da80529d"
+  SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/Assimp"
+  GIT_PROGRESS TRUE
+)
 
-FetchContent_MakeAvailable(EASTL EAStdC EAAssert EAThread GLFW3 IMGUI DIRECTXMATH)
+FetchContent_MakeAvailable(EASTL EAStdC EAAssert EAThread GLFW3 IMGUI DIRECTXMATH ASSIMP)
 
 find_package(DIRECTXMATH REQUIRED)
 message(STATUS "DirectXMath found at ${DIRECTXMATH_INCLUDE_DIR}")
@@ -84,10 +91,13 @@ message(STATUS "Vulkan found at ${Vulkan_LIBRARIES}")
 find_package(IMGUI REQUIRED)
 message(STATUS "ImGui found at ${IMGUI_INCLUDE_DIR}")
 
+set(ASSIMP_LIBRARY_SEARCH_DIR ${CMAKE_SOURCE_DIR}/External/assimp-build/lib/*.lib ${CMAKE_SOURCE_DIR}/External/assimp-build/contrib/*.lib)
+
 file(GLOB_RECURSE ADD_LIBS 
 	"${CMAKE_SOURCE_DIR}/External/additonal_libs/*"
+	${ASSIMP_LIBRARY_SEARCH_DIR}
 )
-set(LIBS ${GLFW3_LIBRARY} ${Vulkan_LIBRARIES} ${ADD_LIBS} EASTL EAStdC EAAssert EAThread)
+set(LIBS ${GLFW3_LIBRARY} ${Vulkan_LIBRARIES} ${ADD_LIBS} EASTL EAStdC EAAssert EAThread ${ASSIMP_LIBRARY})
 
 link_directories(${CMAKE_SOURCE_DIR}/External/additional_libs)
 
@@ -98,7 +108,7 @@ file(GLOB_RECURSE HEADERS
 	"${CMAKE_SOURCE_DIR}/Src/*.h"
 	"${CMAKE_SOURCE_DIR}/Src/*.inl"
 )
-add_executable(${NAME} ${SOURCE} ${HEADERS})
+add_executable(${NAME} ${SOURCE} ${HEADERS} ${IMGUI_SOURCE})
 
 set_target_properties(${NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin")
 set_target_properties(${NAME} PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/bin/")
@@ -117,6 +127,8 @@ SYSTEM
 	${CMAKE_SOURCE_DIR}/External/EAAssert/include/
 	${CMAKE_SOURCE_DIR}/External/EAThread/include/
 	${CMAKE_SOURCE_DIR}/External/stb/
+	${CMAKE_SOURCE_DIR}/External/Assimp/include/
+	${CMAKE_SOURCE_DIR}/External/assimp-build/include/
 )
 
 target_compile_definitions(${NAME} PRIVATE CONV_DEBUG=1)
