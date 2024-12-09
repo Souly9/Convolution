@@ -9,7 +9,8 @@ enum class BufferUsage
 	Index,
 	Staging,
 	Uniform,
-	SSBO,
+	SSBOHost,
+	SSBODevice,
 	GenericHostVisible,
 	GenericDeviceVisible,
 	Texture
@@ -24,11 +25,4 @@ struct BufferCreateInfo
 class GenBuffer : public TrackedResource
 {
 
-};
-
-class VBuffer : public GenBuffer
-{
-public:
-
-protected:
 };

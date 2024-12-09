@@ -8,6 +8,10 @@
 
 namespace ECS
 {
+	namespace System
+	{
+		class ISystem;
+	}
 
 	struct ComponentInfo
 	{
@@ -27,9 +31,10 @@ namespace ECS
 		EntityManager();
 		Entity CreateEntity(const DirectX::XMFLOAT3& position = DirectX::XMFLOAT3(0, 0, 0));
 		void DestroyEntity(Entity entity);
+		void MarkEntityDirty(Entity entity, C_ID componentID);
 
-		void SyncSystemData();
-		void UpdateSystems();
+		void SyncSystemData(u32 frameIdx);
+		void UpdateSystems(u32 frameIdx);
 
 		COMP_TEMPLATE_FUNC
 		void AddComponent(Entity entity, const Component& component);
@@ -58,6 +63,7 @@ namespace ECS
 			return &compVec.at(m_entityComponentMap[entity].componentIndices.at(ECS::ComponentID<Component>::ID)).component;
 		}
 
+		// Not super fast but should be fine since it's only used in low-frequency systems
 		COMP_TEMPLATE_FUNC
 		stltype::vector<Entity> GetEntitiesWithComponent() const
 		{
@@ -71,16 +77,25 @@ namespace ECS
 			return rsltEnts;
 		}
 
-		stltype::vector<stltype::unique_ptr<System::ISystem>> m_systems;
 	private:
 		stltype::vector<Entity> m_entities;
+		struct DirtyEntityInfo
+		{
+			Entity entity;
+			stltype::vector<C_ID> components;
+		};
+		stltype::vector<DirtyEntityInfo> m_dirtyEntities;
+		stltype::fixed_vector<stltype::vector<C_ID>, FRAMES_IN_FLIGHT, false> m_dirtyComponents{ FRAMES_IN_FLIGHT };
 		stltype::hash_map<Entity, ComponentInfo, Entity> m_entityComponentMap;
 
 		stltype::vector<ComponentHolder<Components::Transform>> m_transformComponents;
 		stltype::vector<ComponentHolder<Components::RenderComponent>> m_renderComponents;
 		stltype::vector<ComponentHolder<Components::View>> m_viewComponents;
+		stltype::vector<ComponentHolder<Components::Camera>> m_cameraComponents;
+		stltype::vector<ComponentHolder<Components::Light>> m_lightComponents;
+		stltype::vector<stltype::unique_ptr<System::ISystem>> m_systems;
 
-		stltype::atomic<u64> m_baseEntityID = 0;
+		stltype::atomic<u64> m_baseEntityID = 1;
 
 	};
 
@@ -105,6 +120,7 @@ namespace ECS
 
 			compVector.emplace_back(component, entity);
 			indices[ECS::ComponentID<Component>::ID] = compVector.size() - 1;
+			MarkEntityDirty(entity, ECS::ComponentID<Component>::ID);
 		}
 	}
 
@@ -117,6 +133,10 @@ namespace ECS
 				return m_renderComponents;
 		if constexpr (ECS::ComponentID<Components::View>::ID == ECS::ComponentID<Component>::ID)
 			return m_viewComponents;
+		if constexpr (ECS::ComponentID<Components::Camera>::ID == ECS::ComponentID<Component>::ID)
+			return m_cameraComponents;
+		if constexpr (ECS::ComponentID<Components::Light>::ID == ECS::ComponentID<Component>::ID)
+			return m_lightComponents;
 		else
 		{
 			DEBUG_ASSERT(false);
@@ -133,6 +153,10 @@ namespace ECS
 			return m_renderComponents;
 		if constexpr (ECS::ComponentID<Components::View>::ID == ECS::ComponentID<Component>::ID)
 			return m_viewComponents;
+		if constexpr (ECS::ComponentID<Components::Camera>::ID == ECS::ComponentID<Component>::ID)
+			return m_cameraComponents;
+		if constexpr (ECS::ComponentID<Components::Light>::ID == ECS::ComponentID<Component>::ID)
+			return m_lightComponents;
 		else
 		{
 			DEBUG_ASSERT(false);
@@ -142,14 +166,12 @@ namespace ECS
 	}
 
 	COMP_TEMPLATE_FUNC
-	inline Component* EntityManager::GetComponent(const Entity entity) 
+		inline Component* EntityManager::GetComponent(const Entity entity)
 	{
-		DEBUG_ASSERT(HasComponent<Component>(entity));
-		if (auto it = m_entityComponentMap.find(entity); it != m_entityComponentMap.end())
-		{
-			auto& compVec = GetComponentVector<Component>();
-			return &compVec.at(it->second.componentIndices.at(ECS::ComponentID<Component>::ID)).component;
-		}
-		return nullptr;
+		if (HasComponent<Component>(entity) == false)
+			return nullptr;
+		auto it = m_entityComponentMap.find(entity);
+		auto& compVec = GetComponentVector<Component>();
+		return &compVec.at(it->second.componentIndices.at(ECS::ComponentID<Component>::ID)).component;
 	}
 }

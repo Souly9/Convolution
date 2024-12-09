@@ -16,7 +16,7 @@ class GenBufferVulkan : public GenBuffer
 {
 public:
 	GenBufferVulkan(BufferCreateInfo& info);
-	~GenBufferVulkan();
+	virtual ~GenBufferVulkan();
 
 	void Create(BufferCreateInfo& info);
 
@@ -81,6 +81,6 @@ private:
 class StorageBuffer : public GenBufferVulkan
 {
 public:
-	StorageBuffer(u64 size);
+	StorageBuffer(u64 size, bool isDevice = false);
 	StorageBuffer() {}
 };

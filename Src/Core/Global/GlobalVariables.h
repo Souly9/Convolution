@@ -1,4 +1,6 @@
 #pragma once
+#include "GlobalDefines.h"
+#include <EAThread/eathread_condition.h>
 #include "Core/WindowManager.h"
 #include "Core/Memory/MemoryManager.h"
 #include "Core/ConsoleLogger.h"
@@ -8,6 +10,12 @@
 #include "Core/Rendering/Core/Utils/DeleteQueue.h"
 #include "State/ApplicationState.h"
 #include "Core/Events/EventSystem.h"
+
+extern threadSTL::Semaphore     g_mainRenderThreadSyncSemaphore;
+extern threadSTL::Semaphore     g_renderThreadReadSemaphore;
+extern threadSTL::Semaphore     g_frameTimerSemaphore;
+extern threadSTL::Semaphore     g_frameTimerSemaphore2;
+extern threadSTL::Semaphore     g_imguiSemaphore;
 
 class MemoryManager;
 class TextureMan;
@@ -41,6 +49,7 @@ namespace FrameGlobals
 {
 	static inline u32 GetFrameNumber() { return g_currentFrameNumber; }
 	static inline void SetFrameNumber(u32 frameNumber) { g_currentFrameNumber = frameNumber; }
+	static inline u32 GetPreviousFrameNumber(u32 frameNumber) { return --frameNumber % FRAMES_IN_FLIGHT; }
 
 	static inline  const DirectX::XMUINT2& GetSwapChainExtent() { return g_swapChainExtent; }
 	static inline  f32 GetScreenAspectRatio() { return static_cast<f32>(g_swapChainExtent.x) / static_cast<f32>(g_swapChainExtent.y); }

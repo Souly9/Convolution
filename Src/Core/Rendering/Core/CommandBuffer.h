@@ -1,7 +1,7 @@
 #pragma once
 #include <EASTL/fixed_function.h>
 
-using ExecutionFinishedCallback = stltype::fixed_function<24, void(void)>;
+using ExecutionFinishedCallback = stltype::fixed_function<32, void(void)>;
 
 struct CommandBase
 {

@@ -1,6 +1,6 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
-#include "Core/Rendering/Core/VertexDefines.h"
+#include "Core/Rendering/Core/Defines/VertexDefines.h"
 
 struct Mesh
 {

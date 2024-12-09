@@ -13,6 +13,7 @@ namespace UBO
 		GenericUBO,
 		GenericSSBO,
 		GlobalTransformSSBO,
+		TileArraySSBO,
 		Custom // Just indicate the class itself will specify all binding slots and so on
 	};
 
@@ -26,37 +27,16 @@ namespace UBO
 	static inline stltype::hash_map<BufferType, u32> s_UBOTypeToBindingSlot = {
 		{ BufferType::View, s_viewBindingSlot },
 		{ BufferType::RenderPass, s_renderPassBindingSlot },
-		{ BufferType::GlobalTransformSSBO, s_modelSSBOBindingSlot }
+		{ BufferType::GlobalTransformSSBO, s_modelSSBOBindingSlot },
+		{ BufferType::TileArraySSBO, s_tileArrayBindingSlot }
 
 	};
 
 	static inline stltype::hash_map<BufferType, ShaderTypeBits> s_UBOTypeToShaderStages = {
 		{ BufferType::View, ShaderTypeBits::Vertex },
 		{ BufferType::RenderPass, ShaderTypeBits::Vertex },
-		{ BufferType::GlobalTransformSSBO, ShaderTypeBits::All }
+		{ BufferType::GlobalTransformSSBO, ShaderTypeBits::All },
+		{ BufferType::TileArraySSBO, ShaderTypeBits::Fragment }
 
 	};
-
-	static constexpr u64 GlobalTransformSSBOSize = sizeof(DirectX::XMFLOAT4X4) * MAX_ENTITIES;
-
-	// Contains all model matrices of the scene, mainly because we assume we will perform some kind of rendering operation on every entity in this renderer
-	struct GlobalTransformSSBO
-	{
-		stltype::vector<DirectX::XMFLOAT4X4> modelMatrices{};
-	};
-
-	struct ViewUBO
-	{
-		DirectX::XMFLOAT4X4 view;
-		DirectX::XMFLOAT4X4 projection;
-	};
-
-	struct RenderPassUBO
-	{
-		stltype::vector<u32> entityIndices{};
-	};
-
-	
-
-
 }

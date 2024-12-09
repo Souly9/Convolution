@@ -3,7 +3,7 @@
 #include "Core/Global/ThreadBase.h"
 #include <EASTL/queue.h>
 
-using DeleteFunction = stltype::fixed_function<24, void()>;
+using DeleteFunction = stltype::function<void()>;
 
 class DeleteQueue : public ThreadBase
 {
@@ -13,7 +13,14 @@ public:
 	void ProcessDeleteQueue();
 
 	void RegisterDelete(DeleteFunction&& func);
+	void RegisterDeleteForNextFrame(DeleteFunction&& func);
 
 protected:
 	stltype::queue<DeleteFunction> m_deleteQueue;
+	struct DelayedDelete
+	{
+		DeleteFunction func;
+		u8 submittedFrameIdx;
+	};
+	stltype::queue<DelayedDelete> m_delayedDeleteQueue;
 };

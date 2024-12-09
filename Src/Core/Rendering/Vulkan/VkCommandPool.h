@@ -3,6 +3,7 @@
 #include "BackendDefines.h"
 #include "Core/Rendering/Core/CommandPool.h"
 
+class CBufferVulkan;
 class CommandPoolVulkan : public TrackedResource
 {
 public:
@@ -20,12 +21,13 @@ public:
 	bool IsValid() const { return m_commandPool != VK_NULL_HANDLE; }
 
 	void ReturnCommandBuffer(CommandBuffer* commandBuffer);
+	void ClearAll() { m_commandBuffers.clear(); }
 protected:
 	CommandPoolVulkan(u32 graphicsFamilyIdx);
 	CommandPoolVulkan(u32 graphicsFamilyIdx, VkCommandPoolCreateFlagBits flags);
 
 	VkCommandPool m_commandPool { VK_NULL_HANDLE };
-	stltype::vector<CBufferVulkan> m_commandBuffers;
+	stltype::vector<CBufferVulkan> m_commandBuffers{};
 };
 
 class TransferCommandPoolVulkan : public CommandPoolVulkan

@@ -29,6 +29,6 @@ public:
 	void Destroy();
 
 protected:
-	CommandPoolVulkan* m_pool;
-	VkCommandBuffer  m_commandBuffer;
+	CommandPoolVulkan* m_pool{ nullptr };
+	VkCommandBuffer  m_commandBuffer{VK_NULL_HANDLE};
 };

@@ -13,9 +13,12 @@ namespace ECS
 
 	struct Entity
 	{
-		EntityID ID{};
+		EntityID ID{ INVALID_ENTITY };
+
+		Entity() : ID{ INVALID_ENTITY } {}
 
 		friend class EntityManager;
+
 		template <typename Key, typename T, typename Hash, typename Predicate,
 			typename Allocator, bool bCacheHashCode>
 		friend class stltype::hash_map;
@@ -27,8 +30,8 @@ namespace ECS
 
 		bool operator==(const Entity& other) const { return ID == other.ID; }
 
+		bool IsValid() const { return ID != INVALID_ENTITY; }
 	private:
-		Entity() {}
-		Entity(u64 id) : ID(id) {}
+		Entity(u64 id) : ID{ id } {}
 	};
 }

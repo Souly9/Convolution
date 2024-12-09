@@ -43,6 +43,8 @@ constexpr static inline u32 MAX_BINDLESS_TEXTURES = 16536;
 constexpr static inline u32 MAX_MESHES = 4096;
 constexpr static inline u32 MAX_MATERIALS = 1024;
 constexpr static inline u32 MAX_ENTITIES = 8096;
+constexpr static inline u32 MAX_TILES = 1;
+constexpr static inline u32 MAX_LIGHTS_PER_TILE = 32;
 
 // memory
 // Want to switch to custom allocators one day
@@ -73,5 +75,7 @@ using RenderAPI = Vulkan;
 #include "LogDefines.h"
 #include "GlobalVariables.h"
 #include "State/ApplicationState.h"
+#include "Core/Events/EventSystem.h"
 
 #define CUR_FRAME FrameGlobals::GetFrameNumber()
+#define COMP_ID(component) ECS::ComponentID<ECS::Components::##component>::ID

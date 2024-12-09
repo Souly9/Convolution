@@ -3,6 +3,7 @@
 #include "Core/ECS/Components/View.h"
 #include "Core/ECS//Systems/System.h"
 #include "Core/Rendering/Core/View.h"
+#include "Core/Rendering/Core/Defines/GlobalBuffers.h"
 
 namespace ECS
 {
@@ -18,6 +19,7 @@ namespace ECS
 			virtual void Process() override;
 			virtual void SyncData() override;
 
+			virtual bool AccessesAnyComponents(const stltype::vector<C_ID>& components) override;
 		private:
 			UBO::ViewUBO BuildMainViewUBO(const Components::View* pView, const Components::Transform* pTransform);
 		protected:

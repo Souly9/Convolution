@@ -1,7 +1,7 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
 #include "Utils/MemoryUtilities.h"
-#include "DescriptorLayoutDefines.h"
+#include "Defines/DescriptorLayoutDefines.h"
 
 enum class Topology
 {
@@ -52,7 +52,7 @@ struct RasterizerInfo
 {
 	PolygonMode polyMode = PolygonMode::Fill; // GPU Feature required except for fill
 	f32 lineWidth = 1.0;
-	Cullmode cullmode = Cullmode::Back;
+	Cullmode cullmode = Cullmode::None;
 	FrontFace frontMode = FrontFace::Clockwise;
 	f32 depthBiasConstantFactor = 0.0;
 	f32 depthBiasClamp = 0.0;

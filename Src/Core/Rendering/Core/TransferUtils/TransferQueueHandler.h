@@ -3,6 +3,7 @@
 #include "Core/Global/GlobalDefines.h"
 #include "../Synchronization.h"
 #include "../RenderingTypeDefs.h"
+#include "Core/Global/ThreadBase.h"
 
 enum class QueueType
 {
@@ -12,7 +13,7 @@ enum class QueueType
 };
 
 // Used to submit commandbuffers to various queues asynchronously or build simple commandbuffers
-class AsyncQueueHandler
+class AsyncQueueHandler : public ThreadBase
 {
 public:
 	~AsyncQueueHandler();
@@ -28,13 +29,28 @@ public:
 	};
 	void SubmitCommandBufferAsync(const CommandBufferRequest& request);
 
-	struct TransferCommand
+	struct MeshTransfer
 	{
 		stltype::vector<CompleteVertex> vertices;
 		stltype::vector<u32> indices;
 		RenderPass* pRenderPass; // Will have its vertex and index buffer set once the command is created by the handler
 	};
 
+	struct SSBOTransfer
+	{
+		void* data;
+		u64 size;
+		DescriptorSet* pDescriptorSet;
+		StorageBuffer* pStorageBuffer;
+	};
+
+	struct SSBODeviceBufferTransfer
+	{
+		GenericBuffer* pSrc;
+		GenericBuffer* pDst;
+		DescriptorSet* pDescriptorSet;
+	};
+	using TransferCommand = stltype::variant<MeshTransfer, SSBOTransfer, SSBODeviceBufferTransfer>;
 
 	void SubmitTransferCommandAsync(const TransferCommand& request);
 	void SubmitTransferCommandAsync(const Mesh* request, RenderPass* pRenderPass);
@@ -43,12 +59,16 @@ public:
 	void WaitForFences();
 
 protected:
+	template<typename T>
+	void BuildTransferCommand(const T& request, CommandBuffer* pCmdBuffer) { DEBUG_ASSERT(false); }
+	void BuildTransferCommand(const MeshTransfer& request, CommandBuffer* pCmdBuffer);
+	void BuildTransferCommand(const SSBOTransfer& request, CommandBuffer* pCmdBuffer);
+	void BuildTransferCommand(const SSBODeviceBufferTransfer& request, CommandBuffer* pCmdBuffer);
+
 	void SubmitCommandBuffers(const stltype::vector<CommandBufferRequest>& commandBuffers);
 
 	void FreeInFlightCommandBuffers();
 protected:
-	threadSTL::Thread m_handlerThread;
-	threadSTL::Futex m_sharedDataMutex{};
 	threadSTL::Futex m_fencesToWaitOnMutex{};
 
 	struct InFlightRequest
@@ -63,8 +83,6 @@ protected:
 
 	stltype::vector<CommandBufferRequest> m_commandBufferRequests{};
 	stltype::vector<TransferCommand> m_transferCommands{};
-
-	bool m_keepRunning{ true };
 };
 
 extern stltype::unique_ptr<AsyncQueueHandler> g_pQueueHandler;

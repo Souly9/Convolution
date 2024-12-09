@@ -28,4 +28,5 @@ struct ApplicationState
 	stltype::vector<ECS::Entity> selectedEntities{};
 	GUIState guiState{};
 	RendererState renderState{};
+	ECS::Entity mainCameraEntity{};
 };

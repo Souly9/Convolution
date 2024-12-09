@@ -91,11 +91,15 @@ const VkRenderPass& RenderPassVulkan::GetRef() const
 
 void RenderPassVulkan::SetVertexBuffer(const VertexBufferVulkan& buffer)
 {
+	if (m_vertexBuffer.GetRef() != buffer.GetRef())
+		m_vertexBuffer.CleanUp();
 	m_vertexBuffer = buffer;
 }
 
 void RenderPassVulkan::SetIndexBuffer(const IndexBufferVulkan& buffer)
 {
+	if(m_indexBuffer.GetRef() != buffer.GetRef())
+		m_indexBuffer.CleanUp();
 	m_indexBuffer = buffer;
 }
 
