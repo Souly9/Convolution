@@ -2,15 +2,15 @@
 #include "Visualizer.h"
 #include "Core/ECS/ComponentDefines.h"
 
-static inline void Visualize(const ECS::Components::Transform* pTransform)
+static inline bool Visualize(ECS::Components::Transform* pTransform)
 {
-	DirectX::XMFLOAT4 position;
-	DirectX::XMStoreFloat4(&position, pTransform->position);
+	bool needsUpdate = false;
+	if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen))
+	{
+		needsUpdate |= DrawFloat3Visualizer("Position", pTransform->position);
+		needsUpdate |= DrawFloat3Visualizer("Rotation", pTransform->rotation);
+		needsUpdate |= DrawFloat3Visualizer("Scale", pTransform->scale);
+	}
 
-	ImGui::Text("Position "); ImGui::SameLine();
-	ImGui::PushItemWidth(100);
-	ImGui::DragFloat("X", &position.x, 0.1f); ImGui::SameLine();
-	ImGui::DragFloat("Y", &position.y, 0.1f); ImGui::SameLine();
-	ImGui::DragFloat("Z", &position.z, 0.1f); ImGui::SameLine();
-	ImGui::PopItemWidth();
+	return needsUpdate;
 }

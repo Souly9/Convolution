@@ -5,6 +5,7 @@
 #include "Core/ECS/Systems/System.h"
 #include "EventUtils.h"
 #include "ApplicationEvents.h"
+#include "InputEvents.h"
 
 struct ApplicationState;
 struct UpdateEventData
@@ -40,10 +41,20 @@ public:
 	EVENT_FUNCTIONS(BaseInit);
 	EVENT_FUNCTIONS(AppInit);
 	EVENT_FUNCTIONS(WindowResize);
+	EVENT_FUNCTIONS(NextFrame);
+	EVENT_FUNCTIONS(KeyPress);
+	EVENT_FUNCTIONS(KeyHold);
+	EVENT_FUNCTIONS(LeftMouseClick);
+	EVENT_FUNCTIONS(MouseMove);
 protected:
 	EVENT(Mouse);
 	EVENT(Update);
 	EVENT(BaseInit);
 	EVENT(AppInit);
 	EVENT(WindowResize);
+	EVENT(NextFrame);
+	EVENT(KeyPress);
+	EVENT(KeyHold);
+	EVENT(LeftMouseClick);
+	EVENT(MouseMove);
 };

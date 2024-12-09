@@ -17,7 +17,6 @@ void ImGuiManager::BeginFrame()
 	ImGui_ImplVulkan_NewFrame();
 	ImGui_ImplGlfw_NewFrame();
 	ImGui::NewFrame();
-	
 }
 
 void ImGuiManager::EndFrame()

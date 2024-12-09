@@ -3,7 +3,7 @@
 #include "BackendDefines.h"
 #include "Core/Rendering/Core/Pipeline.h"
 #include "Core/Rendering/Core/Resource.h"
-#include "Core/Rendering/Core/VertexDefines.h"
+#include "Core/Rendering/Core/Defines/VertexDefines.h"
 #include "Core/Rendering/Vulkan/VkDescriptorSetLayout.h"
 
 struct PipeVertInfo

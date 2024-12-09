@@ -26,3 +26,8 @@ void ECS::System::SRenderComponent::SyncData()
 
 	m_pPassManager->SetEntityMeshDataForFrame(std::move(dataMap), FrameGlobals::GetFrameNumber());
 }
+
+bool ECS::System::SRenderComponent::AccessesAnyComponents(const stltype::vector<C_ID>& components)
+{
+	return stltype::find(components.begin(), components.end(), ComponentID<Components::RenderComponent>::ID) != components.end();
+}

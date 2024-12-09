@@ -1,11 +1,11 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
 #include "Core/UI/ImGui/ImGuiManager.h"
+#include "Rendering/RenderLayer.h"
 #include "Core/UI/ImGui/MainMenuBar.h"
 #include "TimeData.h"
-#include "Rendering/RenderLayer.h"
-#include "Core/Rendering/Passes/PassManager.h"
 #include "Core/Events/EventSystem.h"
+#include "RenderThread.h"
 
 class UI;
 class TimeData;
@@ -22,17 +22,19 @@ public:
 	~Application();
 
 	void Run();
-	void Update();
+	void Update(u32 currentFrame);
 
 	void Render();
+
+	void WaitForRendererToFinish(u32 idx);
 
 private:
 
 	void CreateMainPSO();
 
 	ImGuiManager m_imGuiManager{};
-	RenderPasses::PassManager m_passManager;
+
+	RenderThread m_renderThread;
 
 	ApplicationStateManager m_applicationState{};
-
 };

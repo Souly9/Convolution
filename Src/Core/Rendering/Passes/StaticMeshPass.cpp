@@ -74,9 +74,9 @@ namespace RenderPasses
 
 	void StaticMainMeshPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes)
 	{
-		AsyncQueueHandler::TransferCommand cmd{};
-		cmd.vertices.reserve(meshes.size() * 1000);
-		cmd.indices.reserve(meshes.size() * 300);
+		AsyncQueueHandler::MeshTransfer cmd{};
+		cmd.vertices.reserve(meshes.size() * 10);
+		cmd.indices.reserve(meshes.size() * 30);
 		cmd.pRenderPass = &m_mainPass;
 
 		u32 idxOffset = 0;
@@ -102,8 +102,14 @@ namespace RenderPasses
 
 		GenericIndexedDrawCmd cmd{ m_mainPSOFrameBuffers[ctx.imageIdx] , m_mainPass, m_mainPSO };
 		cmd.vertCount = m_mainPass.GetVertCount();
-		const auto transformSSBOSet = data.bufferDescriptors.at(UBO::BufferType::GlobalTransformSSBO);
-		cmd.descriptorSets = { g_pTexManager->GetBindlessDescriptorSet(), data.viewDescriptorSets.at(0), transformSSBOSet };
+		if(data.bufferDescriptors.empty() || data.viewDescriptorSets.empty())
+			cmd.descriptorSets = { g_pTexManager->GetBindlessDescriptorSet()};
+		else
+		{
+			const auto transformSSBOSet = data.bufferDescriptors.at(UBO::BufferType::GlobalTransformSSBO);
+			const auto tileArraySSBOSet = data.bufferDescriptors.at(UBO::BufferType::TileArraySSBO);
+			cmd.descriptorSets = { g_pTexManager->GetBindlessDescriptorSet(), data.viewDescriptorSets.at(0), transformSSBOSet, tileArraySSBOSet };
+		}
 		currentBuffer->RecordCommand(cmd);
 		currentBuffer->Bake();
 
@@ -116,5 +122,6 @@ namespace RenderPasses
 		m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalTextures));
 		m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::View));
 		m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::GlobalTransformSSBO));
+		m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::TileArraySSBO));
 	}
 }

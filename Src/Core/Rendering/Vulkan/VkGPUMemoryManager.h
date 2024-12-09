@@ -16,6 +16,8 @@ public:
 
 	void TryFreeMemory(GPUMemoryHandle memoryHandle);
 private:
+	threadSTL::Futex m_mappingMutex;
+	threadSTL::Futex m_allocatinggMutex;
 	stltype::vector<GPUMemoryHandle> m_memoryHandles;
 	stltype::vector<GPUMemoryHandle> m_mappedMemoryHandles; // Mostly just for debugging
 };

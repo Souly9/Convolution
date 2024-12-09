@@ -2,7 +2,6 @@
 #include "VkGlobals.h"
 #include "Core/Rendering/Core/TextureManager.h"
 #include "Utils/VkEnumHelpers.h"
-#include "VkDescriptorPool.h"
 
 namespace CommandHelpers
 {
@@ -108,15 +107,13 @@ namespace CommandHelpers
 
 CBufferVulkan::~CBufferVulkan()
 {
-    CallCallbacks();
-
-    vkFreeCommandBuffers(VK_LOGICAL_DEVICE, m_pool->GetRef(), 1, &GetRef());
-    m_commands.clear();
+    if(m_pool != nullptr && m_pool->GetRef() != VK_NULL_HANDLE)
+        vkFreeCommandBuffers(VK_LOGICAL_DEVICE, m_pool->GetRef(), 1, &GetRef());
 }
 
 void CBufferVulkan::Bake()
 {
-    BeginBuffer();
+    BeginBufferForSingleSubmit();
 
     bool needsBegin = true;
     for (auto& cmd : m_commands)
@@ -247,8 +244,6 @@ void CBufferVulkan::ResetBuffer()
 
 void CBufferVulkan::Destroy()
 {
-    CallCallbacks();
     if(m_pool)
         m_pool->ReturnCommandBuffer(this);
-    m_commands.clear();
 }

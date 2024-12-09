@@ -5,42 +5,40 @@
 
 AsyncQueueHandler::~AsyncQueueHandler()
 {
-	m_keepRunning = false;
-
-	m_handlerThread.WaitForEnd();
-	m_fencesToWaitOn.clear();
+	ShutdownThread();
 }
 
 void AsyncQueueHandler::Init()
 {
-	m_commandPools.insert({ QueueType::Transfer, TransferCommandPoolVulkan::Create() });
-	m_commandPools.insert({ QueueType::Compute, CommandPool::Create(VkGlobals::GetQueueFamilyIndices().computeFamily.value()) });
-	m_commandPools.insert({ QueueType::Graphics, CommandPool::Create(VkGlobals::GetQueueFamilyIndices().graphicsFamily.value()) });
-	m_handlerThread = threadSTL::MakeThread([this]
+	m_commandPools.emplace(QueueType::Transfer, TransferCommandPoolVulkan::Create());
+	m_commandPools.emplace(QueueType::Compute, CommandPool::Create(VkGlobals::GetQueueFamilyIndices().computeFamily.value()));
+	m_commandPools.emplace(QueueType::Graphics, CommandPool::Create(VkGlobals::GetQueueFamilyIndices().graphicsFamily.value()));
+	m_thread = threadSTL::MakeThread([this]
 		{
 			HandleRequests();
 		});
-	m_handlerThread.SetName("Convolution_AsyncQueueHandler");
+	m_thread.SetName("Convolution_AsyncQueueHandler");
 }
 
 void AsyncQueueHandler::HandleRequests()
 {
-	while(m_keepRunning)
+	while(KeepRunning())
 	{
 		if (!m_commandBufferRequests.empty() || !m_transferCommands.empty())
 		{
+			m_sharedDataMutex.Lock();
 			BuildTransferCommandBuffer(m_transferCommands);
 			SubmitCommandBuffers(m_commandBufferRequests);
 
-			m_sharedDataMutex.Lock();
 			m_transferCommands.clear();
 			m_commandBufferRequests.clear();
 			m_sharedDataMutex.Unlock();
 		}
-		if(m_fencesToWaitOn.size() > 0)
+		if(m_fencesToWaitOn.empty() == false)
 		{
 			bool shouldClear = true;
 
+			m_sharedDataMutex.Lock();
 			for (auto& fenceToWaitOn : m_fencesToWaitOn)
 			{
 				if (fenceToWaitOn.fence.IsSignaled() == false)
@@ -49,10 +47,16 @@ void AsyncQueueHandler::HandleRequests()
 					break;
 				}
 			}
+			m_sharedDataMutex.Unlock();
+
 			if (shouldClear)
 			{
 				FreeInFlightCommandBuffers();
 			}
+		}
+		else
+		{
+			Suspend();
 		}
 	}
 }
@@ -73,56 +77,100 @@ void AsyncQueueHandler::SubmitTransferCommandAsync(const TransferCommand& reques
 
 void AsyncQueueHandler::SubmitTransferCommandAsync(const Mesh* pMesh, RenderPass* pRenderPass)
 {
-	SubmitTransferCommandAsync({ pMesh->vertices, pMesh->indices, pRenderPass });
+	SubmitTransferCommandAsync(MeshTransfer{ pMesh->vertices, pMesh->indices, pRenderPass });
 }
 
 void AsyncQueueHandler::BuildTransferCommandBuffer(const stltype::vector<TransferCommand>& transferCommands)
 {
-	m_sharedDataMutex.Lock();
 	for (const auto& transferCommand : transferCommands)
 	{
-		const auto& vertexData = transferCommand.vertices;
-		const auto& indices = transferCommand.indices;
-		const auto vertSize = sizeof(vertexData[0]);
-		const auto idxSize = sizeof(indices[0]);
-
-		CommandBuffer* transferBuffer = m_commandPools[QueueType::Transfer].CreateCommandBuffer(CommandBufferCreateInfo{});
-		VertexBuffer vbuffer(vertexData.size() * vertSize);
-		StagingBuffer stgBuffer1(vbuffer.GetInfo().size);
-		vbuffer.FillAndTransfer(stgBuffer1, transferBuffer, (void*)vertexData.data(), true);
-		IndexBuffer ibuffer(indices.size() * idxSize);
-		StagingBuffer stgBuffer2(vbuffer.GetInfo().size);
-		ibuffer.FillAndTransfer(stgBuffer2, transferBuffer, (void*)indices.data(), true);
-
-		DEBUG_ASSERT(transferCommand.pRenderPass);
-		transferCommand.pRenderPass->SetVertexBuffer(vbuffer);
-		transferCommand.pRenderPass->SetIndexBuffer(ibuffer);
-		transferCommand.pRenderPass->SetVertCountToDraw(indices.size());
-
-		transferBuffer->BeginBufferForSingleSubmit();
-		transferBuffer->Bake();
-
-		m_commandBufferRequests.emplace_back(transferBuffer, QueueType::Transfer);
+		CommandBuffer* pTransferCmdBuffer = m_commandPools[QueueType::Transfer].CreateCommandBuffer(CommandBufferCreateInfo{});
+		stltype::visit([pTransferCmdBuffer, this](const auto& cmd)
+			{
+				BuildTransferCommand(cmd, pTransferCmdBuffer);
+			},
+			transferCommand);
+		m_commandBufferRequests.emplace_back(pTransferCmdBuffer, QueueType::Transfer);
 	}
-	m_sharedDataMutex.Unlock();
 }
 
 void AsyncQueueHandler::WaitForFences()
 {
-	m_fencesToWaitOnMutex.Lock();
+	m_sharedDataMutex.Lock();
+	BuildTransferCommandBuffer(m_transferCommands);
+	SubmitCommandBuffers(m_commandBufferRequests);
+	m_transferCommands.clear();
+	m_commandBufferRequests.clear();
 	for (const auto& fenceToWaitOn : m_fencesToWaitOn)
 	{
 		fenceToWaitOn.fence.WaitFor();
 	}
-	FreeInFlightCommandBuffers();
-	m_fencesToWaitOnMutex.Unlock();
+	for (auto& poolPair : m_commandPools)
+	{
+		poolPair.second.ClearAll();
+	}
+	m_fencesToWaitOn.clear();
+	m_sharedDataMutex.Unlock();
+
+}
+
+void AsyncQueueHandler::BuildTransferCommand(const MeshTransfer& request, CommandBuffer* pCmdBuffer)
+{
+	const auto& vertexData = request.vertices;
+	const auto& indices = request.indices;
+	const auto vertSize = sizeof(vertexData[0]);
+	const auto idxSize = sizeof(indices[0]);
+
+	VertexBuffer vbuffer(vertexData.size() * vertSize);
+	StagingBuffer stgBuffer1(vbuffer.GetInfo().size);
+	vbuffer.FillAndTransfer(stgBuffer1, pCmdBuffer, (void*)vertexData.data(), true);
+
+	IndexBuffer ibuffer(indices.size() * idxSize);
+	StagingBuffer stgBuffer2(vbuffer.GetInfo().size);
+	ibuffer.FillAndTransfer(stgBuffer2, pCmdBuffer, (void*)indices.data(), true);
+
+	DEBUG_ASSERT(request.pRenderPass);
+	request.pRenderPass->SetVertexBuffer(vbuffer);
+	request.pRenderPass->SetIndexBuffer(ibuffer);
+	request.pRenderPass->SetVertCountToDraw(indices.size());
+
+	pCmdBuffer->Bake();
+}
+
+void AsyncQueueHandler::BuildTransferCommand(const SSBOTransfer& request, CommandBuffer* pCmdBuffer)
+{
+	StagingBuffer stgBuffer(request.size);
+	request.pStorageBuffer->FillAndTransfer(stgBuffer, pCmdBuffer, request.data, true);
+
+	pCmdBuffer->AddExecutionFinishedCallback(
+		[request]()
+		{
+			request.pDescriptorSet->WriteSSBOUpdate(*request.pStorageBuffer);
+		});
+	pCmdBuffer->Bake();
+}
+
+void AsyncQueueHandler::BuildTransferCommand(const SSBODeviceBufferTransfer& request, CommandBuffer* pCmdBuffer)
+{
+	SimpleBufferCopyCmd copyCmd{ request.pSrc, request.pDst };
+	copyCmd.srcOffset = 0;
+	copyCmd.dstOffset = 0;
+	copyCmd.size = request.pSrc->GetInfo().size;
+
+	pCmdBuffer->RecordCommand(copyCmd);
+	pCmdBuffer->AddExecutionFinishedCallback(
+		[request]()
+		{
+			request.pDescriptorSet->WriteSSBOUpdate(*request.pDst);
+		});
+	pCmdBuffer->Bake();
 }
 
 void AsyncQueueHandler::SubmitCommandBuffers(const stltype::vector<CommandBufferRequest>& commandBuffers)
 {
 	for (const auto& cmdBufferRequest : commandBuffers)
 	{
-		auto& pCmdBuffer = cmdBufferRequest.buffer;
+		const auto& pCmdBuffer = cmdBufferRequest.buffer;
 		Fence transferFinishedFence;
 		transferFinishedFence.Create(false);
 
@@ -135,25 +183,19 @@ void AsyncQueueHandler::SubmitCommandBuffers(const stltype::vector<CommandBuffer
 		}
 		else if(cmdBufferRequest.queueType == QueueType::Graphics)
 		{
-			SRF::SubmitCommandBufferToGraphicsQueue<RenderAPI>(cmdBufferRequest.buffer, transferFinishedFence);
+			SRF::SubmitCommandBufferToGraphicsQueue<RenderAPI>(pCmdBuffer, transferFinishedFence);
 		}
-		m_fencesToWaitOnMutex.Lock();
 		m_fencesToWaitOn.emplace_back(pCmdBuffer, transferFinishedFence, cmdBufferRequest.queueType);
-		m_fencesToWaitOnMutex.Unlock();
 	}
 }
 
 void AsyncQueueHandler::FreeInFlightCommandBuffers()
 {
-	m_fencesToWaitOnMutex.Lock(); 
-	for (auto& fenceToWaitOn : m_fencesToWaitOn)
+	m_sharedDataMutex.Lock();
+	for (auto& poolPair : m_commandPools)
 	{
-		auto& pBuffer = fenceToWaitOn.pBuffer;
-		if (pBuffer != nullptr)
-		{
-			pBuffer->Destroy();
-		}
+		poolPair.second.ClearAll();
 	}
 	m_fencesToWaitOn.clear();
-	m_fencesToWaitOnMutex.Unlock();
+	m_sharedDataMutex.Unlock();
 }

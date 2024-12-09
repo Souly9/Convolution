@@ -2,7 +2,7 @@
 #include "Core/Rendering/Core/Pipeline.h"
 #include "Core/Rendering/Core/Texture.h"
 #include "Core/Rendering/Core/Buffer.h"
-#include "Core/Rendering/Core/UBODefines.h"
+#include "Core/Rendering/Core/Defines/UBODefines.h"
 
 inline VkPolygonMode Conv(const PolygonMode& m)
 {
@@ -193,8 +193,10 @@ inline VkBufferUsageFlags Conv(const BufferUsage& m)
 			return VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 		case BufferUsage::Uniform:
 			return VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-		case BufferUsage::SSBO:
-			return VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+		case BufferUsage::SSBODevice:
+			return VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+		case BufferUsage::SSBOHost:
+			return VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
 		default:
 			DEBUG_ASSERT(false);
 	}
@@ -212,8 +214,12 @@ inline VkMemoryPropertyFlags Conv2MemFlags(const BufferUsage& m)
 		case BufferUsage::Staging:
 			return VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 		case BufferUsage::Uniform:
-		case BufferUsage::SSBO:
+		case BufferUsage::SSBOHost:
 			return VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+		case BufferUsage::SSBODevice:
+			return VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+		case BufferUsage::GenericDeviceVisible:
+			return VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 		default:
 			DEBUG_ASSERT(false);
 	}

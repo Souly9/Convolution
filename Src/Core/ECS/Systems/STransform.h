@@ -16,6 +16,7 @@ namespace ECS
 			virtual void Process() override;
 			virtual void SyncData() override;
 
+			virtual bool AccessesAnyComponents(const stltype::vector<C_ID>& components) override;
 		protected:
 			// Cached model matrices of all entities
 			RenderPasses::TransformSystemData m_cachedDataMap;

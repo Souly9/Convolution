@@ -1,4 +1,5 @@
 #pragma once
+#include <vulkan/vulkan.h>
 #include "Core/Global/GlobalDefines.h"
 
 struct SimpleVertex
@@ -32,11 +33,6 @@ namespace VertexInputDefines
 		TexCoord0,
 		TexCoord1,
 		TexCoord2,
-		TexCoord3,
-		TexCoord4,
-		TexCoord5,
-		TexCoord6,
-		TexCoord7
 	};
 
 	struct VertexAttributeInfo

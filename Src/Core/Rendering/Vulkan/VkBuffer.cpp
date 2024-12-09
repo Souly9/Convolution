@@ -44,8 +44,11 @@ void GenBufferVulkan::Create(BufferCreateInfo& info)
 
 void GenBufferVulkan::CleanUp()
 {
-    vkDestroyBuffer(VK_LOGICAL_DEVICE, m_buffer, VulkanAllocator());
-    m_buffer = VK_NULL_HANDLE;
+    auto bufferHandle = m_buffer;
+    auto memory = m_allocatedMemory;
+
+    vkDestroyBuffer(VK_LOGICAL_DEVICE, bufferHandle, VulkanAllocator());
+    g_pGPUMemoryManager->TryFreeMemory(memory);
 }
 
 void GenBufferVulkan::FillImmediate(const void* data)
@@ -68,11 +71,12 @@ void GenBufferVulkan::FillAndTransfer(StagingBuffer& stgBuffer, CommandBuffer* t
     if (freeStagingBuffer)
     {
         auto buffer = stgBuffer.GetRef();
-        auto callback = [buffer]() {
-
-            vkDestroyBuffer(VK_LOGICAL_DEVICE, buffer, VulkanAllocator());
-            };
-        copyCmd.optionalCallback = std::bind(callback);
+        auto memory = stgBuffer.GetMemoryHandle();
+        transferBuffer->AddExecutionFinishedCallback([buffer, memory]()
+            {
+                vkDestroyBuffer(VK_LOGICAL_DEVICE, buffer, VulkanAllocator());
+                g_pGPUMemoryManager->TryFreeMemory(memory);
+            });
 
         // Guarantee it won't get freed until we hit the callback
         stgBuffer.Grab();
@@ -137,10 +141,10 @@ UniformBuffer::UniformBuffer(u64 size)
     Create(info);
 }
 
-StorageBuffer::StorageBuffer(u64 size)
+StorageBuffer::StorageBuffer(u64 size, bool isDevice)
 {
     BufferCreateInfo info{};
     info.size = size;
-    info.usage = BufferUsage::SSBO;
+    info.usage = isDevice ? BufferUsage::SSBODevice : BufferUsage::SSBOHost;
     Create(info);
 }

@@ -4,20 +4,22 @@
 
 void CommandPoolVulkan::ReturnCommandBuffer(CommandBuffer* pBuffer)
 {
-	m_commandBuffers.erase(stltype::remove_if(m_commandBuffers.begin(), m_commandBuffers.end(), [pBuffer](CommandBuffer& buffer) { return &buffer == pBuffer; }));
+	if(pBuffer == nullptr) return;
+	m_commandBuffers.erase(stltype::remove_if(m_commandBuffers.begin(), m_commandBuffers.end(), 
+		[pBuffer](CommandBuffer& buffer) { return buffer.GetRef() == pBuffer->GetRef(); }),
+		m_commandBuffers.end());
 }
 
 CommandPoolVulkan::CommandPoolVulkan(u32 graphicsFamilyIdx) : CommandPoolVulkan(graphicsFamilyIdx, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT)
 {
 }
 
-CommandPoolVulkan::CommandPoolVulkan(u32 graphicsFamilyIdx, VkCommandPoolCreateFlagBits flags)
+CommandPoolVulkan::CommandPoolVulkan(u32 graphicsFamilyIdx, VkCommandPoolCreateFlagBits flags) : CommandPoolVulkan()
 {
 	VkCommandPoolCreateInfo poolInfo{};
 	poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	poolInfo.flags = flags;
 	poolInfo.queueFamilyIndex = graphicsFamilyIdx;
-	m_commandBuffers.reserve(1024);
 
 	DEBUG_ASSERT(vkCreateCommandPool(VkGlobals::GetLogicalDevice(), &poolInfo, VulkanAllocator(), &m_commandPool) == VK_SUCCESS);
 }
@@ -34,8 +36,6 @@ CommandPoolVulkan::~CommandPoolVulkan()
 
 void CommandPoolVulkan::CleanUp()
 {
-	m_commandBuffers.clear();
-	
 	VK_FREE_IF(m_commandPool, vkDestroyCommandPool(VkGlobals::GetLogicalDevice(), m_commandPool, VulkanAllocator()))
 }
 
@@ -46,6 +46,7 @@ CBufferVulkan* CommandPoolVulkan::CreateCommandBuffer(const CommandBufferCreateI
 	allocInfo.commandPool = m_commandPool;
 	allocInfo.level = createInfo.isPrimaryBuffer ? VK_COMMAND_BUFFER_LEVEL_PRIMARY : VK_COMMAND_BUFFER_LEVEL_SECONDARY;
 	allocInfo.commandBufferCount = 1;
+	m_commandBuffers.reserve(128);
 
 	VkCommandBuffer buffer;
 	DEBUG_ASSERT(vkAllocateCommandBuffers(VkGlobals::GetLogicalDevice(), &allocInfo, &buffer) == VK_SUCCESS);
@@ -63,6 +64,7 @@ stltype::vector<CommandBuffer*> CommandPoolVulkan::CreateCommandBuffers(const Co
 	allocInfo.commandPool = m_commandPool;
 	allocInfo.level = createInfo.isPrimaryBuffer ? VK_COMMAND_BUFFER_LEVEL_PRIMARY : VK_COMMAND_BUFFER_LEVEL_SECONDARY;
 	allocInfo.commandBufferCount = count;
+	m_commandBuffers.reserve(128);
 
 	stltype::vector<VkCommandBuffer> buffers;
 	buffers.resize(count);

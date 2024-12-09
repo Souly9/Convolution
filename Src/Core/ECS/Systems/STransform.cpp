@@ -18,13 +18,23 @@ void ECS::System::STransform::Process()
 	for (const auto& transform : transComps)
 	{
 		const auto& transformComp = transform.component;
-		const auto transformQuat = XMQuaternionRotationRollPitchYawFromVector(transformComp.rotation);
+		const auto position = XMLoadFloat3(&transformComp.position);
+		const auto rotation = XMLoadFloat3(&transformComp.rotation);
+		const auto scale = XMLoadFloat3(&transformComp.scale);
 
-		XMStoreFloat4x4(&m_cachedDataMap[transform.entity.ID], XMMatrixTransformation(zeroVec, zeroVec, transformComp.scale, zeroVec, transformQuat, transformComp.position));
+		const auto transformQuat = XMQuaternionRotationRollPitchYawFromVector(-rotation);
+
+		XMStoreFloat4x4(&m_cachedDataMap[transform.entity.ID], XMMatrixTransformation(position, transformQuat, scale, position, transformQuat, position));
 	}
 }
 
 void ECS::System::STransform::SyncData()
 {
-	m_pPassManager->SetEntityTransformDataForFrame(m_cachedDataMap, FrameGlobals::GetFrameNumber());
+	auto map = m_cachedDataMap;
+	m_pPassManager->SetEntityTransformDataForFrame(std::move(map), FrameGlobals::GetFrameNumber());
+}
+
+bool ECS::System::STransform::AccessesAnyComponents(const stltype::vector<C_ID>& components)
+{
+	return stltype::find(components.begin(), components.end(), ComponentID<Components::Transform>::ID) != components.end();
 }

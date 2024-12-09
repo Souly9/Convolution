@@ -17,6 +17,12 @@ int main() {
         Application app(true, layer);
         app.Run();
     }
+    g_pTexManager.reset();
+    g_pEntityManager.reset();
+    g_pQueueHandler.reset();
+    g_pFileReader.reset();
+    g_pMeshManager.reset();
+    g_pGPUMemoryManager.reset();
     layer.CleanUp();
     return 0;
 }

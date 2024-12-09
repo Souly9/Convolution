@@ -15,7 +15,8 @@ namespace ECS
 
 			virtual void Process() override;
 			virtual void SyncData() override;
-			
+
+			virtual bool AccessesAnyComponents(const stltype::vector<C_ID>& components) override;
 		protected:
 			RenderPasses::PassManager* m_pPassManager;
 		};

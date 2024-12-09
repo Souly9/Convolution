@@ -30,6 +30,22 @@ void ECS::System::SView::CleanUp()
 
 void ECS::System::SView::Process()
 {
+	const auto camEntities = g_pEntityManager->GetEntitiesWithComponent<Components::Camera>();
+	//const auto lightEntities = g_pEntityManager->GetEntitiesWithComponent<Components::Lights>();
+
+	for (const auto& entity : camEntities)
+	{
+		const auto* pCamera = g_pEntityManager->GetComponentUnsafe<Components::Camera>(entity);
+		if (g_pEntityManager->HasComponent<Components::View>(entity) == false)
+		{
+			g_pEntityManager->AddComponent<Components::View>(entity, {});
+		}
+		auto* pView = g_pEntityManager->GetComponentUnsafe<Components::View>(entity);
+		pView->fov = pCamera->fov;
+		pView->zNear = pCamera->zNear;
+		pView->zFar = pCamera->zFar;
+		pView->type = pCamera->isMainCam ? ECS::Components::ViewType::MainRenderView : ECS::Components::ViewType::SecondaryRenderView;
+	}
 }
 
 void ECS::System::SView::SyncData()
@@ -44,11 +60,24 @@ void ECS::System::SView::SyncData()
 		const auto* pViewComp = g_pEntityManager->GetComponentUnsafe<Components::View>(entity);
 		const auto* pTransformComp = g_pEntityManager->GetComponentUnsafe<Components::Transform>(entity);
 
-		const auto ubo = BuildMainViewUBO(pViewComp, pTransformComp);
-		memcpy(m_mappedViewUBOs[currentFrame], &ubo, sizeof(ubo));
-		m_viewUBODescriptors[currentFrame]->WriteBufferUpdate(m_viewUBOs[currentFrame]);
+		if(pViewComp->type == ECS::Components::ViewType::MainRenderView)
+		{
+			const auto ubo = BuildMainViewUBO(pViewComp, pTransformComp);
+			memcpy(m_mappedViewUBOs[currentFrame], &ubo, sizeof(ubo));
+			m_viewUBODescriptors[currentFrame]->WriteBufferUpdate(m_viewUBOs[currentFrame]);
+		}
 	}
 	m_pPassManager->SetMainViewData({ m_viewUBODescriptors[currentFrame] }, { m_viewUBODescriptors[currentFrame] }, currentFrame);
+}
+
+bool ECS::System::SView::AccessesAnyComponents(const stltype::vector<C_ID>& components)
+{
+	return stltype::find_if(components.begin(), components.end(),
+		[](const C_ID& comp) { 
+			return (comp == ECS::ComponentID<Components::Transform>::ID) ||
+				(comp == ECS::ComponentID<Components::Camera>::ID) || 
+				(comp == ECS::ComponentID<Components::Light>::ID);
+		}) != components.cend();
 }
 
 UBO::ViewUBO ECS::System::SView::BuildMainViewUBO(const Components::View* pView, const Components::Transform* pTransform)
@@ -58,18 +87,31 @@ UBO::ViewUBO ECS::System::SView::BuildMainViewUBO(const Components::View* pView,
 	UBO::ViewUBO ubo{};
 
 	using namespace DirectX;
-	const auto rotQuat = XMMatrixRotationRollPitchYawFromVector(pTransform->rotation);
+	const auto rotation = XMLoadFloat3(&pTransform->rotation);
+	const auto viewPos = XMLoadFloat3(&pTransform->position);
+	const auto rotQuat = XMMatrixRotationRollPitchYawFromVector(rotation);
 	
 	const XMVECTOR viewForward = XMVector3Transform(XMVECTORF32({ 0.f, 1.f, 0.f }), rotQuat);
 	const XMVECTOR viewRight = XMVector3Transform(XMVECTORF32({ 1.f, 0.f, 0.f }), rotQuat);
 	const XMVECTOR viewUP = XMVector3Cross(viewForward, viewRight);
 	const XMVECTOR focusPos = XMLoadFloat3(&pView->focusPosition);
 
+	if (XMVector3Equal(XMVectorSubtract(viewPos, focusPos), XMVectorZero()))
+	{
+		const auto newViewPos = XMFLOAT3(pTransform->position.x + 0.1f, pTransform->position.y, pTransform->position.z);
+		DirectX::XMStoreFloat4x4(&ubo.view, DirectX::XMMatrixLookAtRH(XMLoadFloat3(&newViewPos),
+			focusPos, viewUP));
+	}
+	else
+	{
+		DirectX::XMStoreFloat4x4(&ubo.view, DirectX::XMMatrixLookAtRH(viewPos, focusPos, viewUP));
+	}
 	//DEBUG_LOG(stltype::to_string(totalDt));
 	//DirectX::XMStoreFloat4x4(&ubo.model, DirectX::XMMatrixRotationAxis(DirectX::XMVECTORF32({ 0.f, 0.f, 1.f }), DirectX::XMConvertToRadians(45.f * totalDt)));
 	//DEBUG_LOG(stltype::to_string(totalDt));
-	DirectX::XMStoreFloat4x4(&ubo.view, DirectX::XMMatrixLookAtRH(DirectX::XMVECTORF32({ 0, 5.f, 2.f }), focusPos, viewUP));
-	DirectX::XMStoreFloat4x4(&ubo.projection, DirectX::XMMatrixPerspectiveFovRH(DirectX::XMConvertToRadians(pView->FoV), FrameGlobals::GetScreenAspectRatio(), pView->zNear, pView->zFar));
+	DirectX::XMStoreFloat4x4(&ubo.projection, DirectX::XMMatrixPerspectiveFovRH(DirectX::XMConvertToRadians(pView->fov), FrameGlobals::GetScreenAspectRatio(), 
+		stltype::max(pView->zNear, 0.000001f), // Prevent division by zero
+		pView->zFar));
 
 	return ubo;
 }

@@ -1,6 +1,6 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
-#include "VertexDefines.h"
+#include "Defines/VertexDefines.h"
 #include "View.h"
 
 #ifdef USE_VULKAN
