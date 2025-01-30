@@ -16,8 +16,8 @@ public:
 	~TextureVulkan();
 	virtual void CleanUp() override;
 
-	void SetImageView(VkImageView view) { m_imageView = view; }
-	void SetSampler(VkSampler sampler) { m_sampler = sampler; }
+	void SetImageView(VkImageView view);
+	void SetSampler(VkSampler sampler);
 
 	VkImageView GetImageView() const { return m_imageView; }
 	VkImage GetImage() const { return m_image; }

@@ -29,6 +29,7 @@ void GenBufferVulkan::Create(BufferCreateInfo& info)
     }
 
     DEBUG_ASSERT(vkCreateBuffer(VK_LOGICAL_DEVICE, &bufferInfo, VulkanAllocator(), &m_buffer) == VK_SUCCESS);
+    DEBUG_ASSERT(m_buffer != VK_NULL_HANDLE);
 
     m_info.size = size;
     m_info.usage = info.usage;
@@ -47,8 +48,11 @@ void GenBufferVulkan::CleanUp()
     auto bufferHandle = m_buffer;
     auto memory = m_allocatedMemory;
 
-    vkDestroyBuffer(VK_LOGICAL_DEVICE, bufferHandle, VulkanAllocator());
-    g_pGPUMemoryManager->TryFreeMemory(memory);
+    g_pDeleteQueue->RegisterDeleteForNextFrame([bufferHandle, memory]() mutable
+        {
+            vkDestroyBuffer(VK_LOGICAL_DEVICE, bufferHandle, VulkanAllocator());
+            g_pGPUMemoryManager->TryFreeMemory(memory);
+        });
 }
 
 void GenBufferVulkan::FillImmediate(const void* data)
@@ -57,15 +61,15 @@ void GenBufferVulkan::FillImmediate(const void* data)
     MapAndCopyToMemory(GetMemoryHandle(), data, GetInfo().size, 0);
 }
 
-void GenBufferVulkan::FillAndTransfer(StagingBuffer& stgBuffer, CommandBuffer* transferBuffer, const void* data, bool freeStagingBuffer)
+void GenBufferVulkan::FillAndTransfer(StagingBuffer& stgBuffer, CommandBuffer* transferBuffer, const void* data, bool freeStagingBuffer, u64 offset)
 {
     CheckCopyArgs(data, UINT64_MAX, 0);
     DEBUG_ASSERT(stgBuffer.GetRef() != VK_NULL_HANDLE);
 
-    MapAndCopyToMemory(stgBuffer.GetMemoryHandle(), data, stgBuffer.GetInfo().size, 0);
+    MapAndCopyToMemory(stgBuffer.GetMemoryHandle(), data, stgBuffer.GetInfo().size, offset);
     SimpleBufferCopyCmd copyCmd{&stgBuffer, this};
 	copyCmd.srcOffset = 0;
-	copyCmd.dstOffset = 0;
+	copyCmd.dstOffset = offset;
 	copyCmd.size = m_info.size;
 
     if (freeStagingBuffer)
@@ -98,7 +102,7 @@ void GenBufferVulkan::UnmapMemory()
 void GenBufferVulkan::MapAndCopyToMemory(const GPUMemoryHandle& memory, const void* data, u64 size, u64 offset)
 {
     const auto bufferData = g_pGPUMemoryManager->MapMemory(memory, m_info.size);
-    memcpy(bufferData, data, (size_t)m_info.size);
+    memcpy((char*)bufferData, data, (size_t)m_info.size);
     g_pGPUMemoryManager->UnmapMemory(memory);
 }
 

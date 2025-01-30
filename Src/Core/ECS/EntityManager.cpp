@@ -3,6 +3,8 @@
 #include "Systems/RenderThread/SView.h"
 #include "Systems/SLight.h"
 #include "Systems/STransform.h"
+#include "Systems/SAABB.h"
+#include "Systems/SDebugDisplay.h"
 
 namespace ECS
 {
@@ -10,6 +12,7 @@ namespace ECS
 
 	EntityManager::EntityManager()
 	{
+
 		g_pEventSystem->AddAppInitEventCallback([this](const AppInitEventData& data)
 			{
 				for (auto& pSystem : m_systems)
@@ -25,6 +28,8 @@ namespace ECS
 		m_systems.emplace_back(stltype::make_unique<System::SView>());
 		m_systems.emplace_back(stltype::make_unique<System::SRenderComponent>());
 		m_systems.emplace_back(stltype::make_unique<System::SLight>());
+		m_systems.emplace_back(stltype::make_unique<System::SAABB>());
+		m_systems.emplace_back(stltype::make_unique<System::SDebugDisplay>());
 	}
 
 	Entity EntityManager::CreateEntity(const DirectX::XMFLOAT3& position)
@@ -34,7 +39,7 @@ namespace ECS
 		m_entityComponentMap.emplace(newEntity, ComponentInfo{});
 
 		AddComponent(newEntity, Transform{ position });
-		MarkEntityDirty(newEntity, COMP_ID(Transform));
+		MarkComponentDirty(newEntity, COMP_ID(Transform));
 		return newEntity;
 	}
 
@@ -44,7 +49,7 @@ namespace ECS
 		m_entityComponentMap.erase(entity);
 	}
 
-	void EntityManager::MarkEntityDirty(Entity entity, C_ID componentID)
+	void EntityManager::MarkComponentDirty(Entity entity, C_ID componentID)
 	{
 		/*DEBUG_ASSERT(stltype::find(m_entities.begin(), m_entities.end(), entity) != m_entities.end());
 		auto it = stltype::find(m_dirtyEntities.begin(), m_dirtyEntities.end(), entity);
@@ -52,7 +57,7 @@ namespace ECS
 			m_dirtyEntities.emplace_back(entity, { componentID });
 		else
 			it->components.emplace_back(componentID);*/
-		DEBUG_ASSERT(stltype::find(m_entities.begin(), m_entities.end(), entity) != m_entities.end());
+		//DEBUG_ASSERT(stltype::find(m_entities.begin(), m_entities.end(), entity) != m_entities.end());
 		u32 frameIdx = FrameGlobals::GetFrameNumber();
 		auto& dirtyCompVec = m_dirtyComponents[frameIdx];
 		auto it = stltype::find(dirtyCompVec.begin(), dirtyCompVec.end(), componentID);
@@ -67,7 +72,7 @@ namespace ECS
 		for (auto& pSystem : m_systems)
 		{
 			if(pSystem->AccessesAnyComponents(m_dirtyComponents[frameIdx]))
-				pSystem->SyncData();
+				pSystem->SyncData(frameIdx);
 		}
 		m_dirtyComponents[frameIdx].clear();
 	}

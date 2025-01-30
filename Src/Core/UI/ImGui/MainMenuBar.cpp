@@ -34,21 +34,31 @@ void MainMenuBar::DrawMenuBar(f32 dt, ApplicationInfos& appInfos)
 			{
 				m_statsWindow.SetOpen(true);
 			}
+			if (ImGui::MenuItem("Debug Settings", ""))
+			{
+				m_debugSettingsWindow.SetOpen(true);
+			}
 			ImGui::EndMenu();
 		}
 		ImGui::EndMainMenuBar();
-		if(m_debugInfoWindow.IsOpen())
-		{
-			m_debugInfoWindow.DrawWindow(dt, appInfos);
-			appInfos.infos.clear();
-		}
-		if (m_statsWindow.IsOpen())
-		{
-			m_statsWindow.DrawWindow(dt);
-		}
-		if(m_selectedEntitiesWindow.IsOpen())
-		{
-			m_selectedEntitiesWindow.DrawWindow(m_lastUpdateState);
-		}
+	}
+
+	if (m_debugInfoWindow.IsOpen())
+	{
+		m_debugInfoWindow.DrawWindow(dt, appInfos);
+		appInfos.infos.clear();
+	}
+	if (m_statsWindow.IsOpen())
+	{
+		m_statsWindow.DrawWindow(dt);
+	}
+	if (m_selectedEntitiesWindow.IsOpen())
+	{
+		m_selectedEntitiesWindow.DrawWindow(m_lastUpdateState);
+	}
+
+	if (m_debugSettingsWindow.IsOpen())
+	{
+		m_debugSettingsWindow.DrawWindow(dt);
 	}
 }

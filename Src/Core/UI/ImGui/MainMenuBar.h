@@ -3,6 +3,7 @@
 #include "UIElement.h"
 #include "DebugWindows/InfoWindow.h"
 #include "DebugWindows/StatsWindow.h"
+#include "DebugWindows/DebugSettings.h"
 #include "Controls/SelectedEntitiesWindow.h"
 
 class MainMenuBar : public SelfInstantiatingUIElement<MainMenuBar>
@@ -19,6 +20,7 @@ public:
 private:
 	InfoWindow m_debugInfoWindow;
 	StatsWindow m_statsWindow;
+	DebugSettingsWindow m_debugSettingsWindow;
 	SelectedEntityWindow m_selectedEntitiesWindow;
 	UpdateEventData m_lastUpdateState;
 };

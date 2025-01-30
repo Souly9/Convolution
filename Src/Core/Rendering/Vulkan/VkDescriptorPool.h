@@ -7,6 +7,7 @@ class DescriptorSetVulkan
 {
 public:
 	DescriptorSetVulkan();
+	DescriptorSetVulkan(u32 binding);
 	DescriptorSetVulkan(VkDescriptorSet descriptorSet) : m_descriptorSet(descriptorSet) {}
 
 	void SetBindingSlot(u32 binding);
@@ -14,9 +15,9 @@ public:
 	VkDescriptorSet GetRef() const;
 
 	// Updates the descriptor set's buffer with the supplied data
-	void WriteBufferUpdate(const GenericBuffer& buffer);
-	void WriteSSBOUpdate(const GenericBuffer& buffer);
-	void WriteBufferUpdate(const GenericBuffer& buffer, bool isUBO, u32 size, u32 offset = 0);
+	void WriteBufferUpdate(const GenericBuffer& buffer, u32 bindingSlot = 0);
+	void WriteSSBOUpdate(const GenericBuffer& buffer, u32 bindingSlot = 0);
+	void WriteBufferUpdate(const GenericBuffer& buffer, bool isUBO, u32 size, u32 bindingSlot = 0, u32 offset = 0);
 	void WriteBindlessTextureUpdate(const TextureVulkan* pTex, u32 idx);
 
 private:

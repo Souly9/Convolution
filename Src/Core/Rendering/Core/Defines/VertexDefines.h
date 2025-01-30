@@ -2,9 +2,12 @@
 #include <vulkan/vulkan.h>
 #include "Core/Global/GlobalDefines.h"
 
-struct SimpleVertex
+struct MinVertex
 {
 	DirectX::XMFLOAT3 position;
+};
+struct SimpleVertex : public MinVertex
+{
 	DirectX::XMFLOAT3 normal;
 };
 
@@ -45,7 +48,7 @@ namespace ConcreteVIS
 	using namespace VertexInputDefines;
 	static inline const VertexAttributeInfo g_completeVertexInputInfo = VertexAttributeInfo
 	{
-	.attributes = stltype::vector<VertexAttributes>{ VertexAttributes::Position, VertexAttributes::Color0, VertexAttributes::TexCoord0 }
+	.attributes = stltype::vector<VertexAttributes>{ VertexAttributes::Position, VertexAttributes::Normal, VertexAttributes::TexCoord0 }
 	};
 
 	static inline const VertexAttributeInfo g_positionOnlyVertexInputInfo = VertexAttributeInfo
@@ -64,21 +67,24 @@ static inline const stltype::hash_map<VertexInputDefines::VertexAttributes, u32>
 {
 	{ VertexInputDefines::VertexAttributes::Position,		sizeof(DirectX::XMFLOAT3) },
 	{ VertexInputDefines::VertexAttributes::Color0,	        sizeof(DirectX::XMFLOAT3) },
-	{ VertexInputDefines::VertexAttributes::TexCoord0,	    sizeof(DirectX::XMFLOAT2) }
+	{ VertexInputDefines::VertexAttributes::TexCoord0,	    sizeof(DirectX::XMFLOAT2) },
+	{ VertexInputDefines::VertexAttributes::Normal,	        sizeof(DirectX::XMFLOAT3) }
 };
 
 static inline const stltype::hash_map<VertexInputDefines::VertexAttributes, u32> g_VertexAttributeBindingMap =
 {
 	{ VertexInputDefines::VertexAttributes::Position,		0 },
 	{ VertexInputDefines::VertexAttributes::Color0,	        0 },
-	{ VertexInputDefines::VertexAttributes::TexCoord0,	    0 }
+	{ VertexInputDefines::VertexAttributes::TexCoord0,	    0 },
+	{ VertexInputDefines::VertexAttributes::Normal,	        0 }
 };
 
 static inline const stltype::hash_map<VertexInputDefines::VertexAttributes, u32> g_VertexAttributeLocationMap =
 {
 	{ VertexInputDefines::VertexAttributes::Position,		0 },
-	{ VertexInputDefines::VertexAttributes::Color0,	        1 },
-	{ VertexInputDefines::VertexAttributes::TexCoord0,	    2 }
+	{ VertexInputDefines::VertexAttributes::Color0,	        8 },
+	{ VertexInputDefines::VertexAttributes::TexCoord0,	    2 },
+	{ VertexInputDefines::VertexAttributes::Normal,         1 }
 };
 
 #ifdef USE_VULKAN
@@ -86,6 +92,7 @@ static inline const stltype::hash_map<VertexInputDefines::VertexAttributes, VkFo
 {
 	{ VertexInputDefines::VertexAttributes::Position,		VK_FORMAT_R32G32B32_SFLOAT },
 	{ VertexInputDefines::VertexAttributes::Color0,	        VK_FORMAT_R32G32B32_SFLOAT },
-	{ VertexInputDefines::VertexAttributes::TexCoord0,	    VK_FORMAT_R32G32_SFLOAT }
+	{ VertexInputDefines::VertexAttributes::TexCoord0,	    VK_FORMAT_R32G32_SFLOAT },
+	{ VertexInputDefines::VertexAttributes::Normal,	        VK_FORMAT_R32G32B32_SFLOAT }
 };
 #endif

@@ -29,6 +29,12 @@ public:
 	};
 	void SubmitCommandBufferAsync(const CommandBufferRequest& request);
 
+	struct MinMeshTransfer
+	{
+		stltype::vector<MinVertex> vertices;
+		stltype::vector<u32> indices;
+		RenderPass* pRenderPass; // Will have its vertex and index buffer set once the command is created by the handler
+	};
 	struct MeshTransfer
 	{
 		stltype::vector<CompleteVertex> vertices;
@@ -40,8 +46,10 @@ public:
 	{
 		void* data;
 		u64 size;
+		u64 offset = 0;
 		DescriptorSet* pDescriptorSet;
 		StorageBuffer* pStorageBuffer;
+		u32 dstBinding{ 0 };
 	};
 
 	struct SSBODeviceBufferTransfer
@@ -50,7 +58,7 @@ public:
 		GenericBuffer* pDst;
 		DescriptorSet* pDescriptorSet;
 	};
-	using TransferCommand = stltype::variant<MeshTransfer, SSBOTransfer, SSBODeviceBufferTransfer>;
+	using TransferCommand = stltype::variant<MeshTransfer, MinMeshTransfer, SSBOTransfer, SSBODeviceBufferTransfer>;
 
 	void SubmitTransferCommandAsync(const TransferCommand& request);
 	void SubmitTransferCommandAsync(const Mesh* request, RenderPass* pRenderPass);
@@ -61,9 +69,12 @@ public:
 protected:
 	template<typename T>
 	void BuildTransferCommand(const T& request, CommandBuffer* pCmdBuffer) { DEBUG_ASSERT(false); }
+	void BuildTransferCommand(const MinMeshTransfer& request, CommandBuffer* pCmdBuffer);
 	void BuildTransferCommand(const MeshTransfer& request, CommandBuffer* pCmdBuffer);
 	void BuildTransferCommand(const SSBOTransfer& request, CommandBuffer* pCmdBuffer);
 	void BuildTransferCommand(const SSBODeviceBufferTransfer& request, CommandBuffer* pCmdBuffer);
+
+	void BuildTransferCommandBuffer(void* pVertData, u64 vertDataSize, const stltype::vector<u32>& indices, RenderPass* pRenderPass, CommandBuffer* pCmdBuffer);
 
 	void SubmitCommandBuffers(const stltype::vector<CommandBufferRequest>& commandBuffers);
 

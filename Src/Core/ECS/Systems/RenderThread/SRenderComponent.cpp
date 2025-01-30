@@ -11,20 +11,27 @@ void ECS::System::SRenderComponent::Process()
 {
 }
 
-void ECS::System::SRenderComponent::SyncData()
+void ECS::System::SRenderComponent::SyncData(u32 currentFrame)
 {
 	// Not that beautiful but don't want to get into archetypes for now and the view system won't run often or on many entities either way
 	const auto& renderComps = g_pEntityManager->GetComponentVector<Components::RenderComponent>();
+	const auto& debugRenderComps = g_pEntityManager->GetComponentVector<Components::DebugRenderComponent>();
 
 	RenderPasses::EntityMeshDataMap dataMap;
 	dataMap.reserve(renderComps.size());
 
 	for (const auto& renderComp : renderComps)
 	{
-		dataMap[renderComp.entity.ID] = RenderPasses::EntityMeshData{ renderComp.component.pMesh, renderComp.component.pMaterial };
+		dataMap[renderComp.entity.ID].emplace_back(renderComp.component.pMesh, renderComp.component.pMaterial, false);
+	}
+	for (const auto& renderComp : debugRenderComps)
+	{
+		if(renderComp.component.shouldRender == false) continue;
+
+		dataMap[renderComp.entity.ID].emplace_back(renderComp.component.pMesh, renderComp.component.pMaterial, true);
 	}
 
-	m_pPassManager->SetEntityMeshDataForFrame(std::move(dataMap), FrameGlobals::GetFrameNumber());
+	m_pPassManager->SetEntityMeshDataForFrame(std::move(dataMap), currentFrame);
 }
 
 bool ECS::System::SRenderComponent::AccessesAnyComponents(const stltype::vector<C_ID>& components)

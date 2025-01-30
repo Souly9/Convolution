@@ -21,34 +21,36 @@ void RenderThread::RenderLoop()
 	{
 		m_pImGuiManager->BeginFrame();
 		WaitForGameThreadAndPreviousFrame();
-		m_passManager.BlockUntilPassesFinished(currentFrame);
 
 		// Start imgui frame, update frame numbers
 		{
+			lastFrame = currentFrame;
 			currentFrame = FrameGlobals::GetFrameNumber();
-			lastFrame = FrameGlobals::GetPreviousFrameNumber(currentFrame);
 
 		}
 		// First sync game data with renderthread
 		{
+			m_passManager.BlockUntilPassesFinished(lastFrame);
 			g_pEntityManager->SyncSystemData(lastFrame);
 
+			// Renderer done so we can take care of any deferred deletes
+			g_pDeleteQueue->ProcessDeleteQueue();
 		}
 
 		// Sync ended, signal gamethread
 		g_renderThreadReadSemaphore.Post();
+		g_imguiSemaphore.Wait();
 
 		{
-			m_passManager.PreProcessDataForCurrentFrame();
+			m_passManager.PreProcessDataForCurrentFrame(lastFrame);
 			g_pQueueHandler->WaitForFences();
 		}
 
 		{
-			m_passManager.ExecutePasses(FrameGlobals::GetFrameNumber());
+			m_passManager.ExecutePasses(lastFrame);
 		}
 
 		{
-			m_pImGuiManager->EndFrame();
 			g_pTexManager->PostRender();
 		}
 	}

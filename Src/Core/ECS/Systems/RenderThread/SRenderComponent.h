@@ -14,7 +14,7 @@ namespace ECS
 			void Init(const SystemInitData& data) override;
 
 			virtual void Process() override;
-			virtual void SyncData() override;
+			virtual void SyncData(u32 currentFrame) override;
 
 			virtual bool AccessesAnyComponents(const stltype::vector<C_ID>& components) override;
 		protected:

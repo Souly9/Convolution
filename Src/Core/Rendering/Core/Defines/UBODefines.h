@@ -10,9 +10,12 @@ namespace UBO
 	{
 		View,
 		RenderPass,
+		LightUniformsUBO,
 		GenericUBO,
 		GenericSSBO,
-		GlobalTransformSSBO,
+		GlobalObjectDataSSBOs, 
+		TransformSSBO,
+		PerPassObjectSSBO,
 		TileArraySSBO,
 		Custom // Just indicate the class itself will specify all binding slots and so on
 	};
@@ -27,16 +30,22 @@ namespace UBO
 	static inline stltype::hash_map<BufferType, u32> s_UBOTypeToBindingSlot = {
 		{ BufferType::View, s_viewBindingSlot },
 		{ BufferType::RenderPass, s_renderPassBindingSlot },
-		{ BufferType::GlobalTransformSSBO, s_modelSSBOBindingSlot },
-		{ BufferType::TileArraySSBO, s_tileArrayBindingSlot }
+		{ BufferType::GlobalObjectDataSSBOs, s_globalObjectDataBindingSlot },
+		{ BufferType::TileArraySSBO, s_tileArrayBindingSlot },
+		{ BufferType::PerPassObjectSSBO, s_perPassObjectDataBindingSlot },
+		{ BufferType::TransformSSBO, s_modelSSBOBindingSlot },
+		{ BufferType::LightUniformsUBO, s_globalLightUniformsBindingSlot }
 
 	};
 
 	static inline stltype::hash_map<BufferType, ShaderTypeBits> s_UBOTypeToShaderStages = {
 		{ BufferType::View, ShaderTypeBits::Vertex },
 		{ BufferType::RenderPass, ShaderTypeBits::Vertex },
-		{ BufferType::GlobalTransformSSBO, ShaderTypeBits::All },
-		{ BufferType::TileArraySSBO, ShaderTypeBits::Fragment }
+		{ BufferType::GlobalObjectDataSSBOs, ShaderTypeBits::All },
+		{ BufferType::TileArraySSBO, ShaderTypeBits::All },
+		{ BufferType::PerPassObjectSSBO, ShaderTypeBits::All },
+		{ BufferType::TransformSSBO, ShaderTypeBits::All },
+		{ BufferType::LightUniformsUBO, ShaderTypeBits::All }
 
 	};
 }

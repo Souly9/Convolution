@@ -1,8 +1,7 @@
-﻿
-cmake_minimum_required (VERSION 3.28)
+﻿cmake_minimum_required (VERSION 3.28)
 include(FetchContent)
 Set(FETCHCONTENT_QUIET FALSE)
- 
+
 find_package(Git REQUIRED)
 if(Git_FOUND)
   message("Git found: ${GIT_EXECUTABLE}")
@@ -91,7 +90,11 @@ message(STATUS "Vulkan found at ${Vulkan_LIBRARIES}")
 find_package(IMGUI REQUIRED)
 message(STATUS "ImGui found at ${IMGUI_INCLUDE_DIR}")
 
-set(ASSIMP_LIBRARY_SEARCH_DIR ${CMAKE_SOURCE_DIR}/External/assimp-build/lib/*.lib ${CMAKE_SOURCE_DIR}/External/assimp-build/contrib/*.lib)
+if(${CMAKE_BUILD_TYPE} STREQUAL "Debug")
+set(ASSIMP_LIBRARY_SEARCH_DIR ${CMAKE_SOURCE_DIR}/External/assimp-build/lib/*d.lib ${CMAKE_SOURCE_DIR}/External/assimp-build/contrib/*d.lib)
+else()
+set(ASSIMP_LIBRARY_SEARCH_DIR ${CMAKE_SOURCE_DIR}/External/assimp-build/lib/*.lib ${CMAKE_SOURCE_DIR}/External/assimp/contrib/*.lib)
+endif()
 
 file(GLOB_RECURSE ADD_LIBS 
 	"${CMAKE_SOURCE_DIR}/External/additonal_libs/*"
@@ -129,6 +132,7 @@ SYSTEM
 	${CMAKE_SOURCE_DIR}/External/stb/
 	${CMAKE_SOURCE_DIR}/External/Assimp/include/
 	${CMAKE_SOURCE_DIR}/External/assimp-build/include/
+	${CMAKE_SOURCE_DIR}/External/SimpleMath/
 )
 
 target_compile_definitions(${NAME} PRIVATE CONV_DEBUG=1)

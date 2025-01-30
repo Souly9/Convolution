@@ -5,10 +5,24 @@
 
 namespace RenderPasses
 {
+	class ConvolutionRenderPass;
+
 	struct EntityMeshData
 	{
 		Mesh* pMesh;
 		Material* pMaterial;
+
+		EntityMeshData(Mesh* pM, Material* pMat, bool isDebug) : pMesh(pM), pMaterial(pMat) { flags[s_isDebugMeshFlag] = isDebug; }
+
+		bool IsDebugMesh() const { return flags[s_isDebugMeshFlag]; }
+		bool IsInstanced() const { return flags[s_isInstancedFlag]; }
+		bool SetDebugMesh() { return flags[s_isDebugMeshFlag] = true; }
+		bool SetInstanced() { return flags[s_isInstancedFlag] = true; }
+
+	protected:
+		static inline u8 s_isDebugMeshFlag = 0;
+		static inline u8 s_isInstancedFlag = 1;
+		stltype::bitset<8> flags{};
 	};
 
 	// Generic struct that stores the data by a pass to render the mesh (e.g. the static mesh pass)
@@ -16,13 +30,16 @@ namespace RenderPasses
 	{
 		EntityMeshData meshData;
 		// Index into the transform UBO
-		u32 transformUBOIdx;
+		u32 transformIdx;
+		u32 perObjectDataIdx;
 	};
 
-	using EntityMeshDataMap = stltype::hash_map<u64, EntityMeshData>;
+	using EntityMeshDataMap = stltype::hash_map<u64, stltype::vector<EntityMeshData>>;
+	using EntityDebugMeshDataMap = stltype::hash_map<u64, EntityMeshData>;
 	using TransformSystemData = stltype::hash_map<ECS::EntityID, DirectX::XMFLOAT4X4>;
 	using EntityTransformData = stltype::pair<stltype::vector<ECS::EntityID>, stltype::vector<DirectX::XMFLOAT4X4>>;
 	using LightVector = stltype::vector<RenderLight>;
+	using EntityMaterialMap = stltype::hash_map<u64, stltype::vector<Material*>>;
 
 	struct EntityRenderData
 	{
@@ -44,21 +61,24 @@ namespace RenderPasses
 		stltype::hash_map<UBO::BufferType, DescriptorSet*> bufferDescriptors;
 	};
 
+	struct RenderPassSynchronizationContext
+	{
+		Semaphore* waitSemaphore;
+		Semaphore signalSemaphore;
+		Fence finishedFence;
+	};
+
 	struct FrameRendererContext
 	{
-		StorageBuffer tileArraySSBO;
+		DescriptorSet* modelSSBODescriptor;
+		DescriptorSet* globalObjectDataDescriptor;
 		DescriptorSet* tileArraySSBODescriptor;
-		UBO::GlobalTileArraySSBO tileArray;
+		DescriptorSet* mainViewUBODescriptor;
 
-		Semaphore imageAvailableSemaphore{};
-		// Semaphores to sync with the main passes (static meshes etc), in case passes want to write onto the finished color buffer of this frame
-		Semaphore mainGeometryPassFinishedSemaphore{};
-		Fence mainGeometryPassFinishedFence{};
-		// Semaphores to sync with UI passes (mainly ImGui)
-		Semaphore mainUIPassFinishedSemaphore{};
-		Fence mainUIPassFinishedFence{};
-
-
+		Semaphore imageAvailableSemaphore;
+		Semaphore* renderingFinishedSemaphore;
+		Fence* renderingFinishedFence{ nullptr };
+		stltype::hash_map<ConvolutionRenderPass*, RenderPassSynchronizationContext> synchronizationContexts{};
 
 		u32 imageIdx;
 		u32 currentFrame;
@@ -77,14 +97,25 @@ namespace RenderPasses
 	{
 		Main,
 		UI,
+		Debug,
 		Shadow,
 		PostProcess,
 		ColorGrading
 	};
 
+	struct InstancedMeshDataInfo
+	{
+		u32 instanceCount;
+		u32 indexBufferOffset;
+		u32 instanceOffset;
+		u32 verticesPerInstance;
+	};
+
 	class ConvolutionRenderPass
 	{
 	public:
+		ConvolutionRenderPass();
+
 		virtual ~ConvolutionRenderPass() {}
 
 		virtual void BuildBuffers() = 0;
@@ -98,6 +129,9 @@ namespace RenderPasses
 		virtual void CreateSharedDescriptorLayout() = 0;
 
 		virtual void Init(const RendererAttachmentInfo& attachmentInfo) = 0;
+		virtual bool WantsToRender() const = 0;
+
+		void InitBaseData(const RendererAttachmentInfo& attachmentInfo, RenderPass& mainPass);
 	protected:
 		// Sets all vulkan vertex input attributes and returns the size of a vertex
 		u32 SetVertexAttributes(const stltype::vector<VertexInputDefines::VertexAttributes>& vertexAttributes);
@@ -107,7 +141,10 @@ namespace RenderPasses
 
 		VkVertexInputBindingDescription m_vertexInputDescription{};
 
+		CommandPool m_mainPool;
+		stltype::vector<CommandBuffer*> m_cmdBuffers;
 
+		stltype::vector<FrameBuffer> m_mainPSOFrameBuffers;
 	};
 
 	class PassManager
@@ -132,16 +169,19 @@ namespace RenderPasses
 		void SetEntityTransformDataForFrame(TransformSystemData&& data, u32 frameIdx);
 		void SetLightDataForFrame(const LightVector& data, u32 frameIdx);
 
-		void SetMainViewData(const RenderView& mainView, const stltype::vector<DescriptorSet*>& viewDescriptorSets, u32 frameIdx);
+		void SetMainViewData(UBO::ViewUBO&& viewUBO, u32 frameIdx);
 
-		void PreProcessDataForCurrentFrame();
+		void PreProcessDataForCurrentFrame(u32 frameIdx);
 
 		void RegisterDebugCallbacks();
 
+		void UpdateMainViewUBO(const void* data, size_t size, u32 frameIdx);
 		void UpdateGlobalTransformSSBO(const UBO::GlobalTransformSSBO& data, u32 frameIdx);
+		void UpdateGlobalObjectDataSSBO(const UBO::GlobalObjectDataSSBO& data, u32 frameIdx);
 		void UpdateWholeTileArraySSBO(const UBO::GlobalTileArraySSBO& data, u32 frameIdx);
 		void UpateTileInTileSSBO(const UBO::Tile& tile, u32 tileIdx, u32 frameIdx);
 
+		void DispatchSSBOTransfer(void* data, DescriptorSet* pDescriptor, u32 size, StorageBuffer* pSSBO, u32 offset = 0, u32 dstBinding = 0);
 		void BlockUntilPassesFinished(u32 frameIdx);
 	protected:
 		void PreProcessMeshData(const stltype::vector<PassMeshData>& meshes);
@@ -151,26 +191,37 @@ namespace RenderPasses
 
 		// Pass data for each frame
 		stltype::hash_map<PassType, stltype::vector<stltype::unique_ptr<ConvolutionRenderPass>>> m_passes{};
-		stltype::fixed_vector<PassGeometryData, FRAMES_IN_FLIGHT> m_mainPassGeometryData{ FRAMES_IN_FLIGHT };
 		stltype::fixed_vector<MainPassData, FRAMES_IN_FLIGHT> m_mainPassData{ FRAMES_IN_FLIGHT };
 		stltype::fixed_vector<FrameRendererContext, FRAMES_IN_FLIGHT> m_frameRendererContexts{};
 		stltype::hash_map<ECS::EntityID, u32> m_entityToTransformUBOIdx{};
+		stltype::hash_map<ECS::EntityID, u32> m_entityToObjectDataIdx{};
+
 		// Global transform SSBO
-		stltype::fixed_vector<StorageBuffer, FRAMES_IN_FLIGHT> m_modelSSBOs;
-		stltype::fixed_vector<GPUMappedMemoryHandle, FRAMES_IN_FLIGHT> m_mappedModelSSBOs;
-		stltype::vector<DescriptorSet*> m_modelSSBODescriptors;
+		StorageBuffer m_modelSSBOs;
+		StorageBuffer m_tileArraySSBO;
+		UniformBuffer m_viewUBO;
+		UniformBuffer m_lightUniformsUBO;
+		StorageBuffer m_perObjectDataSSBO;
+		UBO::GlobalTileArraySSBO m_tileArray;
+		GPUMappedMemoryHandle m_mappedViewUBOBuffer;
+		GPUMappedMemoryHandle m_mappedLightUniformsUBO;
+
 		DescriptorPool m_descriptorPool;
-		DescriptorSetLayoutVulkan m_modelSSBOLayout;
+		DescriptorSetLayoutVulkan m_globalDataSSBOsLayout;
 
 		// Global tile array SSBO
 		DescriptorSetLayoutVulkan m_tileArraySSBOLayout;
+		// Global view UBO layout
+		DescriptorSetLayoutVulkan m_viewUBOLayout;
 
 		// struct to hold data for all meshes for the next frame to be rendered, uses more memory but allows for async pre-processing and we shouldn't rebuild data often anyway
 		struct RenderDataForPreProcessing
 		{
 			EntityMeshDataMap entityMeshData{};
+			EntityMaterialMap entityMaterialData{};
 			TransformSystemData entityTransformData{};
 			LightVector lightVector{};
+			stltype::optional<UBO::ViewUBO> mainViewUBO{};
 			u32 frameIdx{ 99 };
 
 			bool IsValid() const
@@ -179,7 +230,7 @@ namespace RenderPasses
 			}
 			bool IsEmpty() const
 			{
-				return entityMeshData.size() == 0 && entityTransformData.size() == 0 && lightVector.size() == 0;
+				return entityMeshData.size() == 0 && entityTransformData.size() == 0 && lightVector.size() == 0 && entityMaterialData.size() == 0;
 			}
 
 			void Clear()

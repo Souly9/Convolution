@@ -23,7 +23,7 @@ struct KeyHoldEventData
 using KeyHoldEventCallback = stltype::fixed_function<8, void(const KeyHoldEventData&)>;
 struct LeftMouseClickEventData
 {
-	DirectX::XMUINT2 mousePos;
+	double mousePosX, mousePosY;
 };
 using LeftMouseClickEventCallback = stltype::fixed_function<8, void(const LeftMouseClickEventData&)>;
 struct MouseMoveEventData

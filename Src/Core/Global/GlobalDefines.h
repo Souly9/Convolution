@@ -1,4 +1,7 @@
 #pragma once
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <EASTL/allocator.h>
 #include <EAStdC/EAString.h>
 #include <EASTL/string.h>
@@ -12,6 +15,7 @@
 #include <EASTL/optional.h>
 #include <DirectXMath.h>
 #include <DirectXPackedVector.h>
+#include <SimpleMath.h>
 #include <cassert>
 #include <functional>
 #include <EASTL/hash_map.h>
@@ -21,8 +25,9 @@
 #include <EAThread/eathread_futex.h>
 #include <EASTL/bitset.h>
 #include <EASTL/fixed_function.h>
+#include "Core/../../Shaders/Globals/BindingSlots.h"
 
-#ifndef NDEBUG
+#if CONV_DEBUG
 #define ASSERT(x) assert(x)
 #else 
 #undef CONV_DEBUG
@@ -30,10 +35,9 @@
 #endif
 #define DEBUG_ASSERT(x) ASSERT(x)
 
-namespace eastl {}
-
 namespace stltype = eastl;
 namespace threadSTL = EA::Thread;
+namespace mathstl = DirectX::SimpleMath;
 
 #include "Typedefs.h"
 
@@ -41,8 +45,6 @@ const static inline stltype::string ENGINE_NAME = "Convolution";
 constexpr static inline u32 FRAMES_IN_FLIGHT = 2u;
 constexpr static inline u32 MAX_BINDLESS_TEXTURES = 16536;
 constexpr static inline u32 MAX_MESHES = 4096;
-constexpr static inline u32 MAX_MATERIALS = 1024;
-constexpr static inline u32 MAX_ENTITIES = 8096;
 constexpr static inline u32 MAX_TILES = 1;
 constexpr static inline u32 MAX_LIGHTS_PER_TILE = 32;
 
@@ -79,3 +81,7 @@ using RenderAPI = Vulkan;
 
 #define CUR_FRAME FrameGlobals::GetFrameNumber()
 #define COMP_ID(component) ECS::ComponentID<ECS::Components::##component>::ID
+
+static inline constexpr f32 FLOAT_TOLERANCE = 0.00001f;
+
+static inline constexpr f32 AMBIENT_STRENGTH = 0.1f;

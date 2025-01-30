@@ -2,6 +2,7 @@
 #include "BindingSlots.h"
 
 #define MAX_LIGHTS_PER_TILE 32
+#define TileArraySet 3
 
 struct Light
 {
@@ -13,8 +14,18 @@ struct Light
 struct Tile
 {
 	Light lights[MAX_LIGHTS_PER_TILE];
-};
-layout(std140, set = 3, binding = GlobalTileArraySSBOSlot) readonly buffer GlobalTileSSBO
+}; 
+layout(std430, set = TileArraySet, binding = GlobalTileArraySSBOSlot) readonly buffer GlobalTileSSBO
 {
 	Tile tiles[];
 } lightTileArraySSBO;
+
+struct LightUniforms
+{
+	vec4 CameraPos;
+	vec4 LightGlobals; // ambient
+};
+layout(std140, set = TileArraySet, binding = GlobalLightDataUBOSlot) uniform LightUBO
+{
+	LightUniforms data;
+} lightUniforms;

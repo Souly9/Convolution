@@ -1,4 +1,3 @@
-#include <GLFW/glfw3.h>
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Rendering/RenderLayer.h"
 #include "Core/Rendering/Passes/PassManager.h"
@@ -17,11 +16,13 @@ int main() {
         Application app(true, layer);
         app.Run();
     }
+    g_pQueueHandler.reset();
     g_pTexManager.reset();
     g_pEntityManager.reset();
     g_pQueueHandler.reset();
     g_pFileReader.reset();
     g_pMeshManager.reset();
+    g_pDeleteQueue->ForceEmptyQueue();
     g_pGPUMemoryManager.reset();
     layer.CleanUp();
     return 0;

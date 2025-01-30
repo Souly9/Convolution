@@ -114,30 +114,32 @@ VkDescriptorSet DescriptorSetVulkan::GetRef() const
 	return m_descriptorSet;
 }
 
-void DescriptorSetVulkan::WriteBufferUpdate(const GenericBuffer& buffer)
+void DescriptorSetVulkan::WriteBufferUpdate(const GenericBuffer& buffer, u32 bindingSlot)
 {
-	WriteBufferUpdate(buffer, true, buffer.GetInfo().size, 0);
+	WriteBufferUpdate(buffer, true, buffer.GetInfo().size, bindingSlot, 0);
 }
 
-void DescriptorSetVulkan::WriteSSBOUpdate(const GenericBuffer& buffer)
+void DescriptorSetVulkan::WriteSSBOUpdate(const GenericBuffer& buffer, u32 bindingSlot)
 {
-	WriteBufferUpdate(buffer, false, buffer.GetInfo().size, 0);
+	WriteBufferUpdate(buffer, false, buffer.GetInfo().size, bindingSlot, 0);
 }
 
-void DescriptorSetVulkan::WriteBufferUpdate(const GenericBuffer& buffer, bool isUBO, u32 size, u32 offset)
+void DescriptorSetVulkan::WriteBufferUpdate(const GenericBuffer& buffer, bool isUBO, u32 size, u32 bindingSlot,  u32 offset)
 {
-	DEBUG_ASSERT(m_bindingSlot != 0);
+	if (bindingSlot == 0)
+		bindingSlot = m_bindingSlot;
+	DEBUG_ASSERT(bindingSlot != 0);
 
 	VkDescriptorBufferInfo bufferInfo{};
 	bufferInfo.buffer = buffer.GetRef();
 	bufferInfo.offset = offset;
-	bufferInfo.range = size;
+	bufferInfo.range = VK_WHOLE_SIZE;
 
 	VkWriteDescriptorSet descriptorWrite{};
 	descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 	descriptorWrite.dstSet = GetRef();
-	descriptorWrite.dstBinding = m_bindingSlot;
-	descriptorWrite.dstArrayElement = 0;
+	descriptorWrite.dstBinding = bindingSlot;
+	descriptorWrite.dstArrayElement = offset;
 	descriptorWrite.descriptorType = isUBO ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 	descriptorWrite.descriptorCount = 1; 
 	descriptorWrite.pBufferInfo = &bufferInfo;

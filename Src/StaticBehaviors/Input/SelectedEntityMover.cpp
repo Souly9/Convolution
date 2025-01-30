@@ -13,7 +13,7 @@ void SelectedEntityMover::RegisterCallbacks()
 void SelectedEntityMover::OnKeyPress(const KeyPressEventData& data)
 {
 	const auto baseMoveVal = 1;
-	const auto moveVal = baseMoveVal * 5.f;
+	const auto moveVal = baseMoveVal * 50.f;
 	if(data.key == KeyType::ForwardMove)
 	{
 		s_moveVector.x -= baseMoveVal;
@@ -51,5 +51,6 @@ void SelectedEntityMover::OnUpdate(const UpdateEventData& data)
 		);
 
 		s_moveVector = XMFLOAT2(0, 0);
+		g_pEntityManager->MarkComponentDirty(data.state.mainCameraEntity, ECS::ComponentID<ECS::Components::Transform>::ID);
 	}
 }
