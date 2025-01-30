@@ -5,17 +5,19 @@
 
 using DeleteFunction = stltype::function<void()>;
 
-class DeleteQueue : public ThreadBase
+class DeleteQueue
 {
 public:
 	DeleteQueue();
 
 	void ProcessDeleteQueue();
+	void ForceEmptyQueue();
 
 	void RegisterDelete(DeleteFunction&& func);
 	void RegisterDeleteForNextFrame(DeleteFunction&& func);
 
 protected:
+	threadSTL::Futex m_sharedDataMutex;
 	stltype::queue<DeleteFunction> m_deleteQueue;
 	struct DelayedDelete
 	{

@@ -26,7 +26,7 @@ public:
 	void FillImmediate(const void* data);
 
 	// Fill buffer using staging buffer
-	void FillAndTransfer(StagingBuffer& stgBuffer, CommandBuffer* transferBuffer, const void* data, bool freeStagingBuffer = false);
+	void FillAndTransfer(StagingBuffer& stgBuffer, CommandBuffer* transferBuffer, const void* data, bool freeStagingBuffer = false, u64 offset = 0);
 
 	GPUMappedMemoryHandle MapMemory();
 	void UnmapMemory();

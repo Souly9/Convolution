@@ -16,8 +16,8 @@ static inline bool DrawFloat3Visualizer(const char* label, DirectX::XMFLOAT3& va
 	hasChanged |= ImGui::DragFloat("X", &value.x, MIN_STEP_SIZE); ImGui::SameLine();
 	hasChanged |= ImGui::DragFloat("Y", &value.y, MIN_STEP_SIZE); ImGui::SameLine();
 	hasChanged |= ImGui::DragFloat("Z", &value.z, MIN_STEP_SIZE);
-	ImGui::PopItemWidth();
 	ImGui::PopID();
+	ImGui::PopItemWidth();
 	return hasChanged;
 }
 static inline bool DrawFloatSlider(const char* label, f32* value, f32 min = -10000.f, f32 max = 10000.f, ImGuiSliderFlags flags = ImGuiSliderFlags_AlwaysClamp)
@@ -28,7 +28,7 @@ static inline bool DrawFloatSlider(const char* label, f32* value, f32 min = -100
 	ImGui::PushID(label);
 	ImGui::Text(label); ImGui::SameLine(MIN_WIDTH);
 	ImGui::DragFloat("", value, MIN_STEP_SIZE, min, max, "%.3f", flags);
-	ImGui::PopItemWidth();
 	ImGui::PopID();
+	ImGui::PopItemWidth();
 	return hasChanged;
 }

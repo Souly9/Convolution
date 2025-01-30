@@ -3,46 +3,15 @@
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Rendering/Core/RenderingTypeDefs.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
+#include "Utils/RenderPassUtils.h"
 
 namespace RenderPasses
 {
-	void ConvolutionRenderPass::SetVertexInputDescriptions(VertexInputDefines::VertexAttributeTemplates vertexInputType)
-	{
-		const auto vertAttributes = g_VertexInputToRenderDefs.at(vertexInputType);
-		const auto totalOffset = SetVertexAttributes(vertAttributes.attributes);
-
-		DEBUG_ASSERT(totalOffset != 0);
-
-		m_vertexInputDescription = VkVertexInputBindingDescription{};
-		m_vertexInputDescription.binding = 0;
-		m_vertexInputDescription.stride = totalOffset;
-		m_vertexInputDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-	}
-
-	u32 ConvolutionRenderPass::SetVertexAttributes(const stltype::vector<VertexInputDefines::VertexAttributes>& vertexAttributes)
-	{
-		m_attributeDescriptions.clear();
-		u32 offset = 0;
-		for (const auto& attribute : vertexAttributes)
-		{
-			VkVertexInputAttributeDescription attributeDescription{};
-			attributeDescription.binding = g_VertexAttributeBindingMap.at(attribute);
-			attributeDescription.location = g_VertexAttributeLocationMap.at(attribute);
-			attributeDescription.format = g_VertexAttributeVkFormatMap.at(attribute);
-			attributeDescription.offset = offset;
-
-			offset += g_VertexAttributeSizeMap.at(attribute);
-
-			m_attributeDescriptions.push_back(attributeDescription);
-		}
-		return offset;
-	}
-
 	void StaticMainMeshPass::BuildBuffers()
 	{
 	}
 
-	StaticMainMeshPass::StaticMainMeshPass() : m_mainPool{ CommandPool::Create(VkGlobals::GetQueueFamilyIndices().graphicsFamily.value()) }
+	StaticMainMeshPass::StaticMainMeshPass()
 	{
 		SetVertexInputDescriptions(VertexInputDefines::VertexAttributeTemplates::Complete);
 		CreateSharedDescriptorLayout();
@@ -63,13 +32,7 @@ namespace RenderPasses
 
 		m_mainPSO = PSO(mainVert, mainFrag, PipeVertInfo{ m_vertexInputDescription, m_attributeDescriptions }, info, m_mainPass);
 
-		for (const auto& attachment : attachmentInfo.swapchainTextures)
-		{
-			const stltype::vector<const TextureVulkan*> textures = { &attachment, attachmentInfo.pDepthTexture };
-			m_mainPSOFrameBuffers.emplace_back(textures, m_mainPass, attachment.GetInfo().extents);
-		}
-
-		m_cmdBuffers = m_mainPool.CreateCommandBuffers(CommandBufferCreateInfo{}, FRAMES_IN_FLIGHT);
+		InitBaseData(attachmentInfo, m_mainPass);
 	}
 
 	void StaticMainMeshPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes)
@@ -79,9 +42,14 @@ namespace RenderPasses
 		cmd.indices.reserve(meshes.size() * 30);
 		cmd.pRenderPass = &m_mainPass;
 
+		UBO::PerPassObjectDataSSBO data{};
+
 		u32 idxOffset = 0;
 		for (const auto& meshData : meshes)
 		{
+			if (meshData.meshData.IsDebugMesh())
+				continue;
+
 			const Mesh* pMesh = meshData.meshData.pMesh;
 			cmd.vertices.insert(cmd.vertices.end(), pMesh->vertices.begin(), pMesh->vertices.end());
 
@@ -90,38 +58,56 @@ namespace RenderPasses
 				cmd.indices.emplace_back(idx + idxOffset);
 			}
 			idxOffset += pMesh->indices.size() - 1;
+			data.perObjectDataIdx.push_back(g_pMaterialManager->GetMaterialIdx(meshData.meshData.pMaterial));
+			//data.perObjectDataIdx.push_back(meshData.perObjectDataIdx);
+			data.transformIdx.push_back(meshData.transformIdx);
 		}
+		RebuildPerObjectBuffer(data);
 		g_pQueueHandler->SubmitTransferCommandAsync(cmd);
 	}
 
 	void StaticMainMeshPass::Render(const MainPassData& data, const FrameRendererContext& ctx)
 	{
+		//if (NeedToRender(m_mainPass) == false) return;
+
 		const auto currentFrame = ctx.currentFrame;
+		UpdateContextForFrame(currentFrame);
+		const auto& passCtx = m_perObjectFrameContexts[currentFrame];
+
 		CommandBuffer* currentBuffer = m_cmdBuffers[currentFrame];
 		DEBUG_ASSERT(currentBuffer);
 
-		GenericIndexedDrawCmd cmd{ m_mainPSOFrameBuffers[ctx.imageIdx] , m_mainPass, m_mainPSO };
+		GenericInstancedDrawCmd cmd{ m_mainPSOFrameBuffers[ctx.imageIdx] , m_mainPass, m_mainPSO };
 		cmd.vertCount = m_mainPass.GetVertCount();
-		if(data.bufferDescriptors.empty() || data.viewDescriptorSets.empty())
+		if(data.bufferDescriptors.empty())
 			cmd.descriptorSets = { g_pTexManager->GetBindlessDescriptorSet()};
 		else
 		{
-			const auto transformSSBOSet = data.bufferDescriptors.at(UBO::BufferType::GlobalTransformSSBO);
+			const auto transformSSBOSet = data.bufferDescriptors.at(UBO::BufferType::TransformSSBO);
 			const auto tileArraySSBOSet = data.bufferDescriptors.at(UBO::BufferType::TileArraySSBO);
-			cmd.descriptorSets = { g_pTexManager->GetBindlessDescriptorSet(), data.viewDescriptorSets.at(0), transformSSBOSet, tileArraySSBOSet };
+			cmd.descriptorSets = { g_pTexManager->GetBindlessDescriptorSet(), data.mainView.descriptorSet, transformSSBOSet, tileArraySSBOSet, passCtx.m_perObjectDescriptor };
 		}
 		currentBuffer->RecordCommand(cmd);
 		currentBuffer->Bake();
 
-		SRF::SubmitCommandBufferToGraphicsQueue<RenderAPI>(ctx.imageAvailableSemaphore, ctx.mainGeometryPassFinishedSemaphore, currentBuffer, ctx.mainGeometryPassFinishedFence);
+		const auto& syncContext = ctx.synchronizationContexts.find(this)->second;
+		SRF::SubmitCommandBufferToGraphicsQueue<RenderAPI>(*syncContext.waitSemaphore, syncContext.signalSemaphore, currentBuffer, syncContext.finishedFence);
 
 	}
 
 	void StaticMainMeshPass::CreateSharedDescriptorLayout()
 	{
-		m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalTextures));
-		m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::View));
-		m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::GlobalTransformSSBO));
-		m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::TileArraySSBO));
+		m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalTextures, 0));
+		m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::View, 1));
+		m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::TransformSSBO, 2));
+		m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::GlobalObjectDataSSBOs, 2));
+		m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::TileArraySSBO, 3));
+		m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::LightUniformsUBO, 3));
+		m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::PerPassObjectSSBO, 4));
+	}
+
+	bool StaticMainMeshPass::WantsToRender() const
+	{
+		return NeedToRender(m_mainPass);
 	}
 }

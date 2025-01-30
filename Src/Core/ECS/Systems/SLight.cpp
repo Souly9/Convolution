@@ -9,7 +9,7 @@ void ECS::System::SLight::Process()
 {
 }
 
-void ECS::System::SLight::SyncData()
+void ECS::System::SLight::SyncData(u32 currentFrame)
 {
 	const auto entities = g_pEntityManager->GetEntitiesWithComponent<Components::Light>();
 	RenderPasses::LightVector lights;
@@ -22,7 +22,7 @@ void ECS::System::SLight::SyncData()
 
 		lights.push_back(ConvertToRenderLight(pLightComponent, pTransformComp));
 	}
-	m_pPassManager->SetLightDataForFrame(lights, FrameGlobals::GetFrameNumber());
+	m_pPassManager->SetLightDataForFrame(lights, currentFrame);
 }
 
 bool ECS::System::SLight::AccessesAnyComponents(const stltype::vector<C_ID>& components)

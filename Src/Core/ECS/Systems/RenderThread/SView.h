@@ -17,7 +17,7 @@ namespace ECS
 			virtual void CleanUp() override;
 
 			virtual void Process() override;
-			virtual void SyncData() override;
+			virtual void SyncData(u32 currentFrame) override;
 
 			virtual bool AccessesAnyComponents(const stltype::vector<C_ID>& components) override;
 		private:
@@ -25,12 +25,7 @@ namespace ECS
 		protected:
 			RenderPasses::PassManager* m_pPassManager;
 		private:
-			stltype::fixed_vector<UniformBuffer, FRAMES_IN_FLIGHT> m_viewUBOs;
-			stltype::fixed_vector<GPUMappedMemoryHandle, FRAMES_IN_FLIGHT> m_mappedViewUBOs;
-			stltype::vector<DescriptorSet*> m_viewUBODescriptors;
 			stltype::vector<stltype::vector<RenderView>> m_renderViews;
-			DescriptorPool m_descriptorPool;
-			DescriptorSetLayout m_viewDescLayout;
 		};
 	}
 }

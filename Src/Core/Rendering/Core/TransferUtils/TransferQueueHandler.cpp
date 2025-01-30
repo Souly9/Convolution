@@ -6,6 +6,14 @@
 AsyncQueueHandler::~AsyncQueueHandler()
 {
 	ShutdownThread();
+	for (const auto& fenceToWaitOn : m_fencesToWaitOn)
+	{
+		fenceToWaitOn.fence.WaitFor();
+	}
+	for (auto& poolPair : m_commandPools)
+	{
+		poolPair.second.ClearAll();
+	}
 }
 
 void AsyncQueueHandler::Init()
@@ -104,6 +112,7 @@ void AsyncQueueHandler::WaitForFences()
 	for (const auto& fenceToWaitOn : m_fencesToWaitOn)
 	{
 		fenceToWaitOn.fence.WaitFor();
+		fenceToWaitOn.pBuffer->CallCallbacks();
 	}
 	for (auto& poolPair : m_commandPools)
 	{
@@ -114,38 +123,33 @@ void AsyncQueueHandler::WaitForFences()
 
 }
 
+void AsyncQueueHandler::BuildTransferCommand(const MinMeshTransfer& request, CommandBuffer* pCmdBuffer)
+{
+	const auto& vertexData = request.vertices;
+	const auto& indices = request.indices;
+	const auto vertSize = sizeof(vertexData[0]);
+
+	BuildTransferCommandBuffer((void*)vertexData.data(), vertexData.size() * vertSize, indices, request.pRenderPass, pCmdBuffer);
+}
+
 void AsyncQueueHandler::BuildTransferCommand(const MeshTransfer& request, CommandBuffer* pCmdBuffer)
 {
 	const auto& vertexData = request.vertices;
 	const auto& indices = request.indices;
 	const auto vertSize = sizeof(vertexData[0]);
-	const auto idxSize = sizeof(indices[0]);
 
-	VertexBuffer vbuffer(vertexData.size() * vertSize);
-	StagingBuffer stgBuffer1(vbuffer.GetInfo().size);
-	vbuffer.FillAndTransfer(stgBuffer1, pCmdBuffer, (void*)vertexData.data(), true);
-
-	IndexBuffer ibuffer(indices.size() * idxSize);
-	StagingBuffer stgBuffer2(vbuffer.GetInfo().size);
-	ibuffer.FillAndTransfer(stgBuffer2, pCmdBuffer, (void*)indices.data(), true);
-
-	DEBUG_ASSERT(request.pRenderPass);
-	request.pRenderPass->SetVertexBuffer(vbuffer);
-	request.pRenderPass->SetIndexBuffer(ibuffer);
-	request.pRenderPass->SetVertCountToDraw(indices.size());
-
-	pCmdBuffer->Bake();
+	BuildTransferCommandBuffer((void*)vertexData.data(), vertexData.size() * vertSize, indices, request.pRenderPass, pCmdBuffer);
 }
 
 void AsyncQueueHandler::BuildTransferCommand(const SSBOTransfer& request, CommandBuffer* pCmdBuffer)
 {
 	StagingBuffer stgBuffer(request.size);
-	request.pStorageBuffer->FillAndTransfer(stgBuffer, pCmdBuffer, request.data, true);
+	request.pStorageBuffer->FillAndTransfer(stgBuffer, pCmdBuffer, request.data, true, request.offset);
 
 	pCmdBuffer->AddExecutionFinishedCallback(
 		[request]()
 		{
-			request.pDescriptorSet->WriteSSBOUpdate(*request.pStorageBuffer);
+			request.pDescriptorSet->WriteBufferUpdate(*request.pStorageBuffer, false, request.size, request.dstBinding, request.offset);
 		});
 	pCmdBuffer->Bake();
 }
@@ -163,6 +167,24 @@ void AsyncQueueHandler::BuildTransferCommand(const SSBODeviceBufferTransfer& req
 		{
 			request.pDescriptorSet->WriteSSBOUpdate(*request.pDst);
 		});
+	pCmdBuffer->Bake();
+}
+
+void AsyncQueueHandler::BuildTransferCommandBuffer(void* pVertData, u64 vertDataSize, const stltype::vector<u32>& indices, RenderPass* pRenderPass, CommandBuffer* pCmdBuffer)
+{
+	VertexBuffer vbuffer(vertDataSize);
+	StagingBuffer stgBuffer1(vbuffer.GetInfo().size);
+	vbuffer.FillAndTransfer(stgBuffer1, pCmdBuffer, pVertData, true);
+
+	IndexBuffer ibuffer(indices.size() * sizeof(indices[0]));
+	StagingBuffer stgBuffer2(ibuffer.GetInfo().size);
+	ibuffer.FillAndTransfer(stgBuffer2, pCmdBuffer, (void*)indices.data(), true);
+
+	DEBUG_ASSERT(pRenderPass);
+	pRenderPass->SetVertexBuffer(vbuffer);
+	pRenderPass->SetIndexBuffer(ibuffer);
+	pRenderPass->SetVertCountToDraw(indices.size());
+
 	pCmdBuffer->Bake();
 }
 

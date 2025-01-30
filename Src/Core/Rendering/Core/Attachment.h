@@ -16,7 +16,7 @@ struct DepthBufferAttachmentInfo
 {
 	TexFormat format;
 	LoadOp loadOp = LoadOp::CLEAR;
-	StoreOp storeOp = StoreOp::IDC;
+	StoreOp storeOp = StoreOp::STORE;
 	u32 samples = 1u;
 	LoadOp stencilLoadOp = LoadOp::IDC;
 	StoreOp stencilStoreOp = StoreOp::IDC;

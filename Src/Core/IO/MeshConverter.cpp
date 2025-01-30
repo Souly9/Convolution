@@ -12,13 +12,13 @@ namespace MeshConversion
 		return true;
 	}
 
-	DirectX::XMFLOAT3 Convert(const aiVector3D& v)
+	mathstl::Vector3 Convert(const aiVector3D& v)
 	{
-		return DirectX::XMFLOAT3(v.x, v.y, v.z);
+		return mathstl::Vector3(v.x, v.y, v.z);
 	}
-	DirectX::XMFLOAT3 Convert(const aiColor3D& v)
+	mathstl::Vector4 Convert(const aiColor3D& v)
 	{
-		return DirectX::XMFLOAT3(v.r, v.g, v.b);
+		return mathstl::Vector4(v.r, v.g, v.b, 0);
 	}
 	DirectX::XMFLOAT2 ConvertUV(const aiVector3D& v)
 	{

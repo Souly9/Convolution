@@ -26,8 +26,8 @@ void ImGuiManager::EndFrame()
 
 void ImGuiManager::RenderElements(f32 dt, ApplicationInfos& appInfos)
 {
+	//ImGui::ShowDemoWindow();
 
-	ImGui::ShowDemoWindow();
 	for (ImGuiRenderFunction& renderFunction : s_registeredFunctions)
 		renderFunction(dt, appInfos);
 }

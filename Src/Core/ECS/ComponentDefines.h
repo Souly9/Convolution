@@ -5,6 +5,7 @@
 #include "Components/View.h"
 #include "Components/Camera.h"
 #include "Components/Light.h"
+#include "Components/DebugRenderComponent.h"
 
 struct Transform;
 struct RenderComponent;
@@ -27,4 +28,5 @@ namespace ECS
 	template<> struct ComponentID <Components::View> { static constexpr C_ID ID = 0x00000004; };
 	template<> struct ComponentID <Components::Camera> { static constexpr C_ID ID = 0x00000008; };
 	template<> struct ComponentID <Components::Light> { static constexpr C_ID ID = 0x00000000F; };
+	template<> struct ComponentID <Components::DebugRenderComponent> { static constexpr C_ID ID = 0x000000010; };
 }

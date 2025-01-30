@@ -35,13 +35,13 @@ DepthBufferAttachmentVulkan DepthBufferAttachmentVulkan::Create(const DepthBuffe
 {
     VkAttachmentDescription depthAttachment{};
     depthAttachment.format = createInfo.format;
-    depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    depthAttachment.samples = Conv(createInfo.samples);
+    depthAttachment.loadOp = Conv(createInfo.loadOp);
+    depthAttachment.storeOp = Conv(createInfo.storeOp);
+    depthAttachment.stencilLoadOp = Conv(createInfo.stencilLoadOp);
+    depthAttachment.stencilStoreOp = Conv(createInfo.stencilStoreOp);
+    depthAttachment.initialLayout = Conv(createInfo.initialLayout);
+    depthAttachment.finalLayout = Conv(createInfo.finalLayout);
     return { depthAttachment };
 }
 

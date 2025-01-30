@@ -5,27 +5,10 @@
 void ECS::System::SView::Init(const SystemInitData& data)
 {
 	m_pPassManager = data.pPassManager;
-	// Uniform buffers
-	u64 bufferSize = sizeof(UBO::ViewUBO);
-
-	for (size_t i = 0; i < FRAMES_IN_FLIGHT; i++)
-	{
-		m_viewUBOs.emplace_back(bufferSize);
-		m_mappedViewUBOs.push_back(m_viewUBOs[i].MapMemory());
-	}
-
-	m_descriptorPool.Create({});
-	m_viewDescLayout = DescriptorLaytoutUtils::CreateOneDescriptorSetLayout(PipelineDescriptorLayout(UBO::BufferType::View));
-	m_viewUBODescriptors = m_descriptorPool.CreateDescriptorSetsUBO({ m_viewDescLayout.GetRef(), m_viewDescLayout.GetRef(), m_viewDescLayout.GetRef() });
-	for (auto& set : m_viewUBODescriptors)
-	{
-		set->SetBindingSlot(s_viewBindingSlot);
-	}
 }
 
 void ECS::System::SView::CleanUp()
 {
-	m_viewUBOs.clear();
 }
 
 void ECS::System::SView::Process()
@@ -48,9 +31,8 @@ void ECS::System::SView::Process()
 	}
 }
 
-void ECS::System::SView::SyncData()
+void ECS::System::SView::SyncData(u32 currentFrame)
 {
-	const u32 currentFrame = FrameGlobals::GetFrameNumber();
 
 	// Not that beautiful but don't want to get into archetypes for now and the view system won't run often or on many entities either way
 	const auto entities = g_pEntityManager->GetEntitiesWithComponent<Components::View>();
@@ -62,12 +44,10 @@ void ECS::System::SView::SyncData()
 
 		if(pViewComp->type == ECS::Components::ViewType::MainRenderView)
 		{
-			const auto ubo = BuildMainViewUBO(pViewComp, pTransformComp);
-			memcpy(m_mappedViewUBOs[currentFrame], &ubo, sizeof(ubo));
-			m_viewUBODescriptors[currentFrame]->WriteBufferUpdate(m_viewUBOs[currentFrame]);
+			auto ubo = BuildMainViewUBO(pViewComp, pTransformComp);
+			m_pPassManager->SetMainViewData(std::move(ubo), currentFrame);
 		}
 	}
-	m_pPassManager->SetMainViewData({ m_viewUBODescriptors[currentFrame] }, { m_viewUBODescriptors[currentFrame] }, currentFrame);
 }
 
 bool ECS::System::SView::AccessesAnyComponents(const stltype::vector<C_ID>& components)
@@ -82,36 +62,35 @@ bool ECS::System::SView::AccessesAnyComponents(const stltype::vector<C_ID>& comp
 
 UBO::ViewUBO ECS::System::SView::BuildMainViewUBO(const Components::View* pView, const Components::Transform* pTransform)
 {
-	static f32 totalDt = 0;
-	totalDt += g_pGlobalTimeData->GetDeltaTime();
 	UBO::ViewUBO ubo{};
 
 	using namespace DirectX;
-	const auto rotation = XMLoadFloat3(&pTransform->rotation);
-	const auto viewPos = XMLoadFloat3(&pTransform->position);
-	const auto rotQuat = XMMatrixRotationRollPitchYawFromVector(rotation);
-	
-	const XMVECTOR viewForward = XMVector3Transform(XMVECTORF32({ 0.f, 1.f, 0.f }), rotQuat);
-	const XMVECTOR viewRight = XMVector3Transform(XMVECTORF32({ 1.f, 0.f, 0.f }), rotQuat);
-	const XMVECTOR viewUP = XMVector3Cross(viewForward, viewRight);
-	const XMVECTOR focusPos = XMLoadFloat3(&pView->focusPosition);
+	using namespace mathstl;
 
-	if (XMVector3Equal(XMVectorSubtract(viewPos, focusPos), XMVectorZero()))
-	{
-		const auto newViewPos = XMFLOAT3(pTransform->position.x + 0.1f, pTransform->position.y, pTransform->position.z);
-		DirectX::XMStoreFloat4x4(&ubo.view, DirectX::XMMatrixLookAtRH(XMLoadFloat3(&newViewPos),
-			focusPos, viewUP));
-	}
-	else
-	{
-		DirectX::XMStoreFloat4x4(&ubo.view, DirectX::XMMatrixLookAtRH(viewPos, focusPos, viewUP));
-	}
-	//DEBUG_LOG(stltype::to_string(totalDt));
-	//DirectX::XMStoreFloat4x4(&ubo.model, DirectX::XMMatrixRotationAxis(DirectX::XMVECTORF32({ 0.f, 0.f, 1.f }), DirectX::XMConvertToRadians(45.f * totalDt)));
-	//DEBUG_LOG(stltype::to_string(totalDt));
-	DirectX::XMStoreFloat4x4(&ubo.projection, DirectX::XMMatrixPerspectiveFovRH(DirectX::XMConvertToRadians(pView->fov), FrameGlobals::GetScreenAspectRatio(), 
+	const auto pRotInDegrees = &pTransform->rotation;
+	const XMVECTOR upVector = XMVectorSet(0.f, -1.f, 0.f, 0.f);
+	const XMVECTOR rotation{XMConvertToRadians(pRotInDegrees->x), XMConvertToRadians(pRotInDegrees->y), XMConvertToRadians(pRotInDegrees->z)};
+	const XMVECTOR viewPos = XMLoadFloat3(&pTransform->position);
+
+	XMMATRIX rotationMatrix = XMMatrixRotationRollPitchYaw(rotation.m128_f32[0], rotation.m128_f32[1], rotation.m128_f32[2]);
+	// Use the rotation and position to determine the "focus position" aka view direction in this case
+	XMVECTOR rotatedFocusPos = viewPos - XMVector3TransformCoord(Vector3(0, 0, 1), rotationMatrix);
+
+	XMMATRIX viewMat = XMMatrixLookAtLH(viewPos, rotatedFocusPos, upVector);
+
+	XMMATRIX projMat = DirectX::XMMatrixPerspectiveFovLH(DirectX::XMConvertToRadians(pView->fov), FrameGlobals::GetScreenAspectRatio(),
 		stltype::max(pView->zNear, 0.000001f), // Prevent division by zero
-		pView->zFar));
+		pView->zFar);
 
+	XMStoreFloat4x4(&ubo.view, viewMat);
+	DirectX::XMStoreFloat4x4(&ubo.projection, projMat);
+	auto viewProj = XMMatrixMultiply(projMat, viewMat);
+
+	g_pApplicationState->RegisterUpdateFunction([projMat, viewMat, viewProj](ApplicationState& state)
+		{
+			state.mainCamViewProjectionMatrix = viewProj;
+			state.invMainCamProjectionMatrix = DirectX::XMMatrixInverse(nullptr, projMat);
+			state.invMainCamViewMatrix = DirectX::XMMatrixInverse(nullptr, viewMat);
+		});
 	return ubo;
 }

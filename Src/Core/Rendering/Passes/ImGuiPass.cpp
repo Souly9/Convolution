@@ -11,40 +11,23 @@
 #include <imgui/imstb_textedit.h>
 #include <imgui/imstb_truetype.h>
 #include "ImGuiPass.h"
+#include "Utils/RenderPassUtils.h"
 
 namespace RenderPasses
 {
 
-	ImGuiPass::ImGuiPass() : m_mainPool{ CommandPool::Create(VkGlobals::GetQueueFamilyIndices().graphicsFamily.value()) }
+	ImGuiPass::ImGuiPass()
 	{
 		g_pEventSystem->AddWindowResizeEventCallback([this](const auto&) { UpdateImGuiScaling(); });
 	}
 
 	void ImGuiPass::Init(const RendererAttachmentInfo& attachmentInfo)
 	{
-		ColorAttachmentInfo colorAttachmentInfo{};
-		colorAttachmentInfo.format = attachmentInfo.swapchainTextures[0].GetInfo().format;
-		colorAttachmentInfo.loadOp = LoadOp::LOAD;
-		colorAttachmentInfo.initialLayout = ImageLayout::COLOR_ATTACHMENT;
-		colorAttachmentInfo.finalLayout = ImageLayout::PRESENT;
-		auto colorAttachment = RenderPassAttachmentColor::Create(colorAttachmentInfo);
+		const auto attachments = CreateWriteableAndPresentableRT(attachmentInfo);
+		m_mainPass = RenderPass({ attachments.color, attachments.depth });
 
-		DepthBufferAttachmentInfo depthAttachmentInfo{};
-		depthAttachmentInfo.format = DEPTH_BUFFER_FORMAT;
-		depthAttachmentInfo.loadOp = LoadOp::LOAD;
-		depthAttachmentInfo.stencilLoadOp = LoadOp::LOAD;
-		depthAttachmentInfo.initialLayout = ImageLayout::DEPTH_STENCIL;
-		auto depthAttachment = DepthBufferAttachmentVulkan::Create(depthAttachmentInfo);
 
-		m_mainPass = RenderPass({ colorAttachment, depthAttachment });
-
-		for (const auto& attachment : attachmentInfo.swapchainTextures)
-		{
-			const stltype::vector<const TextureVulkan*> textures = { &attachment, attachmentInfo.pDepthTexture };
-			m_mainPSOFrameBuffers.emplace_back(textures, m_mainPass, attachment.GetInfo().extents);
-		}
-		
-		m_cmdBuffers = m_mainPool.CreateCommandBuffers(CommandBufferCreateInfo{}, FRAMES_IN_FLIGHT);
+		InitBaseData(attachmentInfo, m_mainPass);
 
 		const auto vkContext = VkGlobals::GetContext();
 
@@ -91,7 +74,8 @@ namespace RenderPasses
 		currentBuffer->EndRPass();
 		currentBuffer->EndBuffer();
 
-		SRF::SubmitCommandBufferToGraphicsQueue<RenderAPI>(ctx.mainGeometryPassFinishedSemaphore, ctx.mainUIPassFinishedSemaphore, currentBuffer, ctx.mainUIPassFinishedFence);
+		const auto& syncContext = ctx.synchronizationContexts.find(this)->second;
+		SRF::SubmitCommandBufferToGraphicsQueue<RenderAPI>(*syncContext.waitSemaphore, syncContext.signalSemaphore, currentBuffer, syncContext.finishedFence);
 	}
 
 	void ImGuiPass::UpdateImGuiScaling()
@@ -103,5 +87,9 @@ namespace RenderPasses
 		io.FontGlobalScale = scale;
 		io.DisplayFramebufferScale = ImVec2(xScale, yScale);
 		ImGui::GetStyle().ScaleAllSizes(scale);
+	}
+	bool ImGuiPass::WantsToRender() const
+	{
+		return true;
 	}
 }

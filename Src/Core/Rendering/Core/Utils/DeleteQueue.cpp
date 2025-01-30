@@ -2,50 +2,50 @@
 
 DeleteQueue::DeleteQueue()
 {
-	m_thread = threadSTL::MakeThread([this]
-		{
-			ProcessDeleteQueue();
-		});
-	m_thread.SetName("Convolution_DeleteQueue");
 }
 
 void DeleteQueue::ProcessDeleteQueue()
 {
-	while (KeepRunning())
+	m_sharedDataMutex.Lock();
+	while (m_deleteQueue.size() > 0)
 	{
-		if (m_deleteQueue.size() > 0)
-		{
-			while (m_deleteQueue.size() > 0)
-			{
-				m_sharedDataMutex.Lock();
-				const auto func = m_deleteQueue.front();
-				m_deleteQueue.pop();
-				m_sharedDataMutex.Unlock();
-				func();
-			}
-		}
-		if(m_delayedDeleteQueue.size() > 0)
-		{
-			while (m_delayedDeleteQueue.size() > 0)
-			{
-				m_sharedDataMutex.Lock();
-				const auto& [func, frame] = m_delayedDeleteQueue.front();
-				if (frame != FrameGlobals::GetFrameNumber())
-				{
-					func();
-				}
-				else
-				{
-					m_sharedDataMutex.Unlock();
-					break;
-				}
-				m_delayedDeleteQueue.pop();
-				m_sharedDataMutex.Unlock();
-			}
-		}
-
-		threadSTL::ThreadSleep(50);
+		const auto func = m_deleteQueue.front();
+		m_deleteQueue.pop();
+		func();
 	}
+
+	while (m_delayedDeleteQueue.size() > 0)
+	{
+		const auto& [func, frame] = m_delayedDeleteQueue.front();
+		if (frame != FrameGlobals::GetFrameNumber())
+		{
+			func();
+		}
+		else
+		{
+			break;
+		}
+		m_delayedDeleteQueue.pop();
+	}
+	m_sharedDataMutex.Unlock();
+}
+
+void DeleteQueue::ForceEmptyQueue()
+{
+	m_sharedDataMutex.Lock();
+	while (m_deleteQueue.size() > 0)
+	{
+		const auto& func = m_deleteQueue.front();
+		func();
+		m_deleteQueue.pop();
+	}
+	while (m_delayedDeleteQueue.size() > 0)
+	{
+		const auto& func = m_delayedDeleteQueue.front().func;
+		func();
+		m_delayedDeleteQueue.pop();
+	}
+	m_sharedDataMutex.Unlock();
 }
 
 void DeleteQueue::RegisterDelete(DeleteFunction&& func)

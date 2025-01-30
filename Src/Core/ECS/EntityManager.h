@@ -1,5 +1,4 @@
 #pragma once
-#include <EASTL/hash_map.h>
 #include "Core/Global/GlobalDefines.h"
 #include "Entity.h"
 #include "Components/Component.h"
@@ -24,6 +23,7 @@ namespace ECS
 		Component component;
 		Entity entity;
 	};
+	struct Entity;
 
 	class EntityManager
 	{
@@ -31,7 +31,7 @@ namespace ECS
 		EntityManager();
 		Entity CreateEntity(const DirectX::XMFLOAT3& position = DirectX::XMFLOAT3(0, 0, 0));
 		void DestroyEntity(Entity entity);
-		void MarkEntityDirty(Entity entity, C_ID componentID);
+		void MarkComponentDirty(Entity entity, C_ID componentID);
 
 		void SyncSystemData(u32 frameIdx);
 		void UpdateSystems(u32 frameIdx);
@@ -77,6 +77,7 @@ namespace ECS
 			return rsltEnts;
 		}
 
+		const stltype::vector<Entity>& GetAllEntities() const { return m_entities; }
 	private:
 		stltype::vector<Entity> m_entities;
 		struct DirtyEntityInfo
@@ -90,6 +91,7 @@ namespace ECS
 
 		stltype::vector<ComponentHolder<Components::Transform>> m_transformComponents;
 		stltype::vector<ComponentHolder<Components::RenderComponent>> m_renderComponents;
+		stltype::vector<ComponentHolder<Components::DebugRenderComponent>> m_debugRenderComponents;
 		stltype::vector<ComponentHolder<Components::View>> m_viewComponents;
 		stltype::vector<ComponentHolder<Components::Camera>> m_cameraComponents;
 		stltype::vector<ComponentHolder<Components::Light>> m_lightComponents;
@@ -116,11 +118,12 @@ namespace ECS
 		{
 			auto& indices = it->second.componentIndices;
 			auto& compVector = GetComponentVector<Component>();
-			DEBUG_ASSERT(HasComponent(ECS::ComponentID<Component>::ID, indices) == false);
+			if (HasComponent(ECS::ComponentID<Component>::ID, indices))
+				return;
 
 			compVector.emplace_back(component, entity);
 			indices[ECS::ComponentID<Component>::ID] = compVector.size() - 1;
-			MarkEntityDirty(entity, ECS::ComponentID<Component>::ID);
+			MarkComponentDirty(entity, ECS::ComponentID<Component>::ID);
 		}
 	}
 
@@ -137,6 +140,8 @@ namespace ECS
 			return m_cameraComponents;
 		if constexpr (ECS::ComponentID<Components::Light>::ID == ECS::ComponentID<Component>::ID)
 			return m_lightComponents;
+		if constexpr (ECS::ComponentID<Components::DebugRenderComponent>::ID == ECS::ComponentID<Component>::ID)
+			return m_debugRenderComponents;
 		else
 		{
 			DEBUG_ASSERT(false);
@@ -157,6 +162,8 @@ namespace ECS
 			return m_cameraComponents;
 		if constexpr (ECS::ComponentID<Components::Light>::ID == ECS::ComponentID<Component>::ID)
 			return m_lightComponents;
+		if constexpr (ECS::ComponentID<Components::DebugRenderComponent>::ID == ECS::ComponentID<Component>::ID)
+			return m_debugRenderComponents;
 		else
 		{
 			DEBUG_ASSERT(false);

@@ -22,7 +22,7 @@ namespace CommandHelpers
             cmd.firstVert, cmd.firstInstance);
     }
 
-    static void RecordCommand(GenericIndexedDrawCmd& cmd, CBufferVulkan& buffer, bool& needsBegin)
+    static void RecordCommand(GenericInstancedDrawCmd& cmd, CBufferVulkan& buffer, bool& needsBegin)
     {
         if (needsBegin)
         {
@@ -35,8 +35,8 @@ namespace CommandHelpers
 			sets[i] = cmd.descriptorSets[i]->GetRef();
 
         vkCmdBindDescriptorSets(buffer.GetRef(), VK_PIPELINE_BIND_POINT_GRAPHICS, cmd.pso.GetLayout(), 0, cmd.descriptorSets.size(), sets.data(), 0, nullptr);
-        vkCmdDrawIndexed(buffer.GetRef(), cmd.vertCount, cmd.instanceCount, cmd.indexOffset,
-            cmd.firstVert, cmd.firstInstance);
+
+        vkCmdDrawIndexed(buffer.GetRef(), cmd.vertCount, cmd.instanceCount, cmd.indexOffset, cmd.firstVert, cmd.firstInstance);
     }
     static void RecordCommand(SimpleBufferCopyCmd& cmd, CBufferVulkan& buffer, bool& needsBegin)
     {

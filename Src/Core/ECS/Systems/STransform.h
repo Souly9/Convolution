@@ -14,10 +14,12 @@ namespace ECS
 			void Init(const SystemInitData& data) override;
 
 			virtual void Process() override;
-			virtual void SyncData() override;
+			virtual void SyncData(u32 currentFrame) override;
 
 			virtual bool AccessesAnyComponents(const stltype::vector<C_ID>& components) override;
 		protected:
+			mathstl::Matrix ComputeModelMatrix(const ECS::Components::Transform* pTransform);
+			void ComputeModelMatrixRecursive(Entity entity);
 			// Cached model matrices of all entities
 			RenderPasses::TransformSystemData m_cachedDataMap;
 			RenderPasses::PassManager* m_pPassManager;

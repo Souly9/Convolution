@@ -1,9 +1,23 @@
 #pragma once
 #include <EASTL/fixed_function.h>
 
-using ExecutionFinishedCallback = stltype::fixed_function<32, void(void)>;
+using ExecutionFinishedCallback = stltype::fixed_function<48, void(void)>;
 
 struct CommandBase
+{
+
+};
+
+struct BeginRenderPassCmd : public CommandBase
+{
+	DirectX::XMINT2 offset = { 0, 0 };
+	const FrameBuffer& frameBuffer;
+	const RenderPass& renderPass;
+
+	BeginRenderPassCmd(const FrameBuffer& fb, const RenderPass& rp) : frameBuffer(fb), renderPass(rp) {}
+};
+
+struct EndRenderPassCmd : public CommandBase
 {
 
 };
@@ -33,11 +47,11 @@ struct GenericDrawCmd : CommandBase
 	GenericDrawCmd(const FrameBuffer& fb, const RenderPass& rp, const PSO& ps) : frameBuffer(fb), renderPass(rp), pso(ps) {}
 };
 
-struct GenericIndexedDrawCmd : public GenericDrawCmd
+struct GenericInstancedDrawCmd : public GenericDrawCmd
 {
 	u32 indexOffset{ 0 };
 
-	GenericIndexedDrawCmd(FrameBuffer& fb, RenderPass& rp, PSO& ps) : GenericDrawCmd(fb, rp, ps) {}
+	GenericInstancedDrawCmd(FrameBuffer& fb, RenderPass& rp, PSO& ps) : GenericDrawCmd(fb, rp, ps) {}
 };
 
 struct CopyBaseCmd : CommandBase
@@ -108,7 +122,7 @@ struct GenericComputeCmd : CommandBase
 
 };
 
-using Command = stltype::variant<CommandBase, GenericDrawCmd, GenericIndexedDrawCmd, DrawMeshCmd, GenericComputeCmd, SimpleBufferCopyCmd, ImageBuffyCopyCmd, ImageLayoutTransitionCmd, DrawCmdDummy>;
+using Command = stltype::variant<CommandBase, GenericDrawCmd, GenericInstancedDrawCmd, DrawMeshCmd, GenericComputeCmd, SimpleBufferCopyCmd, ImageBuffyCopyCmd, ImageLayoutTransitionCmd, DrawCmdDummy>;
 
 // Generic command buffer, basically collects all commands as generic structs first so we can reason about them
 class CBuffer

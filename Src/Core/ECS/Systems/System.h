@@ -28,9 +28,16 @@ namespace ECS
 			virtual void Process() = 0;
 
 			// Main function to sync component data to render data
-			virtual void SyncData() {}
+			virtual void SyncData(u32 currentFrame) {}
 
 			virtual bool AccessesAnyComponents(const stltype::vector<C_ID>& components) { return false; }
+
+		protected:
+			template<typename T>
+			bool AccessesComponent(const stltype::vector<C_ID>& components) const
+			{
+				return stltype::find(components.begin(), components.end(), ComponentID<T>::ID) != components.end();
+			}
 		};
 	}
 }

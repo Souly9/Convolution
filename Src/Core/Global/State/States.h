@@ -28,5 +28,15 @@ struct ApplicationState
 	stltype::vector<ECS::Entity> selectedEntities{};
 	GUIState guiState{};
 	RendererState renderState{};
+	DirectX::XMMATRIX mainCamViewProjectionMatrix{};
+	DirectX::XMMATRIX invMainCamProjectionMatrix{};
+	DirectX::XMMATRIX invMainCamViewMatrix{};
+
 	ECS::Entity mainCameraEntity{};
+	bool renderDebugMeshes{true};
+
+	bool ShouldDisplayDebugObjects() const
+	{
+		return renderDebugMeshes;
+	}
 };

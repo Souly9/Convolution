@@ -37,3 +37,15 @@ void TextureVulkan::CleanUp()
 	VK_FREE_IF(m_imageMemory, g_pGPUMemoryManager->TryFreeMemory(m_imageMemory));
 }
 
+void TextureVulkan::SetImageView(VkImageView view)
+{
+	VK_FREE_IF(m_imageView, vkDestroyImageView(VK_LOGICAL_DEVICE, m_imageView, VulkanAllocator()));
+	m_imageView = view;
+}
+
+void TextureVulkan::SetSampler(VkSampler sampler)
+{
+	VK_FREE_IF(m_sampler, vkDestroySampler(VK_LOGICAL_DEVICE, m_sampler, VulkanAllocator()));
+	m_sampler = sampler;
+}
+

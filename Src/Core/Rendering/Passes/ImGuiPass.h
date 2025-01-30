@@ -24,12 +24,10 @@ namespace RenderPasses
 		virtual void CreateSharedDescriptorLayout() override {}
 
 		void UpdateImGuiScaling();
+
+		virtual bool WantsToRender() const override;
 	protected:
 		RenderPass m_mainPass;
-		CommandPool m_mainPool;
 		DescriptorPool m_descPool;
-		stltype::vector<CommandBuffer*> m_cmdBuffers;
-
-		stltype::vector<FrameBuffer> m_mainPSOFrameBuffers;
 	};
 }

@@ -94,8 +94,29 @@ namespace DescriptorLaytoutUtils
 		return setLayout;
 	}
 
-	static DescriptorSetLayoutVulkan CreateOneDescriptorSetLayout(const PipelineDescriptorLayout& layoutInfo)
+	static DescriptorSetLayoutVulkan CreateOneDescriptorSetLayout(const PipelineDescriptorLayout& layout)
 	{
-		return CreateOneDescriptorSetForAll(stltype::vector<PipelineDescriptorLayout>(1, layoutInfo));
+		stltype::vector<PipelineDescriptorLayout> rslt{ layout };
+		return CreateOneDescriptorSetForAll(rslt);
+	}
+
+	static stltype::vector<DescriptorSetLayoutVulkan> CreateOneDescriptorSetLayoutPerSet(const stltype::vector<PipelineDescriptorLayout>& layoutInfos)
+	{
+		stltype::vector<DescriptorSetLayoutVulkan> rslt;
+		
+		// Sort all layouts for sets, mainly done here so it's easier to write outside 
+		stltype::hash_map<u32, stltype::vector<PipelineDescriptorLayout>> setLayoutMap;
+		u32 setCount = 0;
+		for (const auto& layout : layoutInfos)
+		{
+			if (setCount < layout.setIndex)
+				setCount = layout.setIndex;
+			setLayoutMap[layout.setIndex].push_back(layout);
+		}
+		for (u32 i = 0; i <= setCount; ++i)
+		{
+			rslt.push_back(CreateOneDescriptorSetForAll(setLayoutMap[i]));
+		}
+		return rslt;
 	}
 }

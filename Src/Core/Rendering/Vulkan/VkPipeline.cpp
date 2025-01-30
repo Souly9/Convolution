@@ -45,20 +45,22 @@ PipelineVulkan::PipelineVulkan(const ShaderVulkan& vertShader, const ShaderVulka
 	pipelineInfo.pDepthStencilState = nullptr; // Optional
 	pipelineInfo.pColorBlendState = &colorBlending;
 	pipelineInfo.pDynamicState = &dymState;
-
-	if (pipeInfo.hasDepth)
-	{
-		const auto depthStencil = CreateDepthStencilLayout();
-		pipelineInfo.pDepthStencilState = &depthStencil;
-	}
-
 	pipelineInfo.layout = m_pipelineLayout;
 	pipelineInfo.renderPass = renderPass.GetRef();
 	pipelineInfo.subpass = 0;
 	pipelineInfo.basePipelineHandle = VK_NULL_HANDLE; // Optional
 	pipelineInfo.basePipelineIndex = -1; // Optional
 
-	DEBUG_ASSERT(vkCreateGraphicsPipelines(VkGlobals::GetLogicalDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, VulkanAllocator(), &m_pipeline) == VK_SUCCESS);
+	if (pipeInfo.hasDepth)
+	{
+		const auto depthStencil = CreateDepthStencilLayout();
+		pipelineInfo.pDepthStencilState = &depthStencil;
+		DEBUG_ASSERT(vkCreateGraphicsPipelines(VkGlobals::GetLogicalDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, VulkanAllocator(), &m_pipeline) == VK_SUCCESS);
+	}
+	else
+	{
+		DEBUG_ASSERT(vkCreateGraphicsPipelines(VkGlobals::GetLogicalDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, VulkanAllocator(), &m_pipeline) == VK_SUCCESS);
+	}
 }
 
 PipelineVulkan::~PipelineVulkan()
@@ -217,10 +219,8 @@ VkPipelineDepthStencilStateCreateInfo PipelineVulkan::CreateDepthStencilLayout()
 
 VkPipelineLayout PipelineVulkan::CreatePipelineLayout(const DescriptorSetLayoutInfo& layoutInfo)
 {
-	for (const auto& layout : layoutInfo.sharedDescriptors)
-	{
-		m_sharedDescriptorSetLayouts.push_back(DescriptorLaytoutUtils::CreateOneDescriptorSetLayout(layout));
-	}
+	m_sharedDescriptorSetLayouts = DescriptorLaytoutUtils::CreateOneDescriptorSetLayoutPerSet(layoutInfo.sharedDescriptors);
+
 	m_descriptorSetLayout = DescriptorLaytoutUtils::CreateOneDescriptorSetForAll(layoutInfo.pipelineSpecificDescriptors);
 
 	stltype::vector<VkDescriptorSetLayout> descriptorSetLayouts;
