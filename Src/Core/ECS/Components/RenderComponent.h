@@ -17,6 +17,7 @@ namespace ECS
 			Material* pMaterial{ g_pMaterialManager->GetMaterial("Default") };
 
 			AABB boundingBox{};
+			bool isSelected{ false };
 		};
 	}
 }

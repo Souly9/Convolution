@@ -17,7 +17,7 @@ public:
 		m_thread.WaitForEnd();
 	}
 
-	void Suspend() { threadSTL::ThreadSleep(50); }
+	void Suspend() { threadSTL::ThreadSleep(500); }
 protected:
 	threadSTL::Thread m_thread;
 	threadSTL::Futex m_sharedDataMutex;

@@ -152,3 +152,37 @@ StorageBuffer::StorageBuffer(u64 size, bool isDevice)
     info.usage = isDevice ? BufferUsage::SSBODevice : BufferUsage::SSBOHost;
     Create(info);
 }
+
+IndirectDrawCommandBuffer::IndirectDrawCommandBuffer(u64 numOfCommands)
+{
+    BufferCreateInfo info{};
+    info.size = sizeof(IndexedIndirectDrawCmd) * numOfCommands;
+    info.usage = BufferUsage::IndirectDrawCmds;
+    Create(info);
+    m_indexedIndirectCmds.reserve(numOfCommands);
+    // Will be reused and filled\mapped every frame so cheaper to just map forever
+    m_mappedMemoryHandle = MapMemory();
+}
+
+IndirectDrawCountBuffer::IndirectDrawCountBuffer(u64 numOfCounts)
+{
+    BufferCreateInfo info{};
+    info.size = sizeof(u32) * numOfCounts;
+    info.usage = BufferUsage::IndirectDrawCount;
+    Create(info);
+}
+
+void IndirectDrawCommandBuffer::AddIndexedDrawCmd(u32 indexCount, u32 instanceCount, u32 firstIndex, u32 vertexOffset, u32 firstInstance)
+{
+    m_indexedIndirectCmds.emplace_back(indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
+}
+
+void IndirectDrawCommandBuffer::FillCmds()
+{
+    memcpy((char*)m_mappedMemoryHandle, (void*)m_indexedIndirectCmds.data(), m_indexedIndirectCmds.size() * sizeof(IndexedIndirectDrawCmd));
+}
+
+void IndirectDrawCommandBuffer::EmptyCmds()
+{
+    m_indexedIndirectCmds.clear();
+}

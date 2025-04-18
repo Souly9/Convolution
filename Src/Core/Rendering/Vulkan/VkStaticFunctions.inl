@@ -48,7 +48,7 @@ namespace SRF
 		submitInfo.signalSemaphoreCount = 1;
 		submitInfo.pSignalSemaphores = signalSemaphores;
 
-		DEBUG_ASSERT(vkQueueSubmit(VkGlobals::GetGraphicsQueue(), 1, &submitInfo, inFlightFence.GetRef()) == VK_SUCCESS);
+		vkQueueSubmit(VkGlobals::GetGraphicsQueue(), 1, &submitInfo, inFlightFence.GetRef());
 	}
 
 	template<>

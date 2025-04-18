@@ -23,15 +23,21 @@ void RenderPasses::DebugShapePass::Init(const RendererAttachmentInfo& attachment
 	//info.descriptorSetLayout.pipelineSpecificDescriptors.emplace_back();
 	info.descriptorSetLayout.sharedDescriptors = m_sharedDescriptors;
 
-	m_mainPSO = PSO(mainVert, mainFrag, PipeVertInfo{ m_vertexInputDescription, m_attributeDescriptions }, info, m_mainPass);
+	m_solidDebugObjectsPSO = PSO(mainVert, mainFrag, PipeVertInfo{ m_vertexInputDescription, m_attributeDescriptions }, info, m_mainPass);
+
+	auto wireFrameInfo = info;
+	wireFrameInfo.topology = Topology::Lines;
+	m_wireframeDebugObjectsPSO = PSO(mainVert, mainFrag, PipeVertInfo{ m_vertexInputDescription, m_attributeDescriptions }, wireFrameInfo, m_mainPass);
 
 	InitBaseData(attachmentInfo, m_mainPass);
+	m_indirectCmdBuffer = IndirectDrawCommandBuffer(50);
 }
 
 void RenderPasses::DebugShapePass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes)
 {
 	m_instancedMeshInfoMap.clear();
 	bool areAnyDebug = false;
+	m_indirectCmdBuffer.EmptyCmds();
 	for (const auto& meshData : meshes)
 	{
 		if (meshData.meshData.IsDebugMesh())
@@ -46,47 +52,27 @@ void RenderPasses::DebugShapePass::RebuildInternalData(const stltype::vector<Pas
 		return;
 	}
 
-	UBO::PerPassObjectDataSSBO data{};
-
 	AsyncQueueHandler::MinMeshTransfer cmd{};
 	cmd.vertices.reserve(meshes.size() * 10);
 	cmd.indices.reserve(meshes.size() * 30);
 	cmd.pRenderPass = &m_mainPass;
 
-	u32 idxOffset = 0;
+	UBO::PerPassObjectDataSSBO data{};
+	GenericGeometryPass::DrawCmdOffsets offsets{};
+
 	for (const auto& meshData : meshes)
 	{
-		if (meshData.meshData.IsDebugMesh() == false)
+		if (meshData.meshData.IsDebugMesh() == false && meshData.meshData.IsDebugWireframeMesh() == false)
 			continue;
 
 		Mesh* pMesh = meshData.meshData.pMesh;
-		if (auto it = m_instancedMeshInfoMap.find(pMesh); it == m_instancedMeshInfoMap.end())
-		{
-			InstancedMeshDataInfo info{};
-			info.instanceCount = 1;
-			info.indexBufferOffset = idxOffset;
-			info.instanceOffset = 0;
-			info.verticesPerInstance = pMesh->indices.size();
+		PSO* targetPSO = meshData.meshData.IsDebugWireframeMesh() ? &m_wireframeDebugObjectsPSO : &m_solidDebugObjectsPSO;
+		GenerateDrawCommandForMesh(meshData, offsets, cmd.vertices, cmd.indices, m_indirectCmdBuffer, m_indirectCountBuffer);
 
-			for (const auto& vert : pMesh->vertices)
-			{
-				cmd.vertices.emplace_back(ConvertVertexFormat(vert));
-			}
-			for (auto idx : pMesh->indices)
-			{
-				cmd.indices.emplace_back(idx + idxOffset);
-			}
-			idxOffset += pMesh->indices.size() - 1;
-			m_instancedMeshInfoMap[pMesh] = info;
-		}
-		else
-		{
-			++it->second.instanceCount;
-		}
 		data.perObjectDataIdx.push_back(g_pMaterialManager->GetMaterialIdx(meshData.meshData.pMaterial));
-		//data.perObjectDataIdx.push_back(meshData.perObjectDataIdx);
 		data.transformIdx.push_back(meshData.transformIdx);
 	}
+	m_indirectCmdBuffer.FillCmds();
 	RebuildPerObjectBuffer(data);
 	g_pQueueHandler->SubmitTransferCommandAsync(cmd);
 }
@@ -105,16 +91,24 @@ void RenderPasses::DebugShapePass::Render(const MainPassData& data, const FrameR
 	// Only if we have valid descriptors
 	if (data.bufferDescriptors.empty() == false)
 	{
+		const auto transformSSBOSet = data.bufferDescriptors.at(UBO::BufferType::TransformSSBO);
+
 		for (const auto& instancedInfoPair : m_instancedMeshInfoMap)
 		{
 			const auto& instancedDrawCmdInfo = instancedInfoPair.second;
-			const auto transformSSBOSet = data.bufferDescriptors.at(UBO::BufferType::TransformSSBO);
 
-			GenericInstancedDrawCmd cmd{ m_mainPSOFrameBuffers[ctx.imageIdx] , m_mainPass, m_mainPSO };
+			GenericInstancedDrawCmd cmd{ m_mainPSOFrameBuffers[ctx.imageIdx] , m_mainPass, m_solidDebugObjectsPSO };
 			cmd.vertCount = instancedDrawCmdInfo.verticesPerInstance;
 			cmd.instanceCount = instancedDrawCmdInfo.instanceCount;
 			cmd.indexOffset = instancedDrawCmdInfo.indexBufferOffset;
 			cmd.descriptorSets = { data.mainView.descriptorSet, transformSSBOSet, passCtx.m_perObjectDescriptor };
+			currentBuffer->RecordCommand(cmd);
+		}
+		if (m_indirectCmdBuffer.GetDrawCmdNum() > 0)
+		{
+			GenericIndirectDrawCmd cmd{ m_mainPSOFrameBuffers[ctx.imageIdx] , m_mainPass, m_wireframeDebugObjectsPSO, m_indirectCmdBuffer };
+			cmd.descriptorSets = { data.mainView.descriptorSet, transformSSBOSet, passCtx.m_perObjectDescriptor };
+			cmd.drawCount = m_indirectCmdBuffer.GetDrawCmdNum();
 			currentBuffer->RecordCommand(cmd);
 		}
 	}

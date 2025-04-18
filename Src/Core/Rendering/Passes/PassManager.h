@@ -16,12 +16,15 @@ namespace RenderPasses
 
 		bool IsDebugMesh() const { return flags[s_isDebugMeshFlag]; }
 		bool IsInstanced() const { return flags[s_isInstancedFlag]; }
+		bool IsDebugWireframeMesh() const { return flags[s_isDebugWireframeMesh]; }
 		bool SetDebugMesh() { return flags[s_isDebugMeshFlag] = true; }
 		bool SetInstanced() { return flags[s_isInstancedFlag] = true; }
+		bool SetDebugWireframeMesh() { return flags[s_isDebugWireframeMesh] = true; }
 
 	protected:
 		static inline u8 s_isDebugMeshFlag = 0;
 		static inline u8 s_isInstancedFlag = 1;
+		static inline u8 s_isDebugWireframeMesh = 2;
 		stltype::bitset<8> flags{};
 	};
 
@@ -109,6 +112,7 @@ namespace RenderPasses
 		u32 indexBufferOffset;
 		u32 instanceOffset;
 		u32 verticesPerInstance;
+		stltype::vector<PSO*> PSOs{};
 	};
 
 	class ConvolutionRenderPass

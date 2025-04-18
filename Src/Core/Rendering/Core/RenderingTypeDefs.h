@@ -19,6 +19,7 @@ class ShaderVulkan;
 class DescriptorSetVulkan;
 class DescriptorPoolVulkan;
 class DescriptorSetLayoutVulkan;
+struct VkDrawIndexedIndirectCommand;
 
 using GenericBuffer = GenBufferVulkan;
 using VertexBuffer = VertexBufferVulkan;
@@ -37,6 +38,9 @@ using GPUMappedMemoryHandle = void*;
 using DescriptorPool = DescriptorPoolVulkan;
 using TextureHandle = u64;
 using DescriptorSetLayout = DescriptorSetLayoutVulkan;
+
+// Indirect drawing stuff
+using IndexedIndirectDrawCmd = VkDrawIndexedIndirectCommand;
 
 #include "Core/Rendering/Vulkan/VkShader.h"
 #include "Core/Rendering/Vulkan/VkBuffer.h"

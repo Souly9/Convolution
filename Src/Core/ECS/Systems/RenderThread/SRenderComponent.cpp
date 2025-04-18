@@ -22,13 +22,21 @@ void ECS::System::SRenderComponent::SyncData(u32 currentFrame)
 
 	for (const auto& renderComp : renderComps)
 	{
-		dataMap[renderComp.entity.ID].emplace_back(renderComp.component.pMesh, renderComp.component.pMaterial, false);
+		RenderPasses::EntityMeshData& data = dataMap[renderComp.entity.ID].emplace_back(renderComp.component.pMesh, renderComp.component.pMaterial, false);
+		if (renderComp.component.isSelected)
+		{
+			data.SetDebugWireframeMesh();
+		}
 	}
 	for (const auto& renderComp : debugRenderComps)
 	{
 		if(renderComp.component.shouldRender == false) continue;
 
-		dataMap[renderComp.entity.ID].emplace_back(renderComp.component.pMesh, renderComp.component.pMaterial, true);
+		RenderPasses::EntityMeshData& data = dataMap[renderComp.entity.ID].emplace_back(renderComp.component.pMesh, renderComp.component.pMaterial, true);
+		if (renderComp.component.isSelected)
+		{
+			data.SetDebugWireframeMesh();
+		}
 	}
 
 	m_pPassManager->SetEntityMeshDataForFrame(std::move(dataMap), currentFrame);

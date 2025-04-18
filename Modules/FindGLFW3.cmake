@@ -1,6 +1,6 @@
 set(glfw3_SEARCH_DIRS
 ${CMAKE_SOURCE_DIR}/External/
-${CMAKE_SOURCE_DIR}/External/GLFW/lib-vc2022
+${CMAKE_SOURCE_DIR}/External/GLFW/src/include
 ${CMAKE_SOURCE_DIR}/External/additional_libs/lib-vc2022
 )
 

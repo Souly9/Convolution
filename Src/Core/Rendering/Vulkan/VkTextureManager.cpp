@@ -70,7 +70,7 @@ void VkTextureManager::CheckRequests()
 				FreeInFlightCommandBuffers();
 			}
 		}
-		if (m_requests.empty() == false)
+		else if (m_requests.empty() == false)
 		{
 			while (m_requests.empty() == false)
 			{
@@ -87,9 +87,13 @@ void VkTextureManager::CheckRequests()
 			}
 			DispatchAsyncOps();
 		}
-		if(m_texturesToMakeBindless.empty() == false)
+		else if(m_texturesToMakeBindless.empty() == false)
 		{
 			PostRender();
+		}
+		else
+		{
+			threadSTL::ThreadSleep(500);
 		}
 	}
 }
