@@ -84,3 +84,32 @@ public:
 	StorageBuffer(u64 size, bool isDevice = false);
 	StorageBuffer() {}
 };
+
+// Also has some utility data and functions to unify the management of command array and buffer
+class IndirectDrawCommandBuffer : public GenBufferVulkan
+{
+public:
+	IndirectDrawCommandBuffer(u64 numOfCommands);
+	IndirectDrawCommandBuffer() {}
+
+	void AddIndexedDrawCmd(u32 indexCount, u32 instanceCount, u32 firstIndex, u32 vertexOffset, u32 firstInstance);
+
+	void FillCmds();
+
+	void EmptyCmds();
+
+	u32 GetDrawCmdNum() const
+	{
+		return m_indexedIndirectCmds.size();
+	}
+protected:
+	stltype::vector<IndexedIndirectDrawCmd> m_indexedIndirectCmds;
+	GPUMappedMemoryHandle m_mappedMemoryHandle;
+};
+
+class IndirectDrawCountBuffer : public GenBufferVulkan
+{
+public:
+	IndirectDrawCountBuffer(u64 numOfCounts);
+	IndirectDrawCountBuffer() {}
+};

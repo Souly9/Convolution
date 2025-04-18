@@ -20,9 +20,11 @@ namespace RenderPasses
 
 		virtual bool WantsToRender() const override;
 	protected:
-		// Every pass should only have one pipeline as we're working with uber shaders + bindless 
-		PSO m_mainPSO;
+		PSO m_solidDebugObjectsPSO;
+		PSO m_wireframeDebugObjectsPSO;
 		RenderPass m_mainPass;
 		stltype::hash_map<Mesh*, InstancedMeshDataInfo> m_instancedMeshInfoMap;
+		IndirectDrawCommandBuffer m_indirectCmdBuffer;
+		IndirectDrawCountBuffer m_indirectCountBuffer;
 	};
 }

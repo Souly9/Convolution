@@ -11,17 +11,22 @@ namespace CommandHelpers
         DEBUG_ASSERT(false);
     }
 
-    static void RecordCommand(GenericDrawCmd& cmd, CBufferVulkan& buffer, bool& needsBegin)
+    static void RecordCommand(GenericIndirectDrawCmd& cmd, CBufferVulkan& buffer, bool& needsBegin)
     {
         if (needsBegin)
         {
             buffer.BeginRPass(cmd);
             needsBegin = false;
         }
-        vkCmdDraw(buffer.GetRef(), cmd.vertCount, cmd.instanceCount,
-            cmd.firstVert, cmd.firstInstance);
-    }
 
+        stltype::vector<VkDescriptorSet> sets(cmd.descriptorSets.size());
+        for (u32 i = 0; i < sets.size(); ++i)
+            sets[i] = cmd.descriptorSets[i]->GetRef();
+
+        vkCmdBindDescriptorSets(buffer.GetRef(), VK_PIPELINE_BIND_POINT_GRAPHICS, cmd.pso.GetLayout(), 0, cmd.descriptorSets.size(), sets.data(), 0, nullptr);
+
+        vkCmdDrawIndexedIndirect(buffer.GetRef(), cmd.drawCmdBuffer.GetRef(), cmd.bufferOffst, cmd.drawCount, sizeof(VkDrawIndexedIndirectCommand));
+    }
     static void RecordCommand(GenericInstancedDrawCmd& cmd, CBufferVulkan& buffer, bool& needsBegin)
     {
         if (needsBegin)

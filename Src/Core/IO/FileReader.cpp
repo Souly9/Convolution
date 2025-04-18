@@ -57,7 +57,10 @@ void FileReader::CheckIORequests()
 	while (m_keepRunning)
 	{
 		if (m_requests.empty())
+		{
+			threadSTL::ThreadSleep(500);
 			continue;
+		}
 		m_requestSubmitMutex.Lock();
 		const IORequest& request = m_requests.front();
 		m_requestSubmitMutex.Unlock();

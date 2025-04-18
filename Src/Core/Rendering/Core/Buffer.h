@@ -11,6 +11,8 @@ enum class BufferUsage
 	Uniform,
 	SSBOHost,
 	SSBODevice,
+	IndirectDrawCmds,
+	IndirectDrawCount,
 	GenericHostVisible,
 	GenericDeviceVisible,
 	Texture

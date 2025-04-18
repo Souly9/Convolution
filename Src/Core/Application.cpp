@@ -37,7 +37,15 @@ Application::Application(bool canRender, RenderLayer<RenderAPI>& layer) : m_rend
 	comp.pMaterial->properties.baseColor = mathstl::Vector4{ 0,0,1,1 };
 	g_pEntityManager->AddComponent(meshEnt, comp);
 
-	auto camEnt = g_pEntityManager->CreateEntity(DirectX::XMFLOAT3(4, 0, 7));
+	auto parentEnt = g_pEntityManager->CreateEntity(DirectX::XMFLOAT3(0, 4, 0));
+	comp.pMesh = g_pMeshManager->GetPrimitiveMesh(MeshManager::PrimitiveType::Cube);
+	g_pEntityManager->AddComponent(parentEnt, comp);
+	auto parentEnt2 = g_pEntityManager->CreateEntity(DirectX::XMFLOAT3(2, 4, 0));
+	comp.pMesh = g_pMeshManager->GetPrimitiveMesh(MeshManager::PrimitiveType::Quad);
+	g_pEntityManager->AddComponent(parentEnt2, comp);
+	//g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(meshEnt)->parent = parentEnt;
+
+	auto camEnt = g_pEntityManager->CreateEntity(DirectX::XMFLOAT3(4, 0, 12));
 	auto* pTransform = g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(camEnt);
 	pTransform->rotation.y = 0;
 	ECS::Components::Camera compV{};

@@ -17,12 +17,12 @@ layout(location = 0) out VertexOut
 } OUT;
 
 void main() {
-    uint transformIdx = perObjectDataSSBO.transformDataIdx[gl_InstanceIndex];
     uint perObjectDataIdx = perObjectDataSSBO.perObjectDataIdx[gl_InstanceIndex];
     mat4 worldMat = globalTransformSSBO.modelMatrices[transformIdx];
     OUT.worldPos = worldMat * vec4(inPosition, 1.0);
     gl_Position = ubo.proj * ubo.view * OUT.worldPos;
     OUT.fragColor = globalObjectDataSSBO.data[perObjectDataIdx].baseColor.xyz;
     OUT.fragTexCoord = inTexCoord0;
+    // Supposedly better to take adjugate from world matrix
     OUT.normal = AdjugateFromWorldMat(worldMat) * inNormal;
 }

@@ -47,14 +47,9 @@ bool EntitySelector::RayAABBIntersection(const DirectX::SimpleMath::Vector4& ray
 	tmin = stltype::max(tmin, stltype::min(tz1, tz2));
 	tmax = stltype::min(tmax, stltype::max(tz1, tz2));
 
-	// If tmax >= max(0.0, tmin), there is an intersection
-	if (tmax >= stltype::max(0.0, tmin) && tmin < rayDist)
-	{
-		distance = tmin;  
-		return true;      
-	}
+	distance = tmin;
 
-	return false;  // No intersection
+	return tmax >= stltype::max(0.0, tmin) && tmin < rayDist;  
 }
 
 DirectX::XMVECTOR EntitySelector::VectorizedRayAABBIntersection(const DirectX::XMVECTOR& rayOriginX, const DirectX::XMVECTOR& rayOriginY, const DirectX::XMVECTOR& rayOriginZ,
@@ -122,7 +117,7 @@ void EntitySelector::OnLeftMouseClick(const LeftMouseClickEventData& data)
 	if (renderComps.size() < 9)
 	{
 		const Vector3 rayDir(ray.direction);
-		const Vector3 dirInverted = Vector3(1) / rayDir;
+		const Vector3 dirInverted = ray.invOrigin;
 
 		for (size_t i = 0; i < renderComps.size(); i++)
 		{
@@ -233,6 +228,12 @@ void EntitySelector::OnLeftMouseClick(const LeftMouseClickEventData& data)
 				state.selectedEntities.clear();
 				state.selectedEntities.push_back(rsltEntity);
 			});
+		auto pRenderComp = g_pEntityManager->GetComponent<ECS::Components::RenderComponent>(rsltEntity);
+		if(pRenderComp == nullptr)
+			pRenderComp = (ECS::Components::RenderComponent*)g_pEntityManager->GetComponent<ECS::Components::DebugRenderComponent>(rsltEntity);
+		pRenderComp->isSelected = true;
+		g_pEntityManager->MarkComponentDirty(rsltEntity, ECS::ComponentID<ECS::Components::Transform>::ID);
+		g_pEntityManager->MarkComponentDirty(rsltEntity, ECS::ComponentID<ECS::Components::RenderComponent>::ID);
 	}
 	else
 	{
@@ -266,5 +267,5 @@ EntitySelector::WorldPosMouseRay EntitySelector::CreateRay(const DirectX::XMFLOA
 	dir.y *= -1.f;
 	dir.Normalize();
 
-	return { worldCoordsOrigin, dir, dir, 10000.f };
+	return { worldCoordsOrigin, mathstl::Vector3(1) / dir, dir, 10000.f };
 }

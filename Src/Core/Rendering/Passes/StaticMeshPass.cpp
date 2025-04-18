@@ -33,37 +33,35 @@ namespace RenderPasses
 		m_mainPSO = PSO(mainVert, mainFrag, PipeVertInfo{ m_vertexInputDescription, m_attributeDescriptions }, info, m_mainPass);
 
 		InitBaseData(attachmentInfo, m_mainPass);
+		m_indirectCmdBuffer = IndirectDrawCommandBuffer(50);
 	}
 
 	void StaticMainMeshPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes)
 	{
 		AsyncQueueHandler::MeshTransfer cmd{};
-		cmd.vertices.reserve(meshes.size() * 10);
-		cmd.indices.reserve(meshes.size() * 30);
+		cmd.vertices.reserve(meshes.size() * 200);
+		cmd.indices.reserve(meshes.size() * 500);
 		cmd.pRenderPass = &m_mainPass;
 
 		UBO::PerPassObjectDataSSBO data{};
+		GenericGeometryPass::DrawCmdOffsets offsets{};
 
-		u32 idxOffset = 0;
+		m_indirectCmdBuffer.EmptyCmds();
+
 		for (const auto& meshData : meshes)
 		{
 			if (meshData.meshData.IsDebugMesh())
 				continue;
 
-			const Mesh* pMesh = meshData.meshData.pMesh;
-			cmd.vertices.insert(cmd.vertices.end(), pMesh->vertices.begin(), pMesh->vertices.end());
-
-			for (auto idx : pMesh->indices)
-			{
-				cmd.indices.emplace_back(idx + idxOffset);
-			}
-			idxOffset += pMesh->indices.size() - 1;
+			const auto instanceOffset = offsets.instanceCount = meshData.transformIdx;
 			data.perObjectDataIdx.push_back(g_pMaterialManager->GetMaterialIdx(meshData.meshData.pMaterial));
-			//data.perObjectDataIdx.push_back(meshData.perObjectDataIdx);
-			data.transformIdx.push_back(meshData.transformIdx);
+			data.transformIdx.push_back(instanceOffset);
+
+			GenerateDrawCommandForMesh(meshData, offsets, cmd.vertices, cmd.indices, m_indirectCmdBuffer, m_indirectCountBuffer);
 		}
 		RebuildPerObjectBuffer(data);
 		g_pQueueHandler->SubmitTransferCommandAsync(cmd);
+		m_indirectCmdBuffer.FillCmds();
 	}
 
 	void StaticMainMeshPass::Render(const MainPassData& data, const FrameRendererContext& ctx)
@@ -77,8 +75,8 @@ namespace RenderPasses
 		CommandBuffer* currentBuffer = m_cmdBuffers[currentFrame];
 		DEBUG_ASSERT(currentBuffer);
 
-		GenericInstancedDrawCmd cmd{ m_mainPSOFrameBuffers[ctx.imageIdx] , m_mainPass, m_mainPSO };
-		cmd.vertCount = m_mainPass.GetVertCount();
+		GenericIndirectDrawCmd cmd{ m_mainPSOFrameBuffers[ctx.imageIdx] , m_mainPass, m_mainPSO, m_indirectCmdBuffer };
+		cmd.drawCount = m_indirectCmdBuffer.GetDrawCmdNum();
 		if(data.bufferDescriptors.empty())
 			cmd.descriptorSets = { g_pTexManager->GetBindlessDescriptorSet()};
 		else

@@ -197,6 +197,10 @@ inline VkBufferUsageFlags Conv(const BufferUsage& m)
 			return VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
 		case BufferUsage::SSBOHost:
 			return VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+		case BufferUsage::IndirectDrawCmds:
+			return VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+		case BufferUsage::IndirectDrawCount:
+			return VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
 		default:
 			DEBUG_ASSERT(false);
 	}
@@ -220,6 +224,8 @@ inline VkMemoryPropertyFlags Conv2MemFlags(const BufferUsage& m)
 			return VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 		case BufferUsage::GenericDeviceVisible:
 			return VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+		case BufferUsage::IndirectDrawCmds:
+			return VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 		default:
 			DEBUG_ASSERT(false);
 	}

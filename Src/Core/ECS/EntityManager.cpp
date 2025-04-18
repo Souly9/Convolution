@@ -28,8 +28,8 @@ namespace ECS
 		m_systems.emplace_back(stltype::make_unique<System::SView>());
 		m_systems.emplace_back(stltype::make_unique<System::SRenderComponent>());
 		m_systems.emplace_back(stltype::make_unique<System::SLight>());
-		m_systems.emplace_back(stltype::make_unique<System::SAABB>());
 		m_systems.emplace_back(stltype::make_unique<System::SDebugDisplay>());
+		m_systems.emplace_back(stltype::make_unique<System::SAABB>());
 	}
 
 	Entity EntityManager::CreateEntity(const DirectX::XMFLOAT3& position)
@@ -63,6 +63,13 @@ namespace ECS
 		auto it = stltype::find(dirtyCompVec.begin(), dirtyCompVec.end(), componentID);
 		if (it == dirtyCompVec.end())
 			dirtyCompVec.emplace_back(componentID);
+		else
+		{
+			auto& dirtyCompVec = m_dirtyComponents[FrameGlobals::GetPreviousFrameNumber(frameIdx)];
+			auto it = stltype::find(dirtyCompVec.begin(), dirtyCompVec.end(), componentID);
+			if (it == dirtyCompVec.end())
+				dirtyCompVec.emplace_back(componentID);
+		}
 	}
 
 	void EntityManager::SyncSystemData(u32 frameIdx)

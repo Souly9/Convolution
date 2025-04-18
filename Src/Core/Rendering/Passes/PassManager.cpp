@@ -274,18 +274,22 @@ void RenderPasses::PassManager::SetMainViewData(UBO::ViewUBO&& viewUBO, u32 fram
 
 void RenderPasses::PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
 {
-	if (m_dataToBePreProcessed.IsEmpty() && m_needsToPropagateMainDataUpdate)
+	if (m_needsToPropagateMainDataUpdate)
 	{
 		u32 frameToPropagate = m_frameIdxToPropagate;
 		u32 targetFrame = FrameGlobals::GetPreviousFrameNumber(m_frameIdxToPropagate);
 		m_needsToPropagateMainDataUpdate = false;
 		const auto& ctx = m_frameRendererContexts[targetFrame];
 
-		ctx.mainViewUBODescriptor->WriteBufferUpdate(m_viewUBO);
-		ctx.modelSSBODescriptor->WriteSSBOUpdate(m_modelSSBOs);
 		ctx.modelSSBODescriptor->WriteSSBOUpdate(m_perObjectDataSSBO, s_globalObjectDataBindingSlot);
-		ctx.tileArraySSBODescriptor->WriteSSBOUpdate(m_tileArraySSBO);
-		ctx.tileArraySSBODescriptor->WriteBufferUpdate(m_lightUniformsUBO, s_globalLightUniformsBindingSlot);
+
+		if (m_dataToBePreProcessed.IsEmpty())
+		{
+			ctx.mainViewUBODescriptor->WriteBufferUpdate(m_viewUBO);
+			ctx.modelSSBODescriptor->WriteSSBOUpdate(m_modelSSBOs);
+			ctx.tileArraySSBODescriptor->WriteSSBOUpdate(m_tileArraySSBO);
+			ctx.tileArraySSBODescriptor->WriteBufferUpdate(m_lightUniformsUBO, s_globalLightUniformsBindingSlot);
+		}
 	}
 
 	if (g_pMaterialManager->IsBufferDirty())
@@ -381,12 +385,12 @@ void RenderPasses::PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
 			{
 				tileArray.tiles[0].lights.push_back(light);
 			}
-			UpdateWholeTileArraySSBO(tileArray, m_dataToBePreProcessed.frameIdx);
+			UpdateWholeTileArraySSBO(tileArray, frameIdx);
 		}
 
 		// Clear
 		m_needsToPropagateMainDataUpdate = true;
-		m_frameIdxToPropagate = m_dataToBePreProcessed.frameIdx;
+		m_frameIdxToPropagate = frameIdx;
 		m_dataToBePreProcessed.Clear();
 	}
 }

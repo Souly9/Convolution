@@ -15,7 +15,7 @@
 #include <EASTL/optional.h>
 #include <DirectXMath.h>
 #include <DirectXPackedVector.h>
-#include <SimpleMath.h>
+#include <SimpleMath/SimpleMath.h>
 #include <cassert>
 #include <functional>
 #include <EASTL/hash_map.h>

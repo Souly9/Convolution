@@ -9,6 +9,9 @@ namespace ECS
 		struct Transform : public IComponent
 		{
 		public:
+			mathstl::Matrix localModelMatrix;
+			mathstl::Matrix worldModelMatrix;
+
 			mathstl::Vector3 position{ 0.0f, 0.0f, 0.0f};
 			mathstl::Vector3 rotation{ 0.0f, 0.0f, 0.0f };
 			mathstl::Vector3 scale{ 1.0f, 1.0f, 1.0f };
