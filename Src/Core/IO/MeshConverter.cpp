@@ -14,7 +14,7 @@ namespace MeshConversion
 
 	mathstl::Vector3 Convert(const aiVector3D& v)
 	{
-		return mathstl::Vector3(v.x, v.y, v.z);
+		return mathstl::Vector3(v.x, v.y - 0.1f, v.z);
 	}
 	mathstl::Vector4 Convert(const aiColor3D& v)
 	{
@@ -28,9 +28,6 @@ namespace MeshConversion
 	SceneNode Convert(const aiScene* pScene)
 	{
 		DEBUG_ASSERT(CheckScene(pScene));
-
-		Entity rootEntity = g_pEntityManager->CreateEntity();
-
 		Entity nodeEntity = g_pEntityManager->CreateEntity();
 		for (int i = 0; i < 1; ++i)
 		{
@@ -38,14 +35,23 @@ namespace MeshConversion
 
 			auto pConvMesh = ExtractMesh(pAiMesh);
 			auto* pConvMaterial = ExtractMaterial(pScene->mMaterials[pAiMesh->mMaterialIndex]);
-			
+
+			auto* pTransform = g_pEntityManager->GetComponentUnsafe<Components::Transform>(nodeEntity);
+			pTransform->scale = mathstl::Vector3(10, 10, 10);
 			Components::RenderComponent comp{};
 			comp.pMaterial = pConvMaterial;
 			comp.pMesh = pConvMesh;
+			const auto& aiAABB = pAiMesh->mAABB;
+			comp.boundingBox = g_pMeshManager->CalcAABB(mathstl::Vector3(aiAABB.mMin.x, aiAABB.mMin.y * 0.6f, aiAABB.mMin.z) * pTransform->scale, 
+				mathstl::Vector3(aiAABB.mMax.x, aiAABB.mMax.y * 0.6f, aiAABB.mMax.z) * pTransform->scale,
+				pConvMesh);
+
+			//g_pEntityManager->GetComponentUnsafe<Components::Transform>(nodeEntity)->parent = rootEntity;
+			g_pEntityManager->GetComponentUnsafe<Components::Transform>(nodeEntity)->SetName(pScene->mName.C_Str());
 			g_pEntityManager->AddComponent(nodeEntity, comp);
-
-
 		}
+		g_pMaterialManager->MarkMaterialsDirty();
+
 		return SceneNode{ nodeEntity };
 	}
 
@@ -56,8 +62,22 @@ namespace MeshConversion
 		{
 			auto& vertex = pConvMesh->vertices.push_back();
 			vertex.position = Convert(pMesh->mVertices[i]);
-			vertex.normal = Convert(pMesh->mNormals[i]);
-			vertex.texCoord = ConvertUV(pMesh->mTextureCoords[0][i]);
+			if (pMesh->HasNormals() == false)
+			{
+				vertex.normal = mathstl::Vector3(0, 0, 0);
+			}
+			else
+			{
+				vertex.normal = Convert(pMesh->mNormals[i]);
+			}
+			if (pMesh->HasTextureCoords(0))
+			{
+				vertex.texCoord = ConvertUV(pMesh->mTextureCoords[0][i]);
+			}
+			else
+			{
+				vertex.texCoord = DirectX::XMFLOAT2(0, 0);
+			}
 		}
 
 		for (u32 i = 0; i < pMesh->mNumFaces; ++i)
@@ -80,7 +100,8 @@ namespace MeshConversion
 		//mat.textures.normalTexture = g_pTexManager->SubmitAsyncTextureCreation({ path.C_Str() });
 
 		aiColor3D diffuse;
-		const stltype::string materialName = pMaterial->GetName().C_Str();
+		stltype::string materialName = pMaterial->GetName().C_Str();
+		materialName += "Bunny";
 		if (AI_SUCCESS != pMaterial->Get(AI_MATKEY_COLOR_DIFFUSE, diffuse))
 		{
 			DEBUG_LOG_WARN("Couldn't load diffuse color of Material: " + materialName);

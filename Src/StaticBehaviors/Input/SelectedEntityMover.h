@@ -6,6 +6,7 @@ namespace SelectedEntityMover
 {
 	void RegisterCallbacks();
 	void OnKeyPress(const KeyPressEventData& data);
+	void OnScroll(const ScrollEventData& data);
 
 	void OnUpdate(const UpdateEventData& data);
 }

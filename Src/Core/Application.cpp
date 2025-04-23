@@ -32,17 +32,18 @@ Application::Application(bool canRender, RenderLayer<RenderAPI>& layer) : m_rend
 
 	auto meshEnt = g_pEntityManager->CreateEntity(DirectX::XMFLOAT3(0,0,0));
 	ECS::Components::RenderComponent comp{};
+	g_pFileReader->SubmitIORequest(IORequest{ "Resources/Models/bunny.obj", [&](const ReadMeshInfo& info)
+{
+			g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(info.rootNode.root)->position = DirectX::XMFLOAT3(3, 2, 0);
+}, RequestType::Mesh });
 	comp.pMesh = g_pMeshManager->GetPrimitiveMesh(MeshManager::PrimitiveType::Cube);
 	comp.pMaterial = g_pMaterialManager->AllocateMaterial("DefaultConvolutionMaterial", Material{});
-	comp.pMaterial->properties.baseColor = mathstl::Vector4{ 0,0,1,1 };
+	comp.pMaterial->properties.baseColor = mathstl::Vector4{ 1,1,1,1 };
 	g_pEntityManager->AddComponent(meshEnt, comp);
 
-	auto parentEnt = g_pEntityManager->CreateEntity(DirectX::XMFLOAT3(0, 4, 0));
+	auto parentEnt = g_pEntityManager->CreateEntity(DirectX::XMFLOAT3(0, 1, 0));
 	comp.pMesh = g_pMeshManager->GetPrimitiveMesh(MeshManager::PrimitiveType::Cube);
 	g_pEntityManager->AddComponent(parentEnt, comp);
-	auto parentEnt2 = g_pEntityManager->CreateEntity(DirectX::XMFLOAT3(2, 4, 0));
-	comp.pMesh = g_pMeshManager->GetPrimitiveMesh(MeshManager::PrimitiveType::Quad);
-	g_pEntityManager->AddComponent(parentEnt2, comp);
 	//g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(meshEnt)->parent = parentEnt;
 
 	auto camEnt = g_pEntityManager->CreateEntity(DirectX::XMFLOAT3(4, 0, 12));
@@ -53,7 +54,7 @@ Application::Application(bool canRender, RenderLayer<RenderAPI>& layer) : m_rend
 
 	{
 
-		auto lightEnt = g_pEntityManager->CreateEntity(DirectX::XMFLOAT3(0, 1, 0));
+		auto lightEnt = g_pEntityManager->CreateEntity(DirectX::XMFLOAT3(0, 4, 0));
 		ECS::Components::Light compL{};
 		compL.color = mathstl::Vector4(1, 1, 0, 1);
 		g_pEntityManager->AddComponent(lightEnt, compL);
@@ -74,7 +75,7 @@ Application::Application(bool canRender, RenderLayer<RenderAPI>& layer) : m_rend
 	}
 
 
-	g_pApplicationState->RegisterUpdateFunction([meshEnt, camEnt](ApplicationState& state) { state.selectedEntities.push_back(camEnt); state.mainCameraEntity = camEnt; });
+	g_pApplicationState->RegisterUpdateFunction([camEnt](ApplicationState& state) { state.selectedEntities.push_back(camEnt); state.mainCameraEntity = camEnt; });
 	m_applicationState.ProcessStateUpdates();
 	Update(0);
 	Update(1);

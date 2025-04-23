@@ -17,6 +17,18 @@ static inline bool Visualize(ECS::Components::RenderComponent* pRenderComp)
 			{
 				g_pMaterialManager->MarkMaterialsDirty();
 			}
+
+			needsUpdate |= DrawFloatSlider("Metallic", &pRenderComp->pMaterial->properties.metallic.x, 0.f, 1.f);
+			needsUpdate |= DrawFloatSlider("Roughness", &pRenderComp->pMaterial->properties.roughness.x, 0.f, 1.f);
+
+			if (ImGui::ColorEdit4("Emissive", (float*)&pRenderComp->pMaterial->properties.emissive, ImGuiColorEditFlags_NoInputs))
+			{
+				g_pMaterialManager->MarkMaterialsDirty();
+			}
+			if (needsUpdate)
+			{
+				g_pMaterialManager->MarkMaterialsDirty();
+			}
 		}
 	}
 	return needsUpdate;

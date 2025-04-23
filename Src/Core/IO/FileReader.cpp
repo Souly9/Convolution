@@ -140,20 +140,24 @@ void FileReader::FreeImageData(unsigned char* pixels)
 
 void FileReader::ReadMeshFile(const IORequest& request)
 {
+#define AI_CONFIG_PP_RVC_FLAGS aiComponent::aiComponent_COLORS | aiComponent::aiComponent_CAMERAS
+
 	Assimp::Importer importer;
 	stltype::string_view path = request.filePath;
 	const auto ext = path.substr(path.find_last_of('.'));
 	DEBUG_ASSERT(importer.IsExtensionSupported(ext.data()));
-	
-	const aiScene* pMeshScene = importer.ReadFile(path.data(), aiProcess_Triangulate | 
+	const aiScene* pMeshScene = importer.ReadFile(path.data(), 
+		aiProcess_Triangulate | 
 		aiProcess_CalcTangentSpace |
 		aiProcess_JoinIdenticalVertices |
 		aiProcess_RemoveComponent |
-		aiProcess_GenNormals |
+		aiProcess_GenSmoothNormals |
 		aiProcess_RemoveRedundantMaterials |
-		aiProcess_GenUVCoords |
-		aiProcess_OptimizeMeshes |
-		aiProcess_GenBoundingBoxes);
+		aiProcess_GenUVCoords | 
+		aiProcess_OptimizeMeshes | 
+		aiProcess_OptimizeGraph |
+		aiProcess_GenBoundingBoxes | 
+		aiProcess_ImproveCacheLocality);
 
 	DEBUG_ASSERT(pMeshScene);
 	auto scene = MeshConversion::Convert(pMeshScene);

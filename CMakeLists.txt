@@ -2,6 +2,9 @@
 include(FetchContent)
 Set(FETCHCONTENT_QUIET FALSE)
 
+# Clang complains about all these in our libraries...
+#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unsafe-buffer-usage -Wno-switch-default -Wno-format")
+
 find_package(Git REQUIRED)
 if(Git_FOUND)
   message("Git found: ${GIT_EXECUTABLE}")
@@ -90,16 +93,17 @@ message(STATUS "Vulkan found at ${Vulkan_LIBRARIES}")
 find_package(IMGUI REQUIRED)
 message(STATUS "ImGui found at ${IMGUI_INCLUDE_DIR}")
 
-if(${CMAKE_BUILD_TYPE} STREQUAL "Debug")
+if(${CMAKE_BUILD_TYPE} MATCHES "Debug")
 set(ASSIMP_LIBRARY_SEARCH_DIR ${CMAKE_SOURCE_DIR}/External/assimp-build/lib/*d.lib ${CMAKE_SOURCE_DIR}/External/assimp-build/contrib/*d.lib)
 else()
-set(ASSIMP_LIBRARY_SEARCH_DIR ${CMAKE_SOURCE_DIR}/External/assimp-build/lib/*.lib ${CMAKE_SOURCE_DIR}/External/assimp/contrib/*.lib)
+set(ASSIMP_LIBRARY_SEARCH_DIR ${CMAKE_SOURCE_DIR}/External/assimp-build/lib/*.lib ${CMAKE_SOURCE_DIR}/External/assimp-build/contrib/*.lib)
 endif()
 
 file(GLOB_RECURSE ADD_LIBS 
 	"${CMAKE_SOURCE_DIR}/External/additonal_libs/*"
 	${ASSIMP_LIBRARY_SEARCH_DIR}
 )
+
 set(LIBS ${GLFW3_LIBRARY} ${Vulkan_LIBRARIES} ${ADD_LIBS} EASTL EAStdC EAAssert EAThread ${ASSIMP_LIBRARY})
 
 link_directories(${CMAKE_SOURCE_DIR}/External/additional_libs)
@@ -138,7 +142,6 @@ SYSTEM
 target_compile_definitions(${NAME} PRIVATE CONV_DEBUG=1)
 
 target_link_libraries(${NAME} ${LIBS})
-
 
 if(WIN32)
 add_custom_target(

@@ -3,10 +3,10 @@
 
 struct MaterialProperties
 {
-	mathstl::Vector4 baseColor;
-	mathstl::Vector4 metallic;
+	mathstl::Vector4 baseColor{ 1.0 };
+	mathstl::Vector4 metallic { 0.05 };
 	mathstl::Vector4 emissive;
-	mathstl::Vector4 roughness;
+	mathstl::Vector4 roughness { 0.4 };
 };
 
 struct TextureData

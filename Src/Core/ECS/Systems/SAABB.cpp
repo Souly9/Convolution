@@ -20,7 +20,6 @@ void ECS::System::SAABB::Process()
 		else
 			continue;
 		pRenderComp->boundingBox.center = transformComp.position;
-		pRenderComp->boundingBox.extents = mathstl::Vector3(0.5, 0.5, 0.5) * transformComp.scale;
 
 	}
 }

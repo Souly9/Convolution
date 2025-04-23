@@ -12,17 +12,18 @@ layout(location = 0) out VertexOut
 {
   vec4 worldPos;
   vec3 normal;
-  vec3 fragColor;
   vec2 fragTexCoord;
+  Material mat;
 } OUT;
 
 void main() {
+    uint transformIdx = perObjectDataSSBO.transformDataIdx[gl_InstanceIndex];
     uint perObjectDataIdx = perObjectDataSSBO.perObjectDataIdx[gl_InstanceIndex];
     mat4 worldMat = globalTransformSSBO.modelMatrices[transformIdx];
     OUT.worldPos = worldMat * vec4(inPosition, 1.0);
     gl_Position = ubo.proj * ubo.view * OUT.worldPos;
-    OUT.fragColor = globalObjectDataSSBO.data[perObjectDataIdx].baseColor.xyz;
     OUT.fragTexCoord = inTexCoord0;
     // Supposedly better to take adjugate from world matrix
-    OUT.normal = AdjugateFromWorldMat(worldMat) * inNormal;
+    OUT.normal = AdjugateFromWorldMat(worldMat) * normalize(inNormal);
+    OUT.mat = globalObjectDataSSBO.data[perObjectDataIdx];
 }

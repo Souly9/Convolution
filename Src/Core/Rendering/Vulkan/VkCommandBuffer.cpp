@@ -6,19 +6,23 @@
 namespace CommandHelpers
 {
     template<typename T>
-    static void RecordCommand(T& cmd, CBufferVulkan& buffer, bool& needsBegin)
+    static void RecordCommand(T& cmd, CBufferVulkan& buffer)
     {
         DEBUG_ASSERT(false);
     }
 
-    static void RecordCommand(GenericIndirectDrawCmd& cmd, CBufferVulkan& buffer, bool& needsBegin)
+    static void RecordCommand(BeginRPassCmd& cmd, CBufferVulkan& buffer)
     {
-        if (needsBegin)
-        {
-            buffer.BeginRPass(cmd);
-            needsBegin = false;
-        }
+        buffer.BeginRPass(cmd);
+    }
 
+    static void RecordCommand(EndRPassCmd& cmd, CBufferVulkan& buffer)
+    {
+        buffer.EndRPass();
+    }
+
+    static void RecordCommand(GenericIndirectDrawCmd& cmd, CBufferVulkan& buffer)
+    {
         stltype::vector<VkDescriptorSet> sets(cmd.descriptorSets.size());
         for (u32 i = 0; i < sets.size(); ++i)
             sets[i] = cmd.descriptorSets[i]->GetRef();
@@ -27,14 +31,8 @@ namespace CommandHelpers
 
         vkCmdDrawIndexedIndirect(buffer.GetRef(), cmd.drawCmdBuffer.GetRef(), cmd.bufferOffst, cmd.drawCount, sizeof(VkDrawIndexedIndirectCommand));
     }
-    static void RecordCommand(GenericInstancedDrawCmd& cmd, CBufferVulkan& buffer, bool& needsBegin)
+    static void RecordCommand(GenericInstancedDrawCmd& cmd, CBufferVulkan& buffer)
     {
-        if (needsBegin)
-        {
-            buffer.BeginRPass(cmd);
-            needsBegin = false;
-        }
-        
         stltype::vector<VkDescriptorSet> sets(cmd.descriptorSets.size());
 		for (u32 i = 0; i < sets.size(); ++i)
 			sets[i] = cmd.descriptorSets[i]->GetRef();
@@ -43,9 +41,8 @@ namespace CommandHelpers
 
         vkCmdDrawIndexed(buffer.GetRef(), cmd.vertCount, cmd.instanceCount, cmd.indexOffset, cmd.firstVert, cmd.firstInstance);
     }
-    static void RecordCommand(SimpleBufferCopyCmd& cmd, CBufferVulkan& buffer, bool& needsBegin)
+    static void RecordCommand(SimpleBufferCopyCmd& cmd, CBufferVulkan& buffer)
     {
-        needsBegin = true;
         DEBUG_ASSERT(cmd.srcBuffer->GetRef() != VK_NULL_HANDLE && cmd.dstBuffer->GetRef() != VK_NULL_HANDLE);
 
         VkBufferCopy copyRegion{};
@@ -58,9 +55,8 @@ namespace CommandHelpers
             buffer.AddExecutionFinishedCallback(std::move(cmd.optionalCallback));
     }
 
-    static void RecordCommand(ImageBuffyCopyCmd& cmd, CBufferVulkan& buffer, bool& needsBegin)
+    static void RecordCommand(ImageBuffyCopyCmd& cmd, CBufferVulkan& buffer)
     {
-        needsBegin = true;
         DEBUG_ASSERT(cmd.srcBuffer->GetRef() != VK_NULL_HANDLE && cmd.dstImage->GetImage() != VK_NULL_HANDLE);
 
         VkBufferImageCopy copyRegion{};
@@ -81,9 +77,8 @@ namespace CommandHelpers
             buffer.AddExecutionFinishedCallback(std::move(cmd.optionalCallback));
     }
 
-    static void RecordCommand(ImageLayoutTransitionCmd& cmd, CBufferVulkan& buffer, bool& needsBegin)
+    static void RecordCommand(ImageLayoutTransitionCmd& cmd, CBufferVulkan& buffer)
     {
-        needsBegin = true;
         DEBUG_ASSERT(cmd.pImage->GetImage() != VK_NULL_HANDLE);
 
         VkImageMemoryBarrier memoryBarrier{};
@@ -120,18 +115,14 @@ void CBufferVulkan::Bake()
 {
     BeginBufferForSingleSubmit();
 
-    bool needsBegin = true;
     for (auto& cmd : m_commands)
     {
         stltype::visit([&](auto& c)
             {
-                CommandHelpers::RecordCommand(c, *this, needsBegin);
+                CommandHelpers::RecordCommand(c, *this);
             },
             cmd);
     }
-    if(needsBegin == false)
-        EndRPass();
-
     EndBuffer();
 
     m_commands.clear();
@@ -155,7 +146,7 @@ void CBufferVulkan::BeginBufferForSingleSubmit()
     DEBUG_ASSERT(vkBeginCommandBuffer(GetRef(), &beginInfo) == VK_SUCCESS);
 }
 
-void CBufferVulkan::BeginRPass(GenericDrawCmd& cmd)
+void CBufferVulkan::BeginRPass(BeginRPassCmd& cmd)
 {
     const auto& fbExt = cmd.frameBuffer.GetExtents();
     const auto fbExtents = VkExtent2D(fbExt.x, fbExt.y);

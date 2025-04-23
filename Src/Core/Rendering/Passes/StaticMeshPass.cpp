@@ -53,11 +53,11 @@ namespace RenderPasses
 			if (meshData.meshData.IsDebugMesh())
 				continue;
 
-			const auto instanceOffset = offsets.instanceCount = meshData.transformIdx;
 			data.perObjectDataIdx.push_back(g_pMaterialManager->GetMaterialIdx(meshData.meshData.pMaterial));
-			data.transformIdx.push_back(instanceOffset);
+			data.transformIdx.push_back(meshData.transformIdx);
 
 			GenerateDrawCommandForMesh(meshData, offsets, cmd.vertices, cmd.indices, m_indirectCmdBuffer, m_indirectCountBuffer);
+			++offsets.instanceCount;
 		}
 		RebuildPerObjectBuffer(data);
 		g_pQueueHandler->SubmitTransferCommandAsync(cmd);
@@ -66,8 +66,6 @@ namespace RenderPasses
 
 	void StaticMainMeshPass::Render(const MainPassData& data, const FrameRendererContext& ctx)
 	{
-		//if (NeedToRender(m_mainPass) == false) return;
-
 		const auto currentFrame = ctx.currentFrame;
 		UpdateContextForFrame(currentFrame);
 		const auto& passCtx = m_perObjectFrameContexts[currentFrame];
@@ -75,7 +73,8 @@ namespace RenderPasses
 		CommandBuffer* currentBuffer = m_cmdBuffers[currentFrame];
 		DEBUG_ASSERT(currentBuffer);
 
-		GenericIndirectDrawCmd cmd{ m_mainPSOFrameBuffers[ctx.imageIdx] , m_mainPass, m_mainPSO, m_indirectCmdBuffer };
+		BeginRPassCmd cmdBegin{ m_mainPSOFrameBuffers[ctx.imageIdx], m_mainPass, m_mainPSO };
+		GenericIndirectDrawCmd cmd{ m_mainPSOFrameBuffers[ctx.imageIdx] , m_mainPSO, m_indirectCmdBuffer };
 		cmd.drawCount = m_indirectCmdBuffer.GetDrawCmdNum();
 		if(data.bufferDescriptors.empty())
 			cmd.descriptorSets = { g_pTexManager->GetBindlessDescriptorSet()};
@@ -85,7 +84,9 @@ namespace RenderPasses
 			const auto tileArraySSBOSet = data.bufferDescriptors.at(UBO::BufferType::TileArraySSBO);
 			cmd.descriptorSets = { g_pTexManager->GetBindlessDescriptorSet(), data.mainView.descriptorSet, transformSSBOSet, tileArraySSBOSet, passCtx.m_perObjectDescriptor };
 		}
+		currentBuffer->RecordCommand(cmdBegin);
 		currentBuffer->RecordCommand(cmd);
+		currentBuffer->RecordCommand(EndRPassCmd{});
 		currentBuffer->Bake();
 
 		const auto& syncContext = ctx.synchronizationContexts.find(this)->second;
