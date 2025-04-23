@@ -27,7 +27,7 @@ static inline bool DrawFloatSlider(const char* label, f32* value, f32 min = -100
 	ImGui::PushItemWidth(MIN_WIDTH);
 	ImGui::PushID(label);
 	ImGui::Text(label); ImGui::SameLine(MIN_WIDTH);
-	ImGui::DragFloat("", value, MIN_STEP_SIZE, min, max, "%.3f", flags);
+	hasChanged |= ImGui::DragFloat("", value, MIN_STEP_SIZE, min, max, "%.3f", flags);
 	ImGui::PopID();
 	ImGui::PopItemWidth();
 	return hasChanged;

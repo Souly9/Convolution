@@ -1,13 +1,6 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 #include "BindingSlots.h"
-
-struct Material
-{
-	vec4 baseColor;
-	vec4 metallic;
-	vec4 emissive;
-	vec4 roughness;
-};
+#include "Material.h"
 
 struct PerObjectData
 {

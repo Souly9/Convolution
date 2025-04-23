@@ -2,6 +2,7 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 #define ViewUBOSet 1
 #include "../../Globals/LightData.h"
+#include "../../Globals/Material.h"
 #include "../../Globals/PBR/UnrealPBR.h"
 
 layout(set = 0, binding = GlobalBindlessTextureBufferSlot) uniform sampler2D GlobalBindlessTextures[];
@@ -10,8 +11,8 @@ layout(location = 0) in VertexOut
 {
   vec4 worldPos;
   vec3 normal;
-  vec3 fragColor;
   vec2 fragTexCoord;
+  Material mat;
    } IN;
 
 layout(location = 0) out vec4 outColor;
@@ -24,9 +25,12 @@ void main() {
 
 	Light lights[MAX_LIGHTS_PER_TILE] = lightTileArraySSBO.tiles[0].lights;
 
-	vec3 diffuseCol=vec3(1,0,0);
+	Material mat = IN.mat;
+	vec3 diffuseCol=mat.baseColor.xyz;
 	// Use material roughness or custom set roughness 
-	float roughness= 0.5;
+	float roughness= mat.roughness.x;
+	float metallic = mat.metallic.x;
+
 	vec3 viewDir=normalize(camPos-worldPos.xyz);
 
 	vec3 lighting = vec3(0);
@@ -38,7 +42,7 @@ void main() {
 		vec3 lightDir = normalize(lightPos - worldPos.xyz);
 		vec3 halfwayDir = normalize(lightDir + viewDir);
 
-		vec3 l = computePointLight(worldPos.xyz, lightPos, viewDir, normal, halfwayDir, light.color.xyz, diffuseCol, roughness);
+		vec3 l = computePointLight(worldPos.xyz, lightPos, viewDir, normal, halfwayDir, light.color.xyz, diffuseCol, roughness, metallic);
 
 		lighting.xyz += l;
 	}

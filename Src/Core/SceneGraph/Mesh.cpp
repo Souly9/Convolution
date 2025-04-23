@@ -10,7 +10,7 @@ MeshManager::MeshManager()
 		stltype::vector<CompleteVertex> vertexData =
 		{
 			CompleteVertex{ DirectX::XMFLOAT3{-0.5f, -0.5f, 0.0f}, DirectX::XMFLOAT3{0.0f, 0.0f, 1.0f}, DirectX::XMFLOAT2{1.f, 0.f} },
-			CompleteVertex{ DirectX::XMFLOAT3{.5f, -.5f, 0.0f}, DirectX::XMFLOAT3{0.0f, 0.0f, 1.0f}, DirectX::XMFLOAT2{0.f, 0.f} },
+			CompleteVertex{ DirectX::XMFLOAT3{.5f, -.5f, 0.0f},		DirectX::XMFLOAT3{0.0f, 0.0f, 1.0f}, DirectX::XMFLOAT2{0.f, 0.f} },
 			CompleteVertex{ DirectX::XMFLOAT3{0.5f, 0.5f, 0.0f}, DirectX::XMFLOAT3{0.0f, 0.0f, 1.0f}, DirectX::XMFLOAT2{0.f, 1.f} },
 			CompleteVertex{ DirectX::XMFLOAT3{-0.5f, 0.5f, 0.0f}, DirectX::XMFLOAT3{0.0f, 0.0f, 1.0f}, DirectX::XMFLOAT2{1.f, 1.f} }
 		};
@@ -25,15 +25,15 @@ MeshManager::MeshManager()
 	{
 		stltype::vector<CompleteVertex> vertexData =
 		{
-			CompleteVertex{ DirectX::XMFLOAT3{0.5f,  0.5f,  -0.5f}, DirectX::XMFLOAT3{0.333333f, 0.666667f, -0.666667f}, DirectX::XMFLOAT2{0.f, 1.f} },
-			CompleteVertex{ DirectX::XMFLOAT3{-0.5f, 0.5f,  -0.5f}, DirectX::XMFLOAT3{-0.816497, 0.408248, -0.408248},  DirectX::XMFLOAT2{1.f, 1.f} },
-			CompleteVertex{ DirectX::XMFLOAT3{-0.5f, 0.5f,  0.5f}, DirectX::XMFLOAT3{-0.333333f, 0.666667f, 0.666667f}, DirectX::XMFLOAT2{0.f, 1.f} },
-			CompleteVertex{ DirectX::XMFLOAT3{0.5f,  0.5f,  0.5f}, DirectX::XMFLOAT3{0.816497, 0.408248, -0.408248},     DirectX::XMFLOAT2{1.f, 1.f} },
+			CompleteVertex{ DirectX::XMFLOAT3{0.5f,  0.5f,  -0.5f}, DirectX::XMFLOAT3{1,1,-1}, DirectX::XMFLOAT2{0.f, 1.f} },
+			CompleteVertex{ DirectX::XMFLOAT3{-0.5f, 0.5f,  -0.5f}, DirectX::XMFLOAT3{-1,1,-1},  DirectX::XMFLOAT2{1.f, 1.f} },
+			CompleteVertex{ DirectX::XMFLOAT3{-0.5f, 0.5f,  0.5f},  DirectX::XMFLOAT3{-1,1,1}, DirectX::XMFLOAT2{0.f, 1.f} },
+			CompleteVertex{ DirectX::XMFLOAT3{0.5f,  0.5f,  0.5f},  DirectX::XMFLOAT3{1,1,1},     DirectX::XMFLOAT2{1.f, 1.f} },
 
-			CompleteVertex{ DirectX::XMFLOAT3{0.5f,  -0.5f, -0.5f}, DirectX::XMFLOAT3{0.666667, -0.666667f, -0.333333},   DirectX::XMFLOAT2{0.f, 0.f} },
-			CompleteVertex{ DirectX::XMFLOAT3{-0.5f, -0.5f, -0.5f}, DirectX::XMFLOAT3{-0.408248, -0.408248, -0.816497},  DirectX::XMFLOAT2{1,0}      },
-			CompleteVertex{ DirectX::XMFLOAT3{-0.5f, -0.5f,  0.5f}, DirectX::XMFLOAT3{-0.666667, -0.666667f, 0.333333},   DirectX::XMFLOAT2{0, 0}     },
-			CompleteVertex{ DirectX::XMFLOAT3{0.5f,  -0.5f,  0.5f}, DirectX::XMFLOAT3{0.408248, -0.408248, 0.816497},      DirectX::XMFLOAT2{1.f, 0.f} }
+			CompleteVertex{ DirectX::XMFLOAT3{0.5f,  -0.5f, -0.5f}, DirectX::XMFLOAT3{1,-1,-1},   DirectX::XMFLOAT2{0.f, 0.f} },
+			CompleteVertex{ DirectX::XMFLOAT3{-0.5f, -0.5f, -0.5f}, DirectX::XMFLOAT3{-1,-1,-1},  DirectX::XMFLOAT2{1,0}      },
+			CompleteVertex{ DirectX::XMFLOAT3{-0.5f, -0.5f,  0.5f}, DirectX::XMFLOAT3{-1,-1,1},   DirectX::XMFLOAT2{0, 0}     },
+			CompleteVertex{ DirectX::XMFLOAT3{0.5f,  -0.5f,  0.5f}, DirectX::XMFLOAT3{1,-1,1},      DirectX::XMFLOAT2{1.f, 0.f} }
 		};
 		stltype::vector<u32> indices =
 		{

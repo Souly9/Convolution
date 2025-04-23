@@ -10,4 +10,6 @@ public:
 
 	static void MouseButtonCallback(GLFWwindow* window, s32 button, s32 action, s32 mods);
 	static void MouseMoveCallback(GLFWwindow* window, f64 xpos, f64 ypos);
+
+	static void ScrollCallback(GLFWwindow* window, f64 xoffset, f64 yoffset);
 };

@@ -31,3 +31,8 @@ struct MouseMoveEventData
 	DirectX::XMUINT2 mousePos;
 };
 using MouseMoveEventCallback = stltype::fixed_function<8, void(const MouseMoveEventData&)>;
+struct ScrollEventData
+{
+	mathstl::Vector2 scrollOffset;
+};
+using ScrollEventCallback = stltype::fixed_function<8, void(const ScrollEventData&)>;

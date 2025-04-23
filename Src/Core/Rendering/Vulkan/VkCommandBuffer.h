@@ -18,7 +18,7 @@ public:
 
 	void BeginBuffer();
 	void BeginBufferForSingleSubmit();
-	void BeginRPass(GenericDrawCmd& cmd);
+	void BeginRPass(BeginRPassCmd& cmd);
 	void BeginRPassGeneric(const DrawCmdDummy& cmd);
 
 	void EndRPass();

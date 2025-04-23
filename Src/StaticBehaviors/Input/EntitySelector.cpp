@@ -114,7 +114,7 @@ void EntitySelector::OnLeftMouseClick(const LeftMouseClickEventData& data)
 	}
 	f32 overallMinDist = FLT_MAX;
 	ECS::Entity rsltEntity;
-	if (renderComps.size() < 9)
+	if (renderComps.size() < 90)
 	{
 		const Vector3 rayDir(ray.direction);
 		const Vector3 dirInverted = ray.invOrigin;
@@ -221,24 +221,38 @@ void EntitySelector::OnLeftMouseClick(const LeftMouseClickEventData& data)
 		}
 	}
 
+	auto deslectEntity = [](const ECS::Entity& entity, bool select = false)
+		{
+			auto pRenderComp = g_pEntityManager->GetComponent<ECS::Components::RenderComponent>(entity);
+			if (pRenderComp == nullptr)
+				pRenderComp = (ECS::Components::RenderComponent*)g_pEntityManager->GetComponent<ECS::Components::DebugRenderComponent>(entity);
+			if (pRenderComp != nullptr)
+				pRenderComp->isSelected = select;
+		};
 	if (rsltEntity.IsValid())
 	{
-		g_pApplicationState->RegisterUpdateFunction([rsltEntity](ApplicationState& state)
+		g_pApplicationState->RegisterUpdateFunction([rsltEntity, deslectEntity](ApplicationState& state)
 			{
+				// Clear previous selection
+				for (auto& selectedEntity : state.selectedEntities)
+				{
+					deslectEntity(selectedEntity);
+				}
 				state.selectedEntities.clear();
 				state.selectedEntities.push_back(rsltEntity);
+				deslectEntity(rsltEntity, true);
+				g_pEntityManager->MarkComponentDirty(rsltEntity, ECS::ComponentID<ECS::Components::Transform>::ID);
+				g_pEntityManager->MarkComponentDirty(rsltEntity, ECS::ComponentID<ECS::Components::RenderComponent>::ID);
 			});
-		auto pRenderComp = g_pEntityManager->GetComponent<ECS::Components::RenderComponent>(rsltEntity);
-		if(pRenderComp == nullptr)
-			pRenderComp = (ECS::Components::RenderComponent*)g_pEntityManager->GetComponent<ECS::Components::DebugRenderComponent>(rsltEntity);
-		pRenderComp->isSelected = true;
-		g_pEntityManager->MarkComponentDirty(rsltEntity, ECS::ComponentID<ECS::Components::Transform>::ID);
-		g_pEntityManager->MarkComponentDirty(rsltEntity, ECS::ComponentID<ECS::Components::RenderComponent>::ID);
 	}
 	else
 	{
-		g_pApplicationState->RegisterUpdateFunction([rsltEntity](ApplicationState& state)
+		g_pApplicationState->RegisterUpdateFunction([rsltEntity, deslectEntity](ApplicationState& state)
 			{
+				for (auto& selectedEntity : state.selectedEntities)
+				{
+					deslectEntity(selectedEntity);
+				}
 				state.selectedEntities.clear();
 			});
 	}

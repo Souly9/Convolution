@@ -24,7 +24,8 @@ namespace RenderPasses
 		PSO m_wireframeDebugObjectsPSO;
 		RenderPass m_mainPass;
 		stltype::hash_map<Mesh*, InstancedMeshDataInfo> m_instancedMeshInfoMap;
-		IndirectDrawCommandBuffer m_indirectCmdBuffer;
+		IndirectDrawCommandBuffer m_indirectCmdBufferOpaque;
+		IndirectDrawCommandBuffer m_indirectCmdBufferWireFrame;
 		IndirectDrawCountBuffer m_indirectCountBuffer;
 	};
 }

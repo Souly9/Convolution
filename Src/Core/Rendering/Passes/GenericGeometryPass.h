@@ -26,6 +26,9 @@ namespace RenderPasses
 		};
 		template<typename T>
 		void GenerateDrawCommandForMesh(const RenderPasses::PassMeshData& meshData, DrawCmdOffsets& offsets, stltype::vector<T>& vertices, stltype::vector<u32>& indices, IndirectDrawCommandBuffer& indirectCmdBuffer, IndirectDrawCountBuffer indirectCountBuffer);
+		
+		template<typename T>
+		void FillVertices(const Mesh* pMesh, stltype::vector<T>& vertices);
 	protected:
 		DescriptorPool m_descPool;
 		StorageBuffer m_perObjectSSBO;
@@ -44,35 +47,28 @@ namespace RenderPasses
 	inline void GenericGeometryPass::GenerateDrawCommandForMesh(const RenderPasses::PassMeshData& meshData, DrawCmdOffsets& offsets, stltype::vector<T>& vertices, stltype::vector<u32>& indices, IndirectDrawCommandBuffer& indirectCmdBuffer, IndirectDrawCountBuffer indirectCountBuffer)
 	{
 		const Mesh* pMesh = meshData.meshData.pMesh;
-		vertices.insert(vertices.end(), pMesh->vertices.begin(), pMesh->vertices.end());
+		FillVertices(pMesh, vertices);
 
 		for (auto idx : pMesh->indices)
 		{
 			indices.emplace_back(idx + offsets.idxOffset);
 		}
 		indirectCmdBuffer.AddIndexedDrawCmd(pMesh->indices.size(), 1, offsets.numOfIdxs, 0, offsets.instanceCount);
-		++offsets.instanceCount;
 		offsets.idxOffset += pMesh->vertices.size();
 		offsets.numOfIdxs += pMesh->indices.size();
 	}
 
-	template<>
-	inline void GenericGeometryPass::GenerateDrawCommandForMesh(const RenderPasses::PassMeshData& meshData, DrawCmdOffsets& offsets, stltype::vector<MinVertex>& vertices, stltype::vector<u32>& indices, IndirectDrawCommandBuffer& indirectCmdBuffer, IndirectDrawCountBuffer indirectCountBuffer)
+	template<typename T>
+	inline void GenericGeometryPass::FillVertices(const Mesh* pMesh, stltype::vector<T>& vertices)
 	{
-		const Mesh* pMesh = meshData.meshData.pMesh;
-		
+		vertices.insert(vertices.end(), pMesh->vertices.begin(), pMesh->vertices.end());
+	}
+	template<>
+	inline void GenericGeometryPass::FillVertices(const Mesh* pMesh, stltype::vector<MinVertex>& vertices)
+	{
 		for (auto& vert : pMesh->vertices)
 		{
 			vertices.emplace_back(ConvertVertexFormat(vert));
 		}
-
-		for (auto idx : pMesh->indices)
-		{
-			indices.emplace_back(idx + offsets.idxOffset);
-		}
-		indirectCmdBuffer.AddIndexedDrawCmd(pMesh->indices.size(), 1, offsets.numOfIdxs, 0, offsets.instanceCount);
-		++offsets.instanceCount;
-		offsets.idxOffset += pMesh->vertices.size();
-		offsets.numOfIdxs += pMesh->indices.size();
 	}
 }

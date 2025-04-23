@@ -1,6 +1,6 @@
 const float PI = 3.14159265359;
 // Hardcoded radius for pointlights for simplification
-const float PointLightRadius = 300.0;
+const float PointLightRadius = 500.0;
 
 // Epic's attentuation function from UE4
 float compAttentuation(vec3 worldPos, vec3 lightPos)
@@ -55,7 +55,7 @@ float GeometrySmith(vec3 normal, vec3 viewDir, vec3 lightDir, float roughness)
 }
 
 vec3 computePointLight(vec3 worldPos, vec3 lightPos, vec3 viewDir, vec3 normal,
-	vec3 halfwayDir, vec3 lightColor, vec3 diffuse, float roughness)
+	vec3 halfwayDir, vec3 lightColor, vec3 diffuse, float roughness, float metallic)
 {
 	vec3 wi = normalize(lightPos - worldPos);
 	float cosTheta = max(dot(normal, wi), 0.0);
@@ -64,6 +64,7 @@ vec3 computePointLight(vec3 worldPos, vec3 lightPos, vec3 viewDir, vec3 normal,
 	vec3 radiance = (lightColor * attentuation);
 	// Hardcoded for everything for now
 	vec3 materialReflection = vec3(0.04);
+	materialReflection = mix(materialReflection, diffuse, metallic);
 
 	vec3 Fresnel = vec3(0);
 
@@ -81,6 +82,7 @@ vec3 computePointLight(vec3 worldPos, vec3 lightPos, vec3 viewDir, vec3 normal,
 
 	// No metallic support
 	vec3 kD = vec3(1.0) - Fresnel;
+	kD *= 1.0 - metallic;
 
 	float NdotL = max(dot(normal, wi), 0.0);
 	return (kD * (diffuse / PI) + specular) * radiance * NdotL;
