@@ -56,4 +56,15 @@ namespace UBO
 	{
 		stltype::vector<u32> entityIndices{};
 	};
+
+	struct GBufferPostProcessUBO
+	{
+		BindlessTextureHandle gbufferPosition;
+		BindlessTextureHandle gbufferNormal;
+		BindlessTextureHandle gbuffer3;
+		BindlessTextureHandle gbuffer4;
+		BindlessTextureHandle gbufferUI;
+		// Not valid 
+		// BindlessTextureHandle depthTexture;
+	};
 }

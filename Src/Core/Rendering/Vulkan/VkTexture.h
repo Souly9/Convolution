@@ -23,6 +23,7 @@ public:
 	VkImage GetImage() const { return m_image; }
 	VkSampler GetSampler() const { return m_sampler; }
 
+	virtual void NamingCallBack(const stltype::string& name) override;
 protected:
 	VkImage m_image{ VK_NULL_HANDLE };
 	GPUMemoryHandle m_imageMemory{ VK_NULL_HANDLE };

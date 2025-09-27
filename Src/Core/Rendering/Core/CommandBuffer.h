@@ -1,45 +1,72 @@
 #pragma once
 #include <EASTL/fixed_function.h>
 
-using ExecutionFinishedCallback = stltype::fixed_function<48, void(void)>;
+using ExecutionFinishedCallback = stltype::fixed_function<128, void(void)>;
 
 struct CommandBase
 {
 
 };
 
-struct BeginRPassCmd : public CommandBase
+struct BeginRenderingBaseCmd : public CommandBase
 {
 	DirectX::XMINT2 offset = { 0, 0 };
-	const FrameBuffer& frameBuffer;
-	const RenderPass& renderPass;
+	DirectX::XMINT2 extents = { 0, 0 };
+	stltype::vector<ColorAttachment>& colorAttachments;
+	DepthAttachment* pDepthAttachment;
+
+	BeginRenderingBaseCmd(stltype::vector<ColorAttachment>& cs, DepthAttachment* pDepth)
+		: colorAttachments(cs), pDepthAttachment(pDepth)
+	{
+	}
+};
+
+struct BeginRenderingCmd : public BeginRenderingBaseCmd
+{
 	const PSO& pso;
 
-	BeginRPassCmd(const FrameBuffer& fb, const RenderPass& rp, const PSO& p) : frameBuffer(fb), renderPass(rp), pso(p) {}
+	IndexBuffer* pIndexBuffer{ nullptr };
+	VertexBuffer* pVertexBuffer{ nullptr };
+	IndirectDrawCommandBuffer* drawCmdBuffer{ nullptr };
+
+	BeginRenderingCmd(const PSO& p, stltype::vector<ColorAttachment>& cs, DepthAttachment* pDepth) : BeginRenderingBaseCmd(cs, pDepth), pso(p)
+	{
+	}
 };
 
-struct EndRPassCmd : public CommandBase
+struct BinRenderDataCmd : public CommandBase
+{
+	VertexBuffer& vertexBuffer;
+	IndexBuffer& indexBuffer;
+
+	BinRenderDataCmd(VertexBuffer& vB, IndexBuffer& iB)
+		: vertexBuffer(vB), indexBuffer(iB)
+	{
+	}
+};
+
+struct EndRenderingCmd : public CommandBase
 {
 
 };
 
-struct DrawCmdDummy : public CommandBase
+struct StartProfilingScopeCmd : public CommandBase
 {
-	DirectX::XMINT2 offset = { 0, 0 };
-	const FrameBuffer& frameBuffer;
-	const RenderPass& renderPass;
+	stltype::string name;
+	mathstl::Vector4 color;
+};
 
-	DrawCmdDummy(const FrameBuffer& fb, const RenderPass& rp) : frameBuffer(fb), renderPass(rp) {}
+struct EndProfilingScopeCmd : public CommandBase
+{
 };
 
 struct GenericDrawCmd : public CommandBase
 {
 	//ShaderID shaderID;
-	const FrameBuffer& frameBuffer;
 	const PSO& pso;
 	stltype::vector<DescriptorSet*> descriptorSets{};
 
-	GenericDrawCmd(const FrameBuffer& fb, const PSO& ps) : frameBuffer(fb), pso(ps) {}
+	GenericDrawCmd(const PSO& ps) : pso(ps) {}
 };
 
 struct GenericIndirectDrawCmd : public GenericDrawCmd
@@ -48,7 +75,7 @@ struct GenericIndirectDrawCmd : public GenericDrawCmd
 	u32 drawCount = 5;
 	u32 bufferOffst = 0;
 
-	GenericIndirectDrawCmd(const FrameBuffer& fb, const PSO& ps, const IndirectDrawCommandBuffer& dB) : GenericDrawCmd(fb, ps), drawCmdBuffer(dB) {}
+	GenericIndirectDrawCmd(const PSO& ps, const IndirectDrawCommandBuffer& dB) : GenericDrawCmd(ps), drawCmdBuffer(dB) {}
 };
 
 struct GenericIndexedDrawCmd : public GenericDrawCmd
@@ -58,23 +85,25 @@ struct GenericIndexedDrawCmd : public GenericDrawCmd
 	u32 firstVert{ 0 };
 	u32 firstInstance{ 0 };
 
-	GenericIndexedDrawCmd(const FrameBuffer& fb, const PSO& ps) : GenericDrawCmd(fb, ps) {}
+	GenericIndexedDrawCmd(const PSO& ps) : GenericDrawCmd(ps) {}
 };
 
 struct GenericInstancedDrawCmd : public GenericIndexedDrawCmd
 {
 	u32 indexOffset{ 0 };
 
-	GenericInstancedDrawCmd(FrameBuffer& fb, const PSO& ps) : GenericIndexedDrawCmd(fb, ps) {}
+	GenericInstancedDrawCmd(const PSO& ps) : GenericIndexedDrawCmd(ps) {}
 };
 
 struct CopyBaseCmd : public CommandBase
 {
 	u64 srcOffset{ 0 };
 	ExecutionFinishedCallback optionalCallback;
-	const GenericBuffer* srcBuffer;
+	GenericBuffer* srcBuffer;
 
-	CopyBaseCmd(const GenericBuffer* src) : srcBuffer(src) {}
+	CopyBaseCmd(GenericBuffer& src) : srcBuffer(&src) {
+		src.Grab();
+	}
 };
 
 struct SimpleBufferCopyCmd : public CopyBaseCmd
@@ -83,7 +112,7 @@ struct SimpleBufferCopyCmd : public CopyBaseCmd
 	u64 size{ 0 };
 	const GenericBuffer* dstBuffer;
 
-	SimpleBufferCopyCmd(const GenericBuffer* src, const GenericBuffer* dst) : CopyBaseCmd(src), dstBuffer(dst) {}
+	SimpleBufferCopyCmd(GenericBuffer& src, const GenericBuffer* dst) : CopyBaseCmd(src), dstBuffer(dst) {}
 };
 
 struct ImageBuffyCopyCmd : public CopyBaseCmd
@@ -100,12 +129,12 @@ struct ImageBuffyCopyCmd : public CopyBaseCmd
 	u32 baseArrayLayer{ 0 };
 	u32 layerCount{ 1 };
 
-	ImageBuffyCopyCmd(const GenericBuffer* src, const Texture* dst) : CopyBaseCmd(src), dstImage(dst) {}
+	ImageBuffyCopyCmd(GenericBuffer& src, const Texture* dst) : CopyBaseCmd(src), dstImage(dst) {}
 };
 
 struct ImageLayoutTransitionCmd : public CommandBase
 {
-	const Texture* pImage;
+	stltype::vector<const Texture*> images;
 	ImageLayout oldLayout;
 	ImageLayout newLayout;
 
@@ -123,7 +152,8 @@ struct ImageLayoutTransitionCmd : public CommandBase
 	u32 srcStage;
 	u32 dstStage;
 
-	ImageLayoutTransitionCmd(const Texture* pI) : pImage(pI) {}
+	ImageLayoutTransitionCmd(const Texture* pI) : images{ pI } {}
+	ImageLayoutTransitionCmd(const stltype::vector<const Texture*>& imgs) : images(imgs) {}
 };
 
 struct DrawMeshCmd : public GenericDrawCmd
@@ -136,10 +166,12 @@ struct GenericComputeCmd : public CommandBase
 
 };
 
-using Command = stltype::variant<CommandBase, GenericDrawCmd, GenericIndirectDrawCmd, GenericIndexedDrawCmd, GenericInstancedDrawCmd, DrawMeshCmd, GenericComputeCmd, SimpleBufferCopyCmd, ImageBuffyCopyCmd, ImageLayoutTransitionCmd, DrawCmdDummy, BeginRPassCmd, EndRPassCmd>;
+using Command = stltype::variant<CommandBase, GenericDrawCmd, GenericIndirectDrawCmd, GenericIndexedDrawCmd, GenericInstancedDrawCmd, 
+	DrawMeshCmd, GenericComputeCmd, SimpleBufferCopyCmd, ImageBuffyCopyCmd, ImageLayoutTransitionCmd, BeginRenderingBaseCmd, BeginRenderingCmd, EndRenderingCmd,
+	BinRenderDataCmd, StartProfilingScopeCmd, EndProfilingScopeCmd>;
 
 // Generic command buffer, basically collects all commands as generic structs first so we can reason about them
-class CBuffer
+class CBuffer : public TrackedResource
 {
 public:
 	virtual ~CBuffer()

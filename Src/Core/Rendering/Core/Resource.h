@@ -43,13 +43,15 @@ public:
 	}
 	TrackedResource& operator=(const TrackedResource& other)
 	{
-		TrackedResource res;
-		res.m_refCounter = other.m_refCounter.load();
+		if (this == &other)
+			return *this;
+
+		this->m_refCounter = other.m_refCounter.load();
 #ifdef CONV_DEBUG
-		res.m_debugName = other.m_debugName;
+		this->m_debugName = other.m_debugName;
 #endif
 		other.Grab();
-		return res;
+		return *this;
 	}
 	TrackedResource(TrackedResource&& other) noexcept
 	{
@@ -62,27 +64,33 @@ public:
 
 	TrackedResource& operator=(TrackedResource&& other) noexcept
 	{
-		TrackedResource res;
-		res.m_refCounter = other.m_refCounter.load();
+		if (this == &other)
+			return *this;
+
+		this->m_refCounter = other.m_refCounter.load();
 #ifdef CONV_DEBUG
-		res.m_debugName = other.m_debugName;
+		this->m_debugName = other.m_debugName;
 #endif
 		other.Grab();
-		return res;
+		return *this;
 	}
 
-	void SetDebugName(stltype::string&& name)
+	void SetName(stltype::string&& name)
+	{
+#ifdef CONV_DEBUG
+		m_debugName = name; 
+#endif
+	}
+	void SetName(const stltype::string& name)
 	{
 #ifdef CONV_DEBUG
 		m_debugName = name;
 #endif
 	}
-	void SetDebugName(const stltype::string& name)
-	{
-#ifdef CONV_DEBUG
-		m_debugName = name;
-#endif
-	}
+
+	// can not be purely virtual since we need to create this class sometimes
+	virtual void NamingCallBack(const stltype::string& name) {}
+
 	stltype::string GetDebugName() const
 	{
 #ifdef CONV_DEBUG

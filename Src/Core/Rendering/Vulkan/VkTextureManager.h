@@ -1,5 +1,6 @@
 #pragma once
 #include <EASTL/queue.h>
+#include "Core/Global/ThreadBase.h"
 #include "Core/Global/GlobalDefines.h"
 #include "BackendDefines.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
@@ -12,10 +13,31 @@ struct DynamicTextureRequest
 {
 	DirectX::XMUINT3 extents;
 	TextureHandle handle;
-	VkFormat format;
-	VkImageUsageFlags usage;
-	VkImageTiling  tiling{ VK_IMAGE_TILING_OPTIMAL };
+	TexFormat format;
+	Usage usage;
+	Tiling  tiling{ Tiling::OPTIMAL };
 	bool hasMipMaps{ false };
+	bool createSampler{ true };
+
+	void AddName(const stltype::string& name)
+	{
+#ifdef CONV_DEBUG
+		m_debugName = name;
+#endif
+	}
+
+	const stltype::string& GetName() const
+	{
+#ifdef CONV_DEBUG
+		return m_debugName;
+#else
+		return "DynamicTexture";
+#endif
+	}
+private:
+#ifdef CONV_DEBUG
+	stltype::string m_debugName;
+#endif
 };
 struct TextureFileInfo
 {
@@ -30,8 +52,17 @@ struct FileTextureRequest
 	TextureHandle handle;
 	bool makeBindless{ true };
 };
+struct AsyncLayoutTransitionRequest
+{
+	stltype::vector<const Texture*> textures;
+	ImageLayout oldLayout;
+	ImageLayout newLayout;
+	// Optional semaphores to wait on and signal, these are for the entire command buffer, multiple equests can be batched into one
+	Semaphore* pWaitSemaphore{ nullptr };
+	Semaphore* pSignalSemaphore{ nullptr };
+};
 
-using TextureRequest = stltype::variant<FileTextureRequest, DynamicTextureRequest>;
+using TextureRequest = stltype::variant<FileTextureRequest, DynamicTextureRequest, AsyncLayoutTransitionRequest>;
 
 struct TextureCreationInfoVulkanImage
 {
@@ -40,7 +71,7 @@ struct TextureCreationInfoVulkanImage
 };
 
 // Texture manager that manages texture creation and uploads to the bindless texture buffers, lives in a seperate thread
-class VkTextureManager
+class VkTextureManager : public ThreadBase
 {
 protected:
 
@@ -71,7 +102,7 @@ public:
 	TextureVulkan* CreateDynamicTexture(const DynamicTextureRequest& req);
 	TextureVulkan* CreateTextureImmediate(const DynamicTextureRequest& req);
 
-	u32 GenerateHandle();
+	TextureHandle GenerateHandle();
 
 	void CreateSamplerForTexture(TextureHandle handle, bool useMipMaps);
 	void CreateSamplerForTexture(TextureVulkan* pTex, bool useMipMaps);
@@ -79,17 +110,20 @@ public:
 	void CreateImageViewForTexture(TextureVulkan* pTex, bool useMipMaps);
 
 	void EnqueueAsyncImageLayoutTransition(const TextureHandle handle, const ImageLayout oldLayout, const ImageLayout newLayout);
-	void EnqueueAsyncImageLayoutTransition(const Texture* pTex, const ImageLayout oldLayout, const ImageLayout newLayout);
-	void DispatchAsyncOps();
-	void WaitOnAsyncOps();
+	void EnqueueAsyncImageLayoutTransition(Texture* pTex, const ImageLayout oldLayout, const ImageLayout newLayout);
+	void EnqueueAsyncImageLayoutTransition(const AsyncLayoutTransitionRequest& request);
+	void DispatchAsyncOps(stltype::string cbufferName = "TextureManager_TransferCommandBuffer");
 
 	TextureVulkan* GetTexture(TextureHandle handle);
 
-	void MakeTextureBindless(TextureHandle handle);
-	void MakeTextureBindless(TextureVulkan* pTex);
+	// Async operations to transfer texture data to the global bindless texture array
+	// Immediately returns a handle to the texture, if the texture is not ready yet a placeholder texture will be used
+	// Should take one frame max so who cares
+	BindlessTextureHandle MakeTextureBindless(TextureHandle handle);
+	BindlessTextureHandle MakeTextureBindless(TextureVulkan* pTex);
 
-	void EnqueueAsyncTextureTransfer(const StagingBuffer* pStagingBuffer, const Texture* pTex, const VkImageAspectFlagBits flagBit);
-	void EnqueueAsyncTextureTransfer(const StagingBuffer* pStagingBuffer, const TextureHandle handle, const VkImageAspectFlagBits flagBit);
+	void EnqueueAsyncTextureTransfer(StagingBuffer* pStagingBuffer, const Texture* pTex, const VkImageAspectFlagBits flagBit);
+	void EnqueueAsyncTextureTransfer(StagingBuffer* pStagingBuffer, const TextureHandle handle, const VkImageAspectFlagBits flagBit);
 
 	stltype::vector<TextureVulkan>& GetSwapChainTextures() { return m_swapChainTextures; }
 	DescriptorSetVulkan* GetBindlessDescriptorSet() { return m_bindlessDescriptorSet; }
@@ -108,15 +142,13 @@ protected:
 	void CreateTransferCommandPool();
 	void CreateTransferCommandBuffer();
 	void CreateBindlessDescriptorSet();
-	void FreeInFlightCommandBuffers();
 protected:
-	// Manager thread
-	threadSTL::Thread m_texManagerThread;
-	threadSTL::Futex m_sharedDataMutex{};
 
 	// Manager thread data
 	CommandPool m_transferCommandPool;
 	CommandBuffer* m_transferCommandBuffer{ nullptr };
+	stltype::vector<CommandBuffer*> m_inflightCommandBuffers;
+	stltype::vector<CommandBuffer*> m_availableCommandBuffers;
 	DescriptorPool m_bindlessDescriptorPool;
 	DescriptorSet* m_bindlessDescriptorSet{ nullptr };
 	DescriptorSetLayout m_bindlessDescriptorSetLayout;
@@ -126,7 +158,6 @@ protected:
 	stltype::queue<TextureRequest> m_requests{}; // Pending texture requests, mainly handled by manager thread
 	stltype::hash_map<TextureHandle, Texture> m_textures;
 	stltype::vector<StagingBuffer> m_stagingBufferInUse;
-	stltype::vector<stltype::pair<CommandBuffer*, Fence>> m_fencesToWaitOn;
 	stltype::vector<Texture> m_swapChainTextures;
 
 	stltype::atomic<u32> m_baseHandle{ 0 };

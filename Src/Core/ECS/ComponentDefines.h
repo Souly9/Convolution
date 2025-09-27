@@ -29,4 +29,18 @@ namespace ECS
 	template<> struct ComponentID <Components::Camera> { static constexpr C_ID ID = 0x00000008; };
 	template<> struct ComponentID <Components::Light> { static constexpr C_ID ID = 0x00000000F; };
 	template<> struct ComponentID <Components::DebugRenderComponent> { static constexpr C_ID ID = 0x000000010; };
+
+	static inline stltype::vector<C_ID> GetAllComponentIDs()
+	{
+		return {
+			ComponentID<Components::Transform>::ID,
+			ComponentID<Components::RenderComponent>::ID,
+			ComponentID<Components::View>::ID,
+			ComponentID<Components::Camera>::ID,
+			ComponentID<Components::Light>::ID,
+			ComponentID<Components::DebugRenderComponent>::ID
+		};
+	}
 }
+
+#define C_ID(compName) ECS::ComponentID<ECS::Components::compName>::ID

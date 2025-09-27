@@ -91,10 +91,14 @@ void RenderBackendImpl<Vulkan>::CreateDebugMessenger()
 	PFN_vkCreateDebugReportCallbackEXT CreateDebugReportCallback = VK_NULL_HANDLE;
 	CreateDebugReportCallback = (PFN_vkCreateDebugReportCallbackEXT)vkGetInstanceProcAddr(m_instance, "vkCreateDebugReportCallbackEXT");
 
+	vkSetDebugUtilsObjectName = (PFN_vkSetDebugUtilsObjectNameEXT)vkGetInstanceProcAddr(m_instance, "vkSetDebugUtilsObjectNameEXT"); 
+	vkBeginDebugUtilsLabel = reinterpret_cast<PFN_vkCmdBeginDebugUtilsLabelEXT>(vkGetInstanceProcAddr(m_instance, "vkCmdBeginDebugUtilsLabelEXT"));
+	vkCmdEndDebugUtilsLabel = reinterpret_cast<PFN_vkCmdEndDebugUtilsLabelEXT>(vkGetInstanceProcAddr(m_instance, "vkCmdEndDebugUtilsLabelEXT"));
+
 	VkDebugUtilsMessengerCreateInfoEXT createInfo{};
 	createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
 	createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-	createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+	createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT;
 	createInfo.pfnUserCallback = DebugCallback;
 	createInfo.pUserData = nullptr; // Optional
 
@@ -106,15 +110,20 @@ void RenderBackendImpl<Vulkan>::CreateDebugMessenger()
 
 VKAPI_ATTR VkBool32 VKAPI_CALL RenderBackendImpl<Vulkan>::DebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData)
 {
+	if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT)
+	{
+		DEBUG_LOG(stltype::string(pCallbackData->pMessage));
+		return VK_FALSE;
+	}
 	if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
 	{
 		DEBUG_LOG_WARN(stltype::string(pCallbackData->pMessage));
-		return VK_TRUE;
+		return VK_FALSE;
 	}
 	if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
 	{
 		DEBUG_LOG_ERR(stltype::string(pCallbackData->pMessage));
-		return VK_TRUE;
+		return VK_FALSE;
 	}
 	return VK_FALSE;
 }
@@ -131,7 +140,7 @@ bool RenderBackendImpl<Vulkan>::CreateInstance(uint32_t screenWidth, uint32_t sc
 	appInfo.applicationVersion = maxSupportedAPI;
 	appInfo.pEngineName = ENGINE_NAME.data();
 	appInfo.engineVersion = CONV_MIN_VULKAN_VERSION;
-	appInfo.apiVersion = maxSupportedAPI;
+	appInfo.apiVersion = VK_API_LEVEL_MIN;
 
 	VkInstanceCreateInfo createInfo{};
 	createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -142,9 +151,11 @@ bool RenderBackendImpl<Vulkan>::CreateInstance(uint32_t screenWidth, uint32_t sc
 	const char** glfwExtensions;
 
 	glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
+	auto instanceExtensions = stltype::vector<const char*>(glfwExtensions, glfwExtensions + glfwExtensionCount);
+	instanceExtensions.insert(instanceExtensions.end(), g_instanceExtensions.begin(), g_instanceExtensions.end());
 
-	createInfo.enabledExtensionCount = glfwExtensionCount;
-	createInfo.ppEnabledExtensionNames = glfwExtensions;
+	createInfo.enabledExtensionCount = instanceExtensions.size();
+	createInfo.ppEnabledExtensionNames = instanceExtensions.data();
 	createInfo.enabledLayerCount = 0;
 
 	uint32_t extensionCount = 0;
@@ -152,20 +163,12 @@ bool RenderBackendImpl<Vulkan>::CreateInstance(uint32_t screenWidth, uint32_t sc
 	stltype::vector< VkExtensionProperties> extensions(extensionCount);
 	vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, extensions.data());
 
-	for (const auto& extension : extensions)
-	{
-		DEBUG_LOG("Supported extension: " + stltype::string(extension.extensionName));
-	}
-
 	uint32_t layerCount;
 	vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
 
 	stltype::vector<VkLayerProperties> availableLayers(layerCount);
 	vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
-	for (const auto& layer : availableLayers)
-	{
-		DEBUG_LOG("Supported layer: " + stltype::string(layer.layerName));
-	}
+
 	if (AreValidationLayersAvailable(availableLayers))
 	{
 		createInfo.enabledLayerCount = g_validationLayers.size();
@@ -196,15 +199,7 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
 		queueCreateInfos.push_back(queueCreateInfo);
 	}
 
-
-	VkDeviceCreateInfo createInfo{};
-	createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-	createInfo.queueCreateInfoCount = static_cast<u32>(queueCreateInfos.size());
-	createInfo.pQueueCreateInfos = queueCreateInfos.data();
-	createInfo.enabledExtensionCount = static_cast<u32>(g_deviceExtensions.size());
-	createInfo.ppEnabledExtensionNames = g_deviceExtensions.data();
-
-	// Enabling bindless textures and other extensions 
+	// Enabling bindless textures
 	VkPhysicalDeviceDescriptorIndexingFeatures indexingFeaturesBindlessTextures{};
 	indexingFeaturesBindlessTextures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
 	indexingFeaturesBindlessTextures.descriptorBindingPartiallyBound = VK_TRUE;
@@ -214,11 +209,45 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
 	indexingFeaturesBindlessTextures.descriptorBindingUniformBufferUpdateAfterBind = VK_TRUE;
 	indexingFeaturesBindlessTextures.pNext = nullptr;
 
+	// VK 1.3 features
+	VkPhysicalDeviceVulkan13Features features13{};
+	features13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+	features13.dynamicRendering = VK_TRUE;
+	features13.synchronization2 = VK_TRUE;
+	features13.pNext = &indexingFeaturesBindlessTextures;
+
+	// VK 1.1 features
+	VkPhysicalDeviceVulkan11Features features11{};
+	features11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+	features11.pNext = &features13;
+
+	VkDeviceCreateInfo createInfo{};
+	createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+	createInfo.queueCreateInfoCount = static_cast<u32>(queueCreateInfos.size());
+	createInfo.pQueueCreateInfos = queueCreateInfos.data();
+	createInfo.enabledExtensionCount = static_cast<u32>(g_deviceExtensions.size());
+	createInfo.ppEnabledExtensionNames = g_deviceExtensions.data();
+	createInfo.pEnabledFeatures = nullptr;
+
 	VkPhysicalDeviceFeatures2 deviceFeatures2{};
 	deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
 	vkGetPhysicalDeviceFeatures2(m_physicalDevice, &deviceFeatures2);
-	deviceFeatures2.pNext = &indexingFeaturesBindlessTextures;
-	createInfo.pNext = &deviceFeatures2;
+	deviceFeatures2.pNext = &features11;
+
+
+	// Set up device creation info for Aftermath feature flag configuration.
+	VkDeviceDiagnosticsConfigFlagsNV aftermathFlags =
+		VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_AUTOMATIC_CHECKPOINTS_BIT_NV |  // Enable automatic call stack checkpoints.
+		VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_RESOURCE_TRACKING_BIT_NV |      // Enable tracking of resources.
+		VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_SHADER_DEBUG_INFO_BIT_NV |      // Generate debug information for shaders.
+		VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_SHADER_ERROR_REPORTING_BIT_NV;  // Enable additional runtime shader error reporting.
+
+	VkDeviceDiagnosticsConfigCreateInfoNV aftermathInfo = {};
+	aftermathInfo.sType = VK_STRUCTURE_TYPE_DEVICE_DIAGNOSTICS_CONFIG_CREATE_INFO_NV;
+	aftermathInfo.flags = aftermathFlags;
+	aftermathInfo.pNext = &deviceFeatures2;
+
+	createInfo.pNext = &aftermathInfo;
 
 
 	createInfo.enabledLayerCount = 0; // No old vulkan versions here mister
@@ -232,6 +261,8 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
 	vkGetDeviceQueue(m_logicalDevice, m_indices.transferFamily.value(), 0, &m_transferQueue);
 	vkGetDeviceQueue(m_logicalDevice, m_indices.computeFamily.value(), 0, &m_computeQueue);
 
+	vkCmdSetCheckpoint = (PFN_vkCmdSetCheckpointNV)vkGetDeviceProcAddr(m_logicalDevice, "vkCmdSetCheckpointNV");
+	DEBUG_ASSERT(vkCmdSetCheckpoint != VK_NULL_HANDLE);
 	return true;
 }
 
@@ -310,9 +341,8 @@ bool RenderBackendImpl<Vulkan>::AreExtensionsSupported(VkPhysicalDevice device)
 
 	for (const auto& extension : availableExtensions)
 	{
-		stltype::string extensionName(extension.extensionName);
+		stltype::string extensionName(extension.extensionName); 
 		requiredExtensions.erase(extension.extensionName);
-		DEBUG_LOG("Required extension " + extensionName + "is supported!");
 	}
 
 	return requiredExtensions.empty();
@@ -404,12 +434,17 @@ bool RenderBackendImpl<Vulkan>::CreateSwapChain()
 	VkPresentModeKHR presentMode = ChooseSwapPresentMode(swapChainSupport.presentModes);
 	DirectX::XMUINT2 extent = ChooseSwapExtent(swapChainSupport.capabilities);
 
-	u32 imageCount = swapChainSupport.capabilities.minImageCount + 1;
+	// requesting one more image than the minimum to avoid stalls
+	u32 imageCount = (swapChainSupport.capabilities.minImageCount <= SWAPCHAIN_IMAGES && swapChainSupport.capabilities.maxImageCount >= SWAPCHAIN_IMAGES) ?
+		SWAPCHAIN_IMAGES :
+		swapChainSupport.capabilities.maxImageCount;
 	if (swapChainSupport.capabilities.maxImageCount > 0 && 
 		imageCount > swapChainSupport.capabilities.maxImageCount)
 	{
 		imageCount = swapChainSupport.capabilities.maxImageCount;
 	}
+	DEBUG_LOGF("Creating swapchain with {} images", imageCount);
+	//DEBUG_LOG("Creating swapchain with " + stltype::to_string(imageCount) + " images, width: " + stltype::to_string(extent.x) + ", height: " + stltype::to_string(extent.y));
 
 	VkSwapchainCreateInfoKHR createInfo{};
 	createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;

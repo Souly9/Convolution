@@ -91,7 +91,7 @@ namespace DescriptorLaytoutUtils
 
 		VkDescriptorSetLayout setLayout;
 		DEBUG_ASSERT(vkCreateDescriptorSetLayout(VK_LOGICAL_DEVICE, &descriptorLayout, VulkanAllocator(), &setLayout) == VK_SUCCESS);
-		return setLayout;
+		return { setLayout };
 	}
 
 	static DescriptorSetLayoutVulkan CreateOneDescriptorSetLayout(const PipelineDescriptorLayout& layout)

@@ -8,16 +8,11 @@ struct MaterialProperties
 	mathstl::Vector4 emissive;
 	mathstl::Vector4 roughness { 0.4 };
 };
-
-struct TextureData
-{
-	TextureHandle diffuseTexture;
-	TextureHandle normalTexture;
-};
-
 struct Material
 {
 	MaterialProperties properties;
+	TextureHandle diffuseTexture;
+	TextureHandle normalTexture;
 };
 
 using MaterialBuffer = stltype::fixed_vector<Material, MAX_MATERIALS, false>;

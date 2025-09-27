@@ -36,6 +36,7 @@ public:
 	BufferInfo GetInfo() const { return m_info; }
 	BufferUsage GetUsage() const { return m_info.usage; }
 
+	virtual void NamingCallBack(const stltype::string& name) override;
 protected:
 	GenBufferVulkan() {}
 

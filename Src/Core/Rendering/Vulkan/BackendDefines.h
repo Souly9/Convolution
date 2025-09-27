@@ -4,14 +4,15 @@
 #include "Core/WindowManager.h"
 #include "Core/Memory/MemoryManager.h"
 
-static inline constexpr u64 MAX_TEXTURES = 512;
+static inline constexpr u64 MAX_TEXTURES = 4096;
 
 #define VK_LOGICAL_DEVICE VkGlobals::GetLogicalDevice()
 #define VK_PHYS_DEVICE VkGlobals::GetPhysicalDevice()
 #define VK_FREE_IF(res, freeFunc) if(res != VK_NULL_HANDLE) { freeFunc; res = VK_NULL_HANDLE; }
 #define DEPTH_BUFFER_FORMAT VK_FORMAT_D32_SFLOAT
+#define VK_API_LEVEL_MIN VK_MAKE_API_VERSION(0, 1, 4, 3)
 
-static inline constexpr VkClearValue g_BlackCLearColor = { {{0.0f, 0.0f, 0.0f, 1.0f}} };
+static inline constexpr VkClearValue g_BlackCLearColor = { {{0.0f, 0.0f, 0.0f, 0.0f}} };
 static inline constexpr VkClearValue g_WhiteCLearColor = { {{1.0f, 1.0f, 1.0f, 1.0f}} };
 
 struct RequiredDeviceFeatures
@@ -26,8 +27,18 @@ static inline const stltype::vector<const char*> g_validationLayers = {
 #endif
 };
 
+static inline const stltype::vector<const char*> g_instanceExtensions = {
+    "VK_EXT_swapchain_colorspace", // hdr rendering,
+    "VK_EXT_debug_utils"
+};
+
 static inline const stltype::vector<const char*> g_deviceExtensions = {
-    "VK_KHR_swapchain"
+    "VK_KHR_swapchain",
+    "VK_EXT_memory_budget",
+    "VK_NV_device_diagnostic_checkpoints",
+    "VK_NV_device_diagnostics_config",
+    "VK_EXT_device_address_binding_report",
+    "VK_EXT_device_fault",
 }; 
 
 static inline const stltype::vector<VkDynamicState> g_dynamicStates = {
@@ -36,8 +47,8 @@ static inline const stltype::vector<VkDynamicState> g_dynamicStates = {
 };
 
 
-#define SWAPCHAINFORMAT VK_FORMAT_B8G8R8A8_SRGB
-#define SWAPCHAINCOLORSPACE VK_COLOR_SPACE_SRGB_NONLINEAR_KHR
+#define SWAPCHAINFORMAT VK_FORMAT_R16G16B16A16_SFLOAT
+#define SWAPCHAINCOLORSPACE VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT
 #define SWAPCHAINPRESENTMODE VK_PRESENT_MODE_FIFO_KHR
 
 #ifdef NDEBUG
@@ -71,3 +82,9 @@ static inline VkExtent3D Conv(const DirectX::XMUINT3& extent)
 {
     return VkExtent3D(extent.x, extent.y, extent.z);
 }
+
+// Vulkan function pointers, global
+static inline PFN_vkSetDebugUtilsObjectNameEXT vkSetDebugUtilsObjectName = VK_NULL_HANDLE;
+static inline PFN_vkCmdSetCheckpointNV vkCmdSetCheckpoint;
+static inline PFN_vkCmdBeginDebugUtilsLabelEXT vkBeginDebugUtilsLabel = nullptr;
+static inline PFN_vkCmdEndDebugUtilsLabelEXT vkCmdEndDebugUtilsLabel = nullptr;

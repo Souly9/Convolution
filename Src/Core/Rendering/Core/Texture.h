@@ -26,31 +26,30 @@ enum class StoreOp
 	IDC
 };
 
+enum class Tiling
+{
+	OPTIMAL,
+	LINEAR
+};
+
+enum class Usage
+{
+	GBuffer,
+	ColorAttachment,
+	DepthAttachment,
+	TransferSrc,
+	TransferDst,
+	Sampled,
+	AttachmentReadWrite,
+	StencilAttachment,
+};
+
 struct TextureInfoBase
 {
 	DirectX::XMUINT3 extents;
 	ImageLayout layout{ ImageLayout::UNDEFINED };
 	u64 size{ 0 };
 	bool hasMipMaps{ false };
-
-
-	void SetName(stltype::string&& name)
-	{
-#ifdef CONV_DEBUG
-		this->name = name;
-#endif
-	}
-	void SetName(const stltype::string& name)
-	{
-#ifdef CONV_DEBUG
-		this->name = name;
-#endif
-	}
-
-protected:
-#ifdef CONV_DEBUG
-	stltype::string name;
-#endif
 };
 
 struct TextureInfo : TextureInfoBase
@@ -66,6 +65,7 @@ public:
 
 	virtual void CleanUp() override {}
 	const TextureInfo& GetInfo() const { return m_info; }
+	TextureInfo& GetInfo() { return m_info; }
 protected:
 	TextureInfo m_info;
 };

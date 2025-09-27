@@ -13,12 +13,17 @@ struct PipeVertInfo
 	u32 bindingDescriptionCount{ 1 };
 };
 
+struct ShaderCollection
+{
+	Shader* pVertShader;
+	Shader* pFragShader;
+};
+
 // Implementation of a dynamic pipeline state object 
 class PipelineVulkan : public TrackedResource
 {
 public:
-	PipelineVulkan(const ShaderVulkan& vertShader, const ShaderVulkan& fragShader,
-		const PipeVertInfo& vertexInputs, const PipelineInfo& pipeInfo, const RenderPassVulkan& renderPass);
+	PipelineVulkan(const ShaderCollection& shaders, const PipeVertInfo& vertexInputs, const PipelineInfo& pipeInfo);
 
 	PipelineVulkan() = default;
 	~PipelineVulkan();
@@ -49,7 +54,7 @@ private:
 
 	VkPipelineColorBlendAttachmentState CreateColorBlendAttachmentInfo(const ColorBlendAttachmentInfo& info);
 
-	VkPipelineColorBlendStateCreateInfo CreateColorBlendInfo(const ColorBlendInfo& info, const VkPipelineColorBlendAttachmentState& colorBlendAttachment);
+	VkPipelineColorBlendStateCreateInfo CreateColorBlendInfo(const ColorBlendInfo& info, const stltype::vector<VkPipelineColorBlendAttachmentState>& colorBlendAttachments);
 
 	VkPipelineDepthStencilStateCreateInfo CreateDepthStencilLayout();
 	VkPipelineLayout CreatePipelineLayout(const DescriptorSetLayoutInfo& layoutInfo);

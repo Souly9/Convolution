@@ -15,4 +15,6 @@ namespace MeshConversion
 	Mesh* ExtractMesh(const aiMesh* pMesh);
 	stltype::vector<TextureHandle> ExtractMeshTextures(const aiMesh* pMesh);
 	Material* ExtractMaterial(const aiMaterial* pMesh);
+
+	ECS::Entity ConvertScene(const aiScene* pScene, const aiNode* pNode, ECS::Entity& parentEntity);
 }; 

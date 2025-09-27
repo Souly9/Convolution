@@ -13,11 +13,11 @@ public:
 
 	virtual void CleanUp() override;
 
-	void WaitFor();
 	void Reset();
 
 	VkSemaphore GetRef() const;
 
+	virtual void NamingCallBack(const stltype::string& name) override;
 private:
 	VkSemaphore m_semaphore{ VK_NULL_HANDLE };
 };
@@ -38,6 +38,8 @@ public:
 	void Reset();
 
 	VkFence GetRef() const;
+
+	virtual void NamingCallBack(const stltype::string& name) override;
 private:
 	VkFence m_fence{ VK_NULL_HANDLE };
 };

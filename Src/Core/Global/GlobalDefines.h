@@ -43,6 +43,7 @@ namespace mathstl = DirectX::SimpleMath;
 
 const static inline stltype::string ENGINE_NAME = "Convolution";
 constexpr static inline u32 FRAMES_IN_FLIGHT = 2u;
+constexpr static inline u32 SWAPCHAIN_IMAGES = 2u;
 constexpr static inline u32 MAX_BINDLESS_TEXTURES = 16536;
 constexpr static inline u32 MAX_MESHES = 4096;
 constexpr static inline u32 MAX_TILES = 1;
@@ -63,8 +64,8 @@ using RenderAPI = Vulkan;
 
 #define SEPERATE_TRANSFERQUEUE true
 #define GLFW_INCLUDE_VULKAN
-#define CONV_MIN_VULKAN_VERSION VK_API_VERSION_1_1
-#define CONV_DESIRED_VULKAN_VERSION VK_API_VERSION_1_3
+#define CONV_MIN_VULKAN_VERSION VK_API_VERSION_1_4
+#define CONV_DESIRED_VULKAN_VERSION VK_API_VERSION_1_4
 
 #endif
 
@@ -85,3 +86,5 @@ using RenderAPI = Vulkan;
 static inline constexpr f32 FLOAT_TOLERANCE = 0.00001f;
 
 static inline constexpr f32 AMBIENT_STRENGTH = 0.1f;
+
+#define MAKE_FLAG_ENUM(name) static inline name operator|(name lhs, name rhs) { return static_cast<name>(static_cast<char>(lhs) | static_cast<char>(rhs)); }

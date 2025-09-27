@@ -10,14 +10,15 @@
 int main() {
     stltype::string_view title("Vulkan");
     u32 screenWidth = 1920, screenHeight = 1080;
+
     g_pWindowManager = stltype::make_unique<WindowManager>(screenWidth, screenHeight, title);
     RenderLayer<RenderAPI> layer;
     {
         Application app(true, layer);
         app.Run();
     }
-    g_pQueueHandler.reset();
     g_pTexManager.reset();
+    g_pQueueHandler.reset();
     g_pEntityManager.reset();
     g_pQueueHandler.reset();
     g_pFileReader.reset();

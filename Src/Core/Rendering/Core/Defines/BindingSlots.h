@@ -8,3 +8,4 @@ static constexpr u32 s_tileArrayBindingSlot = GlobalTileArraySSBOSlot;
 static constexpr u32 s_perPassObjectDataBindingSlot = PassPerObjectDataSSBOSlot;
 static constexpr u32 s_globalObjectDataBindingSlot = GlobalObjectDataSSBOSlot;
 static constexpr u32 s_globalLightUniformsBindingSlot = GlobalLightDataUBOSlot;
+static constexpr u32 s_globalGbufferPostProcessUBOSlot = GlobalGBufferPostProcessUBOSlot;

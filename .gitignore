@@ -6,7 +6,6 @@
 *.lo
 *.o
 
-bin/*
 
 # Precompiled Headers
 *.gch
@@ -15,7 +14,6 @@ bin/*
 # Compiled Dynamic libraries
 *.so
 *.dylib
-*.dll
 
 # Fortran module files
 *.mod
@@ -25,16 +23,16 @@ bin/*
 *.lai
 *.la
 *.a
-*.lib
 
 # Executables
 *.exe
 *.out
 *.app
 
-/.vs/*
-/out/*
+bin/*
+.vs/*
+out/*
 Shaders/Compiled/*
-External/*
-!External/glfw3/lib-vc2022/*
+
+!External/additional_libs/*
 !Resources\*

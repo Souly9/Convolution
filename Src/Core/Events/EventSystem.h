@@ -47,6 +47,7 @@ public:
 	EVENT_FUNCTIONS(LeftMouseClick);
 	EVENT_FUNCTIONS(MouseMove);
 	EVENT_FUNCTIONS(Scroll);
+	EVENT_FUNCTIONS(PostFrame);
 protected:
 	EVENT(Mouse);
 	EVENT(Update);
@@ -59,4 +60,5 @@ protected:
 	EVENT(LeftMouseClick);
 	EVENT(MouseMove);
 	EVENT(Scroll);
+	EVENT(PostFrame);
 };

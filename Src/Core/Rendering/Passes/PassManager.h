@@ -2,6 +2,7 @@
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Rendering/Core/View.h"
 #include "Core/Rendering/Core/Defines/GlobalBuffers.h"
+#include "GBuffer.h"
 
 namespace RenderPasses
 {
@@ -20,6 +21,11 @@ namespace RenderPasses
 		bool SetDebugMesh() { return flags[s_isDebugMeshFlag] = true; }
 		bool SetInstanced() { return flags[s_isInstancedFlag] = true; }
 		bool SetDebugWireframeMesh() { return flags[s_isDebugWireframeMesh] = true; }
+
+		bool DidGeometryChange(const EntityMeshData& other) const
+		{
+			return pMesh != other.pMesh;
+		}
 
 	protected:
 		static inline u8 s_isDebugMeshFlag = 0;
@@ -58,6 +64,7 @@ namespace RenderPasses
 	// Won't make it too complex but pass data will be roughly sorted based on the view type
 	struct MainPassData
 	{
+		GBuffer* pGbuffer;
 		RenderView mainView;
 		stltype::vector<RenderView> shadowViews;
 		stltype::vector<DescriptorSet*> viewDescriptorSets;
@@ -73,28 +80,46 @@ namespace RenderPasses
 
 	struct FrameRendererContext
 	{
+		stltype::hash_map<ConvolutionRenderPass*, RenderPassSynchronizationContext> synchronizationContexts{};
+		// Signaled when the swapchain image is transitioned to the initial layout for rendering
+		Semaphore pInitialLayoutTransitionSignalSemaphore{};
+		// Signaled when the swapchain image is transitioned to the present layout
+		Semaphore pPresentLayoutTransitionSignalSemaphore{};
+		// Signaled when the passes that don't care about color attachment values are finished rendering
+		Semaphore nonLoadRenderingFinished{};
+		Semaphore toReadTransitionFinished{};
+		// This frame's gbuffer textures
+		GBuffer gbuffer;
+
+		// Swapchain texture to render into for final presentation
+		Texture* pCurrentSwapchainTexture{ nullptr };
+
 		DescriptorSet* modelSSBODescriptor;
 		DescriptorSet* globalObjectDataDescriptor;
 		DescriptorSet* tileArraySSBODescriptor;
 		DescriptorSet* mainViewUBODescriptor;
+		DescriptorSet* gbufferPostProcessDescriptor;
 
-		Semaphore imageAvailableSemaphore;
 		Semaphore* renderingFinishedSemaphore;
 		Fence* renderingFinishedFence{ nullptr };
-		stltype::hash_map<ConvolutionRenderPass*, RenderPassSynchronizationContext> synchronizationContexts{};
 
 		u32 imageIdx;
 		u32 currentFrame;
 	};
 
+	enum class ColorAttachmentType
+	{
+		GBufferColor,
+
+	};
+
 	struct RendererAttachmentInfo
 	{
-		const stltype::vector<TextureVulkan>& swapchainTextures;
-		RenderPassAttachment colorAttachment;
+		GBufferInfo gbuffer;
+		stltype::vector<Texture> swapchainTextures;
+		stltype::hash_map<ColorAttachmentType, stltype::vector<ColorAttachment>> colorAttachments;
 		DepthBufferAttachmentVulkan depthAttachment;
-		const TextureVulkan* pDepthTexture = nullptr;
 
-		RendererAttachmentInfo(const stltype::vector<TextureVulkan>& sT, const TextureVulkan* pDepthT) : swapchainTextures(sT), pDepthTexture(pDepthT) {}
 	};
 	enum class PassType
 	{
@@ -103,7 +128,7 @@ namespace RenderPasses
 		Debug,
 		Shadow,
 		PostProcess,
-		ColorGrading
+		Composite
 	};
 
 	struct InstancedMeshDataInfo
@@ -115,41 +140,6 @@ namespace RenderPasses
 		stltype::vector<PSO*> PSOs{};
 	};
 
-	class ConvolutionRenderPass
-	{
-	public:
-		ConvolutionRenderPass();
-
-		virtual ~ConvolutionRenderPass() {}
-
-		virtual void BuildBuffers() = 0;
-
-		virtual void SetVertexInputDescriptions(VertexInputDefines::VertexAttributeTemplates vertexInputType);
-
-		virtual void RebuildInternalData(const stltype::vector<PassMeshData>& meshes) = 0;
-
-		virtual void Render(const MainPassData& data, const FrameRendererContext& ctx) = 0;
-
-		virtual void CreateSharedDescriptorLayout() = 0;
-
-		virtual void Init(const RendererAttachmentInfo& attachmentInfo) = 0;
-		virtual bool WantsToRender() const = 0;
-
-		void InitBaseData(const RendererAttachmentInfo& attachmentInfo, RenderPass& mainPass);
-	protected:
-		// Sets all vulkan vertex input attributes and returns the size of a vertex
-		u32 SetVertexAttributes(const stltype::vector<VertexInputDefines::VertexAttributes>& vertexAttributes);
-
-		stltype::vector<VkVertexInputAttributeDescription> m_attributeDescriptions{};
-		stltype::vector<PipelineDescriptorLayout> m_sharedDescriptors{};
-
-		VkVertexInputBindingDescription m_vertexInputDescription{};
-
-		CommandPool m_mainPool;
-		stltype::vector<CommandBuffer*> m_cmdBuffers;
-
-		stltype::vector<FrameBuffer> m_mainPSOFrameBuffers;
-	};
 
 	class PassManager
 	{
@@ -161,7 +151,7 @@ namespace RenderPasses
 		~PassManager();
 
 		void Init();
-		
+		void RecreateGbuffers(const mathstl::Vector2& resolution);
 
 		void AddPass(PassType type, stltype::unique_ptr<ConvolutionRenderPass>&& pass);
 		void TransferPassData(const PassGeometryData& passData, u32 frameIdx);
@@ -188,28 +178,38 @@ namespace RenderPasses
 		void DispatchSSBOTransfer(void* data, DescriptorSet* pDescriptor, u32 size, StorageBuffer* pSSBO, u32 offset = 0, u32 dstBinding = 0);
 		void BlockUntilPassesFinished(u32 frameIdx);
 	protected:
-		void PreProcessMeshData(const stltype::vector<PassMeshData>& meshes);
+		void PreProcessMeshData(const stltype::vector<PassMeshData>& meshes, u32 lastFrame, u32 curFrame);
 
 	private:
-		threadSTL::Futex m_passDataMutex;
+		threadSTL::Mutex m_passDataMutex;
+
+		// Only need one gbuffer
+		GBuffer m_gbuffer;
 
 		// Pass data for each frame
 		stltype::hash_map<PassType, stltype::vector<stltype::unique_ptr<ConvolutionRenderPass>>> m_passes{};
 		stltype::fixed_vector<MainPassData, FRAMES_IN_FLIGHT> m_mainPassData{ FRAMES_IN_FLIGHT };
-		stltype::fixed_vector<FrameRendererContext, FRAMES_IN_FLIGHT> m_frameRendererContexts{};
+		// Signaled when the swapchain image is available for rendering
+		stltype::fixed_vector<FrameRendererContext, SWAPCHAIN_IMAGES> m_frameRendererContexts{};
+		stltype::fixed_vector<Semaphore, SWAPCHAIN_IMAGES> m_imageAvailableSemaphores{ SWAPCHAIN_IMAGES };
+		stltype::fixed_vector<Fence, SWAPCHAIN_IMAGES> m_imageAvailableFences{ SWAPCHAIN_IMAGES };
 		stltype::hash_map<ECS::EntityID, u32> m_entityToTransformUBOIdx{};
 		stltype::hash_map<ECS::EntityID, u32> m_entityToObjectDataIdx{};
+
+		// Current Geometry state, mainly used as a simple way to check for changes
+		PassGeometryData m_currentPassGeometryState{};
 
 		// Global transform SSBO
 		StorageBuffer m_modelSSBOs;
 		StorageBuffer m_tileArraySSBO;
 		UniformBuffer m_viewUBO;
 		UniformBuffer m_lightUniformsUBO;
+		UniformBuffer m_gbufferPostProcessUBO;
 		StorageBuffer m_perObjectDataSSBO;
 		UBO::GlobalTileArraySSBO m_tileArray;
 		GPUMappedMemoryHandle m_mappedViewUBOBuffer;
 		GPUMappedMemoryHandle m_mappedLightUniformsUBO;
-
+		GPUMappedMemoryHandle m_mappedGBufferPostProcessUBO;
 		DescriptorPool m_descriptorPool;
 		DescriptorSetLayoutVulkan m_globalDataSSBOsLayout;
 
@@ -217,6 +217,10 @@ namespace RenderPasses
 		DescriptorSetLayoutVulkan m_tileArraySSBOLayout;
 		// Global view UBO layout
 		DescriptorSetLayoutVulkan m_viewUBOLayout;
+		DescriptorSetLayout m_gbufferPostProcessLayout;
+
+		// Global attachments for all passes like gbuffer, depth buffer or swapchain textures
+		RendererAttachmentInfo m_globalRendererAttachments;
 
 		// struct to hold data for all meshes for the next frame to be rendered, uses more memory but allows for async pre-processing and we shouldn't rebuild data often anyway
 		struct RenderDataForPreProcessing
@@ -251,3 +255,5 @@ namespace RenderPasses
 		u32 m_frameIdxToPropagate{ 0 };
 	};
 }
+
+#include "RenderPass.h"

@@ -2,6 +2,7 @@
 include(FetchContent)
 Set(FETCHCONTENT_QUIET FALSE)
 
+#set(UNITY_BUILD ON)
 # Clang complains about all these in our libraries...
 #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unsafe-buffer-usage -Wno-switch-default -Wno-format")
 
@@ -25,6 +26,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED on)
 
 option(CONNECT_TO_GIT "Fetch dependancies from git" ON)
 
+FetchContent_Declare(
+  VulkanMemoryAllocator
+  GIT_REPOSITORY "https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git"
+  GIT_TAG "master" #master
+  SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/VMA"
+  GIT_PROGRESS TRUE
+  OVERRIDE_FIND_PACKAGE TRUE
+)
 FetchContent_Declare(
   EASTL
   GIT_REPOSITORY "https://github.com/electronicarts/EASTL.git"
@@ -81,8 +90,15 @@ FetchContent_Declare(
   SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/Assimp"
   GIT_PROGRESS TRUE
 )
-
-FetchContent_MakeAvailable(EASTL EAStdC EAAssert EAThread GLFW3 IMGUI DIRECTXMATH ASSIMP)
+FetchContent_Declare(
+	TRACY
+	GIT_REPOSITORY "https://github.com/wolfpld/tracy"
+	GIT_TAG "v0.12.2"
+	SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/Tracy"
+	GIT_PROGRESS TRUE
+)
+add_subdirectory("${CMAKE_SOURCE_DIR}/External/VMA")
+FetchContent_MakeAvailable(EASTL EAStdC EAAssert EAThread GLFW3 IMGUI DIRECTXMATH ASSIMP TRACY)
 
 find_package(DIRECTXMATH REQUIRED)
 message(STATUS "DirectXMath found at ${DIRECTXMATH_INCLUDE_DIR}")
@@ -104,7 +120,7 @@ file(GLOB_RECURSE ADD_LIBS
 	${ASSIMP_LIBRARY_SEARCH_DIR}
 )
 
-set(LIBS ${GLFW3_LIBRARY} ${Vulkan_LIBRARIES} ${ADD_LIBS} EASTL EAStdC EAAssert EAThread ${ASSIMP_LIBRARY})
+set(LIBS ${GLFW3_LIBRARY} ${Vulkan_LIBRARIES} ${ADD_LIBS} EASTL EAStdC EAAssert EAThread ${ASSIMP_LIBRARY} TracyClient)
 
 link_directories(${CMAKE_SOURCE_DIR}/External/additional_libs)
 
@@ -137,11 +153,14 @@ SYSTEM
 	${CMAKE_SOURCE_DIR}/External/Assimp/include/
 	${CMAKE_SOURCE_DIR}/External/assimp-build/include/
 	${CMAKE_SOURCE_DIR}/External/SimpleMath/
+	${CMAKE_SOURCE_DIR}/External/VulkanMemoryAllocator/include/
+	${CMAKE_SOURCE_DIR}/External/Aftermath/include/
+	${CMAKE_SOURCE_DIR}/External/GLslang/include/
 )
 
 target_compile_definitions(${NAME} PRIVATE CONV_DEBUG=1)
 
-target_link_libraries(${NAME} ${LIBS})
+target_link_libraries(${NAME} ${LIBS} GPUOpen::VulkanMemoryAllocator)
 
 if(WIN32)
 add_custom_target(
@@ -156,8 +175,8 @@ add_custom_command(OUTPUT ${CMAKE_SOURCE_DIR}/Shaders/Compiled/__header.h
 add_custom_command(OUTPUT ${CMAKE_SOURCE_DIR}/bin/Shaders/___header.h
 					COMMAND cmd /C ${CMAKE_SOURCE_DIR}/Scripts/CopyShaders.bat
 					DEPENDS ${CMAKE_SOURCE_DIR}/Shaders/Compiled/__header.h
-					VERBATIM)
+					)
 add_custom_command(OUTPUT ${CMAKE_SOURCE_DIR}/bin/Shaders/____header.h
 					COMMAND cmd /C ${CMAKE_SOURCE_DIR}/Scripts/CopyTextures.bat
-					VERBATIM)
+					)
 endif()

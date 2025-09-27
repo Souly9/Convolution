@@ -1,5 +1,7 @@
 #include <imgui/imgui.h>
 #include "MainMenuBar.h"
+#include "Scenes/SampleScene.h"
+#include "Scenes/SponzaScene.h"
 
 MainMenuBar::MainMenuBar() : SelfInstantiatingUIElement()
 {
@@ -24,9 +26,41 @@ void MainMenuBar::DrawMenuBar(f32 dt, ApplicationInfos& appInfos)
 			ImGui::EndMenu();
 		}
 
-		if(ImGui::BeginMenu("Debug"))
+		if (ImGui::BeginMenu("Scene"))
 		{
-			if(ImGui::MenuItem("Log", ""))
+			if (ImGui::MenuItem("Reload Current Scene", ""))
+			{
+				if (g_pApplicationState->GetCurrentScene() != nullptr)
+				{
+					g_pApplicationState->ReloadCurrentScene();
+				}
+			}
+
+			if (ImGui::MenuItem("Load Scene", ""))
+			{
+				stltype::vector<stltype::string> sceneNames = { SampleScene::GetSceneName(), SponzaScene::GetSceneName() };
+				auto& currentSceneName = g_pApplicationState->GetCurrentScene()->GetName();
+				for (auto& name : sceneNames)
+				{
+					if (ImGui::MenuItem(name.c_str(), "", false, name == currentSceneName))
+					{
+						if (name == SampleScene::GetSceneName())
+						{
+							g_pApplicationState->SetCurrentScene(stltype::make_unique<SampleScene>());
+						}
+						else if (name == SponzaScene::GetSceneName())
+						{
+							g_pApplicationState->SetCurrentScene(stltype::make_unique<SponzaScene>());
+						}
+					}
+				}
+			}
+			ImGui::EndMenu();
+		}
+
+		if (ImGui::BeginMenu("Debug"))
+		{
+			if (ImGui::MenuItem("Log", ""))
 			{
 				m_debugInfoWindow.SetOpen(true);
 			}
