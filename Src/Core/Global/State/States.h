@@ -1,5 +1,6 @@
 #pragma once
 #include "../GlobalDefines.h"
+#include "Core/SceneGraph/Scene.h"
 
 
 #define BITSET_SETTER_GETTER(name, indexName) \
@@ -28,9 +29,12 @@ struct ApplicationState
 	stltype::vector<ECS::Entity> selectedEntities{};
 	GUIState guiState{};
 	RendererState renderState{};
-	DirectX::XMMATRIX mainCamViewProjectionMatrix{};
-	DirectX::XMMATRIX invMainCamProjectionMatrix{};
-	DirectX::XMMATRIX invMainCamViewMatrix{};
+	mathstl::Matrix mainCamViewProjectionMatrix{};
+	mathstl::Matrix invMainCamProjectionMatrix{};
+	mathstl::Matrix invMainCamViewMatrix{};
+
+	// We only support one scene at a time for now
+	Scene* pCurrentScene;
 
 	ECS::Entity mainCameraEntity{};
 	bool renderDebugMeshes{true};

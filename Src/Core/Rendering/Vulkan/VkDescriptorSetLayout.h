@@ -17,6 +17,7 @@ public:
 
 	const VkDescriptorSetLayout& GetRef() const { return m_descriptorSetLayout; }
 
+	virtual void NamingCallBack(const stltype::string& name) override;
 private:
 	VkDescriptorSetLayout m_descriptorSetLayout{ VK_NULL_HANDLE };
 };

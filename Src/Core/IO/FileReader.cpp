@@ -148,16 +148,11 @@ void FileReader::ReadMeshFile(const IORequest& request)
 	DEBUG_ASSERT(importer.IsExtensionSupported(ext.data()));
 	const aiScene* pMeshScene = importer.ReadFile(path.data(), 
 		aiProcess_Triangulate | 
-		aiProcess_CalcTangentSpace |
 		aiProcess_JoinIdenticalVertices |
 		aiProcess_RemoveComponent |
-		aiProcess_GenSmoothNormals |
 		aiProcess_RemoveRedundantMaterials |
 		aiProcess_GenUVCoords | 
-		aiProcess_OptimizeMeshes | 
-		aiProcess_OptimizeGraph |
-		aiProcess_GenBoundingBoxes | 
-		aiProcess_ImproveCacheLocality);
+		aiProcess_GenBoundingBoxes);
 
 	DEBUG_ASSERT(pMeshScene);
 	auto scene = MeshConversion::Convert(pMeshScene);

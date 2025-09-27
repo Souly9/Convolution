@@ -26,7 +26,7 @@ public:
 
 	void Render();
 
-	void WaitForRendererToFinish(u32 idx);
+	void WaitForRendererToFinish();
 
 private:
 

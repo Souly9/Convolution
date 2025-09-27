@@ -11,6 +11,7 @@ struct ColorAttachmentInfo
 	StoreOp stencilStoreOp = StoreOp::IDC;
 	ImageLayout initialLayout = ImageLayout::UNDEFINED;
 	ImageLayout finalLayout = ImageLayout::PRESENT;
+	ImageLayout renderingLayout = ImageLayout::COLOR_ATTACHMENT;
 };
 struct DepthBufferAttachmentInfo
 {
@@ -22,5 +23,5 @@ struct DepthBufferAttachmentInfo
 	StoreOp stencilStoreOp = StoreOp::IDC;
 	ImageLayout initialLayout = ImageLayout::UNDEFINED;
 	ImageLayout finalLayout = ImageLayout::DEPTH_STENCIL;
+	ImageLayout renderingLayout = ImageLayout::DEPTH_STENCIL;
 };
-

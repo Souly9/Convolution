@@ -12,22 +12,25 @@
 #include <imgui/imstb_truetype.h>
 #include "ImGuiPass.h"
 #include "Utils/RenderPassUtils.h"
+#include "Core/Rendering/Vulkan/Utils/VkEnumHelpers.h"
+#include "Tracy/Tracy.hpp"
 
 namespace RenderPasses
 {
 
-	ImGuiPass::ImGuiPass()
+	ImGuiPass::ImGuiPass() : ConvolutionRenderPass("ImGuiPass")
 	{
 		g_pEventSystem->AddWindowResizeEventCallback([this](const auto&) { UpdateImGuiScaling(); });
 	}
 
-	void ImGuiPass::Init(const RendererAttachmentInfo& attachmentInfo)
+	void RenderPasses::ImGuiPass::Init(RendererAttachmentInfo& attachmentInfo)
 	{
-		const auto attachments = CreateWriteableAndPresentableRT(attachmentInfo);
-		m_mainPass = RenderPass({ attachments.color, attachments.depth });
+		ZoneScopedN("ImGuiPass::Init");
 
-
-		InitBaseData(attachmentInfo, m_mainPass);
+		const auto gbufferUI = CreateDefaultColorAttachment(attachmentInfo.gbuffer.GetFormat(GBufferTextureType::GBufferUI), LoadOp::CLEAR, nullptr);
+		m_mainRenderingData.depthAttachment = CreateDefaultDepthAttachment(LoadOp::LOAD, attachmentInfo.depthAttachment.GetTexture());;
+		m_mainRenderingData.colorAttachments = { gbufferUI };
+		InitBaseData(attachmentInfo);
 
 		const auto vkContext = VkGlobals::GetContext();
 
@@ -45,17 +48,28 @@ namespace RenderPasses
 		info.Device = vkContext.Device;
 		info.Queue = VkGlobals::GetGraphicsQueue();
 		info.QueueFamily = VkGlobals::GetQueueFamilyIndices().graphicsFamily.value();
-		info.RenderPass = m_mainPass.GetRef();
 		info.MinImageCount = FRAMES_IN_FLIGHT;
 		info.ImageCount = FRAMES_IN_FLIGHT;
 		info.MSAASamples = vkContext.MSAASamples;
 		info.DescriptorPool = m_descPool.GetRef();
 		info.Allocator = VulkanAllocator();
+
+		// Fully dynamic rendering here
+		VkPipelineRenderingCreateInfo imguiRenderingInfo{};
+		imguiRenderingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+		imguiRenderingInfo.colorAttachmentCount = 1;
+		imguiRenderingInfo.pColorAttachmentFormats = &gbufferUI.GetDesc().format;
+		imguiRenderingInfo.depthAttachmentFormat = m_mainRenderingData.depthAttachment.GetDesc().format;
+		info.UseDynamicRendering = true;
+		info.PipelineRenderingCreateInfo = imguiRenderingInfo;
+
 		ImGui_ImplVulkan_Init(&info);
 	}
 
-	void ImGuiPass::Render(const MainPassData& data, const FrameRendererContext& ctx)
+	void RenderPasses::ImGuiPass::Render(const MainPassData& data, FrameRendererContext & ctx)
 	{
+		ZoneScopedN("ImGuiPass::Render");
+
 		const auto currentFrame = ctx.currentFrame;
 		const auto imageIdx = ctx.imageIdx;
 
@@ -66,16 +80,32 @@ namespace RenderPasses
 		ImGui::Render();
 		ImGui::UpdatePlatformWindows();
 		ImGui::RenderPlatformWindowsDefault();
-		DrawCmdDummy cmdDummy(m_mainPSOFrameBuffers[imageIdx], m_mainPass);
+		ColorAttachment swapChainColorAttachment = m_mainRenderingData.colorAttachments[0];
+		swapChainColorAttachment.SetTexture(data.pGbuffer->Get(GBufferTextureType::GBufferUI));
+
+		stltype::vector<ColorAttachment> colorAttachments;
+		colorAttachments.push_back(swapChainColorAttachment);
+		const auto ex = ctx.pCurrentSwapchainTexture->GetInfo().extents;
+		const DirectX::XMINT2 extents(ex.x, ex.y);
+		BeginRenderingBaseCmd cmdBegin{ colorAttachments, &m_mainRenderingData.depthAttachment };
+		cmdBegin.extents = extents;
+
 		currentBuffer->BeginBufferForSingleSubmit();
-		currentBuffer->BeginRPassGeneric(cmdDummy);
+		currentBuffer->BeginRendering(cmdBegin);
 
 		ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), currentBuffer->GetRef());
-		currentBuffer->EndRPass();
+		currentBuffer->EndRendering();
 		currentBuffer->EndBuffer();
 
-		const auto& syncContext = ctx.synchronizationContexts.find(this)->second;
-		SRF::SubmitCommandBufferToGraphicsQueue<RenderAPI>(*syncContext.waitSemaphore, syncContext.signalSemaphore, currentBuffer, syncContext.finishedFence);
+		auto& syncContext = ctx.synchronizationContexts.find(this)->second;
+
+		currentBuffer->AddWaitSemaphore(syncContext.waitSemaphore);
+		currentBuffer->AddSignalSemaphore(&ctx.nonLoadRenderingFinished);
+		AsyncQueueHandler::CommandBufferRequest cmdRequest{
+			.pBuffer = currentBuffer,
+			.queueType = QueueType::Graphics,
+		};
+		g_pQueueHandler->SubmitCommandBufferThisFrame(cmdRequest);
 	}
 
 	void ImGuiPass::UpdateImGuiScaling()

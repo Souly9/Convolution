@@ -1,7 +1,8 @@
 #include "GenericGeometryPass.h"
 #include "Core/Rendering/Vulkan/Utils/DescriptorSetLayoutConverters.h"
 
-RenderPasses::GenericGeometryPass::GenericGeometryPass()
+RenderPasses::GenericGeometryPass::GenericGeometryPass(const stltype::string& name) : ConvolutionRenderPass(name)
+
 {
 	DescriptorPoolCreateInfo info{};
 	info.enableStorageBufferDescriptors = true;
@@ -25,7 +26,7 @@ void RenderPasses::GenericGeometryPass::RebuildPerObjectBuffer(const UBO::PerPas
 	memcpy(m_mappedPerObjectSSBO, data.transformIdx.data(), sizeof(data.transformIdx[0]) * data.transformIdx.size());
 	memcpy((char*)m_mappedPerObjectSSBO + UBO::PerPassObjectDataPerObjectDataIdxOffset, data.perObjectDataIdx.data(), sizeof(data.perObjectDataIdx[0]) * data.perObjectDataIdx.size());
 
-	for (u32 i = 0; i < FRAMES_IN_FLIGHT; ++i)
+	for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
 	{
 		m_dirtyFrames.push_back(i);
 	}
@@ -40,4 +41,9 @@ void RenderPasses::GenericGeometryPass::UpdateContextForFrame(u32 frameIdx)
 		ctx.m_perObjectDescriptor->WriteSSBOUpdate(m_perObjectSSBO);
 		m_dirtyFrames.erase(it);
 	}
+}
+
+void RenderPasses::GenericGeometryPass::NameResources(const stltype::string& name)
+{
+	m_perObjectLayout.SetName(name + "_PerObjectSSBO");
 }

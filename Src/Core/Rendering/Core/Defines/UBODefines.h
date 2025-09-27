@@ -11,8 +11,11 @@ namespace UBO
 		View,
 		RenderPass,
 		LightUniformsUBO,
+		GBufferUBO, // Gives access to all gbuffer textures as bindless textures
 		GenericUBO,
+
 		GenericSSBO,
+		// SSBOs only below here
 		GlobalObjectDataSSBOs, 
 		TransformSSBO,
 		PerPassObjectSSBO,
@@ -34,18 +37,20 @@ namespace UBO
 		{ BufferType::TileArraySSBO, s_tileArrayBindingSlot },
 		{ BufferType::PerPassObjectSSBO, s_perPassObjectDataBindingSlot },
 		{ BufferType::TransformSSBO, s_modelSSBOBindingSlot },
-		{ BufferType::LightUniformsUBO, s_globalLightUniformsBindingSlot }
+		{ BufferType::LightUniformsUBO, s_globalLightUniformsBindingSlot },
+		{ BufferType::GBufferUBO, s_globalGbufferPostProcessUBOSlot }
 
 	};
 
 	static inline stltype::hash_map<BufferType, ShaderTypeBits> s_UBOTypeToShaderStages = {
-		{ BufferType::View, ShaderTypeBits::Vertex },
+		{ BufferType::View, ShaderTypeBits::All },
 		{ BufferType::RenderPass, ShaderTypeBits::Vertex },
 		{ BufferType::GlobalObjectDataSSBOs, ShaderTypeBits::All },
 		{ BufferType::TileArraySSBO, ShaderTypeBits::All },
 		{ BufferType::PerPassObjectSSBO, ShaderTypeBits::All },
 		{ BufferType::TransformSSBO, ShaderTypeBits::All },
-		{ BufferType::LightUniformsUBO, ShaderTypeBits::All }
+		{ BufferType::LightUniformsUBO, ShaderTypeBits::All },
+		{ BufferType::GBufferUBO, ShaderTypeBits::All }
 
 	};
 }

@@ -12,7 +12,6 @@ namespace ECS
 
 	EntityManager::EntityManager()
 	{
-
 		g_pEventSystem->AddAppInitEventCallback([this](const AppInitEventData& data)
 			{
 				for (auto& pSystem : m_systems)
@@ -32,14 +31,26 @@ namespace ECS
 		m_systems.emplace_back(stltype::make_unique<System::SAABB>());
 	}
 
-	Entity EntityManager::CreateEntity(const DirectX::XMFLOAT3& position)
+	void EntityManager::UnloadAllEntities()
+	{
+		m_entities.clear();
+		m_entityComponentMap.clear();
+		for (auto& m_dirtyComponents : m_dirtyComponents)
+		{
+			m_dirtyComponents.clear();
+			m_dirtyComponents = ECS::GetAllComponentIDs();
+		}
+	}
+
+	Entity EntityManager::CreateEntity(const DirectX::XMFLOAT3& position, const stltype::string& name)
 	{
 		Entity newEntity{ m_baseEntityID.fetch_add(1, stltype::memory_order_relaxed) };
 		m_entities.emplace_back(newEntity);
 		m_entityComponentMap.emplace(newEntity, ComponentInfo{});
 
-		AddComponent(newEntity, Transform{ position });
-		MarkComponentDirty(newEntity, COMP_ID(Transform));
+		Transform transform{ position };
+		transform.name = name;
+		AddComponent(newEntity, transform);
 		return newEntity;
 	}
 
@@ -51,13 +62,18 @@ namespace ECS
 
 	void EntityManager::MarkComponentDirty(Entity entity, C_ID componentID)
 	{
+		MarkComponentDirty(componentID);
+	}
+
+	void EntityManager::MarkComponentDirty(C_ID componentID)
+	{
 		/*DEBUG_ASSERT(stltype::find(m_entities.begin(), m_entities.end(), entity) != m_entities.end());
 		auto it = stltype::find(m_dirtyEntities.begin(), m_dirtyEntities.end(), entity);
 		if(it == m_dirtyEntities.end())
 			m_dirtyEntities.emplace_back(entity, { componentID });
 		else
 			it->components.emplace_back(componentID);*/
-		//DEBUG_ASSERT(stltype::find(m_entities.begin(), m_entities.end(), entity) != m_entities.end());
+			//DEBUG_ASSERT(stltype::find(m_entities.begin(), m_entities.end(), entity) != m_entities.end());
 		u32 frameIdx = FrameGlobals::GetFrameNumber();
 		auto& dirtyCompVec = m_dirtyComponents[frameIdx];
 		auto it = stltype::find(dirtyCompVec.begin(), dirtyCompVec.end(), componentID);
@@ -70,6 +86,10 @@ namespace ECS
 			if (it == dirtyCompVec.end())
 				dirtyCompVec.emplace_back(componentID);
 		}
+	}
+
+	void EntityManager::MarkComponentsDirty(stltype::vector<C_ID> componentID)
+	{
 	}
 
 	void EntityManager::SyncSystemData(u32 frameIdx)

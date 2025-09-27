@@ -231,6 +231,32 @@ inline VkMemoryPropertyFlags Conv2MemFlags(const BufferUsage& m)
 	}
 	return VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
 }
+inline VmaMemoryUsage Conv2VmaMemFlags(const BufferUsage& m)
+{
+	switch (m)
+	{
+		case BufferUsage::Vertex:
+			return VMA_MEMORY_USAGE_CPU_TO_GPU;
+		case BufferUsage::Index:
+			return VMA_MEMORY_USAGE_CPU_TO_GPU;
+		case BufferUsage::Texture:
+			return VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+		case BufferUsage::Staging:
+			return VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+		case BufferUsage::Uniform:
+		case BufferUsage::SSBOHost:
+			return VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+		case BufferUsage::SSBODevice:
+			return VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+		case BufferUsage::GenericDeviceVisible:
+			return VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+		case BufferUsage::IndirectDrawCmds:
+			return VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+		default:
+			DEBUG_ASSERT(false);
+	}
+	return VMA_MEMORY_USAGE_AUTO;
+}
 
 inline VkShaderStageFlagBits Conv(const ShaderTypeBits& m)
 {
@@ -249,17 +275,73 @@ inline VkShaderStageFlagBits Conv(const ShaderTypeBits& m)
 	return (VkShaderStageFlagBits)vkBits;
 }
 
-inline VkClearValue AttachTypeToClearVal(const AttachmentType& m)
+inline VkImageUsageFlags Conv(const Usage& m)
 {
 	switch (m)
 	{
-		case AttachmentType::GBufferColor:
-			return g_BlackCLearColor;
-		case AttachmentType::DepthStencil:
-			return g_WhiteCLearColor;
+		case Usage::GBuffer:
+			return VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+		case Usage::ColorAttachment:
+			return VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+		case Usage::DepthAttachment:
+			return VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+		case Usage::TransferSrc:
+			return VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+		case Usage::TransferDst:
+			return VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+		case Usage::Sampled:
+			return VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+		case Usage::AttachmentReadWrite:
+			return VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+		case Usage::StencilAttachment:
+			return VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
 		default:
 			DEBUG_ASSERT(false);
+			return 0;
+	}
+}
+
+inline VkImageTiling Conv(const Tiling& m)
+{
+	switch (m)
+	{
+		case Tiling::OPTIMAL:
+			return VK_IMAGE_TILING_OPTIMAL;
+			break;
+		case Tiling::LINEAR:
+			return VK_IMAGE_TILING_LINEAR;
 			break;
 	}
-	return g_BlackCLearColor;
+	DEBUG_ASSERT(false);
+	return VK_IMAGE_TILING_OPTIMAL;
+}
+
+static inline u32 Conv(SyncStages stage)
+{
+	u32 vkStage = 0;
+	if (stage == SyncStages::NONE)
+		return vkStage;
+	if ((u32)stage & (u32)SyncStages::TOP_OF_PIPE)
+		vkStage = (vkStage | VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT);
+	else if ((u32)stage & (u32)SyncStages::DRAW_INDIRECT)
+		vkStage = (vkStage | VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT);
+	else if ((u32)stage & (u32)SyncStages::EARLY_FRAGMENT_TESTS)
+		vkStage = (vkStage | VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT);
+	else if ((u32)stage & (u32)SyncStages::LATE_FRAGMENT_TESTS)
+		vkStage = (vkStage | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT);
+	else if ((u32)stage & (u32)SyncStages::VERTEX_SHADER)
+		vkStage = (vkStage | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT);
+	else if ((u32)stage & (u32)SyncStages::FRAGMENT_SHADER)
+		vkStage = (vkStage | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT);
+	else if ((u32)stage & (u32)SyncStages::COMPUTE_SHADER)
+		vkStage = (vkStage | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	else if ((u32)stage & (u32)SyncStages::COLOR_ATTACHMENT_OUTPUT)
+		vkStage = (vkStage | VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
+	else if ((u32)stage & (u32)SyncStages::BOTTOM_OF_PIPE)
+		vkStage = (vkStage | VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT);
+	else if ((u32)stage & (u32)SyncStages::ALL_COMMANDS)
+		vkStage = (vkStage | VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT);
+	else
+		DEBUG_ASSERT(false);
+	return vkStage;
 }

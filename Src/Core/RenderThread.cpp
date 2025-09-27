@@ -43,14 +43,15 @@ void RenderThread::RenderLoop()
 
 		{
 			m_passManager.PreProcessDataForCurrentFrame(lastFrame);
-			g_pQueueHandler->WaitForFences();
 		}
 
 		{
+			g_pQueueHandler->WaitForFences();
 			m_passManager.ExecutePasses(lastFrame);
 		}
 
 		{
+			g_pEventSystem->OnPostFrame({ lastFrame });
 			g_pTexManager->PostRender();
 		}
 	}
@@ -58,9 +59,9 @@ void RenderThread::RenderLoop()
 
 RenderPasses::PassManager* RenderThread::Start()
 {
-	m_keepRunning = true;
 	m_thread = threadSTL::MakeThread([this]() { RenderLoop(); });
-	m_thread.SetName("Convolution_RenderThread");
+	InitializeThread("Convolution_RenderThread");
+	m_keepRunning = true;
 	return &m_passManager;
 }
 

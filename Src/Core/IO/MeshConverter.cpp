@@ -25,34 +25,70 @@ namespace MeshConversion
 		return DirectX::XMFLOAT2(v.x, v.y);
 	}
 
+	Entity ConvertScene(const aiScene* pScene, const aiNode* pNode, Entity& parentEntity)
+	{
+		Entity localParentEntity = g_pEntityManager->CreateEntity();
+		g_pEntityManager->GetComponentUnsafe<Components::Transform>(localParentEntity)->parent = parentEntity;
+		if (pNode->mNumChildren == 0 && pNode->mNumMeshes != 0)
+		{
+			for (u32 i = 0; i < pNode->mNumMeshes; ++i)
+			{
+				Entity childEntity = g_pEntityManager->CreateEntity();
+				const auto& pAiMesh = pScene->mMeshes[pNode->mMeshes[i]];
+
+				auto pConvMesh = ExtractMesh(pAiMesh);
+				auto* pConvMaterial = ExtractMaterial(pScene->mMaterials[pAiMesh->mMaterialIndex]);
+
+				auto* pTransform = g_pEntityManager->GetComponentUnsafe<Components::Transform>(childEntity);
+				pTransform->scale = mathstl::Vector3(1000,1000,1000);
+				Components::RenderComponent comp{};
+				comp.pMaterial = pConvMaterial;
+				comp.pMesh = pConvMesh;
+				const auto& aiAABB = pAiMesh->mAABB;
+				comp.boundingBox = g_pMeshManager->CalcAABB(mathstl::Vector3(aiAABB.mMin.x, aiAABB.mMin.y * 0.6f, aiAABB.mMin.z) * pTransform->scale,
+					mathstl::Vector3(aiAABB.mMax.x, aiAABB.mMax.y * 0.6f, aiAABB.mMax.z) * pTransform->scale,
+					pConvMesh);
+
+				g_pEntityManager->GetComponentUnsafe<Components::Transform>(childEntity)->parent = localParentEntity;
+				g_pEntityManager->GetComponentUnsafe<Components::Transform>(childEntity)->SetName(pScene->mName.C_Str());
+				g_pEntityManager->AddComponent(childEntity, comp);
+			}
+			return localParentEntity;
+		}
+		else
+		{
+			for (u32 i = 0; i < pNode->mNumChildren; ++i)
+			{
+				if (pNode->mChildren[i]->mNumMeshes == 0)
+				{
+					continue; // Skip empty nodes
+				}
+				else
+					ConvertScene(pScene, pNode->mChildren[i], localParentEntity);
+			}
+		}
+		
+		return parentEntity; 
+	}
+
 	SceneNode Convert(const aiScene* pScene)
 	{
 		DEBUG_ASSERT(CheckScene(pScene));
-		Entity nodeEntity = g_pEntityManager->CreateEntity();
-		for (int i = 0; i < 1; ++i)
-		{
-			const auto& pAiMesh = pScene->mMeshes[i];
 
-			auto pConvMesh = ExtractMesh(pAiMesh);
-			auto* pConvMaterial = ExtractMaterial(pScene->mMaterials[pAiMesh->mMaterialIndex]);
+		Entity rootEntity = g_pEntityManager->CreateEntity();
+		Entity parentEntity = rootEntity;
 
-			auto* pTransform = g_pEntityManager->GetComponentUnsafe<Components::Transform>(nodeEntity);
-			pTransform->scale = mathstl::Vector3(10, 10, 10);
-			Components::RenderComponent comp{};
-			comp.pMaterial = pConvMaterial;
-			comp.pMesh = pConvMesh;
-			const auto& aiAABB = pAiMesh->mAABB;
-			comp.boundingBox = g_pMeshManager->CalcAABB(mathstl::Vector3(aiAABB.mMin.x, aiAABB.mMin.y * 0.6f, aiAABB.mMin.z) * pTransform->scale, 
-				mathstl::Vector3(aiAABB.mMax.x, aiAABB.mMax.y * 0.6f, aiAABB.mMax.z) * pTransform->scale,
-				pConvMesh);
+		ConvertScene(pScene, pScene->mRootNode, parentEntity);
 
-			//g_pEntityManager->GetComponentUnsafe<Components::Transform>(nodeEntity)->parent = rootEntity;
-			g_pEntityManager->GetComponentUnsafe<Components::Transform>(nodeEntity)->SetName(pScene->mName.C_Str());
-			g_pEntityManager->AddComponent(nodeEntity, comp);
-		}
-		g_pMaterialManager->MarkMaterialsDirty();
+		g_pApplicationState->RegisterUpdateFunction([](ApplicationState& state) {
+			g_pEntityManager->MarkComponentDirty(ECS::ComponentID<ECS::Components::Transform>::ID);
+			g_pEntityManager->MarkComponentDirty(ECS::ComponentID<ECS::Components::RenderComponent>::ID);
+			g_pEntityManager->MarkComponentDirty(ECS::ComponentID<ECS::Components::Light>::ID);
+			g_pMaterialManager->MarkMaterialsDirty();
+		});
+		
 
-		return SceneNode{ nodeEntity };
+		return SceneNode{ rootEntity };
 	}
 
 	Mesh* ExtractMesh(const aiMesh* pMesh)
@@ -95,9 +131,10 @@ namespace MeshConversion
 		Material mat{};
 
 		pMaterial->GetTexture(aiTextureType_DIFFUSE, 0, &path);
-		//mat.textures.diffuseTexture = g_pTexManager->SubmitAsyncTextureCreation({ path.C_Str() });
+		mat.diffuseTexture = g_pTexManager->SubmitAsyncTextureCreation({ "Resources\\Models\\" + eastl::string(path.C_Str()) });
+		DEBUG_LOGF("Loading Diffuse Texture: {}", path.C_Str());
 		pMaterial->GetTexture(aiTextureType_NORMALS, 0, &path);
-		//mat.textures.normalTexture = g_pTexManager->SubmitAsyncTextureCreation({ path.C_Str() });
+		//g_pTexManager->SubmitAsyncTextureCreation({ "Resources\\Models\\" + eastl::string(path.C_Str()) });
 
 		aiColor3D diffuse;
 		stltype::string materialName = pMaterial->GetName().C_Str();

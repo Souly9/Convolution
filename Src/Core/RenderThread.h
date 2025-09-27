@@ -9,13 +9,12 @@ class RenderThread : public ThreadBase
 {
 public:
 	RenderThread(ImGuiManager* pImGuiManager);
-
+	void Stop() { m_keepRunning = false; }
 	void WaitForGameThreadAndPreviousFrame();
 
 	void RenderLoop();
 
 	RenderPasses::PassManager* Start();
-protected:
 	RenderPasses::PassManager m_passManager;
 	ImGuiManager* m_pImGuiManager{};
 };

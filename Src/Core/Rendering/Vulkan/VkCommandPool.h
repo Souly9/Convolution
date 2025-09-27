@@ -22,6 +22,8 @@ public:
 
 	void ReturnCommandBuffer(CommandBuffer* commandBuffer);
 	void ClearAll() { m_commandBuffers.clear(); }
+
+	virtual void NamingCallBack(const stltype::string& name) override;
 protected:
 	CommandPoolVulkan(u32 graphicsFamilyIdx);
 	CommandPoolVulkan(u32 graphicsFamilyIdx, VkCommandPoolCreateFlagBits flags);

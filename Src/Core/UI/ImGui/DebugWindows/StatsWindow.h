@@ -11,7 +11,7 @@ public:
 
 	void DrawWindow(f32 dt)
 	{
-		stltype::string device = m_lastState.renderState.physicalRenderDeviceName;
+		stltype::string device = m_lastState.physicalRenderDeviceName;
 		ImGui::Begin("RenderStats", &m_isOpen);
 		ImGui::Text("Performance Stats");
 		ImGui::Text("Avg FPS: %u", m_frameCount);
@@ -27,7 +27,7 @@ public:
 		f32 dt = d.dt;
 		const auto& state = d.state;
 		m_lastDt = dt;
-		m_lastState = state;
+		m_lastState = state.renderState;
 		if(m_totalTime < 1.f)
 		{
 			++m_curFrameCount;
@@ -42,7 +42,7 @@ public:
 	}
 
 protected:
-	ApplicationState m_lastState;
+	RendererState m_lastState;
 	f32 m_lastDt;
 	u32 m_frameCount{ 0 };
 	f32 m_totalTime{ 0.f };

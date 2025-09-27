@@ -68,7 +68,7 @@ protected:
 	void ReadMeshFile(const IORequest& request);
 	
 	threadSTL::Thread m_ioThread;
-	threadSTL::Futex m_requestSubmitMutex{};
+	threadSTL::Mutex m_requestSubmitMutex{};
 	stltype::queue<IORequest> m_requests{}; // Pending requests, read by iothread
 	bool m_keepRunning{ true };
 };

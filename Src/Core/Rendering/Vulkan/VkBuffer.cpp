@@ -27,30 +27,26 @@ void GenBufferVulkan::Create(BufferCreateInfo& info)
         u32 families[] = { queues.graphicsFamily.value(), queues.transferFamily.value() };
         bufferInfo.pQueueFamilyIndices = families;
     }
-
-    DEBUG_ASSERT(vkCreateBuffer(VK_LOGICAL_DEVICE, &bufferInfo, VulkanAllocator(), &m_buffer) == VK_SUCCESS);
-    DEBUG_ASSERT(m_buffer != VK_NULL_HANDLE);
-
+    m_allocatedMemory = g_pGPUMemoryManager->AllocateBuffer(info.usage, bufferInfo, m_buffer);
     m_info.size = size;
     m_info.usage = info.usage;
 
-    VkMemoryRequirements memRequirements;
-    vkGetBufferMemoryRequirements(VK_LOGICAL_DEVICE, m_buffer, &memRequirements);
-    VkMemoryPropertyFlags mainBufferProperties = Conv2MemFlags(info.usage);
+    //DEBUG_ASSERT(vkCreateBuffer(VK_LOGICAL_DEVICE, &bufferInfo, VulkanAllocator(), &m_buffer) == VK_SUCCESS);
+    //DEBUG_ASSERT(m_buffer != VK_NULL_HANDLE);
+    //VkMemoryRequirements memRequirements;
+    //vkGetBufferMemoryRequirements(VK_LOGICAL_DEVICE, m_buffer, &memRequirements);
 
-    m_allocatedMemory = g_pGPUMemoryManager->AllocateMemory(info.size, mainBufferProperties, memRequirements);
-    
-    vkBindBufferMemory(VK_LOGICAL_DEVICE, m_buffer, m_allocatedMemory, 0);
+    //m_allocatedMemory = g_pGPUMemoryManager->AllocateMemory(info.size, mainBufferProperties, memRequirements);
+    //
+    //vkBindBufferMemory(VK_LOGICAL_DEVICE, m_buffer, m_allocatedMemory, 0);
 }
 
 void GenBufferVulkan::CleanUp()
 {
-    auto bufferHandle = m_buffer;
     auto memory = m_allocatedMemory;
 
-    g_pDeleteQueue->RegisterDeleteForNextFrame([bufferHandle, memory]() mutable
+    g_pDeleteQueue->RegisterDeleteForNextFrame([memory]() mutable
         {
-            vkDestroyBuffer(VK_LOGICAL_DEVICE, bufferHandle, VulkanAllocator());
             g_pGPUMemoryManager->TryFreeMemory(memory);
         });
 }
@@ -67,7 +63,7 @@ void GenBufferVulkan::FillAndTransfer(StagingBuffer& stgBuffer, CommandBuffer* t
     DEBUG_ASSERT(stgBuffer.GetRef() != VK_NULL_HANDLE);
 
     MapAndCopyToMemory(stgBuffer.GetMemoryHandle(), data, stgBuffer.GetInfo().size, offset);
-    SimpleBufferCopyCmd copyCmd{&stgBuffer, this};
+    SimpleBufferCopyCmd copyCmd{stgBuffer, this};
 	copyCmd.srcOffset = 0;
 	copyCmd.dstOffset = offset;
 	copyCmd.size = m_info.size;
@@ -76,9 +72,8 @@ void GenBufferVulkan::FillAndTransfer(StagingBuffer& stgBuffer, CommandBuffer* t
     {
         auto buffer = stgBuffer.GetRef();
         auto memory = stgBuffer.GetMemoryHandle();
-        transferBuffer->AddExecutionFinishedCallback([buffer, memory]()
+        transferBuffer->AddExecutionFinishedCallback([memory]()
             {
-                vkDestroyBuffer(VK_LOGICAL_DEVICE, buffer, VulkanAllocator());
                 g_pGPUMemoryManager->TryFreeMemory(memory);
             });
 
@@ -97,6 +92,17 @@ GPUMappedMemoryHandle GenBufferVulkan::MapMemory()
 void GenBufferVulkan::UnmapMemory()
 {
     g_pGPUMemoryManager->UnmapMemory(m_allocatedMemory);
+}
+
+void GenBufferVulkan::NamingCallBack(const stltype::string& name)
+{
+    VkDebugUtilsObjectNameInfoEXT nameInfo = {};
+    nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+    nameInfo.objectType = VK_OBJECT_TYPE_BUFFER;
+    nameInfo.objectHandle = (uint64_t)GetRef();     
+    nameInfo.pObjectName = name.c_str(); 
+
+    vkSetDebugUtilsObjectName(VK_LOGICAL_DEVICE, &nameInfo);
 }
 
 void GenBufferVulkan::MapAndCopyToMemory(const GPUMemoryHandle& memory, const void* data, u64 size, u64 offset)
@@ -174,6 +180,11 @@ IndirectDrawCountBuffer::IndirectDrawCountBuffer(u64 numOfCounts)
 
 void IndirectDrawCommandBuffer::AddIndexedDrawCmd(u32 indexCount, u32 instanceCount, u32 firstIndex, u32 vertexOffset, u32 firstInstance)
 {
+    if(m_indexedIndirectCmds.capacity() == m_indexedIndirectCmds.size())
+    {
+		// Allocate enough space for all commands from the get go please
+        DEBUG_ASSERT(false);
+	}
     m_indexedIndirectCmds.emplace_back(indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
 }
 

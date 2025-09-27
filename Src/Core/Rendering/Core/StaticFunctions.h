@@ -4,19 +4,10 @@
 namespace SRF
 {
 	IMPLEMENT_GRAPHICS_API
-	static inline void QueryImageForPresentationFromMainSwapchain(const Semaphore& imageAvailableSemaphore, u32& imageIndex, u64 timeout = UINT64_MAX);
+	static inline void QueryImageForPresentationFromMainSwapchain(const Semaphore& imageAvailableSemaphore, const Fence& imageAvailableFence, u32& imageIndex, u64 timeout = UINT64_MAX);
 
 	IMPLEMENT_GRAPHICS_API
-	static inline void SubmitForPresentationToMainSwapchain(const Semaphore& waitSemaphore, const u32 swapChainIdx);
-
-	IMPLEMENT_GRAPHICS_API
-	static inline void SubmitCommandBufferToGraphicsQueue(const Semaphore& waitSemaphore, const Semaphore& signalSemaphore, const CommandBuffer* cmdBuffer, const Fence& inFlightFence);
-
-	IMPLEMENT_GRAPHICS_API
-	static inline void SubmitCommandBufferToTransferQueue(const CommandBuffer* cmdBuffer, const Fence& transferFinishedFence);
-
-	IMPLEMENT_GRAPHICS_API
-	static inline void SubmitCommandBufferToGraphicsQueue(const CommandBuffer* cmdBuffer, const Fence& transferFinishedFence);
+	static inline void SubmitForPresentationToMainSwapchain(Semaphore* pWaitSemaphore, u32 swapChainIdx);
 }
 
 #ifdef USE_VULKAN

@@ -1,9 +1,0 @@
-[submodule "External/imgui"]
-	path = External/imgui
-	url = https://github.com/ocornut/imgui.git
-[submodule "External/DirectXMath"]
-	path = External/DirectXMath
-	url = https://github.com/microsoft/DirectXMath.git
-[submodule "External/EASTL"]
-	path = External/EASTL
-	url = https://github.com/electronicarts/EASTL.git

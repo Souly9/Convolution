@@ -29,9 +29,14 @@ namespace ECS
 	{
 	public:
 		EntityManager();
-		Entity CreateEntity(const DirectX::XMFLOAT3& position = DirectX::XMFLOAT3(0, 0, 0));
+
+		void UnloadAllEntities();
+
+		Entity CreateEntity(const DirectX::XMFLOAT3& position = DirectX::XMFLOAT3(0, 0, 0), const stltype::string& name = "Entity");
 		void DestroyEntity(Entity entity);
 		void MarkComponentDirty(Entity entity, C_ID componentID);
+		void MarkComponentDirty(C_ID componentID);
+		void MarkComponentsDirty(stltype::vector<C_ID> componentID);
 
 		void SyncSystemData(u32 frameIdx);
 		void UpdateSystems(u32 frameIdx);
@@ -123,7 +128,6 @@ namespace ECS
 
 			compVector.emplace_back(component, entity);
 			indices[ECS::ComponentID<Component>::ID] = compVector.size() - 1;
-			MarkComponentDirty(entity, ECS::ComponentID<Component>::ID);
 		}
 	}
 
@@ -142,12 +146,6 @@ namespace ECS
 			return m_lightComponents;
 		if constexpr (ECS::ComponentID<Components::DebugRenderComponent>::ID == ECS::ComponentID<Component>::ID)
 			return m_debugRenderComponents;
-		else
-		{
-			DEBUG_ASSERT(false);
-			stltype::vector<ComponentHolder<Component>> rslt{};
-			return rslt;
-		}
 	}
 	COMP_TEMPLATE_FUNC
 	constexpr const stltype::vector<ComponentHolder<Component>>& EntityManager::GetComponentVector() const
@@ -164,12 +162,6 @@ namespace ECS
 			return m_lightComponents;
 		if constexpr (ECS::ComponentID<Components::DebugRenderComponent>::ID == ECS::ComponentID<Component>::ID)
 			return m_debugRenderComponents;
-		else
-		{
-			DEBUG_ASSERT(false);
-			stltype::vector<ComponentHolder<Component>> rslt{};
-			return rslt;
-		}
 	}
 
 	COMP_TEMPLATE_FUNC

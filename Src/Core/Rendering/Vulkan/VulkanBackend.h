@@ -3,7 +3,6 @@
 #include <vulkan/vulkan.h>
 #include "Core/Rendering/Backend/RenderBackend.h"
 #include "Core/Rendering/Vulkan/VkPipeline.h"
-#include "Core/Rendering/Vulkan/VkFramebuffer.h"
 #include "Core/Rendering/Vulkan/VkTexture.h"
 
 template<>

@@ -10,11 +10,11 @@ namespace RenderPasses
 
 		virtual void BuildBuffers() override;
 
-		virtual void Init(const RendererAttachmentInfo& attachmentInfo) override;
+		virtual void Init(RendererAttachmentInfo & attachmentInfo) override;
 
-		virtual void RebuildInternalData(const stltype::vector<PassMeshData>& meshes) override;
+		virtual void RebuildInternalData(const stltype::vector<PassMeshData>& meshes, FrameRendererContext& previousFrameCtx, u32 thisFrameNum) override;
 
-		virtual void Render(const MainPassData& data, const FrameRendererContext& ctx) override;
+		virtual void Render(const MainPassData& data, FrameRendererContext & ctx) override;
 
 		virtual void CreateSharedDescriptorLayout() override;
 
@@ -22,7 +22,7 @@ namespace RenderPasses
 	protected:
 		PSO m_solidDebugObjectsPSO;
 		PSO m_wireframeDebugObjectsPSO;
-		RenderPass m_mainPass;
+
 		stltype::hash_map<Mesh*, InstancedMeshDataInfo> m_instancedMeshInfoMap;
 		IndirectDrawCommandBuffer m_indirectCmdBufferOpaque;
 		IndirectDrawCommandBuffer m_indirectCmdBufferWireFrame;

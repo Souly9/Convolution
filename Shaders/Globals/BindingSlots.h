@@ -5,6 +5,7 @@
 #define GlobalObjectDataSSBOSlot 2
 #define GlobalTileArraySSBOSlot 1
 #define GlobalLightDataUBOSlot 2
+#define GlobalGBufferPostProcessUBOSlot 1
 #define GlobalPerObjectDataSSBOSlot 502
 
 #define PassPerObjectDataSSBOSlot 1

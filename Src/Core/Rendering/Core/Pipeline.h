@@ -45,7 +45,7 @@ struct ColorBlendAttachmentInfo
 
 struct ColorBlendInfo
 {
-
+	u32 blendAttachmentCount = 0;
 };
 
 struct RasterizerInfo
@@ -68,8 +68,14 @@ struct DescriptorSetLayoutInfo
 	stltype::vector<PipelineDescriptorLayout> pipelineSpecificDescriptors;
 };
 
+struct PipelineAttachmentInfo
+{
+	stltype::vector<TexFormat> colorAttachments;
+	TexFormat depthAttachmentFormat;
+};
 struct PipelineInfo
 {
+	PipelineAttachmentInfo attachmentInfos;
 	ColorBlendInfo colorInfo{};
 	ColorBlendAttachmentInfo colorBlendInfo{};
 	MultisampleInfo multisampleInfo{};
@@ -80,3 +86,31 @@ struct PipelineInfo
 	bool dynamicViewScissor{ true };
 	bool hasDepth{ true };
 };
+
+static PipelineAttachmentInfo CreateAttachmentInfo(const stltype::vector<Texture>& colorAttachments, const Texture& depthAttachment)
+{
+	PipelineAttachmentInfo info{};
+	info.colorAttachments.reserve(colorAttachments.size());
+	for (const auto& colorTex : colorAttachments)
+	{
+		info.colorAttachments.push_back(colorTex.GetInfo().format);
+	}
+	info.depthAttachmentFormat = depthAttachment.GetInfo().format;
+	return info;
+}
+static PipelineAttachmentInfo CreateAttachmentInfo(const stltype::vector<ColorAttachment>& colorAttachments)
+{
+	PipelineAttachmentInfo info{};
+	info.colorAttachments.reserve(colorAttachments.size());
+	for (const auto& colorAttachment : colorAttachments)
+	{
+		info.colorAttachments.push_back(colorAttachment.GetDesc().format);
+	}
+	return info;
+}
+static PipelineAttachmentInfo CreateAttachmentInfo(const stltype::vector<ColorAttachment>& colorAttachments, const DepthAttachment& depthAttachment)
+{
+	PipelineAttachmentInfo info = CreateAttachmentInfo(colorAttachments);
+	info.depthAttachmentFormat = depthAttachment.GetDesc().format;
+	return info;
+}

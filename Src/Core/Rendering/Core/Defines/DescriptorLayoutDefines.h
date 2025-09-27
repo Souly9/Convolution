@@ -51,6 +51,7 @@ struct PipelineDescriptorLayout
 
 		type = ToDescriptorType(typeTemplate);
 		bindingSlot = Bindless::s_BindlessTypeToSlot.at(typeTemplate);
+		descriptorCount = Bindless::s_BindlessTypeToCount.at(typeTemplate);
 		shaderStagesToBind = stages;
 		setIndex = setIdx;
 	}

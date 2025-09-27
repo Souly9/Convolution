@@ -5,11 +5,15 @@
 #include "Utils/DescriptorSetLayoutConverters.h"
 
 
-PipelineVulkan::PipelineVulkan(const ShaderVulkan& vertShader, const ShaderVulkan& fragShader,
-	const PipeVertInfo& vertexInputs, const PipelineInfo& pipeInfo, const RenderPassVulkan& renderPass)
+PipelineVulkan::PipelineVulkan(const ShaderCollection& shaders, const PipeVertInfo& vertexInputs, const PipelineInfo& pipeInfo)
 {
+	// Assume we always have a vert and fragment shader here for now
+	Shader& vertShader = *shaders.pVertShader;
+	Shader& fragShader = *shaders.pFragShader;
 	if (vertShader.GetDesc() == VK_NULL_HANDLE || fragShader.GetDesc() == VK_NULL_HANDLE)
 		g_pFileReader->FinishAllRequests();
+	DEBUG_ASSERT(vertShader.GetDesc() != VK_NULL_HANDLE && fragShader.GetDesc() != VK_NULL_HANDLE);
+
 	VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
 	vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
@@ -23,14 +27,18 @@ PipelineVulkan::PipelineVulkan(const ShaderVulkan& vertShader, const ShaderVulka
 	fragShaderStageInfo.pName = fragShader.GetName().c_str();
 
 	const auto shaderStages = stltype::vector{ vertShaderStageInfo, fragShaderStageInfo };
-	
+	const auto attachmentCount = pipeInfo.attachmentInfos.colorAttachments.size();
+
 	const auto dymState = CreateDynamicPipelineInfo(g_dynamicStates);
 	const auto vertexInput = CreateVertexInputInfo(vertexInputs);
 	const auto inputAssembly = CreateInputAssemblyInfo(pipeInfo.topology);
 	const auto viewport = CreateViewportInfo(pipeInfo.viewPortExtents);
 	const auto rasterizer = CreateRasterizerInfo(pipeInfo.viewPortExtents, pipeInfo.rasterizerInfo);
 	const auto multisampling = CreateMultisampleInfo(pipeInfo.multisampleInfo);
-	auto colorBlending = CreateColorBlendInfo(pipeInfo.colorInfo, CreateColorBlendAttachmentInfo(pipeInfo.colorBlendInfo));
+	const auto colorAttachmentInfo = CreateColorBlendAttachmentInfo(pipeInfo.colorBlendInfo);
+	stltype::vector<VkPipelineColorBlendAttachmentState> blendAttachments;
+	blendAttachments.assign(attachmentCount, colorAttachmentInfo);
+	auto colorBlending = CreateColorBlendInfo(pipeInfo.colorInfo, blendAttachments);
 	m_pipelineLayout = CreatePipelineLayout(pipeInfo.descriptorSetLayout);
 
 	VkGraphicsPipelineCreateInfo pipelineInfo{};
@@ -42,15 +50,22 @@ PipelineVulkan::PipelineVulkan(const ShaderVulkan& vertShader, const ShaderVulka
 	pipelineInfo.pViewportState = &viewport;
 	pipelineInfo.pRasterizationState = &rasterizer;
 	pipelineInfo.pMultisampleState = &multisampling;
-	pipelineInfo.pDepthStencilState = nullptr; // Optional
 	pipelineInfo.pColorBlendState = &colorBlending;
 	pipelineInfo.pDynamicState = &dymState;
 	pipelineInfo.layout = m_pipelineLayout;
-	pipelineInfo.renderPass = renderPass.GetRef();
 	pipelineInfo.subpass = 0;
-	pipelineInfo.basePipelineHandle = VK_NULL_HANDLE; // Optional
-	pipelineInfo.basePipelineIndex = -1; // Optional
+	pipelineInfo.renderPass = VK_NULL_HANDLE;
 
+			// Set attachment infos for dynamic rendering
+	VkPipelineRenderingCreateInfo pipelineRenderingCreateInfo{};
+	{
+		pipelineRenderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+		pipelineRenderingCreateInfo.colorAttachmentCount = pipeInfo.attachmentInfos.colorAttachments.size();;
+		pipelineRenderingCreateInfo.pColorAttachmentFormats = pipeInfo.attachmentInfos.colorAttachments.data(); 
+		pipelineRenderingCreateInfo.depthAttachmentFormat = pipeInfo.attachmentInfos.depthAttachmentFormat;
+	}
+
+	pipelineInfo.pNext = &pipelineRenderingCreateInfo;
 	if (pipeInfo.hasDepth)
 	{
 		const auto depthStencil = CreateDepthStencilLayout();
@@ -185,14 +200,14 @@ VkPipelineColorBlendAttachmentState PipelineVulkan::CreateColorBlendAttachmentIn
 	return colorBlendAttachment;
 }
 
-VkPipelineColorBlendStateCreateInfo PipelineVulkan::CreateColorBlendInfo(const ColorBlendInfo& info, const VkPipelineColorBlendAttachmentState& colorBlendAttachment)
+VkPipelineColorBlendStateCreateInfo PipelineVulkan::CreateColorBlendInfo(const ColorBlendInfo& info, const stltype::vector<VkPipelineColorBlendAttachmentState>& colorBlendAttachments)
 {
 	VkPipelineColorBlendStateCreateInfo colorBlending{};
 	colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
 	colorBlending.logicOpEnable = VK_FALSE;
 	colorBlending.logicOp = VK_LOGIC_OP_COPY; // Optional
-	colorBlending.attachmentCount = 1;
-	colorBlending.pAttachments = &colorBlendAttachment;
+	colorBlending.attachmentCount = colorBlendAttachments.size();
+	colorBlending.pAttachments = colorBlendAttachments.data();
 	colorBlending.blendConstants[0] = 0.0f; // Optional
 	colorBlending.blendConstants[1] = 0.0f; // Optional
 	colorBlending.blendConstants[2] = 0.0f; // Optional
