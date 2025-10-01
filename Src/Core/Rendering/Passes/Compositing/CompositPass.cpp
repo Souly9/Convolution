@@ -8,20 +8,11 @@ RenderPasses::CompositPass::CompositPass() : GenericGeometryPass("CompositPass")
 
 void RenderPasses::CompositPass::Init(RendererAttachmentInfo& attachmentInfo)
 {
-
-	auto mainVert = Shader("Shaders/Simple.vert.spv", "main");
-	auto mainFrag = Shader("Shaders/Simple.frag.spv", "main");
-
+	ScopedZone("CompositPass::Init");
 	const auto& gbufferInfo = attachmentInfo.gbuffer;
 
-	const auto swapChainAttachment = CreateDefaultColorAttachment(attachmentInfo.swapchainTextures[0].GetInfo().format, LoadOp::CLEAR, nullptr);
+	const auto swapChainAttachment = CreateDefaultColorAttachment(SWAPCHAINFORMAT, LoadOp::CLEAR, nullptr);
 	m_mainRenderingData.colorAttachments = { swapChainAttachment };
-
-	PipelineInfo info{};
-	info.descriptorSetLayout.sharedDescriptors = m_sharedDescriptors;
-	info.attachmentInfos = CreateAttachmentInfo({ m_mainRenderingData.colorAttachments });
-	info.hasDepth = false;
-	m_mainPSO = PSO(ShaderCollection{ &mainVert, &mainFrag }, PipeVertInfo{ m_vertexInputDescription, m_attributeDescriptions }, info);
 
 	InitBaseData(attachmentInfo);
 	m_indirectCmdBuffer = IndirectDrawCommandBuffer(10);
@@ -39,6 +30,20 @@ void RenderPasses::CompositPass::Init(RendererAttachmentInfo& attachmentInfo)
 	g_pQueueHandler->SubmitTransferCommandAsync(cmd);
 	m_indirectCmdBuffer.FillCmds();
 
+	BuildPipelines();
+}
+
+void RenderPasses::CompositPass::BuildPipelines()
+{
+	ScopedZone("CompositPass::BuildPipelines");
+	auto mainVert = Shader("Shaders/Simple.vert.spv", "main");
+	auto mainFrag = Shader("Shaders/Simple.frag.spv", "main");
+
+	PipelineInfo info{};
+	info.descriptorSetLayout.sharedDescriptors = m_sharedDescriptors;
+	info.attachmentInfos = CreateAttachmentInfo({ m_mainRenderingData.colorAttachments });
+	info.hasDepth = false;
+	m_mainPSO = PSO(ShaderCollection{ &mainVert, &mainFrag }, PipeVertInfo{ m_vertexInputDescription, m_attributeDescriptions }, info);
 }
 
 void RenderPasses::CompositPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes, FrameRendererContext& previousFrameCtx, u32 thisFrameNum)

@@ -1,7 +1,8 @@
 #pragma once
 #include "GlobalDefines.h"
-#include "Tracy/Tracy.hpp"
+#include "Profiling.h"
 
+// Simple mutex wrapper for eastl mutex to make the methods lowercase for Tracy profiling
 class CustomMutex
 {
 public:
@@ -9,7 +10,7 @@ public:
 	void lock() { m_mutex.Lock(); }
 
 private:
-	threadSTL::Mutex m_mutex;
+	threadSTL::Futex m_mutex;
 };
 
 class ThreadBase
@@ -26,6 +27,7 @@ public:
 
 	void ShutdownThread()
 	{
+		if (m_thread.GetStatus() != threadSTL::Thread::Status::kStatusRunning) return;
 		m_keepRunning = false;
 		m_thread.WaitForEnd();
 	}
@@ -33,6 +35,6 @@ public:
 	void Suspend() { threadSTL::ThreadSleep(500); }
 protected:
 	threadSTL::Thread m_thread;
-	TracyLockable(CustomMutex, m_sharedDataMutex);
+	ProfiledLockable(CustomMutex, m_sharedDataMutex);
 	bool m_keepRunning{ true };
 };

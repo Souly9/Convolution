@@ -34,6 +34,7 @@
 #define ASSERT(x) x
 #endif
 #define DEBUG_ASSERT(x) ASSERT(x)
+#define PROFILING_ENABLED 1
 
 namespace stltype = eastl;
 namespace threadSTL = EA::Thread;
@@ -88,3 +89,6 @@ static inline constexpr f32 FLOAT_TOLERANCE = 0.00001f;
 static inline constexpr f32 AMBIENT_STRENGTH = 0.1f;
 
 #define MAKE_FLAG_ENUM(name) static inline name operator|(name lhs, name rhs) { return static_cast<name>(static_cast<char>(lhs) | static_cast<char>(rhs)); }
+
+
+#include "Profiling.h"

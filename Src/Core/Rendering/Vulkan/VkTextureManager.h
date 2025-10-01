@@ -162,5 +162,4 @@ protected:
 
 	stltype::atomic<u32> m_baseHandle{ 0 };
 	u32 m_lastBindlessTextureWriteIdx{ 0 };
-	bool m_keepRunning{ true };
 };

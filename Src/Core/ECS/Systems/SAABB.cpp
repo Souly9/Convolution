@@ -6,6 +6,7 @@ void ECS::System::SAABB::Init(const SystemInitData& data)
 
 void ECS::System::SAABB::Process()
 {
+	ScopedZone("AABB System::Process");
 	const auto& transComps = g_pEntityManager->GetComponentVector<Components::Transform>();
 
 	for (const auto& transform : transComps)

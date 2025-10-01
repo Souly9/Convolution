@@ -16,6 +16,7 @@ struct ReadTextureInfo
 struct ReadBytesInfo
 {
 	stltype::vector<char> bytes;
+	stltype::string filePath;
 };
 
 struct ReadMeshInfo
@@ -31,7 +32,7 @@ enum class RequestType
 };
 
 using IOImageReadCallback = stltype::fixed_function<20, void(const ReadTextureInfo&)>;
-using IOByteReadCallback = stltype::fixed_function<4, void(const ReadBytesInfo&)>;
+using IOByteReadCallback = stltype::fixed_function<64, void(ReadBytesInfo&)>;
 using IOMeshReadCallback = stltype::fixed_function<4, void(const ReadMeshInfo&)>;
 
 using IOCallback = stltype::variant<IOImageReadCallback, IOByteReadCallback, IOMeshReadCallback>;

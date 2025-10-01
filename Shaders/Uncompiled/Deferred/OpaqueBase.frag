@@ -1,5 +1,6 @@
-#version 450
+#version 450 core
 #extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_ARB_shading_language_include : enable
 #define GBufferUBOSet 4
 #include "../../Globals/GBufferUBO.h"
 #include "../../Globals/Textures.h"

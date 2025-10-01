@@ -11,6 +11,7 @@ void ECS::System::STransform::Init(const SystemInitData& data)
 
 void ECS::System::STransform::Process()
 {
+	ScopedZone("Transform System::Process");
 	// Not beautiful but don't want to get into archetypes for now and the view system won't run often or on many entities either way
 	const stltype::vector<ComponentHolder<Components::Transform>>& transComps = g_pEntityManager->GetComponentVector<Components::Transform>();
 
@@ -27,6 +28,7 @@ void ECS::System::STransform::Process()
 
 void ECS::System::STransform::SyncData(u32 currentFrame)
 {
+	ScopedZone("Transform System::SyncData");
 	auto map = m_cachedDataMap;
 	m_pPassManager->SetEntityTransformDataForFrame(std::move(map), currentFrame);
 }

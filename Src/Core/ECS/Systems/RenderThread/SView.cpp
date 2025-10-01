@@ -13,6 +13,7 @@ void ECS::System::SView::CleanUp()
 
 void ECS::System::SView::Process()
 {
+	ScopedZone("View System::Process");
 	const auto camEntities = g_pEntityManager->GetEntitiesWithComponent<Components::Camera>();
 	//const auto lightEntities = g_pEntityManager->GetEntitiesWithComponent<Components::Lights>();
 
@@ -33,7 +34,7 @@ void ECS::System::SView::Process()
 
 void ECS::System::SView::SyncData(u32 currentFrame)
 {
-
+	ScopedZone("View System::SyncData");
 	// Not that beautiful but don't want to get into archetypes for now and the view system won't run often or on many entities either way
 	const auto entities = g_pEntityManager->GetEntitiesWithComponent<Components::View>();
 

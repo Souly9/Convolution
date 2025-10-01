@@ -20,3 +20,8 @@ struct PostFrameEventData
 	u32 frameIdx;
 };
 using PostFrameEventCallback = stltype::fixed_function<8, void(const PostFrameEventData&)>;
+
+struct ShaderHotReloadEventData
+{
+};
+using ShaderHotReloadEventCallback = stltype::fixed_function<8, void(const ShaderHotReloadEventData&)>;

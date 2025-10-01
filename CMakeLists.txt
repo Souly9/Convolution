@@ -159,8 +159,36 @@ SYSTEM
 )
 
 target_compile_definitions(${NAME} PRIVATE CONV_DEBUG=1)
+set(GLSLANG_LIB_DIR "${CMAKE_SOURCE_DIR}/External/additional_libs/glsl/")
+set(GLSLANG_LIBS)
 
-target_link_libraries(${NAME} ${LIBS} GPUOpen::VulkanMemoryAllocator)
+set(GLSLANG_COMPONENTS
+    glslang 
+    MachineIndependent 
+    OSDependent 
+    SPIRV 
+	SPIRV-Tools
+    SPIRV-Tools-opt
+	GenericCodeGen
+	glslang-default-resource-limits
+)
+foreach(COMPONENT ${GLSLANG_COMPONENTS})
+    # Define an IMPORTED library target
+    add_library(${COMPONENT} STATIC IMPORTED)
+
+    # Set the location of the IMPORT LIBRARY (.lib file)
+    set_target_properties(${COMPONENT} PROPERTIES
+        IMPORTED_LOCATION "${GLSLANG_LIB_DIR}/${COMPONENT}.lib"
+        # If your .lib file names are different (e.g., glslang-d.lib), 
+        # you must adjust the name here. 
+        # Use an absolute path here for best results.
+    )
+
+    # Add the library to your main application's link list
+    set(GLSLANG_LIBS ${GLSLANG_LIBS} ${COMPONENT})
+endforeach()
+
+target_link_libraries(${NAME} ${LIBS} GPUOpen::VulkanMemoryAllocator ${GLSLANG_LIBS})
 
 if(WIN32)
 add_custom_target(

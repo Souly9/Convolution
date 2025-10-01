@@ -11,6 +11,7 @@ void ECS::System::SLight::Process()
 
 void ECS::System::SLight::SyncData(u32 currentFrame)
 {
+	ScopedZone("Light System::SyncData");
 	const auto entities = g_pEntityManager->GetEntitiesWithComponent<Components::Light>();
 	RenderPasses::LightVector lights;
 	lights.reserve(entities.size());

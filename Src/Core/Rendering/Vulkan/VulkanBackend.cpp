@@ -123,7 +123,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL RenderBackendImpl<Vulkan>::DebugCallback(VkDebugU
 	if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
 	{
 		DEBUG_LOG_ERR(stltype::string(pCallbackData->pMessage));
-		return VK_FALSE;
+		return VK_TRUE;
 	}
 	return VK_FALSE;
 }

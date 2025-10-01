@@ -20,15 +20,12 @@ namespace RenderPasses
 
 	void RenderPasses::StaticMainMeshPass::Init(RendererAttachmentInfo & attachmentInfo)
 	{
-		ZoneScopedN("StaticMeshPass::Init");
+		ScopedZone("StaticMeshPass::Init");
 
 		for(u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
 		{
 			m_internalSyncContexts[i].bufferUpdateFinishedSemaphore.Create();
 		}
-
-		auto mainVert = Shader("Shaders/SimpleForward.vert.spv", "main");
-		auto mainFrag = Shader("Shaders/SimpleForward.frag.spv", "main");
 
 		const auto& gbufferInfo = attachmentInfo.gbuffer;
 
@@ -39,21 +36,29 @@ namespace RenderPasses
 		m_mainRenderingData.depthAttachment = CreateDefaultDepthAttachment(LoadOp::CLEAR, attachmentInfo.depthAttachment.GetTexture());;
 		m_mainRenderingData.colorAttachments = { gbufferPosition };
 
-		//g_pTexManager->SubmitAsyncTextureCreation({ "Resources\\Textures\\texture.jpg" });
+		InitBaseData(attachmentInfo);
+		m_indirectCmdBuffer = IndirectDrawCommandBuffer(1000);
+
+		BuildPipelines();
+	}
+
+	void StaticMainMeshPass::BuildPipelines()
+	{
+		ScopedZone("StaticMeshPass::BuildPipelines");
+
+		auto mainVert = Shader("Shaders/SimpleForward.vert.spv", "main");
+		auto mainFrag = Shader("Shaders/SimpleForward.frag.spv", "main");
 
 		PipelineInfo info{};
 		//info.descriptorSetLayout.pipelineSpecificDescriptors.emplace_back();
 		info.descriptorSetLayout.sharedDescriptors = m_sharedDescriptors;
 		info.attachmentInfos = CreateAttachmentInfo({ m_mainRenderingData.colorAttachments }, m_mainRenderingData.depthAttachment);
 		m_mainPSO = PSO(ShaderCollection{ &mainVert, &mainFrag }, PipeVertInfo{ m_vertexInputDescription, m_attributeDescriptions }, info);
-
-		InitBaseData(attachmentInfo);
-		m_indirectCmdBuffer = IndirectDrawCommandBuffer(1000);
 	}
 
 	void StaticMainMeshPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes, FrameRendererContext& previousFrameCtx, u32 thisFrameNum)
 	{
-		ZoneScopedN("StaticMeshPass::Rebuild");
+		ScopedZone("StaticMeshPass::Rebuild");
 		AsyncQueueHandler::MeshTransfer cmd{};
 		cmd.vertices.reserve(meshes.size() * 200);
 		cmd.indices.reserve(meshes.size() * 500);
@@ -96,7 +101,7 @@ namespace RenderPasses
 
 	void RenderPasses::StaticMainMeshPass::Render(const MainPassData& data, FrameRendererContext& ctx)
 	{
-		ZoneScopedN("StaticMeshPass::Render");
+		ScopedZone("StaticMeshPass::Render");
 
 		const auto currentFrame = ctx.imageIdx;
 		UpdateContextForFrame(currentFrame);

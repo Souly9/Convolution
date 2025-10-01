@@ -97,6 +97,7 @@ void FileReader::ReadFileAsGenericBytes(const IORequest& request)
 {
 	ReadBytesInfo info{};
 	info.bytes = ReadFileAsGenericBytes(request.filePath.data());
+	info.filePath = request.filePath;
 
 	const IOByteReadCallback* callback = stltype::get_if<IOByteReadCallback>(&request.callback);
 	if(callback)
@@ -117,7 +118,7 @@ stltype::vector<char> FileReader::ReadFileAsGenericBytes(const char* filePath)
 	fileStream.seekg(0);
 	fileStream.read(buffer.data(), fileSize);
 
-	fileStream.close();
+	fileStream.close(); 
 	return buffer;
 }
 

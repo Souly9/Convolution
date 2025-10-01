@@ -97,8 +97,8 @@ GPUMemManager<Vulkan>::~GPUMemManager()
         {
             vmaDestroyImage(s_vmaAllocator, handle.imageHandle, handle.vmaAllocation);
         }
-		DEBUG_ASSERT(handle.imageHandle == VK_NULL_HANDLE && handle.bufferHandle == VK_NULL_HANDLE);
     }
+    s_memoryHandles.clear();
 	FreeVMA();
     m_allocatinggMutex.Unlock();
 }

@@ -13,6 +13,7 @@ void ECS::System::SRenderComponent::Process()
 
 void ECS::System::SRenderComponent::SyncData(u32 currentFrame)
 {
+	ScopedZone("RenderComponent System::SyncData");
 	// Not that beautiful but don't want to get into archetypes for now and the view system won't run often or on many entities either way
 	const auto& renderComps = g_pEntityManager->GetComponentVector<Components::RenderComponent>();
 	const auto& debugRenderComps = g_pEntityManager->GetComponentVector<Components::DebugRenderComponent>();
