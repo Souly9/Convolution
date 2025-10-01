@@ -20,5 +20,6 @@ extern stltype::unique_ptr<ECS::EntityManager> g_pEntityManager = stltype::make_
 extern stltype::unique_ptr<TextureManager> g_pTexManager = stltype::make_unique<TextureManager>();
 extern stltype::unique_ptr<MeshManager> g_pMeshManager = stltype::make_unique<MeshManager>();
 extern ApplicationStateManager* g_pApplicationState = nullptr;
+extern stltype::unique_ptr<ShaderManager> g_pShaderManager = stltype::make_unique<ShaderManager>();
 extern u32 g_currentFrameNumber = 0;
 extern DirectX::XMUINT2 g_swapChainExtent = { 0,0 };

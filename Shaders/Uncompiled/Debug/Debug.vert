@@ -1,4 +1,6 @@
-#version 450
+#version 450 core
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_ARB_shading_language_include : enable
 #define ViewUBOSet 0
 #define TransformSSBOSet 1
 #define PassPerObjectDataSet 2
@@ -15,5 +17,5 @@ void main() {
     uint transformIdx = perObjectDataSSBO.transformDataIdx[gl_InstanceIndex];
     uint perObjectDataIdx = perObjectDataSSBO.perObjectDataIdx[gl_InstanceIndex];
     gl_Position = ubo.proj * ubo.view * globalTransformSSBO.modelMatrices[transformIdx] * vec4(inPosition, 1.0);
-   fragColor = globalObjectDataSSBO.data[perObjectDataIdx].baseColor.xyz;
+    fragColor = globalObjectDataSSBO.data[perObjectDataIdx].baseColor.xyz;
 }

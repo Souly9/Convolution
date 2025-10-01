@@ -116,7 +116,6 @@ namespace RenderPasses
 	struct RendererAttachmentInfo
 	{
 		GBufferInfo gbuffer;
-		stltype::vector<Texture> swapchainTextures;
 		stltype::hash_map<ColorAttachmentType, stltype::vector<ColorAttachment>> colorAttachments;
 		DepthBufferAttachmentVulkan depthAttachment;
 
@@ -177,6 +176,10 @@ namespace RenderPasses
 
 		void DispatchSSBOTransfer(void* data, DescriptorSet* pDescriptor, u32 size, StorageBuffer* pSSBO, u32 offset = 0, u32 dstBinding = 0);
 		void BlockUntilPassesFinished(u32 frameIdx);
+
+		// Mainly used to hot reload shaders
+		// Rebuilding all pipelines for all passes is not the most efficient but we don't have that many and won't be doing it often anyway
+		void RebuildPipelinesForAllPasses();
 	protected:
 		void PreProcessMeshData(const stltype::vector<PassMeshData>& meshes, u32 lastFrame, u32 curFrame);
 

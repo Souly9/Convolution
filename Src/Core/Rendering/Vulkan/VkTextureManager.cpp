@@ -384,6 +384,10 @@ VkTextureManager::~VkTextureManager()
 	{
 		swapChainTex.m_image = VK_NULL_HANDLE;
 	}
+	for (auto& tex : m_textures)
+	{
+		tex.second.CleanUp();
+	}
 	m_swapChainTextures.clear();
 }
 

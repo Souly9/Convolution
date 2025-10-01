@@ -1,4 +1,4 @@
-#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_nonuniform_qualifier : require
 #include "BindingSlots.h"
 #include "PerObjectBuffers.h"
 

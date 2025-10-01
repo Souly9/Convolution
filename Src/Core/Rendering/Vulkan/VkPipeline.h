@@ -59,12 +59,12 @@ private:
 	VkPipelineDepthStencilStateCreateInfo CreateDepthStencilLayout();
 	VkPipelineLayout CreatePipelineLayout(const DescriptorSetLayoutInfo& layoutInfo);
 
-	VkPipelineLayout m_pipelineLayout; 
+	VkPipelineLayout m_pipelineLayout{ VK_NULL_HANDLE };
 
 	stltype::vector<DescriptorSetLayout> m_sharedDescriptorSetLayouts;
 	DescriptorSetLayout m_descriptorSetLayout;
 
-	VkPipeline m_pipeline;
+	VkPipeline m_pipeline { VK_NULL_HANDLE };
 
 	PipelineInfo m_info;
 

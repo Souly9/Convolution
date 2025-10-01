@@ -13,7 +13,7 @@ public:
 	const stltype::string& GetName() const;
 
 private:
-	void CreateShaderModule(const stltype::vector<char>& byteCode);
+	void CreateShaderModule(const stltype::vector<u32>& byteCode);
 
 	VkShaderModule m_shaderModule{};
 

@@ -45,7 +45,9 @@ public:
 	{
 		if (this == &other)
 			return *this;
-
+		this->DecRef();
+		if (ShouldDestroy())
+			CleanUp();
 		this->m_refCounter = other.m_refCounter.load();
 #ifdef CONV_DEBUG
 		this->m_debugName = other.m_debugName;
@@ -67,6 +69,9 @@ public:
 		if (this == &other)
 			return *this;
 
+		this->DecRef();
+		if (ShouldDestroy())
+			CleanUp();
 		this->m_refCounter = other.m_refCounter.load();
 #ifdef CONV_DEBUG
 		this->m_debugName = other.m_debugName;

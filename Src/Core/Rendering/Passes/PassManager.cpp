@@ -8,6 +8,8 @@
 
 void RenderPasses::PassManager::Init()
 {
+	g_pEventSystem->AddShaderHotReloadEventCallback([this](const auto&) { RebuildPipelinesForAllPasses(); });
+
 	AddPass(PassType::Main, stltype::make_unique<RenderPasses::StaticMainMeshPass>());
 	AddPass(PassType::Debug, stltype::make_unique<RenderPasses::DebugShapePass>());
 	AddPass(PassType::UI, stltype::make_unique<RenderPasses::ImGuiPass>());
@@ -94,7 +96,6 @@ void RenderPasses::PassManager::Init()
 	depthAttachmentInfo.format = DEPTH_BUFFER_FORMAT;
 	auto depthAttachment = DepthBufferAttachmentVulkan::Create(depthAttachmentInfo, pDepthTex);
 
-	m_globalRendererAttachments.swapchainTextures = g_pTexManager->GetSwapChainTextures();
 	m_globalRendererAttachments.colorAttachments[ColorAttachmentType::GBufferColor].push_back(colorAttachment);
 	m_globalRendererAttachments.depthAttachment = depthAttachment;
 
@@ -569,6 +570,22 @@ void RenderPasses::PassManager::DispatchSSBOTransfer(void* data, DescriptorSet* 
 void RenderPasses::PassManager::BlockUntilPassesFinished(u32 frameIdx)
 {
 	vkQueueWaitIdle(VkGlobals::GetGraphicsQueue());
+}
+
+void RenderPasses::PassManager::RebuildPipelinesForAllPasses()
+{
+	ScopedZone("PassManager::RebuildPipelinesForAllPasses");
+
+	if (g_pShaderManager->ReloadAllShaders() == false)
+		return;
+
+	for (auto& [type, passes] : m_passes)
+	{
+		for (auto& pass : passes)
+		{
+			pass->BuildPipelines();
+		}
+	}
 }
 
 void RenderPasses::PassManager::PreProcessMeshData(const stltype::vector<PassMeshData>& meshes, u32 lastFrame, u32 curFrame)

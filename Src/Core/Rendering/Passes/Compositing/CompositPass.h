@@ -11,6 +11,8 @@ namespace RenderPasses
 		CompositPass();
 		virtual void BuildBuffers() override {}
 		virtual void Init(RendererAttachmentInfo& attachmentInfo) override;
+		virtual void BuildPipelines() override;
+
 		virtual void RebuildInternalData(const stltype::vector<PassMeshData>& meshes, FrameRendererContext& previousFrameCtx, u32 thisFrameNum) override;
 		virtual void Render(const MainPassData& data, FrameRendererContext& ctx) override;
 		virtual void CreateSharedDescriptorLayout() override;

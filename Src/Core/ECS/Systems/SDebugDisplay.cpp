@@ -14,6 +14,7 @@ void ECS::System::SDebugDisplay::Init(const SystemInitData& data)
 
 void ECS::System::SDebugDisplay::Process()
 {
+	ScopedZone("DebugDisplay System::Process");
 	if (!m_stateChanged)
 		return;
 	bool shouldRender = m_renderDebugMeshes;

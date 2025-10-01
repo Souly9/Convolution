@@ -43,7 +43,10 @@ void GenBufferVulkan::Create(BufferCreateInfo& info)
 
 void GenBufferVulkan::CleanUp()
 {
+    if (m_buffer == VK_NULL_HANDLE) return;
+
     auto memory = m_allocatedMemory;
+    m_buffer = VK_NULL_HANDLE;
 
     g_pDeleteQueue->RegisterDeleteForNextFrame([memory]() mutable
         {

@@ -9,6 +9,12 @@ public:
 		bool drawDebugMeshes = m_drawDebugMeshes;
 		ImGui::Begin("Debug Settings", &m_isOpen);
 		ImGui::Checkbox("Draw debug meshes", &drawDebugMeshes);
+		if (ImGui::Button("Hot Reload Shaders"))
+		{
+			DEBUG_LOG("Hot reloading shaders...");
+			g_pEventSystem->OnShaderHotReload({});
+		}
+
 		ImGui::End();
 
 		if (drawDebugMeshes != m_drawDebugMeshes)

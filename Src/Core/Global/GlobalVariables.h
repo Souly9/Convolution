@@ -10,6 +10,7 @@
 #include "Core/Rendering/Core/Utils/DeleteQueue.h"
 #include "State/ApplicationState.h"
 #include "Core/Events/EventSystem.h"
+#include "Core/Rendering/Core/ShaderManager.h"
 
 extern threadSTL::Semaphore     g_mainRenderThreadSyncSemaphore;
 extern threadSTL::Semaphore     g_renderThreadReadSemaphore;
@@ -26,6 +27,7 @@ class DeleteQueue;
 class EventSystem;
 struct ApplicationState;
 class ApplicationStateManager;
+class ShaderManager;
 namespace ECS
 {
 	class EntityManager;
@@ -40,6 +42,7 @@ extern stltype::unique_ptr<EventSystem> g_pEventSystem;
 extern stltype::unique_ptr<DeleteQueue> g_pDeleteQueue;
 extern ApplicationStateManager* g_pApplicationState;
 extern stltype::unique_ptr<ECS::EntityManager> g_pEntityManager;
+extern stltype::unique_ptr<ShaderManager> g_pShaderManager;
 
 // Holds the frame number of the current frame (aka whether it's the first, second etc. frame of the swapchain)
 extern u32 g_currentFrameNumber;

@@ -19,6 +19,7 @@ Application::Application(bool canRender, RenderLayer<RenderAPI>& layer) : m_rend
 	g_pTexManager->Init();
 	g_pQueueHandler->Init();
 	g_pGlobalTimeData->Reset();
+	g_pShaderManager->ReadAllSourceShaders();
 
 	g_pEventSystem->OnBaseInit({});
 

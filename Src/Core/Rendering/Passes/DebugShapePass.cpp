@@ -14,10 +14,7 @@ void RenderPasses::DebugShapePass::BuildBuffers()
 
 void RenderPasses::DebugShapePass::Init(RendererAttachmentInfo& attachmentInfo)
 {
-	ZoneScopedN("DebugShapePass::Init");
-
-	auto mainVert = Shader("Shaders/Debug.vert.spv", "main");
-	auto mainFrag = Shader("Shaders/Debug.frag.spv", "main");
+	ScopedZone("DebugShapePass::Init");
 
 	const auto gbufferPosition = CreateDefaultColorAttachment(attachmentInfo.gbuffer.GetFormat(GBufferTextureType::GBufferPosition), LoadOp::LOAD, nullptr);
 	//const auto gbufferNormal = CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBufferNormal), LoadOp::CLEAR, nullptr);
@@ -25,6 +22,19 @@ void RenderPasses::DebugShapePass::Init(RendererAttachmentInfo& attachmentInfo)
 	m_mainRenderingData.depthAttachment = CreateDefaultDepthAttachment(LoadOp::LOAD, attachmentInfo.depthAttachment.GetTexture());;
 	m_mainRenderingData.colorAttachments = { gbufferPosition };
 
+	InitBaseData(attachmentInfo);
+	m_indirectCmdBufferWireFrame = IndirectDrawCommandBuffer(500);
+	m_indirectCmdBufferOpaque = IndirectDrawCommandBuffer(500);
+
+	BuildPipelines();
+}
+
+void RenderPasses::DebugShapePass::BuildPipelines()
+{
+	ScopedZone("DebugShapePass::BuildPipelines");
+
+	auto mainVert = Shader("Shaders/Debug.vert.spv", "main");
+	auto mainFrag = Shader("Shaders/Debug.frag.spv", "main");
 	PipelineInfo info{};
 	//info.descriptorSetLayout.pipelineSpecificDescriptors.emplace_back();
 	info.descriptorSetLayout.sharedDescriptors = m_sharedDescriptors;
@@ -34,15 +44,11 @@ void RenderPasses::DebugShapePass::Init(RendererAttachmentInfo& attachmentInfo)
 	auto wireFrameInfo = info;
 	wireFrameInfo.topology = Topology::Lines;
 	m_wireframeDebugObjectsPSO = PSO(ShaderCollection{ &mainVert, &mainFrag }, PipeVertInfo{ m_vertexInputDescription, m_attributeDescriptions }, wireFrameInfo);
-
-	InitBaseData(attachmentInfo);
-	m_indirectCmdBufferWireFrame = IndirectDrawCommandBuffer(50);
-	m_indirectCmdBufferOpaque = IndirectDrawCommandBuffer(50);
 }
 
 void RenderPasses::DebugShapePass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes, FrameRendererContext& previousFrameCtx, u32 thisFrameNum)
 {
-	ZoneScopedN("DebugShapePass::Rebuild");
+	ScopedZone("DebugShapePass::Rebuild");
 
 	m_instancedMeshInfoMap.clear();
 	bool areAnyDebug = false;
@@ -98,7 +104,7 @@ void RenderPasses::DebugShapePass::RebuildInternalData(const stltype::vector<Pas
 
 void RenderPasses::DebugShapePass::Render(const MainPassData& data, FrameRendererContext& ctx)
 {
-	ZoneScopedN("DebugShapePass::Render");
+	ScopedZone("DebugShapePass::Render");
 	const auto currentFrame = ctx.currentFrame;
 	UpdateContextForFrame(currentFrame);
 	const auto& passCtx = m_perObjectFrameContexts[currentFrame];

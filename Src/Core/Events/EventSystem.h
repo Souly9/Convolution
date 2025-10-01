@@ -48,6 +48,7 @@ public:
 	EVENT_FUNCTIONS(MouseMove);
 	EVENT_FUNCTIONS(Scroll);
 	EVENT_FUNCTIONS(PostFrame);
+	EVENT_FUNCTIONS(ShaderHotReload);
 protected:
 	EVENT(Mouse);
 	EVENT(Update);
@@ -61,4 +62,5 @@ protected:
 	EVENT(MouseMove);
 	EVENT(Scroll);
 	EVENT(PostFrame);
+	EVENT(ShaderHotReload);
 };
