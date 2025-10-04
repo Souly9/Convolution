@@ -12,12 +12,26 @@ void ApplicationStateManager::ProcessStateUpdates()
 		updateFunction(newState);
 	}
 	m_updateFunctions.clear();
+	if (m_pNextScene != nullptr)
+	{
+		SwitchSceneInternal();
+		m_pNextScene = nullptr;
+		newState.pCurrentScene = m_pCurrentScene.get();
+	}
 	for (auto& state : m_appStates)
 	{
 		state = newState;
 	}
-	m_updateStateFutex.Unlock();
 	m_currentState = currentState;
+	m_updateStateFutex.Unlock();
+}
+void ApplicationStateManager::SwitchSceneInternal()
+{
+	DEBUG_LOGF("Setting current scene to: {}", m_pNextScene->GetName().c_str());
+	UnloadCurrentScene();
+	m_pNextScene->Load();
+	m_pCurrentScene = std::move(m_pNextScene);
+	DEBUG_LOGF("Loaded scene: {}", m_pCurrentScene->GetName().c_str())
 }
 void ApplicationStateManager::RegisterUpdateFunction(ApplicationStateUpdateFunction&& updateFunction)
 {  
@@ -29,17 +43,7 @@ void ApplicationStateManager::RegisterUpdateFunction(ApplicationStateUpdateFunct
 void ApplicationStateManager::SetCurrentScene(stltype::unique_ptr<Scene>&& scene)
 {
 	DEBUG_ASSERT(scene != m_pCurrentScene);
-	Scene* pRawScene = scene.release();
-	pRawScene->Load();
-	DEBUG_LOGF("Preparing to set current scene to: {}", pRawScene->GetName().c_str());
-	RegisterUpdateFunction([pRawScene, this](auto& appState)
-		{
-			DEBUG_LOGF("Setting current scene to: {}", pRawScene->GetName().c_str());
-			UnloadCurrentScene();
-			m_pCurrentScene = stltype::unique_ptr<Scene>(pRawScene);
-			DEBUG_LOGF("Loaded scene: {}", pRawScene->GetName().c_str())
-			appState.pCurrentScene = pRawScene;
-		});
+	m_pNextScene = std::move(scene);
 }
 
 void ApplicationStateManager::ReloadCurrentScene()

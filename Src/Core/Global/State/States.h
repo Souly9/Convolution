@@ -19,6 +19,7 @@ protected:
 
 struct RendererState
 {
+	stltype::vector<u64> gbufferIDs{};
 	stltype::string physicalRenderDeviceName{};
 	u32 triangleCount{};
 	u32 vertexCount{};

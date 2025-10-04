@@ -11,7 +11,6 @@ namespace ECS
 struct SceneNode
 {
 	ECS::Entity root;
-	stltype::vector<ECS::Entity> children;
 };
 
 struct SceneInfo

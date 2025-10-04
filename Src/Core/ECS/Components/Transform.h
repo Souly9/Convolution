@@ -17,7 +17,7 @@ namespace ECS
 			mathstl::Vector3 scale{ 1.0f, 1.0f, 1.0f };
 
 			mathstl::Vector3 worldPosition{ 0.0f, 0.0f, 0.0f };
-			mathstl::Vector3 worldRotation{ 0.0f, 0.0f, 0.0f };
+			mathstl::Quaternion worldRotation{ 0.0f, 0.0f, 0.0f, 1.0f };
 			mathstl::Vector3 worldScale{ 1.0f, 1.0f, 1.0f };
 
 			stltype::string name;
@@ -36,6 +36,8 @@ namespace ECS
 			{
 				return parent.ID != INVALID_ENTITY;
 			}
+
+			void Scale(f32 s);
 		};
 	}
 }

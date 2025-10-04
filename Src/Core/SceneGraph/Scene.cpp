@@ -7,7 +7,7 @@ Scene::Scene() : Scene("Empty Scene")
 
 Scene::Scene(const stltype::string& name) : m_name{name}
 {
-	g_pEntityManager->CreateEntity(mathstl::Vector3(0,0,0), "Root");
+	//g_pEntityManager->CreateEntity(mathstl::Vector3(0,0,0), "Root");
 }
 
 Scene::~Scene()

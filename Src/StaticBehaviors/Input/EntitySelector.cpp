@@ -102,7 +102,7 @@ void EntitySelector::OnLeftMouseClick(const LeftMouseClickEventData& data)
 	//ray.m_screenPos = mousePos;
 
 	// Cast against scene
-	auto renderComps = g_pEntityManager->GetComponentVector<ECS::Components::RenderComponent>();
+	auto& renderComps = g_pEntityManager->GetComponentVector<ECS::Components::RenderComponent>();
 	const auto& debugRenderComps = g_pEntityManager->GetComponentVector<ECS::Components::DebugRenderComponent>();
 
 	for (const auto& debugRenderComp : debugRenderComps)

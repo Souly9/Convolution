@@ -35,6 +35,13 @@ namespace ECS
 	{
 		m_entities.clear();
 		m_entityComponentMap.clear();
+		m_transformComponents.clear();
+		m_renderComponents.clear();
+		m_debugRenderComponents.clear();
+		m_viewComponents.clear();
+		m_cameraComponents.clear();
+		m_lightComponents.clear();
+		m_baseEntityID = 1;
 		for (auto& m_dirtyComponents : m_dirtyComponents)
 		{
 			m_dirtyComponents.clear();
@@ -94,6 +101,8 @@ namespace ECS
 
 	void EntityManager::SyncSystemData(u32 frameIdx)
 	{
+		ScopedZone("Sync Game Data with Render Thread");
+
 		if (m_dirtyComponents[frameIdx].empty())
 			return;
 		for (auto& pSystem : m_systems)
@@ -106,6 +115,8 @@ namespace ECS
 
 	void EntityManager::UpdateSystems(u32 frameIdx)
 	{
+		ScopedZone("Update Game Data");
+
 		if (m_dirtyComponents[frameIdx].empty())
 			return;
 		for (auto& pSystem : m_systems)

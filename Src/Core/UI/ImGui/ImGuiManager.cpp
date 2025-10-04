@@ -26,7 +26,7 @@ void ImGuiManager::EndFrame()
 
 void ImGuiManager::RenderElements(f32 dt, ApplicationInfos& appInfos)
 {
-	//ImGui::ShowDemoWindow();
+	ScopedZone("ImGuiManager::RenderElements (All UI Elements)");
 
 	for (ImGuiRenderFunction& renderFunction : s_registeredFunctions)
 		renderFunction(dt, appInfos);

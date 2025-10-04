@@ -85,8 +85,14 @@ PipelineVulkan::~PipelineVulkan()
 
 void PipelineVulkan::CleanUp()
 {
-	VK_FREE_IF(m_pipelineLayout, vkDestroyPipelineLayout(VK_LOGICAL_DEVICE, m_pipelineLayout, VulkanAllocator()))
-	VK_FREE_IF(m_pipeline, vkDestroyPipeline(VK_LOGICAL_DEVICE, m_pipeline, VulkanAllocator()))
+	VK_FREE_IF(m_pipelineLayout, vkDestroyPipelineLayout(VK_LOGICAL_DEVICE, m_pipelineLayout, VulkanAllocator()));
+	if (m_pipeline != VK_NULL_HANDLE)
+	{
+		g_pDeleteQueue->RegisterDeleteForNextFrame([pip = m_pipeline]() mutable
+			{
+				vkDestroyPipeline(VK_LOGICAL_DEVICE, pip, VulkanAllocator());
+			});
+	}
 }
 
 bool PipelineVulkan::HasDynamicViewScissorState() const

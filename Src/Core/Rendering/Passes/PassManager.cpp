@@ -6,6 +6,7 @@
 #include "Core/Rendering/Core/RenderingTypeDefs.h"
 #include "Core/Rendering/Vulkan/Utils/DescriptorSetLayoutConverters.h"
 
+#include <imgui/backends/imgui_impl_vulkan.h>
 void RenderPasses::PassManager::Init()
 {
 	g_pEventSystem->AddShaderHotReloadEventCallback([this](const auto&) { RebuildPipelinesForAllPasses(); });
@@ -114,6 +115,17 @@ void RenderPasses::PassManager::Init()
 			pPass->Init(m_globalRendererAttachments);
 		}
 	}
+
+	const auto pTex = m_gbuffer.Get(GBufferTextureType::GBufferPosition);
+	VkDescriptorSet id = ImGui_ImplVulkan_AddTexture(
+		pTex->GetSampler(),
+		pTex->GetImageView(),
+		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL // The expected layout for sampling
+	);
+	g_pApplicationState->RegisterUpdateFunction([id](auto& state)
+		{
+			state.renderState.gbufferIDs.push_back((u64)id);
+		});
 	g_pQueueHandler->WaitForFences();
 }
 
@@ -187,7 +199,7 @@ void RenderPasses::PassManager::ExecutePasses(u32 frameIdx)
 	bool doWeRender = false;
 	for (const auto& passes : m_passes)
 	{
-		if (passes.first == PassType::PostProcess || passes.first == PassType::Composite || passes.first == PassType::UI)
+		if (passes.first == PassType::PostProcess || passes.first == PassType::Composite)
 			continue;
 
 		for (const auto& pass : passes.second)
@@ -209,9 +221,11 @@ void RenderPasses::PassManager::ExecutePasses(u32 frameIdx)
 	imageAvailableFence.WaitFor();
 	auto& ctx = m_frameRendererContexts.at(imageIdx);
 	auto& syncContexts = ctx.synchronizationContexts;
+	auto& additionalSyncContexts = ctx.additionalSynchronizationContexts;
+
 	for (const auto& passes : m_passes)
 	{
-		if (passes.first == PassType::PostProcess || passes.first == PassType::Composite || passes.first == PassType::UI)
+		if (passes.first == PassType::PostProcess || passes.first == PassType::Composite)
 			continue;
 
 		for (const auto& pass : passes.second)
@@ -228,10 +242,14 @@ void RenderPasses::PassManager::ExecutePasses(u32 frameIdx)
 	const auto& debugPasses = m_passes[PassType::Debug];
 	const auto& uiPasses = m_passes[PassType::UI];
 	const auto& compositePasses = m_passes[PassType::Composite];
+
+	const auto gbufferReadTransition = 0;
+	const auto uiReadTransition = 1;
+	const auto presentTransition = 2;
 	if(rebuildSyncs)
 	{
 		Semaphore* waitSemaphore = &ctx.pInitialLayoutTransitionSignalSemaphore;
-		auto fillSyncContextForPasses = [](const auto& passes, auto& syncContexts, Semaphore*& waitSemaphore, Fence*& renderingFinishedFence)
+		auto fillSyncContextForPasses = [](const auto& passes, auto& syncContexts, Semaphore*& waitSemaphore)
 			{
 				for (auto& pass : passes)
 				{
@@ -239,19 +257,29 @@ void RenderPasses::PassManager::ExecutePasses(u32 frameIdx)
 					{
 						auto& syncContext = syncContexts[pass.get()];
 						syncContext.signalSemaphore.Create();
-						syncContext.finishedFence.Create(false);
 						syncContext.waitSemaphore = waitSemaphore;
 						waitSemaphore = &syncContext.signalSemaphore;
-						renderingFinishedFence = &syncContext.finishedFence;
 					}
 				}
 			};
+
+		auto AddNonPassDependency = [](stltype::vector<RenderPassSynchronizationContext>& additionalSyncContexts, Semaphore*& waitSemaphore, u32 stageIdx)
+			{
+				additionalSyncContexts.emplace(additionalSyncContexts.begin() + stageIdx,  waitSemaphore);
+				additionalSyncContexts[stageIdx].signalSemaphore.Create();
+				waitSemaphore = &additionalSyncContexts[stageIdx].signalSemaphore;
+			};
 		syncContexts.clear();
 		syncContexts.reserve(100);
-		fillSyncContextForPasses(geomPasses, syncContexts, waitSemaphore, ctx.renderingFinishedFence);
-		fillSyncContextForPasses(debugPasses, syncContexts, waitSemaphore, ctx.renderingFinishedFence);
-		fillSyncContextForPasses(uiPasses, syncContexts, waitSemaphore, ctx.renderingFinishedFence);
-		fillSyncContextForPasses(compositePasses, syncContexts, waitSemaphore, ctx.renderingFinishedFence);
+		additionalSyncContexts.clear();
+		additionalSyncContexts.reserve(100);
+		fillSyncContextForPasses(geomPasses, syncContexts, waitSemaphore);
+		fillSyncContextForPasses(debugPasses, syncContexts, waitSemaphore);
+		AddNonPassDependency(additionalSyncContexts, waitSemaphore, gbufferReadTransition);
+		fillSyncContextForPasses(uiPasses, syncContexts, waitSemaphore);
+		AddNonPassDependency(additionalSyncContexts, waitSemaphore, uiReadTransition);
+		fillSyncContextForPasses(compositePasses, syncContexts, waitSemaphore);
+		AddNonPassDependency(additionalSyncContexts, waitSemaphore, presentTransition);
 		ctx.renderingFinishedSemaphore = waitSemaphore;
 	}
 	ctx.imageIdx = imageIdx;
@@ -265,16 +293,18 @@ void RenderPasses::PassManager::ExecutePasses(u32 frameIdx)
 			{
 				for (auto& pass : passes)
 				{
-					//if (syncContexts.find(pass.get()) == syncContexts.end())
-					//	continue;
+					if (syncContexts.find(pass.get()) == syncContexts.end())
+						continue;
 
 					pass->Render(mainPassData, ctx);
 				}
 			};
 
-		const stltype::vector<const Texture*> gbufferTextures = { m_gbuffer.Get(GBufferTextureType::GBufferPosition) };
+		stltype::vector<const Texture*> gbufferTextures = m_gbuffer.GetAllTexturesWithoutUI();
+		const auto* pUITexture = m_gbuffer.Get(GBufferTextureType::GBufferUI);
 		stltype::vector<const Texture*> gbufferAndSwapchainTextures = gbufferTextures;
 		gbufferAndSwapchainTextures.push_back(ctx.pCurrentSwapchainTexture);
+		gbufferAndSwapchainTextures.push_back(pUITexture);
 		// Transfer swap chain image from present to render layout before rendering
 		const auto pSwapChainTexture = ctx.pCurrentSwapchainTexture;
 		{
@@ -296,26 +326,31 @@ void RenderPasses::PassManager::ExecutePasses(u32 frameIdx)
 			g_pTexManager->EnqueueAsyncImageLayoutTransition(transitionRequest);
 		}
 		g_pTexManager->DispatchAsyncOps("Initial layout transition");
-		RenderAllPasses(geomPasses, mainPassData, ctx, syncContexts); 
-		RenderAllPasses(debugPasses, mainPassData, ctx, syncContexts);
-		RenderAllPasses(uiPasses, mainPassData, ctx, syncContexts);
-		g_pQueueHandler->DispatchAllRequests();
-		//g_pQueueHandler->WaitForFences();
-		//
-		//g_pQueueHandler->DispatchAllRequests();
+		RenderAllPasses(geomPasses, mainPassData, ctx, syncContexts);
+		//RenderAllPasses(debugPasses, mainPassData, ctx, syncContexts);
 		{
 			AsyncLayoutTransitionRequest transitionRequest{
 				.textures = gbufferTextures,
 				.oldLayout = ImageLayout::COLOR_ATTACHMENT,
 				.newLayout = ImageLayout::SHADER_READ_OPTIMAL,
-				.pWaitSemaphore = &ctx.nonLoadRenderingFinished,
-				.pSignalSemaphore = &ctx.toReadTransitionFinished
+				.pWaitSemaphore = additionalSyncContexts[gbufferReadTransition].waitSemaphore,
+				.pSignalSemaphore = &additionalSyncContexts[gbufferReadTransition].signalSemaphore
 			};
 			g_pTexManager->EnqueueAsyncImageLayoutTransition(transitionRequest);
 		}
 		g_pTexManager->DispatchAsyncOps("Color to shader read transition");
-		//RenderAllPasses(uiPasses, mainPassData, ctx, syncContexts);
-		//g_pQueueHandler->DispatchAllRequests();
+		RenderAllPasses(uiPasses, mainPassData, ctx, syncContexts);
+		{
+			AsyncLayoutTransitionRequest transitionRequest{
+				.textures = { pUITexture },
+				.oldLayout = ImageLayout::COLOR_ATTACHMENT,
+				.newLayout = ImageLayout::SHADER_READ_OPTIMAL,
+				.pWaitSemaphore = additionalSyncContexts[uiReadTransition].waitSemaphore,
+				.pSignalSemaphore = &additionalSyncContexts[uiReadTransition].signalSemaphore
+			};
+			g_pTexManager->EnqueueAsyncImageLayoutTransition(transitionRequest);
+		}
+		g_pTexManager->DispatchAsyncOps("UI gbuffer to shader read transition");
 		RenderAllPasses(compositePasses, mainPassData, ctx, syncContexts);
 
 		{
@@ -323,8 +358,8 @@ void RenderPasses::PassManager::ExecutePasses(u32 frameIdx)
 				.textures = {ctx.pCurrentSwapchainTexture},
 				.oldLayout = ImageLayout::COLOR_ATTACHMENT,
 				.newLayout = ImageLayout::PRESENT,
-				.pWaitSemaphore = ctx.renderingFinishedSemaphore,
-				.pSignalSemaphore = &ctx.pPresentLayoutTransitionSignalSemaphore,
+				.pWaitSemaphore = additionalSyncContexts[presentTransition].waitSemaphore,
+				.pSignalSemaphore = &additionalSyncContexts[presentTransition].signalSemaphore
 			};
 			g_pTexManager->EnqueueAsyncImageLayoutTransition(transitionRequest);
 		}
@@ -334,7 +369,7 @@ void RenderPasses::PassManager::ExecutePasses(u32 frameIdx)
 	//g_pQueueHandler->WaitForFences();
 
 	AsyncQueueHandler::PresentRequest presentRequest{
-		.pWaitSemaphore = &ctx.pPresentLayoutTransitionSignalSemaphore,
+		.pWaitSemaphore = &additionalSyncContexts[presentTransition].signalSemaphore,
 		.swapChainImageIdx = imageIdx
 	};
 	g_pQueueHandler->SubmitSwapchainPresentRequestForThisFrame(presentRequest);
@@ -569,7 +604,8 @@ void RenderPasses::PassManager::DispatchSSBOTransfer(void* data, DescriptorSet* 
 
 void RenderPasses::PassManager::BlockUntilPassesFinished(u32 frameIdx)
 {
-	vkQueueWaitIdle(VkGlobals::GetGraphicsQueue());
+	g_pQueueHandler->WaitForFences(); 
+	//vkQueueWaitIdle(VkGlobals::GetGraphicsQueue());
 }
 
 void RenderPasses::PassManager::RebuildPipelinesForAllPasses()

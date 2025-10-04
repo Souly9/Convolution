@@ -45,7 +45,7 @@ namespace RenderPasses
 
 	using EntityMeshDataMap = stltype::hash_map<u64, stltype::vector<EntityMeshData>>;
 	using EntityDebugMeshDataMap = stltype::hash_map<u64, EntityMeshData>;
-	using TransformSystemData = stltype::hash_map<ECS::EntityID, DirectX::XMFLOAT4X4>;
+	using TransformSystemData = stltype::hash_map<ECS::EntityID, mathstl::Matrix>;
 	using EntityTransformData = stltype::pair<stltype::vector<ECS::EntityID>, stltype::vector<DirectX::XMFLOAT4X4>>;
 	using LightVector = stltype::vector<RenderLight>;
 	using EntityMaterialMap = stltype::hash_map<u64, stltype::vector<Material*>>;
@@ -75,12 +75,12 @@ namespace RenderPasses
 	{
 		Semaphore* waitSemaphore;
 		Semaphore signalSemaphore;
-		Fence finishedFence;
 	};
 
 	struct FrameRendererContext
 	{
 		stltype::hash_map<ConvolutionRenderPass*, RenderPassSynchronizationContext> synchronizationContexts{};
+		stltype::vector<RenderPassSynchronizationContext> additionalSynchronizationContexts{};
 		// Signaled when the swapchain image is transitioned to the initial layout for rendering
 		Semaphore pInitialLayoutTransitionSignalSemaphore{};
 		// Signaled when the swapchain image is transitioned to the present layout

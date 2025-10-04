@@ -7,7 +7,8 @@ void ECS::System::SAABB::Init(const SystemInitData& data)
 void ECS::System::SAABB::Process()
 {
 	ScopedZone("AABB System::Process");
-	const auto& transComps = g_pEntityManager->GetComponentVector<Components::Transform>();
+	auto& transComps = g_pEntityManager->GetComponentVector<Components::Transform>();
+	const auto& meshAABBs = g_pMeshManager->GetMeshAABBs();
 
 	for (const auto& transform : transComps)
 	{
@@ -20,7 +21,9 @@ void ECS::System::SAABB::Process()
 			pRenderComp = static_cast<Components::RenderComponent*>(g_pEntityManager->GetComponentUnsafe<Components::DebugRenderComponent>(transform.entity));
 		else
 			continue;
-		pRenderComp->boundingBox.center = transformComp.position;
+		pRenderComp->boundingBox.center = transformComp.worldPosition;
+		const auto& meshAABB = meshAABBs.find(pRenderComp->pMesh)->second;
+		pRenderComp->boundingBox.extents = meshAABB.extents * transformComp.worldScale;
 
 	}
 }

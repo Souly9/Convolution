@@ -100,7 +100,7 @@ namespace RenderPasses
 		auto& syncContext = ctx.synchronizationContexts.find(this)->second;
 
 		currentBuffer->AddWaitSemaphore(syncContext.waitSemaphore);
-		currentBuffer->AddSignalSemaphore(&ctx.nonLoadRenderingFinished);
+		currentBuffer->AddSignalSemaphore(&syncContext.signalSemaphore);
 		AsyncQueueHandler::CommandBufferRequest cmdRequest{
 			.pBuffer = currentBuffer,
 			.queueType = QueueType::Graphics,

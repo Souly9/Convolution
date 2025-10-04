@@ -48,6 +48,8 @@ public:
 		return aabb;
 	}
 
+	const stltype::hash_map<const Mesh*, AABB>& GetMeshAABBs() const { return m_meshAABBs; }
+
 	enum class PrimitiveType
 	{
 		Quad,

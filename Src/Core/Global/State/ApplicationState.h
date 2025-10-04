@@ -22,6 +22,8 @@ public:
 	void ProcessStateUpdates();
 
 private:
+	void SwitchSceneInternal();
+
 	static inline constexpr u32 MAX_STATES = 2;
 	threadSTL::Mutex m_updateStateFutex;
 	// Double buffered application state to make multi threaded access easier
@@ -29,4 +31,6 @@ private:
 	stltype::fixed_vector<ApplicationStateUpdateFunction, 32> m_updateFunctions;
 	stltype::atomic<u8> m_currentState = 0;
 	stltype::unique_ptr<Scene> m_pCurrentScene{ nullptr };
+	// Scene switching has to be synchronized a bit differently as my design is just too wonky
+	stltype::unique_ptr<Scene> m_pNextScene{ nullptr };
 };

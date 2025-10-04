@@ -36,13 +36,13 @@ void MainMenuBar::DrawMenuBar(f32 dt, ApplicationInfos& appInfos)
 				}
 			}
 
-			if (ImGui::MenuItem("Load Scene", ""))
+			if (ImGui::BeginMenu("Load Scene", ""))
 			{
 				stltype::vector<stltype::string> sceneNames = { SampleScene::GetSceneName(), SponzaScene::GetSceneName() };
-				auto& currentSceneName = g_pApplicationState->GetCurrentScene()->GetName();
+				const auto& currentSceneName = g_pApplicationState->GetCurrentScene()->GetName();
 				for (auto& name : sceneNames)
 				{
-					if (ImGui::MenuItem(name.c_str(), "", false, name == currentSceneName))
+					if (ImGui::MenuItem(name.c_str(), "", false, name != currentSceneName))
 					{
 						if (name == SampleScene::GetSceneName())
 						{
@@ -52,8 +52,13 @@ void MainMenuBar::DrawMenuBar(f32 dt, ApplicationInfos& appInfos)
 						{
 							g_pApplicationState->SetCurrentScene(stltype::make_unique<SponzaScene>());
 						}
+						else
+						{
+							DEBUG_ASSERT(false);
+						}
 					}
 				}
+				ImGui::EndMenu();
 			}
 			ImGui::EndMenu();
 		}
@@ -71,6 +76,10 @@ void MainMenuBar::DrawMenuBar(f32 dt, ApplicationInfos& appInfos)
 			if (ImGui::MenuItem("Debug Settings", ""))
 			{
 				m_debugSettingsWindow.SetOpen(true);
+			}
+			if (ImGui::MenuItem("GBuffer", ""))
+			{
+				m_gbufferWindow.SetOpen(true);
 			}
 			ImGui::EndMenu();
 		}
@@ -94,5 +103,10 @@ void MainMenuBar::DrawMenuBar(f32 dt, ApplicationInfos& appInfos)
 	if (m_debugSettingsWindow.IsOpen())
 	{
 		m_debugSettingsWindow.DrawWindow(dt);
+	}
+
+	if (m_gbufferWindow.IsOpen())
+	{
+		m_gbufferWindow.DrawWindow(dt);
 	}
 }
