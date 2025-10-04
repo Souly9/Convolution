@@ -33,14 +33,15 @@ namespace MeshConversion
 		{
 			for (u32 i = 0; i < pNode->mNumMeshes; ++i)
 			{
+				ScopedZone("Convert Assimp leaf Node");
+
 				Entity childEntity = g_pEntityManager->CreateEntity();
 				const auto& pAiMesh = pScene->mMeshes[pNode->mMeshes[i]];
-
+				
 				auto pConvMesh = ExtractMesh(pAiMesh);
 				auto* pConvMaterial = ExtractMaterial(pScene->mMaterials[pAiMesh->mMaterialIndex]);
 
 				auto* pTransform = g_pEntityManager->GetComponentUnsafe<Components::Transform>(childEntity);
-				pTransform->scale = mathstl::Vector3(1000,1000,1000);
 				Components::RenderComponent comp{};
 				comp.pMaterial = pConvMaterial;
 				comp.pMesh = pConvMesh;
@@ -49,8 +50,8 @@ namespace MeshConversion
 					mathstl::Vector3(aiAABB.mMax.x, aiAABB.mMax.y * 0.6f, aiAABB.mMax.z) * pTransform->scale,
 					pConvMesh);
 
-				g_pEntityManager->GetComponentUnsafe<Components::Transform>(childEntity)->parent = localParentEntity;
-				g_pEntityManager->GetComponentUnsafe<Components::Transform>(childEntity)->SetName(pScene->mName.C_Str());
+				pTransform->parent = localParentEntity;
+				pTransform->SetName(pAiMesh->mName.C_Str());
 				g_pEntityManager->AddComponent(childEntity, comp);
 			}
 			return localParentEntity;
@@ -73,6 +74,7 @@ namespace MeshConversion
 
 	SceneNode Convert(const aiScene* pScene)
 	{
+		ScopedZone("Convert Assimp Scene");
 		DEBUG_ASSERT(CheckScene(pScene));
 
 		Entity rootEntity = g_pEntityManager->CreateEntity();
@@ -93,6 +95,8 @@ namespace MeshConversion
 
 	Mesh* ExtractMesh(const aiMesh* pMesh)
 	{
+		ScopedZone("Convert Assimp Mesh");
+
 		auto* pConvMesh = g_pMeshManager->AllocateMesh(pMesh->mNumVertices, pMesh->mNumFaces);
 		for (u32 i = 0; i <= pMesh->mNumVertices - 1; ++i)
 		{
@@ -127,6 +131,7 @@ namespace MeshConversion
 	}
 	Material* ExtractMaterial(const aiMaterial* pMaterial)
 	{
+		ScopedZone("Convert Assimp material");
 		aiString path;
 		Material mat{};
 
@@ -138,7 +143,6 @@ namespace MeshConversion
 
 		aiColor3D diffuse;
 		stltype::string materialName = pMaterial->GetName().C_Str();
-		materialName += "Bunny";
 		if (AI_SUCCESS != pMaterial->Get(AI_MATKEY_COLOR_DIFFUSE, diffuse))
 		{
 			DEBUG_LOG_WARN("Couldn't load diffuse color of Material: " + materialName);

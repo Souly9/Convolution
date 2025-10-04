@@ -5,6 +5,7 @@
 #include "DebugWindows/StatsWindow.h"
 #include "DebugWindows/DebugSettings.h"
 #include "Controls/SelectedEntitiesWindow.h"
+#include "DebugWindows/GBufferWindow.h"
 
 class MainMenuBar : public SelfInstantiatingUIElement<MainMenuBar>
 {
@@ -23,4 +24,5 @@ private:
 	DebugSettingsWindow m_debugSettingsWindow;
 	SelectedEntityWindow m_selectedEntitiesWindow;
 	UpdateEventData m_lastUpdateState;
+	GBufferWindow m_gbufferWindow;
 };

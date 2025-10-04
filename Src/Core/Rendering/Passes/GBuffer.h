@@ -38,6 +38,11 @@ namespace RenderPasses
 	// Utility thing to hold the gbuffer data
 	struct GBuffer : public GBufferInfo
 	{
+		stltype::vector<const Texture*> GetAllTexturesWithoutUI()
+		{
+			return { m_pPositionTexture, m_pNormalTexture, m_pGbuffer3Texture };
+		}
+
 		Texture* Get(GBufferTextureType type)
 		{
 			switch (type)

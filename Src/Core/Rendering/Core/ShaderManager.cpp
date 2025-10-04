@@ -94,7 +94,7 @@ bool ShaderManager::ReloadAllShaders()
 {
     DEBUG_LOGF("Reloading {} shader files", m_totalShaderFiles);
     //CleanShaderOutputDirectory();
-	ReadAllSourceShaders();
+	return ReadAllSourceShaders();
 }
 
 const SpirVBinary& ShaderManager::GetShader(const stltype::string_view& relativePath)

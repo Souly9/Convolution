@@ -175,14 +175,17 @@ set(GLSLANG_COMPONENTS
 foreach(COMPONENT ${GLSLANG_COMPONENTS})
     # Define an IMPORTED library target
     add_library(${COMPONENT} STATIC IMPORTED)
-
-    # Set the location of the IMPORT LIBRARY (.lib file)
+	
+	if(${CMAKE_BUILD_TYPE} MATCHES "Debug")
+    set_target_properties(${COMPONENT} PROPERTIES
+        IMPORTED_LOCATION "${GLSLANG_LIB_DIR}/${COMPONENT}d.lib"
+    )
+	else()
     set_target_properties(${COMPONENT} PROPERTIES
         IMPORTED_LOCATION "${GLSLANG_LIB_DIR}/${COMPONENT}.lib"
-        # If your .lib file names are different (e.g., glslang-d.lib), 
-        # you must adjust the name here. 
-        # Use an absolute path here for best results.
     )
+	endif()
+
 
     # Add the library to your main application's link list
     set(GLSLANG_LIBS ${GLSLANG_LIBS} ${COMPONENT})

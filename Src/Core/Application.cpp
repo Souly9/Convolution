@@ -6,6 +6,7 @@
 #include "Core/Global/GlobalVariables.h"
 #include "StaticBehaviors/StaticBehaviorCollection.h"
 #include "Scenes/SampleScene.h"
+#include "Scenes/SponzaScene.h"
 #include <imgui/backends/imgui_impl_glfw.h>
 #include <imgui/backends/imgui_impl_vulkan.h>
 #include <imgui/imgui.h>
@@ -21,14 +22,13 @@ Application::Application(bool canRender, RenderLayer<RenderAPI>& layer) : m_rend
 	g_pGlobalTimeData->Reset();
 	g_pShaderManager->ReadAllSourceShaders();
 
-	g_pEventSystem->OnBaseInit({});
-
 	FrameGlobals::SetFrameNumber(0);
 
-	m_applicationState.SetCurrentScene(stltype::make_unique<SampleScene>());
-
-
+	m_applicationState.SetCurrentScene(stltype::make_unique<SponzaScene>());
 	m_applicationState.ProcessStateUpdates();
+
+	g_pEventSystem->OnBaseInit({});
+
 
 	auto pRenderer = m_renderThread.Start();
 	g_pEventSystem->OnAppInit({

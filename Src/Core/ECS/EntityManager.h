@@ -94,12 +94,12 @@ namespace ECS
 		stltype::fixed_vector<stltype::vector<C_ID>, FRAMES_IN_FLIGHT, false> m_dirtyComponents{ FRAMES_IN_FLIGHT };
 		stltype::hash_map<Entity, ComponentInfo, Entity> m_entityComponentMap;
 
-		stltype::vector<ComponentHolder<Components::Transform>> m_transformComponents;
-		stltype::vector<ComponentHolder<Components::RenderComponent>> m_renderComponents;
-		stltype::vector<ComponentHolder<Components::DebugRenderComponent>> m_debugRenderComponents;
-		stltype::vector<ComponentHolder<Components::View>> m_viewComponents;
-		stltype::vector<ComponentHolder<Components::Camera>> m_cameraComponents;
-		stltype::vector<ComponentHolder<Components::Light>> m_lightComponents;
+		stltype::vector<ComponentHolder<Components::Transform>> m_transformComponents{};
+		stltype::vector<ComponentHolder<Components::RenderComponent>> m_renderComponents{};
+		stltype::vector<ComponentHolder<Components::DebugRenderComponent>> m_debugRenderComponents{};
+		stltype::vector<ComponentHolder<Components::View>> m_viewComponents{};
+		stltype::vector<ComponentHolder<Components::Camera>> m_cameraComponents{};
+		stltype::vector<ComponentHolder<Components::Light>> m_lightComponents{};
 		stltype::vector<stltype::unique_ptr<System::ISystem>> m_systems;
 
 		stltype::atomic<u64> m_baseEntityID = 1;

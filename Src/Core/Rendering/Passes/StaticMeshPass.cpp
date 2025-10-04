@@ -86,7 +86,7 @@ namespace RenderPasses
 			++offsets.instanceCount;
 		}
 		VertexBuffer vB{ cmd.vertices.size() * sizeof(CompleteVertex) };
-		IndexBuffer iB(36 * sizeof(u32));
+		IndexBuffer iB(cmd.indices.size() * sizeof(u32));
 		auto mappedVB = vB.MapMemory();
 		auto mappedIB = iB.MapMemory();
 		memcpy(mappedVB, cmd.vertices.data(), cmd.vertices.size() * sizeof(CompleteVertex));
@@ -151,7 +151,7 @@ namespace RenderPasses
 
 		auto& syncContext = ctx.synchronizationContexts.find(this)->second;
 
-		currentBuffer->AddWaitSemaphore(&ctx.pInitialLayoutTransitionSignalSemaphore);
+		currentBuffer->AddWaitSemaphore(syncContext.waitSemaphore);
 		if (m_needsBufferSync)
 		{
 			m_needsBufferSync = false;

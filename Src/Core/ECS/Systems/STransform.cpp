@@ -13,16 +13,25 @@ void ECS::System::STransform::Process()
 {
 	ScopedZone("Transform System::Process");
 	// Not beautiful but don't want to get into archetypes for now and the view system won't run often or on many entities either way
-	const stltype::vector<ComponentHolder<Components::Transform>>& transComps = g_pEntityManager->GetComponentVector<Components::Transform>();
+	stltype::vector<ComponentHolder<Components::Transform>>& transComps = g_pEntityManager->GetComponentVector<Components::Transform>();
 
 	const XMVECTOR zeroVec = XMVectorSet(0.f, 0.f, 0.f, 0.f);
 	m_cachedDataMap.clear();
 
-	for (const auto& transform : transComps)
+	for (auto& transform : transComps)
 	{
-		const auto it = m_cachedDataMap.find(transform.entity.ID);
-		if(it == m_cachedDataMap.end())
-			ComputeModelMatrixRecursive(transform.entity);
+		{
+			ScopedZone("Compute World Model Matrix for Entity branch");
+			const auto it = m_cachedDataMap.find(transform.entity.ID);
+			if (it == m_cachedDataMap.end())
+				ComputeModelMatrixRecursive(transform.entity);
+		}
+		
+		{
+			const auto it = m_cachedDataMap.find(transform.entity.ID);
+			auto& worldModel = it->second;
+			worldModel.Decompose(transform.component.worldScale, transform.component.worldRotation, transform.component.worldPosition);
+		}
 	}
 }
 

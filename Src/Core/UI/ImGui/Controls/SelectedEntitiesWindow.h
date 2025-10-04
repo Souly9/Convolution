@@ -20,6 +20,11 @@ public:
 			bool isEntityDirty = false;
 			ECS::Components::Transform* pTransform = g_pEntityManager->GetComponent<ECS::Components::Transform>(selectedEntity);
 
+			if (pTransform == nullptr)
+			{
+				ImGui::End();
+				return;
+			}
 			ImGui::Text("Entity: %s", pTransform->name.c_str());
 
 			isEntityDirty |= Visualize(pTransform);

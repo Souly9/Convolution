@@ -92,8 +92,9 @@ void RenderPasses::CompositPass::Render(const MainPassData& data, FrameRendererC
 	currentBuffer->RecordCommand(EndRenderingCmd{});
 	currentBuffer->Bake();
 
-	currentBuffer->AddWaitSemaphore(&ctx.toReadTransitionFinished);
-	currentBuffer->AddSignalSemaphore(ctx.renderingFinishedSemaphore);
+	auto& syncContext = ctx.synchronizationContexts[this];
+	currentBuffer->AddWaitSemaphore(syncContext.waitSemaphore);
+	currentBuffer->AddSignalSemaphore(&syncContext.signalSemaphore);
 	AsyncQueueHandler::CommandBufferRequest cmdRequest{
 		.pBuffer = currentBuffer,
 		.queueType = QueueType::Graphics,
