@@ -1,4 +1,5 @@
 #include "SLight.h"
+#include "Core/Rendering/Core/Defines/LightDefines.h"
 
 void ECS::System::SLight::Init(const SystemInitData& data)
 {

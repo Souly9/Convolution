@@ -33,6 +33,8 @@ public:
 
 	virtual void Load() = 0;
 	virtual void Unload();
+
+	void FinishLoad();
 private:
 	SceneNode m_sceneRoot;
 	stltype::string m_name;

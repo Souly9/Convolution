@@ -20,11 +20,10 @@ RenderPasses::GenericGeometryPass::GenericGeometryPass(const stltype::string& na
 	}
 }
 
-void RenderPasses::GenericGeometryPass::RebuildPerObjectBuffer(const UBO::PerPassObjectDataSSBO& data)
+void RenderPasses::GenericGeometryPass::RebuildPerObjectBuffer(const stltype::vector<u32>& data)
 {
 	m_dirtyFrames.clear();
-	memcpy(m_mappedPerObjectSSBO, data.transformIdx.data(), sizeof(data.transformIdx[0]) * data.transformIdx.size());
-	memcpy((char*)m_mappedPerObjectSSBO + UBO::PerPassObjectDataPerObjectDataIdxOffset, data.perObjectDataIdx.data(), sizeof(data.perObjectDataIdx[0]) * data.perObjectDataIdx.size());
+	memcpy(m_mappedPerObjectSSBO, data.data(), sizeof(data[0]) * data.size());
 
 	for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
 	{

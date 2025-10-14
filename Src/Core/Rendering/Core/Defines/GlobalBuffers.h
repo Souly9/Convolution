@@ -1,28 +1,48 @@
 #pragma once
-#include "Core/Global/GlobalDefines.h"
-#include "Core/Rendering/Core/Material.h"
 #include "LightDefines.h"
+#include "../Material.h"
 
 namespace UBO
 {
+	using MaterialBuffer = stltype::fixed_vector<Material, MAX_MATERIALS, false>;
 
-	// Contains all model matrices of the scene, mainly because we assume we will perform some kind of rendering operation on every entity in this renderer
+	// Contains all model matrices of the scene
 	struct GlobalTransformSSBO
 	{
 		stltype::fixed_vector<DirectX::XMFLOAT4X4, MAX_ENTITIES, false> modelMatrices{};
 	};
-	// Contains all material data and so on
-	struct GlobalObjectData
+
+	// Can probably pack each float into half an uint or so but enough for now
+	struct InstanceData
 	{
-		Material material;
+		// Needed to construct the indirect draw cmd on GPU
+		MeshResourceData drawData;
+		mathstl::Vector4 aabbCenterTransIdx;
+		mathstl::Vector4 aabbExtentsMatIdx;
+
+		void SetTransformIdx(u32 idx)
+		{
+			aabbCenterTransIdx.w = (f32)idx;
+		}
+
+		void SetMaterialIdx(u32 idx)
+		{
+			aabbExtentsMatIdx.w = (f32)idx;
+		}
 
 	};
-	struct GlobalObjectDataSSBO
+
+	struct GlobalInstanceSSBO
+	{
+		stltype::fixed_vector<InstanceData, MAX_ENTITIES, false> instanceData{};
+	};
+	struct GlobalMaterialSSBO
 	{
 		MaterialBuffer materials{};
 	};
 
-	static constexpr u64 GlobalPerObjectDataSSBOSize = sizeof(GlobalObjectDataSSBO::materials);
+	static constexpr u64 GlobalPerObjectDataSSBOSize = sizeof(GlobalInstanceSSBO);
+	static constexpr u64 GlobalMaterialSSBOSize = sizeof(GlobalMaterialSSBO);
 	static constexpr u64 GlobalTransformSSBOSize = sizeof(GlobalTransformSSBO::modelMatrices);
 
 	struct Tile
@@ -39,12 +59,9 @@ namespace UBO
 	// SSBO containing the indices for objects rendered by a specific pass to access the global transforms, materials etc.
 	struct PerPassObjectDataSSBO
 	{
-		stltype::fixed_vector<u32, MAX_ENTITIES, false> transformIdx;
-		stltype::fixed_vector<u32, MAX_ENTITIES, false> perObjectDataIdx;
+		stltype::fixed_vector<u32, MAX_ENTITIES, false> instanceIndex;
 	};
-	static constexpr u64 PerPassObjectDataSSBOSize = sizeof(u32) * 2 * MAX_ENTITIES;
-	static constexpr u64 PerPassObjectDataTransformIdxOffset = 0;
-	static constexpr u64 PerPassObjectDataPerObjectDataIdxOffset = sizeof(u32) * MAX_ENTITIES;
+	static constexpr u64 PerPassObjectDataSSBOSize = sizeof(u32) * MAX_ENTITIES;
 
 	struct ViewUBO
 	{

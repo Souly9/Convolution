@@ -19,3 +19,8 @@ void Scene::Unload()
 {
 	g_pEntityManager->UnloadAllEntities();
 }
+
+void Scene::FinishLoad()
+{
+	g_pEventSystem->OnSceneLoaded({});
+}

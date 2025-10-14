@@ -114,7 +114,7 @@ void EntitySelector::OnLeftMouseClick(const LeftMouseClickEventData& data)
 	}
 	f32 overallMinDist = FLT_MAX;
 	ECS::Entity rsltEntity;
-	if (renderComps.size() < 90)
+	if (renderComps.size() < 900000)
 	{
 		const Vector3 rayDir(ray.direction);
 		const Vector3 dirInverted = ray.invOrigin;
@@ -180,7 +180,7 @@ void EntitySelector::OnLeftMouseClick(const LeftMouseClickEventData& data)
 				aabMaxZ = XMVectorAdd(aabbCentersZ, aabbExtentsZ);
 			};
 
-		for (size_t i = 0; i < renderComps.size(); i += 4)
+		for (size_t i = 0; i < renderComps.size() - 3; i += 4)
 		{
 			const auto& aabb1 = renderComps[i].component.boundingBox;
 			const auto& aabb2 = renderComps[i + 1].component.boundingBox;

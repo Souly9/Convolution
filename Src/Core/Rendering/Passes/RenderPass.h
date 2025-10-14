@@ -1,6 +1,8 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
 
+class SharedResourceManager;
+
 namespace VertexInputDefines
 {
 	enum class VertexAttributeTemplates;
@@ -35,7 +37,7 @@ namespace RenderPasses
 
 		virtual void CreateSharedDescriptorLayout() = 0;
 
-		virtual void Init(RendererAttachmentInfo& attachmentInfo) = 0;
+		virtual void Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager) = 0;
 		virtual void BuildPipelines() {}
 
 		virtual bool WantsToRender() const = 0;

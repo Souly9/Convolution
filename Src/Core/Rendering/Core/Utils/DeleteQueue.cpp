@@ -51,13 +51,13 @@ void DeleteQueue::ForceEmptyQueue()
 void DeleteQueue::RegisterDelete(DeleteFunction&& func)
 {
 	m_sharedDataMutex.Lock();
-	m_deleteQueue.emplace_back(std::move(func));
+	m_deleteQueue.emplace(std::move(func));
 	m_sharedDataMutex.Unlock();
 }
 
 void DeleteQueue::RegisterDeleteForNextFrame(DeleteFunction&& func)
 {
 	m_sharedDataMutex.Lock();
-	m_delayedDeleteQueue.emplace_back(std::move(func), FrameGlobals::GetFrameNumber());
+	m_delayedDeleteQueue.emplace(std::move(func), FrameGlobals::GetFrameNumber());
 	m_sharedDataMutex.Unlock();
 }

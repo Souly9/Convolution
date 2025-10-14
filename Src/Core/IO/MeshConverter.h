@@ -1,8 +1,6 @@
 #pragma once
 #include <assimp/scene.h> 
 #include "Core/Global/GlobalDefines.h"
-#include "Core/ECS/EntityManager.h"
-#include "Core/SceneGraph/Mesh.h"
 #include "Core/SceneGraph/Scene.h"
 
 namespace MeshConversion

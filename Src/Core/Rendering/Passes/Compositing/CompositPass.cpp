@@ -6,7 +6,7 @@ RenderPasses::CompositPass::CompositPass() : GenericGeometryPass("CompositPass")
 	CreateSharedDescriptorLayout();
 }
 
-void RenderPasses::CompositPass::Init(RendererAttachmentInfo& attachmentInfo)
+void RenderPasses::CompositPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager)
 {
 	ScopedZone("CompositPass::Init");
 	const auto& gbufferInfo = attachmentInfo.gbuffer;
@@ -18,17 +18,9 @@ void RenderPasses::CompositPass::Init(RendererAttachmentInfo& attachmentInfo)
 	m_indirectCmdBuffer = IndirectDrawCommandBuffer(10);
 	AsyncQueueHandler::MeshTransfer cmd{};
 	cmd.name = "CompositPass_MeshTransfer";
-	cmd.pRenderingDataToFill = &m_mainRenderingData;
+	cmd.pBuffersToFill = &m_mainRenderingData;
 	UBO::PerPassObjectDataSSBO data{};
 	GenericGeometryPass::DrawCmdOffsets offsets{};
-
-	const auto pFullScreenQuadMesh = g_pMeshManager->GetPrimitiveMesh(MeshManager::PrimitiveType::Quad);
-	GenerateDrawCommandForMesh(pFullScreenQuadMesh, offsets, cmd.vertices, cmd.indices, m_indirectCmdBuffer, m_indirectCountBuffer);
-	//data.transformIdx.push_back(0);
-	//data.perObjectDataIdx.push_back(0);
-	//RebuildPerObjectBuffer(data);
-	g_pQueueHandler->SubmitTransferCommandAsync(cmd);
-	m_indirectCmdBuffer.FillCmds();
 
 	BuildPipelines();
 }
@@ -48,6 +40,17 @@ void RenderPasses::CompositPass::BuildPipelines()
 
 void RenderPasses::CompositPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes, FrameRendererContext& previousFrameCtx, u32 thisFrameNum)
 {
+	m_indirectCmdBuffer.EmptyCmds();
+	const auto pFullScreenQuadMesh = g_pMeshManager->GetPrimitiveMesh(MeshManager::PrimitiveType::Quad);
+	const auto meshHandle = previousFrameCtx.pResourceManager->GetMeshHandle(pFullScreenQuadMesh);
+	m_indirectCmdBuffer.AddIndexedDrawCmd(meshHandle.indexCount,
+		1,
+		meshHandle.indexBufferOffset,
+		meshHandle.vertBufferOffset,
+		0
+	);
+	RebuildPerObjectBuffer({ 0 });
+	m_indirectCmdBuffer.FillCmds();
 }
 
 void RenderPasses::CompositPass::Render(const MainPassData& data, FrameRendererContext& ctx)
@@ -68,28 +71,32 @@ void RenderPasses::CompositPass::Render(const MainPassData& data, FrameRendererC
 	const auto ex = ctx.pCurrentSwapchainTexture->GetInfo().extents;
 	const DirectX::XMINT2 extents(ex.x, ex.y);
 
-	BeginRenderingCmd cmdBegin{ m_mainPSO, colorAttachments, nullptr };
+	BeginRenderingCmd cmdBegin{ &m_mainPSO, colorAttachments, nullptr };
 	cmdBegin.extents = extents;
 
-	BinRenderDataCmd geomBufferCmd(*m_mainRenderingData.GetVertexBuffer(), *m_mainRenderingData.GetIndexBuffer());
 
-	GenericIndirectDrawCmd cmd{ m_mainPSO, m_indirectCmdBuffer };
+	auto& sceneGeometryBuffers = data.pResourceManager->GetSceneGeometryBuffers();
+	BinRenderDataCmd geomBufferCmd(sceneGeometryBuffers.GetVertexBuffer(), sceneGeometryBuffers.GetIndexBuffer());
+
+	GenericIndirectDrawCmd cmd{ &m_mainPSO, m_indirectCmdBuffer };
 	cmd.drawCount = m_indirectCmdBuffer.GetDrawCmdNum();
 	if (data.bufferDescriptors.empty())
 	{
-		//cmd.descriptorSets = { g_pTexManager->GetBindlessDescriptorSet() };
 	}
 	else
 	{
-		const auto transformSSBOSet = data.bufferDescriptors.at(UBO::BufferType::TransformSSBO);
-		const auto tileArraySSBOSet = data.bufferDescriptors.at(UBO::BufferType::TileArraySSBO);
-		const auto gbufferUBO = data.bufferDescriptors.at(UBO::BufferType::GBufferUBO);
-		cmd.descriptorSets = { g_pTexManager->GetBindlessDescriptorSet(), data.mainView.descriptorSet, transformSSBOSet, tileArraySSBOSet, gbufferUBO };
+		const auto transformSSBOSet = data.bufferDescriptors.at(UBO::DescriptorContentsType::GlobalInstanceData);
+		const auto texArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessTextureArray);
+		const auto tileArraySSBOSet = data.bufferDescriptors.at(UBO::DescriptorContentsType::LightData);
+		const auto gbufferUBO = data.bufferDescriptors.at(UBO::DescriptorContentsType::GBuffer);
+		cmd.descriptorSets = { texArraySet, data.mainView.descriptorSet, transformSSBOSet, tileArraySSBOSet, gbufferUBO };
 	}
+	StartRenderPassProfilingScope(currentBuffer);
 	currentBuffer->RecordCommand(cmdBegin);
 	currentBuffer->RecordCommand(geomBufferCmd);
 	currentBuffer->RecordCommand(cmd);
 	currentBuffer->RecordCommand(EndRenderingCmd{});
+	EndRenderPassProfilingScope(currentBuffer);
 	currentBuffer->Bake();
 
 	auto& syncContext = ctx.synchronizationContexts[this];
@@ -109,9 +116,15 @@ void RenderPasses::CompositPass::CreateSharedDescriptorLayout()
 	m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::View, 1));
 	m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::TransformSSBO, 2));
 	m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::GlobalObjectDataSSBOs, 2));
+	m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::InstanceDataSSBO, 2));
 	m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::TileArraySSBO, 3));
 	m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::LightUniformsUBO, 3));
 	m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::GBufferUBO, 4));
 	//m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::PerPassObjectSSBO, 4));
+}
+
+bool RenderPasses::CompositPass::WantsToRender() const
+{
+	return NeedToRender(m_indirectCmdBuffer);
 }
 

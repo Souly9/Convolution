@@ -17,17 +17,18 @@ Application::Application(bool canRender, RenderLayer<RenderAPI>& layer) : m_rend
 	bool bCanRender = layer.InitRenderLayer(g_pWindowManager->GetScreenWidth(), g_pWindowManager->GetScreenHeight(), g_pWindowManager->GetTitle());
 
 	g_pGPUMemoryManager->Init();
-	g_pTexManager->Init();
 	g_pQueueHandler->Init();
+	g_pTexManager->Init();
 	g_pGlobalTimeData->Reset();
-	g_pShaderManager->ReadAllSourceShaders();
 
 	FrameGlobals::SetFrameNumber(0);
-
 	m_applicationState.SetCurrentScene(stltype::make_unique<SponzaScene>());
-	m_applicationState.ProcessStateUpdates();
+	g_pShaderManager->ReadAllSourceShaders();
 
 	g_pEventSystem->OnBaseInit({});
+
+	m_applicationState.ProcessStateUpdates();
+
 
 
 	auto pRenderer = m_renderThread.Start();

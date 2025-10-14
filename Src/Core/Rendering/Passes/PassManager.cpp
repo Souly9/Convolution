@@ -4,11 +4,16 @@
 #include "DebugShapePass.h"
 #include "Compositing/CompositPass.h"
 #include "Core/Rendering/Core/RenderingTypeDefs.h"
-#include "Core/Rendering/Vulkan/Utils/DescriptorSetLayoutConverters.h"
+#include "Core/Rendering/Core/Utils/DescriptorLayoutUtils.h"
 
 #include <imgui/backends/imgui_impl_vulkan.h>
 void RenderPasses::PassManager::Init()
 {
+	m_resourceManager.Init();
+
+	g_pEventSystem->AddSceneLoadedEventCallback([this](const auto&) { 
+		m_resourceManager.UploadSceneGeometry(g_pMeshManager->GetMeshes());
+		});
 	g_pEventSystem->AddShaderHotReloadEventCallback([this](const auto&) { RebuildPipelinesForAllPasses(); });
 
 	AddPass(PassType::Main, stltype::make_unique<RenderPasses::StaticMainMeshPass>());
@@ -22,12 +27,10 @@ void RenderPasses::PassManager::Init()
 	info.enableStorageBufferDescriptors = true;
 	m_descriptorPool.Create(info);
 
-	m_globalDataSSBOsLayout = DescriptorLaytoutUtils::CreateOneDescriptorSetForAll({ PipelineDescriptorLayout(UBO::BufferType::TransformSSBO), PipelineDescriptorLayout(UBO::BufferType::GlobalObjectDataSSBOs) });
 	m_tileArraySSBOLayout = DescriptorLaytoutUtils::CreateOneDescriptorSetForAll({ PipelineDescriptorLayout(UBO::BufferType::TileArraySSBO), PipelineDescriptorLayout(UBO::BufferType::LightUniformsUBO) });
 	m_viewUBOLayout = DescriptorLaytoutUtils::CreateOneDescriptorSetLayout(PipelineDescriptorLayout(UBO::BufferType::View));
 	m_gbufferPostProcessLayout = DescriptorLaytoutUtils::CreateOneDescriptorSetLayout(PipelineDescriptorLayout(UBO::BufferType::GBufferUBO));
 
-	u64 bufferSize = UBO::GlobalTransformSSBOSize;
 	u64 tileArraySize = UBO::GlobalTileArraySSBOSize;
 	u64 viewUBOSize = sizeof(UBO::ViewUBO);
 	u64 globalObjectSSBOSize = UBO::GlobalPerObjectDataSSBOSize;
@@ -40,8 +43,6 @@ void RenderPasses::PassManager::Init()
 	depthRequest.usage = Usage::StencilAttachment;
 	auto* pDepthTex = g_pTexManager->CreateTextureImmediate(depthRequest);
 
-	m_modelSSBOs = StorageBuffer(bufferSize, true);
-	m_modelSSBOs.SetName("Transform SSBO");
 	m_viewUBO = UniformBuffer(viewUBOSize);
 	m_mappedViewUBOBuffer = m_viewUBO.MapMemory();
 	m_lightUniformsUBO = UniformBuffer(sizeof(LightUniforms));
@@ -49,7 +50,6 @@ void RenderPasses::PassManager::Init()
 	m_mappedLightUniformsUBO = m_lightUniformsUBO.MapMemory();
 	m_mappedGBufferPostProcessUBO = m_gbufferPostProcessUBO.MapMemory();
 	m_tileArraySSBO = StorageBuffer(tileArraySize, true);
-	m_perObjectDataSSBO = StorageBuffer(globalObjectSSBOSize, true);
 
 	for (size_t i = 0; i < SWAPCHAIN_IMAGES; i++)
 	{
@@ -80,10 +80,10 @@ void RenderPasses::PassManager::Init()
 		frameContext.tileArraySSBODescriptor = m_descriptorPool.CreateDescriptorSet(m_tileArraySSBOLayout.GetRef());
 		frameContext.tileArraySSBODescriptor->SetBindingSlot(s_tileArrayBindingSlot);
 
-		frameContext.modelSSBODescriptor = m_descriptorPool.CreateDescriptorSet(m_globalDataSSBOsLayout.GetRef());
-		frameContext.modelSSBODescriptor->SetBindingSlot(UBO::s_UBOTypeToBindingSlot[UBO::BufferType::TransformSSBO]);
-
 		m_frameRendererContexts.push_back(frameContext);
+
+		UBO::ViewUBO view;
+		UpdateMainViewUBO((const void*)&view, sizeof(UBO::ViewUBO), i);
 	}
 
 	RecreateGbuffers(mathstl::Vector2(FrameGlobals::GetSwapChainExtent().x, FrameGlobals::GetSwapChainExtent().y));
@@ -103,20 +103,21 @@ void RenderPasses::PassManager::Init()
 	u32 idx = 0;
 	for (auto& mainPassData : m_mainPassData)
 	{
-		mainPassData.bufferDescriptors[UBO::BufferType::TransformSSBO] = m_frameRendererContexts[idx].modelSSBODescriptor;
-		mainPassData.bufferDescriptors[UBO::BufferType::TileArraySSBO] = m_frameRendererContexts[idx].tileArraySSBODescriptor;
-		mainPassData.bufferDescriptors[UBO::BufferType::GBufferUBO] = m_frameRendererContexts[idx].gbufferPostProcessDescriptor;
+		mainPassData.bufferDescriptors[UBO::DescriptorContentsType::GlobalInstanceData] = m_resourceManager.GetInstanceSSBODescriptorSet(idx);
+		mainPassData.bufferDescriptors[UBO::DescriptorContentsType::LightData] = m_frameRendererContexts[idx].tileArraySSBODescriptor;
+		mainPassData.bufferDescriptors[UBO::DescriptorContentsType::GBuffer] = m_frameRendererContexts[idx].gbufferPostProcessDescriptor;
+		mainPassData.bufferDescriptors[UBO::DescriptorContentsType::BindlessTextureArray] = g_pTexManager->GetBindlessDescriptorSet();
 		++idx;
 	}
 	for (auto& [type, passes] : m_passes)
 	{
 		for (auto& pPass : passes)
 		{
-			pPass->Init(m_globalRendererAttachments);
+			pPass->Init(m_globalRendererAttachments, m_resourceManager);
 		}
 	}
 
-	const auto pTex = m_gbuffer.Get(GBufferTextureType::GBufferPosition);
+	const auto pTex = m_gbuffer.Get(GBufferTextureType::GBufferAlbedo);
 	VkDescriptorSet id = ImGui_ImplVulkan_AddTexture(
 		pTex->GetSampler(),
 		pTex->GetImageView(),
@@ -138,10 +139,10 @@ void RenderPasses::PassManager::RecreateGbuffers(const mathstl::Vector2& resolut
 	gbufferRequestBase.usage = Usage::GBuffer;
 
 	DynamicTextureRequest gbufferRequestPosition = gbufferRequestBase;
-	gbufferRequestPosition.format = gbuffer.GetFormat(GBufferTextureType::GBufferPosition);
+	gbufferRequestPosition.format = gbuffer.GetFormat(GBufferTextureType::GBufferAlbedo);
 	gbufferRequestPosition.handle = g_pTexManager->GenerateHandle();
 	gbufferRequestPosition.AddName("GBuffer Position");
-	gbuffer.Set(GBufferTextureType::GBufferPosition, g_pTexManager->CreateTextureImmediate(gbufferRequestPosition));
+	gbuffer.Set(GBufferTextureType::GBufferAlbedo, g_pTexManager->CreateTextureImmediate(gbufferRequestPosition));
 
 	DynamicTextureRequest gbufferRequestNormal = gbufferRequestBase;
 	gbufferRequestNormal.format = gbuffer.GetFormat(GBufferTextureType::GBufferNormal);
@@ -149,11 +150,18 @@ void RenderPasses::PassManager::RecreateGbuffers(const mathstl::Vector2& resolut
 	gbufferRequestNormal.AddName("GBuffer Normal");
 	gbuffer.Set(GBufferTextureType::GBufferNormal, g_pTexManager->CreateTextureImmediate(gbufferRequestNormal));
 
+	DynamicTextureRequest gbufferRequestUV = gbufferRequestBase;
+	gbufferRequestUV.format = gbuffer.GetFormat(GBufferTextureType::TexCoordMatData);
+	gbufferRequestUV.handle = g_pTexManager->GenerateHandle();
+	gbufferRequestUV.AddName("GBuffer UV Material Data");
+	gbuffer.Set(GBufferTextureType::TexCoordMatData, g_pTexManager->CreateTextureImmediate(gbufferRequestUV));
+	g_pTexManager->MakeTextureBindless(gbufferRequestUV.handle);
+
 	DynamicTextureRequest gbufferRequest3 = gbufferRequestBase;
-	gbufferRequest3.format = gbuffer.GetFormat(GBufferTextureType::GBuffer3);
+	gbufferRequest3.format = gbuffer.GetFormat(GBufferTextureType::Position);
 	gbufferRequest3.handle = g_pTexManager->GenerateHandle();
-	gbufferRequest3.AddName("GBuffer 3");
-	gbuffer.Set(GBufferTextureType::GBuffer3, g_pTexManager->CreateTextureImmediate(gbufferRequest3));
+	gbufferRequest3.AddName("GBuffer Position");
+	gbuffer.Set(GBufferTextureType::Position, g_pTexManager->CreateTextureImmediate(gbufferRequest3));
 	g_pTexManager->MakeTextureBindless(gbufferRequest3.handle);
 
 	DynamicTextureRequest gbufferRequestUI = gbufferRequestBase;
@@ -166,7 +174,7 @@ void RenderPasses::PassManager::RecreateGbuffers(const mathstl::Vector2& resolut
 	{
 		g_pTexManager->MakeTextureBindless(gbufferRequestPosition.handle),
 		g_pTexManager->MakeTextureBindless(gbufferRequestNormal.handle),
-		g_pTexManager->MakeTextureBindless(gbufferRequest3.handle),
+		g_pTexManager->MakeTextureBindless(gbufferRequestUV.handle),
 		g_pTexManager->MakeTextureBindless(gbufferRequest3.handle), // TODO: Replace with actual gbuffer 4 when needed
 		g_pTexManager->MakeTextureBindless(gbufferRequestUI.handle)
 	};
@@ -194,6 +202,7 @@ void RenderPasses::PassManager::TransferPassData(const PassGeometryData& passDat
 void RenderPasses::PassManager::ExecutePasses(u32 frameIdx)
 {
 	auto& mainPassData = m_mainPassData.at(frameIdx);
+	mainPassData.pResourceManager = &m_resourceManager;
 
 	bool rebuildSyncs = false;
 	bool doWeRender = false;
@@ -210,16 +219,7 @@ void RenderPasses::PassManager::ExecutePasses(u32 frameIdx)
 	if (doWeRender == false)
 		return;
 
-	auto& imageAvailableFence = m_imageAvailableFences.at(frameIdx);
-	auto& imageAvailableSemaphore = m_imageAvailableSemaphores.at(frameIdx);
-	imageAvailableFence.Reset();
-	u32 imageIdx;
-	SRF::QueryImageForPresentationFromMainSwapchain<RenderAPI>(imageAvailableSemaphore, imageAvailableFence, imageIdx);
-
-	// Waiting here since we cant guarantee the presentation engine is done with the image until it is available for us here (the fence from presentKHR is not enough)
-	// Reusing buffers or semaphores for this image before we are sure it's not presented anymore will lead to synchronization errors
-	imageAvailableFence.WaitFor();
-	auto& ctx = m_frameRendererContexts.at(imageIdx);
+	auto& ctx = m_frameRendererContexts.at(m_currentSwapChainIdx);
 	auto& syncContexts = ctx.synchronizationContexts;
 	auto& additionalSyncContexts = ctx.additionalSynchronizationContexts;
 
@@ -282,9 +282,12 @@ void RenderPasses::PassManager::ExecutePasses(u32 frameIdx)
 		AddNonPassDependency(additionalSyncContexts, waitSemaphore, presentTransition);
 		ctx.renderingFinishedSemaphore = waitSemaphore;
 	}
-	ctx.imageIdx = imageIdx;
+
+	auto& imageAvailableSemaphore = m_imageAvailableSemaphores.at(frameIdx);
+
+	ctx.imageIdx = m_currentSwapChainIdx;
 	ctx.currentFrame = frameIdx;
-	ctx.pCurrentSwapchainTexture = &g_pTexManager->GetSwapChainTextures().at(imageIdx);
+	ctx.pCurrentSwapchainTexture = &g_pTexManager->GetSwapChainTextures().at(m_currentSwapChainIdx);
 	mainPassData.pGbuffer = &m_gbuffer;
 	mainPassData.mainView = RenderView{ ctx.mainViewUBODescriptor };
 
@@ -327,7 +330,7 @@ void RenderPasses::PassManager::ExecutePasses(u32 frameIdx)
 		}
 		g_pTexManager->DispatchAsyncOps("Initial layout transition");
 		RenderAllPasses(geomPasses, mainPassData, ctx, syncContexts);
-		//RenderAllPasses(debugPasses, mainPassData, ctx, syncContexts);
+		RenderAllPasses(debugPasses, mainPassData, ctx, syncContexts);
 		{
 			AsyncLayoutTransitionRequest transitionRequest{
 				.textures = gbufferTextures,
@@ -370,7 +373,7 @@ void RenderPasses::PassManager::ExecutePasses(u32 frameIdx)
 
 	AsyncQueueHandler::PresentRequest presentRequest{
 		.pWaitSemaphore = &additionalSyncContexts[presentTransition].signalSemaphore,
-		.swapChainImageIdx = imageIdx
+		.swapChainImageIdx = m_currentSwapChainIdx
 	};
 	g_pQueueHandler->SubmitSwapchainPresentRequestForThisFrame(presentRequest);
 	g_pQueueHandler->DispatchAllRequests();
@@ -379,36 +382,36 @@ void RenderPasses::PassManager::ExecutePasses(u32 frameIdx)
 void RenderPasses::PassManager::SetEntityMeshDataForFrame(EntityMeshDataMap&& data, u32 frameIdx)
 {
 	//DEBUG_ASSERT(frameIdx == FrameGlobals::GetFrameNumber());
-	m_passDataMutex.Lock();
+	m_passDataMutex.lock();
 	m_dataToBePreProcessed.entityMeshData = std::move(data);
 	m_dataToBePreProcessed.frameIdx = frameIdx;
-	m_passDataMutex.Unlock();
+	m_passDataMutex.unlock();
 }
 
 void RenderPasses::PassManager::SetEntityTransformDataForFrame(TransformSystemData&& data, u32 frameIdx)
 {
 	//DEBUG_ASSERT(frameIdx == FrameGlobals::GetFrameNumber());
-	m_passDataMutex.Lock();
+	m_passDataMutex.lock();
 	m_dataToBePreProcessed.entityTransformData = std::move(data);
 	m_dataToBePreProcessed.frameIdx = frameIdx;
-	m_passDataMutex.Unlock();
+	m_passDataMutex.unlock();
 }
 
 void RenderPasses::PassManager::SetLightDataForFrame(const LightVector& data, u32 frameIdx)
 {
 	//DEBUG_ASSERT(frameIdx == FrameGlobals::GetFrameNumber());
-	m_passDataMutex.Lock();
+	m_passDataMutex.lock();
 	m_dataToBePreProcessed.lightVector = data;
 	m_dataToBePreProcessed.frameIdx = frameIdx;
-	m_passDataMutex.Unlock();
+	m_passDataMutex.unlock();
 }
 
 void RenderPasses::PassManager::SetMainViewData(UBO::ViewUBO&& viewUBO, u32 frameIdx)
 {
-	m_passDataMutex.Lock();
+	m_passDataMutex.lock();
 	m_dataToBePreProcessed.mainViewUBO = std::move(viewUBO);
 	m_dataToBePreProcessed.frameIdx = frameIdx;
-	m_passDataMutex.Unlock();
+	m_passDataMutex.unlock();
 }
 
 void RenderPasses::PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
@@ -420,12 +423,11 @@ void RenderPasses::PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
 		m_needsToPropagateMainDataUpdate = false;
 		const auto& ctx = m_frameRendererContexts[targetFrame];
 
-		ctx.modelSSBODescriptor->WriteSSBOUpdate(m_perObjectDataSSBO, s_globalObjectDataBindingSlot);
 
 		if (m_dataToBePreProcessed.IsEmpty())
 		{
+			m_resourceManager.WriteInstanceSSBODescriptorUpdate(targetFrame);
 			ctx.mainViewUBODescriptor->WriteBufferUpdate(m_viewUBO);
-			ctx.modelSSBODescriptor->WriteSSBOUpdate(m_modelSSBOs);
 			ctx.tileArraySSBODescriptor->WriteSSBOUpdate(m_tileArraySSBO);
 			ctx.tileArraySSBODescriptor->WriteBufferUpdate(m_lightUniformsUBO, s_globalLightUniformsBindingSlot);
 		}
@@ -433,9 +435,7 @@ void RenderPasses::PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
 
 	if (g_pMaterialManager->IsBufferDirty())
 	{
-		UBO::GlobalObjectDataSSBO globalObjectDataSSBO{};
-		globalObjectDataSSBO.materials = g_pMaterialManager->GetMaterialBuffer();
-		UpdateGlobalObjectDataSSBO(globalObjectDataSSBO, frameIdx);
+		m_resourceManager.UpdateGlobalMaterialBuffer(g_pMaterialManager->GetMaterialBuffer(), frameIdx);
 		m_needsToPropagateMainDataUpdate = true;
 		m_frameIdxToPropagate = frameIdx;
 		g_pMaterialManager->MarkBufferUploaded();
@@ -446,7 +446,8 @@ void RenderPasses::PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
 		DEBUG_ASSERT(m_dataToBePreProcessed.IsValid());
 		PassGeometryData passData{};
 
-		UBO::GlobalTransformSSBO transformSSBO{};
+		stltype::vector<DirectX::XMFLOAT4X4> transformSSBO;
+		transformSSBO.reserve(MAX_ENTITIES);
 
 		if (m_dataToBePreProcessed.entityMeshData.empty() == false)
 		{
@@ -493,6 +494,7 @@ void RenderPasses::PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
 			}*/
 			if (needsRebuild)
 			{
+				m_resourceManager.UpdateInstanceDataSSBO(passData.staticMeshPassData, frameIdx);
 				PreProcessMeshData(passData.staticMeshPassData, FrameGlobals::GetPreviousFrameNumber(frameIdx), frameIdx);
 			}
 			TransferPassData(std::move(passData), m_dataToBePreProcessed.frameIdx);
@@ -501,9 +503,9 @@ void RenderPasses::PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
 		for (const auto& data : m_dataToBePreProcessed.entityTransformData)
 		{
 			const auto& entityID = data.first;
-			transformSSBO.modelMatrices.insert(transformSSBO.modelMatrices.begin() + m_entityToTransformUBOIdx[entityID], data.second);
+			transformSSBO.insert(transformSSBO.begin() + m_entityToTransformUBOIdx[entityID], data.second);
 		}
-		UpdateGlobalTransformSSBO(transformSSBO, m_dataToBePreProcessed.frameIdx);
+		m_resourceManager.UpdateTransformBuffer(transformSSBO, m_dataToBePreProcessed.frameIdx);
 		
 		if (m_dataToBePreProcessed.mainViewUBO.has_value())
 		{
@@ -514,7 +516,7 @@ void RenderPasses::PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
 		{
 			LightUniforms data;
 			const auto camEnt = g_pApplicationState->GetCurrentApplicationState().mainCameraEntity;
-			const DirectX::XMFLOAT4X4* camMatrix = (transformSSBO.modelMatrices.begin() + m_entityToTransformUBOIdx[camEnt.ID]);
+			const DirectX::XMFLOAT4X4* camMatrix = (transformSSBO.begin() + m_entityToTransformUBOIdx[camEnt.ID]);
 			const DirectX::XMMATRIX camMat = DirectX::XMLoadFloat4x4(camMatrix);
 			DirectX::XMVECTOR camPos, camRot, camScale;
 			DirectX::XMMatrixDecompose(&camScale, &camRot, &camPos, camMat);
@@ -550,9 +552,9 @@ void RenderPasses::PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
 		m_needsToPropagateMainDataUpdate = true;
 		m_frameIdxToPropagate = frameIdx;
 		m_dataToBePreProcessed.Clear();
-		vkQueueWaitIdle(VkGlobals::GetGraphicsQueue());
+		//vkQueueWaitIdle(VkGlobals::GetGraphicsQueue());
 		g_pQueueHandler->DispatchAllRequests();
-		vkQueueWaitIdle(VkGlobals::GetGraphicsQueue());
+		//vkQueueWaitIdle(VkGlobals::GetGraphicsQueue());
 
 	}
 }
@@ -572,16 +574,6 @@ void RenderPasses::PassManager::UpdateMainViewUBO(const void* data, size_t size,
 
 	memcpy(mappedBuffer, data, size);
 	pDescriptor->WriteBufferUpdate(*pBuffer);
-}
-
-void RenderPasses::PassManager::UpdateGlobalTransformSSBO(const UBO::GlobalTransformSSBO& data, u32 frameIdx)
-{
-	DispatchSSBOTransfer((void*)data.modelMatrices.data(), m_frameRendererContexts[frameIdx].modelSSBODescriptor, UBO::GlobalTransformSSBOSize, &m_modelSSBOs);
-}
-
-void RenderPasses::PassManager::UpdateGlobalObjectDataSSBO(const UBO::GlobalObjectDataSSBO& data, u32 frameIdx)
-{
-	DispatchSSBOTransfer((void*)data.materials.data(), m_frameRendererContexts[frameIdx].modelSSBODescriptor, sizeof(UBO::GlobalObjectDataSSBO::materials), &m_perObjectDataSSBO, 0, s_globalObjectDataBindingSlot);
 }
 
 void RenderPasses::PassManager::UpdateWholeTileArraySSBO(const UBO::GlobalTileArraySSBO& data, u32 frameIdx)
@@ -604,7 +596,18 @@ void RenderPasses::PassManager::DispatchSSBOTransfer(void* data, DescriptorSet* 
 
 void RenderPasses::PassManager::BlockUntilPassesFinished(u32 frameIdx)
 {
-	g_pQueueHandler->WaitForFences(); 
+	ScopedZone("PassManager::Wait for previous frame render to finish");
+
+	auto& imageAvailableFence = m_imageAvailableFences.at(frameIdx);
+	auto& imageAvailableSemaphore = m_imageAvailableSemaphores.at(frameIdx);
+	imageAvailableFence.Reset();
+	SRF::QueryImageForPresentationFromMainSwapchain<RenderAPI>(imageAvailableSemaphore, imageAvailableFence, m_currentSwapChainIdx);
+
+	// Waiting here since we cant guarantee the presentation engine is done with the image until it is available for us here (the fence from presentKHR is not enough)
+	// Reusing buffers or semaphores for this image before we are sure it's not presented anymore will lead to synchronization errors
+	imageAvailableFence.WaitFor();
+
+	//g_pQueueHandler->WaitForFences(); 
 	//vkQueueWaitIdle(VkGlobals::GetGraphicsQueue());
 }
 
@@ -627,6 +630,7 @@ void RenderPasses::PassManager::RebuildPipelinesForAllPasses()
 void RenderPasses::PassManager::PreProcessMeshData(const stltype::vector<PassMeshData>& meshes, u32 lastFrame, u32 curFrame)
 {
 	auto& lastFrameCtx = m_frameRendererContexts[lastFrame];
+	lastFrameCtx.pResourceManager = &m_resourceManager;
 	for (auto& [type, passes] : m_passes)
 	{
 		for (auto& pass : passes)

@@ -1,23 +1,20 @@
 #extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_scalar_block_layout : enable
 #include "BindingSlots.h"
 #include "Material.h"
+#include "IndirectDrawStructs.h"
 
-struct PerObjectData
-{
-	Material material;
-};
 layout(std140, set = TransformSSBOSet, binding = GlobalTransformDataSSBOSlot) readonly buffer GlobalPerObjectSSBO
 {
 	mat4 modelMatrices[MAX_ENTITIES];
 } globalTransformSSBO;
 
-layout(std430, set = TransformSSBOSet, binding = GlobalObjectDataSSBOSlot) readonly buffer GlobalObjectDataSSBO
+layout(scalar, set = TransformSSBOSet, binding = GlobalObjectDataSSBOSlot) readonly buffer GlobalObjectDataSSBO
 {
-	Material data[MAX_MATERIALS];
+	Material materials[MAX_MATERIALS];
 } globalObjectDataSSBO;
 
-layout(std430, set = PassPerObjectDataSet, binding = PassPerObjectDataSSBOSlot) readonly buffer PerPassObjectSSBO
+layout(scalar, set = TransformSSBOSet, binding = GlobalInstanceDataSSBOSlot) readonly buffer GlobalInstanceDataSSBO
 {
-	uint transformDataIdx[MAX_ENTITIES];
-	uint perObjectDataIdx[MAX_ENTITIES];
-} perObjectDataSSBO;
+	InstanceData instances[MAX_ENTITIES];
+} globalInstanceDataSSBO;

@@ -1,8 +1,12 @@
 #pragma once
 #include "../GlobalDefines.h"
 #include "States.h"
+#include "Core/Global/State/ApplicationState.h"
 #include "Core/SceneGraph/Scene.h"
 #include "EASTL/unique_ptr.h"
+
+struct ApplicationState;
+class Scene;
 
 // Classes can register functions that recieve writeable application state and update it, usually executed at the end of the update cycle~before next one
 using ApplicationStateUpdateFunction = stltype::function<void(ApplicationState& appState)>;
@@ -10,6 +14,8 @@ using ApplicationStateUpdateFunction = stltype::function<void(ApplicationState& 
 class ApplicationStateManager
 {
 public:
+	ApplicationStateManager() {}
+
 	const ApplicationState& GetCurrentApplicationState() { return m_appStates[m_currentState]; }
 
 	void RegisterUpdateFunction(ApplicationStateUpdateFunction&& updateFunction);

@@ -5,6 +5,7 @@
 #define TransformSSBOSet 1
 #define PassPerObjectDataSet 2
 #include "../../Globals/GlobalBuffers.h"
+#include "../../Globals/DrawBuildBuffers.h"
 
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;
@@ -15,7 +16,6 @@ layout(location = 1) out vec2 fragTexCoord;
 
 void main() {
     uint transformIdx = perObjectDataSSBO.transformDataIdx[gl_InstanceIndex];
-    uint perObjectDataIdx = perObjectDataSSBO.perObjectDataIdx[gl_InstanceIndex];
     gl_Position = ubo.proj * ubo.view * globalTransformSSBO.modelMatrices[transformIdx] * vec4(inPosition, 1.0);
-    fragColor = globalObjectDataSSBO.data[perObjectDataIdx].baseColor.xyz;
+    fragColor = vec3(1,1,0);//globalObjectDataSSBO.data[perObjectDataIdx].baseColor.xyz;
 }

@@ -27,6 +27,8 @@ namespace MeshConversion
 
 	Entity ConvertScene(const aiScene* pScene, const aiNode* pNode, Entity& parentEntity)
 	{
+		ScopedZone("Convert Assimp Node");
+
 		Entity localParentEntity = g_pEntityManager->CreateEntity();
 		g_pEntityManager->GetComponentUnsafe<Components::Transform>(localParentEntity)->parent = parentEntity;
 		if (pNode->mNumChildren == 0 && pNode->mNumMeshes != 0)
@@ -136,8 +138,8 @@ namespace MeshConversion
 		Material mat{};
 
 		pMaterial->GetTexture(aiTextureType_DIFFUSE, 0, &path);
-		mat.diffuseTexture = g_pTexManager->SubmitAsyncTextureCreation({ "Resources\\Models\\" + eastl::string(path.C_Str()) });
-		DEBUG_LOGF("Loading Diffuse Texture: {}", path.C_Str());
+		mat.diffuseTexture = g_pTexManager->MakeTextureBindless(g_pTexManager->SubmitAsyncTextureCreation({ "Resources\\Models\\" + eastl::string(path.C_Str()) }));
+		DEBUG_LOGF("[MeshConverter] Loading Diffuse Texture: {} with handle {}", path.C_Str(), mat.diffuseTexture);
 		pMaterial->GetTexture(aiTextureType_NORMALS, 0, &path);
 		//g_pTexManager->SubmitAsyncTextureCreation({ "Resources\\Models\\" + eastl::string(path.C_Str()) });
 
@@ -145,22 +147,22 @@ namespace MeshConversion
 		stltype::string materialName = pMaterial->GetName().C_Str();
 		if (AI_SUCCESS != pMaterial->Get(AI_MATKEY_COLOR_DIFFUSE, diffuse))
 		{
-			DEBUG_LOG_WARN("Couldn't load diffuse color of Material: " + materialName);
+			//DEBUG_LOG_WARN("Couldn't load diffuse color of Material: " + materialName);
 		}
 		aiColor3D metallic;
 		if (AI_SUCCESS != pMaterial->Get(AI_MATKEY_METALLIC_FACTOR, metallic))
 		{
-			DEBUG_LOG_WARN("Couldn't load metallic factor of Material: " + materialName);
+			//DEBUG_LOG_WARN("Couldn't load metallic factor of Material: " + materialName);
 		}
 		aiColor3D roughness;
 		if (AI_SUCCESS != pMaterial->Get(AI_MATKEY_ROUGHNESS_FACTOR, roughness))
 		{
-			DEBUG_LOG_WARN("Couldn't load roughness factor of Material: " + materialName);
+			//DEBUG_LOG_WARN("Couldn't load roughness factor of Material: " + materialName);
 		}
 		aiColor3D emission;
 		if (AI_SUCCESS != pMaterial->Get(AI_MATKEY_COLOR_EMISSIVE, emission))
 		{
-			DEBUG_LOG_WARN("Couldn't load emissive color of Material: " + materialName);
+			//DEBUG_LOG_WARN("Couldn't load emissive color of Material: " + materialName);
 		}
 
 		mat.properties.baseColor = Convert(diffuse);

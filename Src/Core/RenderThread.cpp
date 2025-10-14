@@ -30,9 +30,9 @@ void RenderThread::RenderLoop()
 		}
 		// First sync game data with renderthread
 		{
-			m_passManager.BlockUntilPassesFinished(lastFrame);
 			g_pEntityManager->SyncSystemData(lastFrame);
 
+			m_passManager.BlockUntilPassesFinished(lastFrame);
 			// Renderer done so we can take care of any deferred deletes
 			g_pDeleteQueue->ProcessDeleteQueue();
 		}

@@ -3,8 +3,6 @@
 #include "Core/ECS/Components/Light.h"
 #include "Core/SceneGraph/Mesh.h"
 
-static inline constexpr MeshManager::PrimitiveType s_lightDebugMeshPrimitive = MeshManager::PrimitiveType::Cube;
-
 struct RenderLight
 {
 	mathstl::Vector4 position{};

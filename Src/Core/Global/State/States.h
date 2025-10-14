@@ -1,7 +1,6 @@
 #pragma once
-#include "../GlobalDefines.h"
-#include "Core/SceneGraph/Scene.h"
 
+class Scene;
 
 #define BITSET_SETTER_GETTER(name, indexName) \
 bool Show##name() const { return test(indexName); } \

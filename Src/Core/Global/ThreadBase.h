@@ -10,7 +10,7 @@ public:
 	void lock() { m_mutex.Lock(); }
 
 private:
-	threadSTL::Futex m_mutex;
+	threadSTL::Mutex m_mutex;
 };
 
 class ThreadBase
@@ -32,7 +32,7 @@ public:
 		m_thread.WaitForEnd();
 	}
 
-	void Suspend() { threadSTL::ThreadSleep(500); }
+	void Suspend() { threadSTL::ThreadSleep(10); }
 protected:
 	threadSTL::Thread m_thread;
 	ProfiledLockable(CustomMutex, m_sharedDataMutex);

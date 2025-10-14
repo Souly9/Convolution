@@ -9,3 +9,5 @@ using f64 = double;
 
 using ShaderID = u64;
 using PipelineID = u32;
+using C_ID = u64;
+using TextureHandle = u32;

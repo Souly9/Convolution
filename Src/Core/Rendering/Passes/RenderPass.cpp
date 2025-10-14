@@ -1,6 +1,7 @@
 #include "RenderPass.h"
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Rendering/Vulkan/VkGlobals.h"
+#include "Core/Rendering/Core/SharedResourceManager.h"
 
 namespace RenderPasses
 {

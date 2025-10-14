@@ -4,7 +4,6 @@
 #include "Core/Rendering/Core/RenderingTypeDefs.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
 #include "Utils/RenderPassUtils.h"
-#include "Tracy/Tracy.hpp"
 
 namespace RenderPasses
 {
@@ -18,7 +17,7 @@ namespace RenderPasses
 		CreateSharedDescriptorLayout();
 	}
 
-	void RenderPasses::StaticMainMeshPass::Init(RendererAttachmentInfo & attachmentInfo)
+	void RenderPasses::StaticMainMeshPass::Init(RendererAttachmentInfo & attachmentInfo, const SharedResourceManager& resourceManager)
 	{
 		ScopedZone("StaticMeshPass::Init");
 
@@ -30,11 +29,11 @@ namespace RenderPasses
 		const auto& gbufferInfo = attachmentInfo.gbuffer;
 
 		//const auto gbufferPosition = CreateDefaultColorAttachment(attachmentInfo.swapchainTextures[0].GetInfo().format, LoadOp::CLEAR, nullptr);
-		const auto gbufferPosition = CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBufferPosition), LoadOp::CLEAR, nullptr);
-		//const auto gbufferNormal = CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBufferNormal), LoadOp::CLEAR, nullptr);
-		//const auto gbuffer3 = CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBuffer3), LoadOp::CLEAR, nullptr);
+		const auto gbufferPosition = CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBufferAlbedo), LoadOp::CLEAR, nullptr);
+		const auto gbufferNormal = CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBufferNormal), LoadOp::CLEAR, nullptr);
+		const auto gbuffer3 = CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::TexCoordMatData), LoadOp::CLEAR, nullptr);
 		m_mainRenderingData.depthAttachment = CreateDefaultDepthAttachment(LoadOp::CLEAR, attachmentInfo.depthAttachment.GetTexture());;
-		m_mainRenderingData.colorAttachments = { gbufferPosition };
+		m_mainRenderingData.colorAttachments = { gbufferPosition, gbufferNormal, gbuffer3 };
 
 		InitBaseData(attachmentInfo);
 		m_indirectCmdBuffer = IndirectDrawCommandBuffer(1000);
@@ -59,42 +58,28 @@ namespace RenderPasses
 	void StaticMainMeshPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes, FrameRendererContext& previousFrameCtx, u32 thisFrameNum)
 	{
 		ScopedZone("StaticMeshPass::Rebuild");
-		AsyncQueueHandler::MeshTransfer cmd{};
-		cmd.vertices.reserve(meshes.size() * 200);
-		cmd.indices.reserve(meshes.size() * 500);
-		cmd.pRenderingDataToFill = &m_mainRenderingData;
-
-		if (previousFrameCtx.synchronizationContexts.find(this) != previousFrameCtx.synchronizationContexts.end())
-			cmd.waitSemaphores.push_back(&previousFrameCtx.nonLoadRenderingFinished);
-		cmd.signalSemaphores.push_back(&m_internalSyncContexts[thisFrameNum].bufferUpdateFinishedSemaphore);
-		cmd.waitStage = SyncStages::TOP_OF_PIPE;
-		cmd.signalStage = SyncStages::ALL_COMMANDS;
-
-		UBO::PerPassObjectDataSSBO data{};
-		GenericGeometryPass::DrawCmdOffsets offsets{};
 
 		m_indirectCmdBuffer.EmptyCmds();
-		for (const auto& meshData : meshes)
+		u32 instanceOffset = 0;
+		stltype::vector<u32> instanceDataIndices;
+		instanceDataIndices.reserve(meshes.size());
+		for (const auto& mesh : meshes)
 		{
-			if (meshData.meshData.IsDebugMesh() || cmd.vertices.empty() == false)
+			if (mesh.meshData.IsDebugMesh())
 				continue;
+			const auto& meshHandle = mesh.meshData.meshResourceHandle;
 
-			data.perObjectDataIdx.push_back(g_pMaterialManager->GetMaterialIdx(meshData.meshData.pMaterial));
-			data.transformIdx.push_back(meshData.transformIdx);
-
-			GenerateDrawCommandForMesh(meshData, offsets, cmd.vertices, cmd.indices, m_indirectCmdBuffer, m_indirectCountBuffer);
-			++offsets.instanceCount;
+			m_indirectCmdBuffer.AddIndexedDrawCmd(
+				meshHandle.indexCount,
+				1, // TODO: instanced rendering
+				meshHandle.indexBufferOffset,
+				meshHandle.vertBufferOffset,
+				instanceOffset
+			);
+			instanceDataIndices.emplace_back(mesh.meshData.instanceDataIdx);
+			++instanceOffset;
 		}
-		VertexBuffer vB{ cmd.vertices.size() * sizeof(CompleteVertex) };
-		IndexBuffer iB(cmd.indices.size() * sizeof(u32));
-		auto mappedVB = vB.MapMemory();
-		auto mappedIB = iB.MapMemory();
-		memcpy(mappedVB, cmd.vertices.data(), cmd.vertices.size() * sizeof(CompleteVertex));
-		memcpy(mappedIB, cmd.indices.data(), cmd.indices.size() * sizeof(u32));
-		m_mainRenderingData.SetIndexBuffer(iB);
-		m_mainRenderingData.SetVertexBuffer(vB);
-		RebuildPerObjectBuffer(data);
-		//g_pQueueHandler->SubmitTransferCommandAsync(cmd);
+		RebuildPerObjectBuffer(instanceDataIndices);
 		m_indirectCmdBuffer.FillCmds(); 
 		//m_needsBufferSync = true;
 	}
@@ -113,35 +98,37 @@ namespace RenderPasses
 
 		
 		ColorAttachment gbufferPosition = m_mainRenderingData.colorAttachments[0];
-		//ColorAttachment gbufferNormal = m_mainRenderingData.colorAttachments[1];
-		//ColorAttachment gbuffer3 = m_mainRenderingData.colorAttachments[2];
+		ColorAttachment gbufferNormal = m_mainRenderingData.colorAttachments[1];
+		ColorAttachment gbuffer3 = m_mainRenderingData.colorAttachments[2];
 		//gbufferPosition.SetTexture(ctx.gbuffer.Get(GBufferTextureType::GBufferPosition));]
-		gbufferPosition.SetTexture(data.pGbuffer->Get(GBufferTextureType::GBufferPosition));
-		//gbufferNormal.SetTexture(ctx.gbuffer.Get(GBufferTextureType::GBufferNormal));
-		//gbuffer3.SetTexture(ctx.gbuffer.Get(GBufferTextureType::GBuffer3));
+		gbufferPosition.SetTexture(data.pGbuffer->Get(GBufferTextureType::GBufferAlbedo));
+		gbufferNormal.SetTexture(data.pGbuffer->Get(GBufferTextureType::GBufferNormal));
+		gbuffer3.SetTexture(data.pGbuffer->Get(GBufferTextureType::TexCoordMatData));
 
-		stltype::vector<ColorAttachment> colorAttachments = { gbufferPosition };
+		stltype::vector<ColorAttachment> colorAttachments = { gbufferPosition, gbufferNormal, gbuffer3 };
 
 		const auto ex = ctx.pCurrentSwapchainTexture->GetInfo().extents;
 		const DirectX::XMINT2 extents(ex.x, ex.y);
 
-		BeginRenderingCmd cmdBegin{ m_mainPSO, colorAttachments, &m_mainRenderingData.depthAttachment };
+		BeginRenderingCmd cmdBegin{ &m_mainPSO, colorAttachments, &m_mainRenderingData.depthAttachment };
 		cmdBegin.extents = extents;
 	
-		GenericIndirectDrawCmd cmd{ m_mainPSO, m_indirectCmdBuffer };
+		GenericIndirectDrawCmd cmd{ &m_mainPSO, m_indirectCmdBuffer };
 		cmd.drawCount = m_indirectCmdBuffer.GetDrawCmdNum();
+
+		auto& sceneGeometryBuffers = data.pResourceManager->GetSceneGeometryBuffers();
 		if(data.bufferDescriptors.empty())
 			cmd.descriptorSets = { g_pTexManager->GetBindlessDescriptorSet()};
 		else
 		{
-			const auto transformSSBOSet = data.bufferDescriptors.at(UBO::BufferType::TransformSSBO);
-			const auto tileArraySSBOSet = data.bufferDescriptors.at(UBO::BufferType::TileArraySSBO);
-			cmd.descriptorSets = { g_pTexManager->GetBindlessDescriptorSet(), data.mainView.descriptorSet, transformSSBOSet, passCtx.m_perObjectDescriptor };
+			const auto transformSSBOSet = data.bufferDescriptors.at(UBO::DescriptorContentsType::GlobalInstanceData);
+			const auto texArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessTextureArray);
+			cmd.descriptorSets = { texArraySet, data.mainView.descriptorSet, transformSSBOSet, passCtx.m_perObjectDescriptor };
 		}
 		cmdBegin.drawCmdBuffer = &m_indirectCmdBuffer;
 		StartRenderPassProfilingScope(currentBuffer);
 		currentBuffer->RecordCommand(cmdBegin);
-		BinRenderDataCmd geomBufferCmd(*m_mainRenderingData.GetVertexBuffer(), *m_mainRenderingData.GetIndexBuffer());
+		BinRenderDataCmd geomBufferCmd(sceneGeometryBuffers.GetVertexBuffer(), sceneGeometryBuffers.GetIndexBuffer());
 		currentBuffer->RecordCommand(geomBufferCmd);
 		currentBuffer->RecordCommand(cmd);
 		currentBuffer->RecordCommand(EndRenderingCmd{});
@@ -172,11 +159,12 @@ namespace RenderPasses
 		m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::View, 1));
 		m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::TransformSSBO, 2));
 		m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::GlobalObjectDataSSBOs, 2));
+		m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::InstanceDataSSBO, 2));
 		m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::PerPassObjectSSBO, 3));
 	}
 
 	bool StaticMainMeshPass::WantsToRender() const
 	{
-		return NeedToRender(m_mainRenderingData);
+		return NeedToRender(m_indirectCmdBuffer);
 	}
 }

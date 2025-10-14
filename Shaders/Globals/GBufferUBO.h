@@ -2,9 +2,9 @@
 #include "BindingSlots.h"
 layout(set = GBufferUBOSet, binding = GlobalGBufferPostProcessUBOSlot) uniform GBufferUBO
 {
-    uint gbufferPositionIdx;
+    uint gbufferAlbedoIdx;
     uint gbufferNormalIdx;
-    uint gbuffer3Idx;
-    uint gbuffer4Idx;
+    uint gbufferTexCoordMatIdx;
+    uint gbufferPositionIdx;
     uint gbufferUIIdx;
 } gbufferUBO;

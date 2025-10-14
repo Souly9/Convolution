@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Global/GlobalDefines.h"
 #include "BackendDefines.h"
 #include "Core/Rendering/Core/Attachment.h"
 

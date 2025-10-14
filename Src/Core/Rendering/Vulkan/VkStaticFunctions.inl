@@ -103,7 +103,7 @@ namespace SRF
         else
             DEBUG_ASSERT(false);
 
-        submitQueue = VkGlobals::GetAllQueues().graphics;
+        //submitQueue = VkGlobals::GetAllQueues().graphics;
         DEBUG_ASSERT(vkQueueSubmit2(submitQueue, submitInfos.size(), submitInfos.data(), transferFinishedFence.GetRef()) == VK_SUCCESS);
 	}
 

@@ -1,4 +1,4 @@
-#include "Core/Rendering/Core/Defines/GlobalBuffers.h"
+#include "Core/Rendering/Core/MaterialManager.h"
 #include "Mesh.h"
 
 MeshManager::MeshManager()
@@ -52,6 +52,9 @@ MeshManager::MeshManager()
 		};
 		m_pCubePrimitive = stltype::make_unique<Mesh>(vertexData, indices);
 	}
+	m_meshes.push_back(stltype::unique_ptr<Mesh>(m_pPlanePrimitive.get()));
+	m_meshes.push_back(stltype::unique_ptr<Mesh>(m_pCubePrimitive.get()));
+
 }
 
 Mesh* MeshManager::GetPrimitiveMesh(PrimitiveType type)

@@ -36,7 +36,7 @@ namespace ECS
 			template<typename T>
 			bool AccessesComponent(const stltype::vector<C_ID>& components) const
 			{
-				return stltype::find(components.begin(), components.end(), ComponentID<T>::ID) != components.end();
+				return stltype::find(components.begin(), components.end(), ECS::ComponentID<T>::ID) != components.end();
 			}
 		};
 	}

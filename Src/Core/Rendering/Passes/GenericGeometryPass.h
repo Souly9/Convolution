@@ -7,6 +7,7 @@
 #include "PassManager.h"
 #include "Utils/RenderPassUtils.h"
 #include "Core/Rendering/Core/MemoryBarrier.h"
+#include "Core/Rendering/Core/Utils/GeometryBufferBuildUtils.h"
 #include "RenderPass.h"
 
 namespace RenderPasses
@@ -16,7 +17,7 @@ namespace RenderPasses
 	{
 	public:
 		GenericGeometryPass(const stltype::string& name);
-		void RebuildPerObjectBuffer(const UBO::PerPassObjectDataSSBO& data);
+		void RebuildPerObjectBuffer(const stltype::vector<u32>& data);
 
 		void UpdateContextForFrame(u32 frameIdx);
 
@@ -28,13 +29,6 @@ namespace RenderPasses
 			u32 numOfIdxs{ 0 };
 			u32 instanceCount{ 0 };
 		};
-		template<typename T>
-		void GenerateDrawCommandForMesh(const RenderPasses::PassMeshData& meshData, DrawCmdOffsets& offsets, stltype::vector<T>& vertices, stltype::vector<u32>& indices, IndirectDrawCommandBuffer& indirectCmdBuffer, IndirectDrawCountBuffer indirectCountBuffer);
-		template<typename T>
-		void GenerateDrawCommandForMesh(const Mesh* pMesh, DrawCmdOffsets& offsets, stltype::vector<T>& vertices, stltype::vector<u32>& indices, IndirectDrawCommandBuffer& indirectCmdBuffer, IndirectDrawCountBuffer indirectCountBuffer);
-
-		template<typename T>
-		void FillVertices(const Mesh* pMesh, stltype::vector<T>& vertices);
 	protected:
 		DescriptorPool m_descPool;
 		StorageBuffer m_perObjectSSBO;
@@ -51,37 +45,4 @@ namespace RenderPasses
 		bool m_needsBufferSync{ false };
 	};
 
-	template<typename T>
-	inline void GenericGeometryPass::GenerateDrawCommandForMesh(const Mesh* pMesh, DrawCmdOffsets& offsets, stltype::vector<T>& vertices, stltype::vector<u32>& indices, IndirectDrawCommandBuffer& indirectCmdBuffer, IndirectDrawCountBuffer indirectCountBuffer)
-	{
-		FillVertices(pMesh, vertices);
-
-		for (auto idx : pMesh->indices)
-		{
-			indices.emplace_back(idx + offsets.idxOffset);
-		}
-		indirectCmdBuffer.AddIndexedDrawCmd(pMesh->indices.size(), 1, offsets.numOfIdxs, 0, offsets.instanceCount);
-		offsets.idxOffset += pMesh->vertices.size();
-		offsets.numOfIdxs += pMesh->indices.size();
-	}
-	template<typename T>
-	inline void GenericGeometryPass::GenerateDrawCommandForMesh(const RenderPasses::PassMeshData& meshData, DrawCmdOffsets& offsets, stltype::vector<T>& vertices, stltype::vector<u32>& indices, IndirectDrawCommandBuffer& indirectCmdBuffer, IndirectDrawCountBuffer indirectCountBuffer)
-	{
-		const Mesh* pMesh = meshData.meshData.pMesh;
-		GenerateDrawCommandForMesh(pMesh, offsets, vertices, indices, indirectCmdBuffer, indirectCountBuffer);
-	}
-
-	template<typename T>
-	inline void GenericGeometryPass::FillVertices(const Mesh* pMesh, stltype::vector<T>& vertices)
-	{
-		vertices.insert(vertices.end(), pMesh->vertices.begin(), pMesh->vertices.end());
-	}
-	template<>
-	inline void GenericGeometryPass::FillVertices(const Mesh* pMesh, stltype::vector<MinVertex>& vertices)
-	{
-		for (auto& vert : pMesh->vertices)
-		{
-			vertices.emplace_back(ConvertVertexFormat(vert));
-		}
-	}
 }

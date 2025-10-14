@@ -2,7 +2,11 @@
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Rendering/Core/View.h"
 #include "Core/Rendering/Core/Defines/GlobalBuffers.h"
+#include "Core/Rendering/Core/Defines/LightDefines.h"
+#include "Core/Rendering/Core/SharedResourceManager.h"
 #include "GBuffer.h"
+
+class SharedResourceManager;
 
 namespace RenderPasses
 {
@@ -12,8 +16,16 @@ namespace RenderPasses
 	{
 		Mesh* pMesh;
 		Material* pMaterial;
+		AABB aabb;
+		// Needed for creating the instanced to draw in the renderpasses
+		// Only guaranteed to be valid during Renderpass RebuildInternalData
+		MeshHandle meshResourceHandle;
+		u32 instanceDataIdx;
 
-		EntityMeshData(Mesh* pM, Material* pMat, bool isDebug) : pMesh(pM), pMaterial(pMat) { flags[s_isDebugMeshFlag] = isDebug; }
+		EntityMeshData(Mesh* pM, Material* pMat, const AABB& box, bool isDebug) : pMesh(pM), pMaterial(pMat), aabb{ box } 
+		{ 
+			flags[s_isDebugMeshFlag] = isDebug; 
+		}
 
 		bool IsDebugMesh() const { return flags[s_isDebugMeshFlag]; }
 		bool IsInstanced() const { return flags[s_isInstancedFlag]; }
@@ -64,11 +76,12 @@ namespace RenderPasses
 	// Won't make it too complex but pass data will be roughly sorted based on the view type
 	struct MainPassData
 	{
+		SharedResourceManager* pResourceManager;
 		GBuffer* pGbuffer;
 		RenderView mainView;
 		stltype::vector<RenderView> shadowViews;
 		stltype::vector<DescriptorSet*> viewDescriptorSets;
-		stltype::hash_map<UBO::BufferType, DescriptorSet*> bufferDescriptors;
+		stltype::hash_map<UBO::DescriptorContentsType, DescriptorSet*> bufferDescriptors;
 	};
 
 	struct RenderPassSynchronizationContext
@@ -88,14 +101,10 @@ namespace RenderPasses
 		// Signaled when the passes that don't care about color attachment values are finished rendering
 		Semaphore nonLoadRenderingFinished{};
 		Semaphore toReadTransitionFinished{};
-		// This frame's gbuffer textures
-		GBuffer gbuffer;
 
 		// Swapchain texture to render into for final presentation
 		Texture* pCurrentSwapchainTexture{ nullptr };
 
-		DescriptorSet* modelSSBODescriptor;
-		DescriptorSet* globalObjectDataDescriptor;
 		DescriptorSet* tileArraySSBODescriptor;
 		DescriptorSet* mainViewUBODescriptor;
 		DescriptorSet* gbufferPostProcessDescriptor;
@@ -105,6 +114,8 @@ namespace RenderPasses
 
 		u32 imageIdx;
 		u32 currentFrame;
+
+		SharedResourceManager* pResourceManager{ nullptr };
 	};
 
 	enum class ColorAttachmentType
@@ -169,8 +180,6 @@ namespace RenderPasses
 		void RegisterDebugCallbacks();
 
 		void UpdateMainViewUBO(const void* data, size_t size, u32 frameIdx);
-		void UpdateGlobalTransformSSBO(const UBO::GlobalTransformSSBO& data, u32 frameIdx);
-		void UpdateGlobalObjectDataSSBO(const UBO::GlobalObjectDataSSBO& data, u32 frameIdx);
 		void UpdateWholeTileArraySSBO(const UBO::GlobalTileArraySSBO& data, u32 frameIdx);
 		void UpateTileInTileSSBO(const UBO::Tile& tile, u32 tileIdx, u32 frameIdx);
 
@@ -184,7 +193,10 @@ namespace RenderPasses
 		void PreProcessMeshData(const stltype::vector<PassMeshData>& meshes, u32 lastFrame, u32 curFrame);
 
 	private:
-		threadSTL::Mutex m_passDataMutex;
+		ProfiledLockable(CustomMutex, m_passDataMutex);
+
+		// Resource Manager 
+		SharedResourceManager m_resourceManager;
 
 		// Only need one gbuffer
 		GBuffer m_gbuffer;
@@ -203,18 +215,15 @@ namespace RenderPasses
 		PassGeometryData m_currentPassGeometryState{};
 
 		// Global transform SSBO
-		StorageBuffer m_modelSSBOs;
 		StorageBuffer m_tileArraySSBO;
 		UniformBuffer m_viewUBO;
 		UniformBuffer m_lightUniformsUBO;
 		UniformBuffer m_gbufferPostProcessUBO;
-		StorageBuffer m_perObjectDataSSBO;
 		UBO::GlobalTileArraySSBO m_tileArray;
 		GPUMappedMemoryHandle m_mappedViewUBOBuffer;
 		GPUMappedMemoryHandle m_mappedLightUniformsUBO;
 		GPUMappedMemoryHandle m_mappedGBufferPostProcessUBO;
 		DescriptorPool m_descriptorPool;
-		DescriptorSetLayoutVulkan m_globalDataSSBOsLayout;
 
 		// Global tile array SSBO
 		DescriptorSetLayoutVulkan m_tileArraySSBOLayout;
@@ -222,9 +231,10 @@ namespace RenderPasses
 		DescriptorSetLayoutVulkan m_viewUBOLayout;
 		DescriptorSetLayout m_gbufferPostProcessLayout;
 
-		// Global attachments for all passes like gbuffer, depth buffer or swapchain textures
+		// Global attachment infos for all passes like gbuffer, depth buffer or swapchain textures
 		RendererAttachmentInfo m_globalRendererAttachments;
 
+		u32 m_currentSwapChainIdx;
 		// struct to hold data for all meshes for the next frame to be rendered, uses more memory but allows for async pre-processing and we shouldn't rebuild data often anyway
 		struct RenderDataForPreProcessing
 		{

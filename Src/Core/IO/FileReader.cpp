@@ -58,12 +58,11 @@ void FileReader::CheckIORequests()
 	{
 		if (m_requests.empty())
 		{
-			threadSTL::ThreadSleep(500);
+			threadSTL::ThreadSleep(50);
 			continue;
 		}
 		m_requestSubmitMutex.Lock();
-		const IORequest& request = m_requests.front();
-		m_requestSubmitMutex.Unlock();
+		const IORequest request = m_requests.front();
 
 		switch (request.requestType)
 		{
@@ -86,7 +85,6 @@ void FileReader::CheckIORequests()
 				DEBUG_ASSERT(false);
 				break;
 		}
-		m_requestSubmitMutex.Lock();
 		m_requests.pop();
 		m_requestSubmitMutex.Unlock();
 	}
@@ -106,6 +104,7 @@ void FileReader::ReadFileAsGenericBytes(const IORequest& request)
 
 stltype::vector<char> FileReader::ReadFileAsGenericBytes(const char* filePath)
 {
+	ScopedZone("FileReader::Read File As Generic Bytes");
 	std::ifstream fileStream(filePath, std::ios::ate | std::ios::binary);
 
 	DEBUG_ASSERT(fileStream.is_open());
@@ -124,6 +123,7 @@ stltype::vector<char> FileReader::ReadFileAsGenericBytes(const char* filePath)
 
 void FileReader::ReadImageFile(const IORequest& request)
 {
+	ScopedZone("FileReader::Read Image File");
 	ReadTextureInfo info{};
 	info.pixels = stbi_load(request.filePath.data(), &info.extents.x, &info.extents.y, &info.texChannels, STBI_rgb_alpha);
 	DEBUG_ASSERT(info.pixels);
@@ -141,6 +141,7 @@ void FileReader::FreeImageData(unsigned char* pixels)
 
 void FileReader::ReadMeshFile(const IORequest& request)
 {
+	ScopedZone("FileReader::Read Mesh File");
 #define AI_CONFIG_PP_RVC_FLAGS aiComponent::aiComponent_COLORS | aiComponent::aiComponent_CAMERAS
 
 	Assimp::Importer importer;
