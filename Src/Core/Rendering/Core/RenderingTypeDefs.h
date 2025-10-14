@@ -1,9 +1,17 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
-#include "Defines/VertexDefines.h"
-#include "View.h"
+
+struct MeshResourceData
+{
+	u32 vertBufferOffset;
+	u32 indexBufferOffset;
+	u32 vertCount;
+	u32 indexCount;
+};
+using MeshHandle = MeshResourceData;
 
 #ifdef USE_VULKAN
+#include <vulkan/vulkan.h>
 #define TEXFORMAT(type) VK_FORMAT_##type
 
 #include "vk_mem_alloc.h"
@@ -15,13 +23,17 @@ class CommandPoolVulkan;
 class AttachmentBaseVulkan;
 class ColorAttachmentVulkan;
 class TextureVulkan;
-class PipelineVulkan;
+class GraphicsPipelineVulkan;
+class ComputePipelineVulkan;
 class ShaderVulkan;
 class DescriptorSetVulkan;
 class DescriptorPoolVulkan;
 class DescriptorSetLayoutVulkan;
 struct VkDrawIndexedIndirectCommand;
 class DepthBufferAttachmentVulkan;
+class DescriptorSetVulkan;
+struct MeshResourceData;
+
 
 using GenericBuffer = GenBufferVulkan;
 using VertexBuffer = VertexBufferVulkan;
@@ -29,13 +41,14 @@ using IndexBuffer = IndexBufferVulkan;
 using CommandBuffer = CBufferVulkan;
 using CommandPool = CommandPoolVulkan;
 using Texture = TextureVulkan;
-using PSO = PipelineVulkan;
+using PSO = GraphicsPipelineVulkan;
+using ComputePipeline = ComputePipelineVulkan;
 using Shader = ShaderVulkan;
 
 using GPUMemoryHandle = VmaAllocation;
 using GPUMappedMemoryHandle = void*;
 using DescriptorPool = DescriptorPoolVulkan;
-using TextureHandle = u32;
+using DescriptorSet = DescriptorSetVulkan;
 // Mainly used to index into the global bindless texture array
 using BindlessTextureHandle = u32;
 using DescriptorSetLayout = DescriptorSetLayoutVulkan;

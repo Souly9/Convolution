@@ -65,11 +65,12 @@ void GenBufferVulkan::FillAndTransfer(StagingBuffer& stgBuffer, CommandBuffer* t
     CheckCopyArgs(data, UINT64_MAX, 0);
     DEBUG_ASSERT(stgBuffer.GetRef() != VK_NULL_HANDLE);
 
-    MapAndCopyToMemory(stgBuffer.GetMemoryHandle(), data, stgBuffer.GetInfo().size, offset);
+    const auto sizeToTransfer = stgBuffer.GetInfo().size;
+    MapAndCopyToMemory(stgBuffer.GetMemoryHandle(), data, sizeToTransfer, offset);
     SimpleBufferCopyCmd copyCmd{stgBuffer, this};
 	copyCmd.srcOffset = 0;
 	copyCmd.dstOffset = offset;
-	copyCmd.size = m_info.size;
+	copyCmd.size = sizeToTransfer;
 
     if (freeStagingBuffer)
     {
@@ -110,8 +111,8 @@ void GenBufferVulkan::NamingCallBack(const stltype::string& name)
 
 void GenBufferVulkan::MapAndCopyToMemory(const GPUMemoryHandle& memory, const void* data, u64 size, u64 offset)
 {
-    const auto bufferData = g_pGPUMemoryManager->MapMemory(memory, m_info.size);
-    memcpy((char*)bufferData, data, (size_t)m_info.size);
+    const auto bufferData = g_pGPUMemoryManager->MapMemory(memory, size);
+    memcpy((char*)bufferData, data, (size_t)size);
     g_pGPUMemoryManager->UnmapMemory(memory);
 }
 
@@ -199,4 +200,5 @@ void IndirectDrawCommandBuffer::FillCmds()
 void IndirectDrawCommandBuffer::EmptyCmds()
 {
     m_indexedIndirectCmds.clear();
+    //memcpy((char*)m_mappedMemoryHandle, (void*)0, m_info.size);
 }

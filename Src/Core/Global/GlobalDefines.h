@@ -25,7 +25,6 @@
 #include <EAThread/eathread_futex.h>
 #include <EASTL/bitset.h>
 #include <EASTL/fixed_function.h>
-#include "Core/../../Shaders/Globals/BindingSlots.h"
 
 #if CONV_DEBUG
 #define ASSERT(x) assert(x)
@@ -34,13 +33,14 @@
 #define ASSERT(x) x
 #endif
 #define DEBUG_ASSERT(x) ASSERT(x)
-#define PROFILING_ENABLED 1
 
 namespace stltype = eastl;
 namespace threadSTL = EA::Thread;
 namespace mathstl = DirectX::SimpleMath;
 
 #include "Typedefs.h"
+#include "Core/../../Shaders/Globals/BindingSlots.h"
+#include "Core/ECS/Entity.h"
 
 const static inline stltype::string ENGINE_NAME = "Convolution";
 constexpr static inline u32 FRAMES_IN_FLIGHT = 2u;
@@ -73,13 +73,12 @@ using RenderAPI = Vulkan;
 #define IMPLEMENT_GRAPHICS_API template<class BackendAPI> requires stltype::is_base_of_v<AvailableRenderBackends, BackendAPI>
 #define GLOBAL_INCLUDES 
 
-#include "Core/ECS/Entity.h"
 #include "Core/Global/State/States.h"
 
 #include "LogDefines.h"
 #include "GlobalVariables.h"
-#include "State/ApplicationState.h"
 #include "Core/Events/EventSystem.h"
+#include "Profiling.h"
 
 #define CUR_FRAME FrameGlobals::GetFrameNumber()
 #define COMP_ID(component) ECS::ComponentID<ECS::Components::##component>::ID
@@ -90,5 +89,3 @@ static inline constexpr f32 AMBIENT_STRENGTH = 0.1f;
 
 #define MAKE_FLAG_ENUM(name) static inline name operator|(name lhs, name rhs) { return static_cast<name>(static_cast<char>(lhs) | static_cast<char>(rhs)); }
 
-
-#include "Profiling.h"

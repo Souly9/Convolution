@@ -1,8 +1,6 @@
 #pragma once
 #include <vulkan/vulkan_core.h>
-#include "Core/Rendering/Core/RenderingTypeDefs.h"
 #include "Core/WindowManager.h"
-#include "Core/Memory/MemoryManager.h"
 
 static inline constexpr u64 MAX_TEXTURES = 4096;
 
@@ -39,6 +37,7 @@ static inline const stltype::vector<const char*> g_deviceExtensions = {
     "VK_NV_device_diagnostics_config",
     "VK_EXT_device_address_binding_report",
     "VK_EXT_device_fault",
+    "VK_EXT_scalar_block_layout"
 }; 
 
 static inline const stltype::vector<VkDynamicState> g_dynamicStates = {
@@ -85,6 +84,8 @@ static inline VkExtent3D Conv(const DirectX::XMUINT3& extent)
 
 // Vulkan function pointers, global
 static inline PFN_vkSetDebugUtilsObjectNameEXT vkSetDebugUtilsObjectName = VK_NULL_HANDLE;
-static inline PFN_vkCmdSetCheckpointNV vkCmdSetCheckpoint;
-static inline PFN_vkCmdBeginDebugUtilsLabelEXT vkBeginDebugUtilsLabel = nullptr;
-static inline PFN_vkCmdEndDebugUtilsLabelEXT vkCmdEndDebugUtilsLabel = nullptr;
+static inline PFN_vkCmdSetCheckpointNV vkCmdSetCheckpoint = VK_NULL_HANDLE;
+static inline PFN_vkCmdBeginDebugUtilsLabelEXT vkBeginDebugUtilsLabel = VK_NULL_HANDLE;
+static inline PFN_vkCmdEndDebugUtilsLabelEXT vkCmdEndDebugUtilsLabel = VK_NULL_HANDLE;
+
+#include "Core/Rendering/Core/RenderingTypeDefs.h"

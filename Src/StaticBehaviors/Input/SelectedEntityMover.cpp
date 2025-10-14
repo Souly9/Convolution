@@ -20,19 +20,19 @@ void SelectedEntityMover::OnKeyPress(const KeyPressEventData& data)
 	const auto moveVal = s_moveSpeed * 50.f;
 	if(data.key == KeyType::ForwardMove)
 	{
-		s_moveVector.x += moveVal;
+		s_moveVector.x -= moveVal;
 	}
 	else if(data.key == KeyType::BackwardMove)
 	{
-		s_moveVector.x -= moveVal;
+		s_moveVector.x += moveVal;
 	}
 	else if(data.key == KeyType::RightMove)
 	{
-		s_moveVector.y -= moveVal;
+		s_moveVector.y += moveVal;
 	}
 	else if(data.key == KeyType::LeftMove)
 	{
-		s_moveVector.y += moveVal;
+		s_moveVector.y -= moveVal;
 	}
 }
 

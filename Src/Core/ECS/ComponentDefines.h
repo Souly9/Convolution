@@ -1,5 +1,4 @@
 #pragma once
-#include "Core/Global/GlobalDefines.h"
 #include "Components/Transform.h"
 #include "Components/RenderComponent.h"
 #include "Components/View.h"

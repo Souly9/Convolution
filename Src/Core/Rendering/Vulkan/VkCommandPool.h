@@ -20,7 +20,7 @@ public:
 
 	bool IsValid() const { return m_commandPool != VK_NULL_HANDLE; }
 
-	void ReturnCommandBuffer(CommandBuffer* commandBuffer);
+	void ReturnCommandBuffer(const CommandBuffer* commandBuffer);
 	void ClearAll() { m_commandBuffers.clear(); }
 
 	virtual void NamingCallBack(const stltype::string& name) override;

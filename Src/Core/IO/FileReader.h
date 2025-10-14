@@ -1,9 +1,10 @@
 #pragma once
 struct ReadTextureInfo;
+struct SceneNode;
+#include "Core/SceneGraph/Scene.h"
 #include "Core/Global/GlobalDefines.h"
 #include <EASTL/fixed_function.h>
 #include <EASTL/queue.h>
-#include "Core/SceneGraph/Scene.h"
 
 struct ReadTextureInfo
 {

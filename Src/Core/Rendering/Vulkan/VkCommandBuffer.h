@@ -16,6 +16,7 @@ public:
 	const VkCommandBuffer& GetRef() const { return m_commandBuffer; }
 	VkCommandBuffer& GetRef() { return m_commandBuffer; }
 	void SetPool(CommandPoolVulkan* pool) { m_pool = pool; }
+	CommandPoolVulkan* GetPool() const { return m_pool; }
 
 	void BeginBuffer();
 	void BeginBufferForSingleSubmit();

@@ -34,11 +34,19 @@ void AsyncQueueHandler::Init()
 		{
 			DispatchAllRequests();
 		});
+
+	m_keepRunning = true;
+	m_thread = threadSTL::MakeThread([this]
+		{
+			CheckRequests();
+		});
 	InitializeThread("Convolution_AsyncQueueHandler");
 }
 
 void AsyncQueueHandler::DispatchAllRequests()
 {
+	ScopedZone("AsyncQueueHandler::DispatchAllRequests");
+
 	m_sharedDataMutex.lock();
 	BuildTransferCommandBuffer(m_transferCommands);
 	SubmitCommandBuffers(m_commandBufferRequests);
@@ -51,7 +59,7 @@ void AsyncQueueHandler::DispatchAllRequests()
 	m_sharedDataMutex.unlock();
 }
 
-void AsyncQueueHandler::HandleRequests()
+void AsyncQueueHandler::CheckRequests()
 {
 	while(KeepRunning())
 	{
@@ -64,25 +72,8 @@ void AsyncQueueHandler::HandleRequests()
 			m_transferCommands.clear();
 			m_commandBufferRequests.clear();
 		}
-		if(m_fencesToWaitOn.empty() == false)
-		{
-			bool shouldClear = true;
-			for (auto& fenceToWaitOn : m_fencesToWaitOn)
-			{
-				if (fenceToWaitOn.fence.IsSignaled() == false)
-				{
-					shouldClear = false;
-					break;
-				}
-			}
 
-			if (shouldClear)
-			{
-				FreeInFlightCommandBuffers();
-			}
-		}
-
-		m_sharedDataMutex.lock();
+		m_sharedDataMutex.unlock();
 
 		Suspend();
 	}
@@ -129,12 +120,14 @@ void AsyncQueueHandler::SubmitTransferCommandAsync(const Mesh* pMesh, RenderingD
 	SubmitTransferCommandAsync(MeshTransfer{ 
 		.vertices = pMesh->vertices, 
 		.indices = pMesh->indices, 
-		.pRenderingDataToFill = &renderDataToFill 
+		.pBuffersToFill = &renderDataToFill 
 		});
 }
 
 void AsyncQueueHandler::BuildTransferCommandBuffer(const stltype::vector<TransferCommand>& transferCommands)
 {
+	ScopedZone("AsyncQueueHandler::Building transfer command buffers");
+
 	for (const auto& transferCommand : transferCommands)
 	{
 		CommandBuffer* pTransferCmdBuffer = m_commandPools[QueueType::Transfer].CreateCommandBuffer(CommandBufferCreateInfo{});
@@ -149,12 +142,22 @@ void AsyncQueueHandler::BuildTransferCommandBuffer(const stltype::vector<Transfe
 
 void AsyncQueueHandler::WaitForFences()
 {
-	m_sharedDataMutex.lock();
+	ScopedZone("AsyncQueueHandler::Waiting on fences");
 
-	for (const auto& fenceToWaitOn : m_fencesToWaitOn)
+	m_sharedDataMutex.lock();
+	if (m_fencesToWaitOn.empty())
+	{
+		m_sharedDataMutex.unlock();
+		return;
+	}
+	stltype::vector<InFlightRequest> fences(m_fencesToWaitOn);
+	m_fencesToWaitOn.clear();
+	m_sharedDataMutex.unlock();
+
+	for (const auto& fenceToWaitOn : fences)
 	{
 		fenceToWaitOn.fence.WaitFor();
-		
+
 		if (fenceToWaitOn.fence.IsSignaled() == false)
 		{
 			u32 cCount = 0;
@@ -170,18 +173,35 @@ void AsyncQueueHandler::WaitForFences()
 			}
 			DEBUG_ASSERT(false);
 		}
-
-		for(auto& cmdBufferRequest : fenceToWaitOn.requests)
+		for (auto& cmdBufferRequest : fenceToWaitOn.requests)
 		{
 			if (cmdBufferRequest.pBuffer != nullptr)
 			{
 				cmdBufferRequest.pBuffer->CallCallbacks();
 			}
-			
+
 		}
 	}
-	FreeInFlightCommandBuffers();
 
+	m_sharedDataMutex.lock();
+	for (const auto& fenceToWaitOn : fences)
+	{
+		for (auto& cmdBufferRequest : fenceToWaitOn.requests)
+		{
+			if (cmdBufferRequest.pBuffer != nullptr)
+			{
+				for (auto& poolPair : m_commandPools)
+				{
+					auto& pool = poolPair.second;
+					if (cmdBufferRequest.pBuffer->GetPool() == &pool)
+					{
+						pool.ReturnCommandBuffer(cmdBufferRequest.pBuffer);
+						break;
+					}
+				}
+			}
+		}
+	}
 	m_sharedDataMutex.unlock();
 }
 
@@ -196,7 +216,7 @@ void AsyncQueueHandler::BuildTransferCommand(const MeshTransfer& request, Comman
 	SetBufferSyncInfo(request, pCmdBuffer);
 
 	AsyncQueueHandler::TransferDestinationData transferData;
-	transferData.pRenderingDataToFill = request.pRenderingDataToFill;
+	transferData.pBuffersToFill = request.pBuffersToFill;
 	BuildTransferCommandBuffer((void*)vertexData.data(), vertexData.size() * vertSize, indices, transferData, pCmdBuffer);
 }
 
@@ -247,11 +267,11 @@ void AsyncQueueHandler::BuildTransferCommandBuffer(void* pVertData, u64 vertData
 	StagingBuffer stgBuffer2(ibuffer.GetInfo().size);
 	ibuffer.FillAndTransfer(stgBuffer2, pCmdBuffer, (void*)indices.data(), true);
 	
-	auto pRenderDataToFill = transferData.pRenderingDataToFill;
-	DEBUG_ASSERT(pRenderDataToFill != nullptr);
+	auto pBuffersToFill = transferData.pBuffersToFill;
+	DEBUG_ASSERT(pBuffersToFill != nullptr);
 
-	pRenderDataToFill->SetIndexBuffer(ibuffer);
-	pRenderDataToFill->SetVertexBuffer(vbuffer);
+	pBuffersToFill->SetIndexBuffer(ibuffer);
+	pBuffersToFill->SetVertexBuffer(vbuffer);
 	pCmdBuffer->Bake();
 }
 
@@ -259,37 +279,48 @@ void AsyncQueueHandler::SubmitCommandBuffers(stltype::vector<CommandBufferReques
 {
 	if (commandBuffers.empty())
 		return;
-	stltype::vector<CommandBuffer*> buffersToSubmit;
-	buffersToSubmit.reserve(commandBuffers.size());
+	// The map will group buffers by their QueueType
+	stltype::hash_map<QueueType, stltype::vector<CommandBuffer*>> buffersByQueue;
+	stltype::hash_map<QueueType, stltype::vector<CommandBufferRequest>> requestsByQueue;
 
-	for(const auto& cmdBufferRequest : commandBuffers)
+	// 1. Group the command buffer requests by their intended queue type
+	for (const auto& cmdBufferRequest : commandBuffers)
 	{
-		buffersToSubmit.push_back(cmdBufferRequest.pBuffer);
+		requestsByQueue[cmdBufferRequest.queueType].push_back(cmdBufferRequest);
+
+		buffersByQueue[cmdBufferRequest.queueType].push_back(cmdBufferRequest.pBuffer);
 	}
 
-	// Delete duplicate semaphores since vulkan hates them
-	//auto EraseDuplicates = [](stltype::vector<VkSemaphore>& semaphores)
-	//	{
-	//		semaphores.erase(stltype::unique(semaphores.begin(), semaphores.end()), semaphores.end());
-	//	};
-	//EraseDuplicates(graphicsWaitSemaphores);
-	//EraseDuplicates(graphicsSignalSemaphores);
-
-	auto SubmitBuffers = [this](const auto& buffers, QueueType queueType, Fence& fence)
+	// 2. Define a generic submission and fence creation logic
+	auto SubmitAndRecord = [this](
+		const stltype::vector<CommandBuffer*>& buffers,
+		const stltype::vector<CommandBufferRequest>& requests,
+		QueueType queueType)
 		{
-			SRF::SubmitCommandBufferToQueue(buffers, fence, queueType);
+			if (buffers.empty())
+				return;
+
+			// Create a unique fence for this submission
+			Fence submissionFence;
+			submissionFence.Create(false);
+
+			// Submit the command buffers to the specific queue
+			SRF::SubmitCommandBufferToQueue(buffers, submissionFence, queueType);
+
+			// Record the fence and original requests for later waiting/cleanup
+			m_fencesToWaitOn.emplace_back(requests, submissionFence);
 		};
-		
-	{
-		if (buffersToSubmit.empty() == false)
-		{
-			Fence transferFinishedFence;
-			transferFinishedFence.Create(false);
-			SubmitBuffers(buffersToSubmit, QueueType::Graphics, transferFinishedFence);
-			m_fencesToWaitOn.emplace_back(commandBuffers, transferFinishedFence);
-		}
-	}
 
+	// 3. Iterate over the grouped buffers and submit them
+
+	for (const auto& pair : buffersByQueue)
+	{
+		QueueType queueType = pair.first;
+		const stltype::vector<CommandBuffer*>& buffers = pair.second;
+		const stltype::vector<CommandBufferRequest>& requests = requestsByQueue.at(queueType);
+
+		SubmitAndRecord(buffers, requests, queueType);
+	}
 
 	for (auto& cmdBufferRequest : commandBuffers)
 	{

@@ -7,8 +7,9 @@
 #define GlobalLightDataUBOSlot 2
 #define GlobalGBufferPostProcessUBOSlot 1
 #define GlobalPerObjectDataSSBOSlot 502
+#define GlobalInstanceDataSSBOSlot 3
 
 #define PassPerObjectDataSSBOSlot 1
 
-#define MAX_MATERIALS 1024
-#define MAX_ENTITIES 8096
+#define MAX_MATERIALS 2048
+#define MAX_ENTITIES 16384

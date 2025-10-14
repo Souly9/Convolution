@@ -2,7 +2,6 @@
 #include "GlobalDefines.h"
 #include <EAThread/eathread_condition.h>
 #include "Core/WindowManager.h"
-#include "Core/Memory/MemoryManager.h"
 #include "Core/ConsoleLogger.h"
 #include "Core/TimeData.h"
 #include "Core/IO/FileReader.h"
@@ -28,13 +27,13 @@ class EventSystem;
 struct ApplicationState;
 class ApplicationStateManager;
 class ShaderManager;
+class MaterialManager;
 namespace ECS
 {
 	class EntityManager;
 }
 
 extern stltype::unique_ptr<WindowManager> g_pWindowManager;
-extern stltype::unique_ptr<MemoryManager> g_pMemoryManager;
 extern stltype::unique_ptr<ConsoleLogger> g_pConsoleLogger;
 extern stltype::unique_ptr<TimeData> g_pGlobalTimeData;
 extern stltype::unique_ptr<FileReader> g_pFileReader;
@@ -43,6 +42,7 @@ extern stltype::unique_ptr<DeleteQueue> g_pDeleteQueue;
 extern ApplicationStateManager* g_pApplicationState;
 extern stltype::unique_ptr<ECS::EntityManager> g_pEntityManager;
 extern stltype::unique_ptr<ShaderManager> g_pShaderManager;
+extern stltype::unique_ptr<MaterialManager> g_pMaterialManager;
 
 // Holds the frame number of the current frame (aka whether it's the first, second etc. frame of the swapchain)
 extern u32 g_currentFrameNumber;
@@ -62,4 +62,5 @@ namespace FrameGlobals
 #include "Core/Rendering/Core/TextureManager.h"
 #include "Core/SceneGraph/Mesh.h"
 #include "Core/Rendering/Core/Material.h"
+#include "Core/Rendering/Core/MaterialManager.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"

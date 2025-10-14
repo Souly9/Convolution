@@ -2,11 +2,6 @@
 #include "Core/Rendering/Core/Defines/VertexDefines.h"
 #include "../PassManager.h"
 
-static inline MinVertex ConvertVertexFormat(const CompleteVertex& completeVert)
-{
-	return { completeVert.position };
-}
-
 struct WriteableRTAttachments
 {
 	ColorAttachmentVulkan color;
@@ -35,9 +30,9 @@ static inline DepthAttachment CreateDefaultDepthAttachment(LoadOp loadOp, Textur
 	return DepthAttachment::Create(depthAttachmentInfo, pTex);
 }
 
-static inline bool NeedToRender(const RenderingData& data)
+static inline bool NeedToRender(const IndirectDrawCommandBuffer& buffer)
 {
-	if (data.GetVertexCount() == 0)
+	if (buffer.GetDrawCmdNum() == 0)
 		return false;
 	return true;
 }

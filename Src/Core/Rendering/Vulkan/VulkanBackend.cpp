@@ -42,6 +42,7 @@ bool RenderBackendImpl<Vulkan>::Init(uint32_t screenWidth, uint32_t screenHeight
 	DEBUG_LOG("Vulkan physical and logical device created!");
 
 	VkGlobals::SetLogicalDevice(m_logicalDevice);
+	vkCmdSetCheckpoint = reinterpret_cast<PFN_vkCmdSetCheckpointNV>(vkGetDeviceProcAddr(VK_LOGICAL_DEVICE, "vkCmdSetCheckpointNV"));
 	{
 		DEBUG_LOG("Creating Swapchain!");
 		if (!CreateSwapChain())
@@ -261,8 +262,7 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
 	vkGetDeviceQueue(m_logicalDevice, m_indices.transferFamily.value(), 0, &m_transferQueue);
 	vkGetDeviceQueue(m_logicalDevice, m_indices.computeFamily.value(), 0, &m_computeQueue);
 
-	vkCmdSetCheckpoint = (PFN_vkCmdSetCheckpointNV)vkGetDeviceProcAddr(m_logicalDevice, "vkCmdSetCheckpointNV");
-	DEBUG_ASSERT(vkCmdSetCheckpoint != VK_NULL_HANDLE);
+	//DEBUG_ASSERT(vkCmdSetCheckpoint != VK_NULL_HANDLE);
 	return true;
 }
 

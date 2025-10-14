@@ -10,7 +10,7 @@ namespace RenderPasses
 
 		virtual void BuildBuffers() override;
 
-		virtual void Init(RendererAttachmentInfo & attachmentInfo) override;
+		virtual void Init(RendererAttachmentInfo & attachmentInfo, const SharedResourceManager& resourceManager) override;
 		virtual void BuildPipelines() override;
 
 		virtual void RebuildInternalData(const stltype::vector<PassMeshData>& meshes, FrameRendererContext& previousFrameCtx, u32 thisFrameNum) override;

@@ -10,6 +10,9 @@ public:
 	virtual ~Resource() = default;
 };
 
+// Resource that tracks references to itself and destroys itself when no references are left
+// Mostly hacky and for my own convenience...
+// If we copy/move the resource we just tell the original one that a new reference is created, leading to it not deleting the underlying vulkan etc. pointer 
 class TrackedResource : public Resource
 {
 public:

@@ -9,7 +9,6 @@ extern threadSTL::Semaphore g_imguiSemaphore{ 0 };
 
 extern stltype::unique_ptr<EventSystem> g_pEventSystem = stltype::make_unique<EventSystem>();
 extern stltype::unique_ptr<WindowManager> g_pWindowManager = nullptr;
-extern stltype::unique_ptr<MemoryManager> g_pMemoryManager = stltype::make_unique<MemoryManager>();
 extern stltype::unique_ptr<ConsoleLogger> g_pConsoleLogger = stltype::make_unique<ConsoleLogger>();
 extern stltype::unique_ptr<TimeData> g_pGlobalTimeData = stltype::make_unique<TimeData>();
 extern stltype::unique_ptr<FileReader> g_pFileReader = stltype::make_unique<FileReader>();

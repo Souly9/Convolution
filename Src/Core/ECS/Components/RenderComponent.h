@@ -1,8 +1,7 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
 #include "Component.h"
-#include "Core/SceneGraph/Mesh.h"
-#include "Core/Rendering/Core/Material.h"
+#include "Core/Rendering/Core/AABB.h"
 
 class Mesh;
 class Material;
@@ -14,7 +13,7 @@ namespace ECS
 		struct RenderComponent : public IComponent
 		{
 			Mesh* pMesh;
-			Material* pMaterial{ g_pMaterialManager->GetMaterial("Default") };
+			Material* pMaterial{ nullptr };
 
 			AABB boundingBox{};
 			bool isSelected{ false };

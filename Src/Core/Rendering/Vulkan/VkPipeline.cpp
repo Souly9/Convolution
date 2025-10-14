@@ -5,7 +5,7 @@
 #include "Utils/DescriptorSetLayoutConverters.h"
 
 
-PipelineVulkan::PipelineVulkan(const ShaderCollection& shaders, const PipeVertInfo& vertexInputs, const PipelineInfo& pipeInfo)
+GraphicsPipelineVulkan::GraphicsPipelineVulkan(const ShaderCollection& shaders, const PipeVertInfo& vertexInputs, const PipelineInfo& pipeInfo)
 {
 	// Assume we always have a vert and fragment shader here for now
 	Shader& vertShader = *shaders.pVertShader;
@@ -78,12 +78,12 @@ PipelineVulkan::PipelineVulkan(const ShaderCollection& shaders, const PipeVertIn
 	}
 }
 
-PipelineVulkan::~PipelineVulkan()
+GraphicsPipelineVulkan::~GraphicsPipelineVulkan()
 {
 	TRACKED_DESC_IMPL
 }
 
-void PipelineVulkan::CleanUp()
+void GraphicsPipelineVulkan::CleanUp()
 {
 	VK_FREE_IF(m_pipelineLayout, vkDestroyPipelineLayout(VK_LOGICAL_DEVICE, m_pipelineLayout, VulkanAllocator()));
 	if (m_pipeline != VK_NULL_HANDLE)
@@ -95,22 +95,22 @@ void PipelineVulkan::CleanUp()
 	}
 }
 
-bool PipelineVulkan::HasDynamicViewScissorState() const
+bool GraphicsPipelineVulkan::HasDynamicViewScissorState() const
 {
 	return m_info.dynamicViewScissor;
 }
 
-bool PipelineVulkan::NeedsVertexBuffers() const
+bool GraphicsPipelineVulkan::NeedsVertexBuffers() const
 {
 	return m_vertexInfo.bindingDescriptionCount > 0;
 }
 
-VkPipeline PipelineVulkan::GetRef() const
+VkPipeline GraphicsPipelineVulkan::GetRef() const
 {
 	return m_pipeline;
 }
 
-VkPipelineDynamicStateCreateInfo PipelineVulkan::CreateDynamicPipelineInfo(const stltype::vector<VkDynamicState>& dynamicStates)
+VkPipelineDynamicStateCreateInfo GraphicsPipelineVulkan::CreateDynamicPipelineInfo(const stltype::vector<VkDynamicState>& dynamicStates)
 {
 	VkPipelineDynamicStateCreateInfo dynamicState{};
 	dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
@@ -120,7 +120,7 @@ VkPipelineDynamicStateCreateInfo PipelineVulkan::CreateDynamicPipelineInfo(const
 	return dynamicState;
 }
 
-VkPipelineVertexInputStateCreateInfo PipelineVulkan::CreateVertexInputInfo(const PipeVertInfo& vertexInputs)
+VkPipelineVertexInputStateCreateInfo GraphicsPipelineVulkan::CreateVertexInputInfo(const PipeVertInfo& vertexInputs)
 {
 	VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
 	vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -134,7 +134,7 @@ VkPipelineVertexInputStateCreateInfo PipelineVulkan::CreateVertexInputInfo(const
 	return vertexInputInfo;
 }
 
-VkPipelineVertexInputStateCreateInfo PipelineVulkan::CreateEmptyVertexInputInfo()
+VkPipelineVertexInputStateCreateInfo GraphicsPipelineVulkan::CreateEmptyVertexInputInfo()
 {
 	VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
 	vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -146,7 +146,7 @@ VkPipelineVertexInputStateCreateInfo PipelineVulkan::CreateEmptyVertexInputInfo(
 	return vertexInputInfo;
 }
 
-VkPipelineInputAssemblyStateCreateInfo PipelineVulkan::CreateInputAssemblyInfo(const Topology& topology)
+VkPipelineInputAssemblyStateCreateInfo GraphicsPipelineVulkan::CreateInputAssemblyInfo(const Topology& topology)
 {
 	VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
 	inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -156,7 +156,7 @@ VkPipelineInputAssemblyStateCreateInfo PipelineVulkan::CreateInputAssemblyInfo(c
 	return inputAssembly;
 }
 
-VkPipelineViewportStateCreateInfo PipelineVulkan::CreateViewportInfo(const DirectX::XMFLOAT4& viewportExtents)
+VkPipelineViewportStateCreateInfo GraphicsPipelineVulkan::CreateViewportInfo(const DirectX::XMFLOAT4& viewportExtents)
 {
 	VkPipelineViewportStateCreateInfo viewportState{};
 	viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -166,7 +166,7 @@ VkPipelineViewportStateCreateInfo PipelineVulkan::CreateViewportInfo(const Direc
 	return viewportState;
 }
 
-VkPipelineRasterizationStateCreateInfo PipelineVulkan::CreateRasterizerInfo(const DirectX::XMFLOAT4& viewportExtents, const RasterizerInfo& info)
+VkPipelineRasterizationStateCreateInfo GraphicsPipelineVulkan::CreateRasterizerInfo(const DirectX::XMFLOAT4& viewportExtents, const RasterizerInfo& info)
 {
 	VkPipelineRasterizationStateCreateInfo rasterizer{};
 	rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
@@ -184,7 +184,7 @@ VkPipelineRasterizationStateCreateInfo PipelineVulkan::CreateRasterizerInfo(cons
 	return rasterizer;
 }
 
-VkPipelineMultisampleStateCreateInfo PipelineVulkan::CreateMultisampleInfo(const MultisampleInfo& info)
+VkPipelineMultisampleStateCreateInfo GraphicsPipelineVulkan::CreateMultisampleInfo(const MultisampleInfo& info)
 {
 	VkPipelineMultisampleStateCreateInfo multisampling{};
 	multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
@@ -198,7 +198,7 @@ VkPipelineMultisampleStateCreateInfo PipelineVulkan::CreateMultisampleInfo(const
 	return multisampling;
 }
 
-VkPipelineColorBlendAttachmentState PipelineVulkan::CreateColorBlendAttachmentInfo(const ColorBlendAttachmentInfo& info)
+VkPipelineColorBlendAttachmentState GraphicsPipelineVulkan::CreateColorBlendAttachmentInfo(const ColorBlendAttachmentInfo& info)
 {
 	VkPipelineColorBlendAttachmentState colorBlendAttachment{};
 	colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
@@ -206,7 +206,7 @@ VkPipelineColorBlendAttachmentState PipelineVulkan::CreateColorBlendAttachmentIn
 	return colorBlendAttachment;
 }
 
-VkPipelineColorBlendStateCreateInfo PipelineVulkan::CreateColorBlendInfo(const ColorBlendInfo& info, const stltype::vector<VkPipelineColorBlendAttachmentState>& colorBlendAttachments)
+VkPipelineColorBlendStateCreateInfo GraphicsPipelineVulkan::CreateColorBlendInfo(const ColorBlendInfo& info, const stltype::vector<VkPipelineColorBlendAttachmentState>& colorBlendAttachments)
 {
 	VkPipelineColorBlendStateCreateInfo colorBlending{};
 	colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -222,7 +222,7 @@ VkPipelineColorBlendStateCreateInfo PipelineVulkan::CreateColorBlendInfo(const C
 	return colorBlending;
 }
 
-VkPipelineDepthStencilStateCreateInfo PipelineVulkan::CreateDepthStencilLayout()
+VkPipelineDepthStencilStateCreateInfo GraphicsPipelineVulkan::CreateDepthStencilLayout()
 {
 	VkPipelineDepthStencilStateCreateInfo depthStencil{};
 	depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
@@ -238,7 +238,7 @@ VkPipelineDepthStencilStateCreateInfo PipelineVulkan::CreateDepthStencilLayout()
 	return depthStencil;
 }
 
-VkPipelineLayout PipelineVulkan::CreatePipelineLayout(const DescriptorSetLayoutInfo& layoutInfo)
+VkPipelineLayout GraphicsPipelineVulkan::CreatePipelineLayout(const DescriptorSetLayoutInfo& layoutInfo)
 {
 	m_sharedDescriptorSetLayouts = DescriptorLaytoutUtils::CreateOneDescriptorSetLayoutPerSet(layoutInfo.sharedDescriptors);
 

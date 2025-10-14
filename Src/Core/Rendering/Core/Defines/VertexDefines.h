@@ -1,19 +1,18 @@
 #pragma once
-#include <vulkan/vulkan.h>
-#include "Core/Global/GlobalDefines.h"
+#include "../RenderingTypeDefs.h"
 
 struct MinVertex
 {
-	DirectX::XMFLOAT3 position;
+	mathstl::Vector3 position;
 };
 struct SimpleVertex : public MinVertex
 {
-	DirectX::XMFLOAT3 normal;
+	mathstl::Vector3 normal;
 };
 
 struct CompleteVertex : SimpleVertex
 {
-	DirectX::XMFLOAT2 texCoord;
+	mathstl::Vector2 texCoord;
 };
 
 namespace VertexInputDefines
@@ -90,9 +89,9 @@ static inline const stltype::hash_map<VertexInputDefines::VertexAttributes, u32>
 #ifdef USE_VULKAN
 static inline const stltype::hash_map<VertexInputDefines::VertexAttributes, VkFormat> g_VertexAttributeVkFormatMap =
 {
-	{ VertexInputDefines::VertexAttributes::Position,		VK_FORMAT_R32G32B32_SFLOAT },
-	{ VertexInputDefines::VertexAttributes::Color0,	        VK_FORMAT_R32G32B32_SFLOAT },
-	{ VertexInputDefines::VertexAttributes::TexCoord0,	    VK_FORMAT_R32G32_SFLOAT },
-	{ VertexInputDefines::VertexAttributes::Normal,	        VK_FORMAT_R32G32B32_SFLOAT }
+	{ VertexInputDefines::VertexAttributes::Position,		TEXFORMAT(R32G32B32_SFLOAT) },
+	{ VertexInputDefines::VertexAttributes::Color0,	        TEXFORMAT(R32G32B32_SFLOAT) },
+	{ VertexInputDefines::VertexAttributes::TexCoord0,	    TEXFORMAT(R32G32_SFLOAT) },
+	{ VertexInputDefines::VertexAttributes::Normal,	        TEXFORMAT(R32G32B32_SFLOAT) }
 };
 #endif

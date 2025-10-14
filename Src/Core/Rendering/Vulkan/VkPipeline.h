@@ -19,14 +19,19 @@ struct ShaderCollection
 	Shader* pFragShader;
 };
 
+class ComputePipelineVulkan : public TrackedResource
+{
+
+};
+
 // Implementation of a dynamic pipeline state object 
-class PipelineVulkan : public TrackedResource
+class GraphicsPipelineVulkan : public TrackedResource
 {
 public:
-	PipelineVulkan(const ShaderCollection& shaders, const PipeVertInfo& vertexInputs, const PipelineInfo& pipeInfo);
+	GraphicsPipelineVulkan(const ShaderCollection& shaders, const PipeVertInfo& vertexInputs, const PipelineInfo& pipeInfo);
 
-	PipelineVulkan() = default;
-	~PipelineVulkan();
+	GraphicsPipelineVulkan() = default;
+	~GraphicsPipelineVulkan();
 
 	void CleanUp();
 

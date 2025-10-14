@@ -49,6 +49,7 @@ public:
 	EVENT_FUNCTIONS(Scroll);
 	EVENT_FUNCTIONS(PostFrame);
 	EVENT_FUNCTIONS(ShaderHotReload);
+	EVENT_FUNCTIONS(SceneLoaded);
 protected:
 	EVENT(Mouse);
 	EVENT(Update);
@@ -63,4 +64,5 @@ protected:
 	EVENT(Scroll);
 	EVENT(PostFrame);
 	EVENT(ShaderHotReload);
+	EVENT(SceneLoaded);
 };

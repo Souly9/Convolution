@@ -142,6 +142,20 @@ protected:
 	void CreateTransferCommandPool();
 	void CreateTransferCommandBuffer();
 	void CreateBindlessDescriptorSet();
+
+	struct LoadedTexInfo
+	{
+		stltype::string filePath;
+		TextureHandle handle;
+	};
+	const LoadedTexInfo* IsAlreadyRequested(const stltype::string& filePath) const;
+
+	struct BindlessInfo
+	{
+		TextureHandle handle;
+		BindlessTextureHandle bindlessHandle;
+	};
+	const BindlessInfo* IsAlreadyBindless(TextureHandle handle) const;
 protected:
 
 	// Manager thread data
@@ -149,10 +163,12 @@ protected:
 	CommandBuffer* m_transferCommandBuffer{ nullptr };
 	stltype::vector<CommandBuffer*> m_inflightCommandBuffers;
 	stltype::vector<CommandBuffer*> m_availableCommandBuffers;
+	stltype::vector<LoadedTexInfo> m_loadedTextureCache;
+	stltype::vector<BindlessInfo> m_bindlessTextureCache;
 	DescriptorPool m_bindlessDescriptorPool;
 	DescriptorSet* m_bindlessDescriptorSet{ nullptr };
 	DescriptorSetLayout m_bindlessDescriptorSetLayout;
-	stltype::vector<Texture*> m_texturesToMakeBindless;
+	stltype::vector<TextureHandle> m_texturesToMakeBindless;
 
 	// Frequently accessed by threads
 	stltype::queue<TextureRequest> m_requests{}; // Pending texture requests, mainly handled by manager thread

@@ -13,7 +13,6 @@
 #include "ImGuiPass.h"
 #include "Utils/RenderPassUtils.h"
 #include "Core/Rendering/Vulkan/Utils/VkEnumHelpers.h"
-#include "Tracy/Tracy.hpp"
 
 namespace RenderPasses
 {
@@ -23,7 +22,7 @@ namespace RenderPasses
 		g_pEventSystem->AddWindowResizeEventCallback([this](const auto&) { UpdateImGuiScaling(); });
 	}
 
-	void RenderPasses::ImGuiPass::Init(RendererAttachmentInfo& attachmentInfo)
+	void RenderPasses::ImGuiPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager)
 	{
 		ScopedZone("ImGuiPass::Init");
 
@@ -91,10 +90,12 @@ namespace RenderPasses
 		cmdBegin.extents = extents;
 
 		currentBuffer->BeginBufferForSingleSubmit();
+		StartRenderPassProfilingScope(currentBuffer);
 		currentBuffer->BeginRendering(cmdBegin);
 
 		ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), currentBuffer->GetRef());
 		currentBuffer->EndRendering();
+		EndRenderPassProfilingScope(currentBuffer);
 		currentBuffer->EndBuffer();
 
 		auto& syncContext = ctx.synchronizationContexts.find(this)->second;

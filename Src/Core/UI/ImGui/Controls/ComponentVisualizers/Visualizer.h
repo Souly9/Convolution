@@ -3,7 +3,7 @@
 namespace Visualizer
 {
 	static constexpr inline u32 MIN_WIDTH = 150;
-	static constexpr inline f32 MIN_STEP_SIZE = 0.01f;
+	static constexpr inline f32 MIN_STEP_SIZE = 0.1f;
 }
 
 static inline bool DrawFloat3Visualizer(const char* label, DirectX::XMFLOAT3& value)

@@ -60,6 +60,7 @@ public:
 				g_pMaterialManager->MarkMaterialsDirty();
 			});
 		g_pApplicationState->RegisterUpdateFunction([camEnt](ApplicationState& state) { state.selectedEntities.push_back(camEnt); state.mainCameraEntity = camEnt; });
+		FinishLoad();
 	}
 	
 };

@@ -1,4 +1,4 @@
-﻿cmake_minimum_required (VERSION 3.28)
+﻿cmake_minimum_required (VERSION 3.5)
 include(FetchContent)
 Set(FETCHCONTENT_QUIET FALSE)
 
@@ -37,7 +37,7 @@ FetchContent_Declare(
 FetchContent_Declare(
   EASTL
   GIT_REPOSITORY "https://github.com/electronicarts/EASTL.git"
-  GIT_TAG "7fadbf0da01e6f6e0e7038b1b34343a069b8fc51" #master
+  GIT_TAG "master" #master
   SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/EASTL"
   GIT_PROGRESS TRUE
 )
@@ -97,7 +97,22 @@ FetchContent_Declare(
 	SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/Tracy"
 	GIT_PROGRESS TRUE
 )
+FetchContent_Declare(
+	ImGuizmo
+	GIT_REPOSITORY "https://github.com/CedricGuillemet/ImGuizmo"
+	GIT_TAG "master"
+	SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/ImGuizmo"
+	GIT_PROGRESS TRUE
+)
 add_subdirectory("${CMAKE_SOURCE_DIR}/External/VMA")
+
+# Set some Assimp specific options to control what gets built
+set(ASSIMP_BUILD_ASSIMP_TOOLS OFF CACHE BOOL "Disable Assimp tools build")
+set(ASSIMP_BUILD_TESTS OFF CACHE BOOL "Disable Assimp tests build")
+set(ASSIMP_BUILD_SAMPLES OFF CACHE BOOL "Disable Assimp samples build")
+set(ASSIMP_INSTALL OFF CACHE BOOL "Disable installation of Assimp")
+set(ASSIMP_INJECT_RUNTIME_PATH OFF CACHE BOOL "Disable rpath injection")
+
 FetchContent_MakeAvailable(EASTL EAStdC EAAssert EAThread GLFW3 IMGUI DIRECTXMATH ASSIMP TRACY)
 
 find_package(DIRECTXMATH REQUIRED)
@@ -109,18 +124,28 @@ message(STATUS "Vulkan found at ${Vulkan_LIBRARIES}")
 find_package(IMGUI REQUIRED)
 message(STATUS "ImGui found at ${IMGUI_INCLUDE_DIR}")
 
-if(${CMAKE_BUILD_TYPE} MATCHES "Debug")
-set(ASSIMP_LIBRARY_SEARCH_DIR ${CMAKE_SOURCE_DIR}/External/assimp-build/lib/*d.lib ${CMAKE_SOURCE_DIR}/External/assimp-build/contrib/*d.lib)
-else()
-set(ASSIMP_LIBRARY_SEARCH_DIR ${CMAKE_SOURCE_DIR}/External/assimp-build/lib/*.lib ${CMAKE_SOURCE_DIR}/External/assimp-build/contrib/*.lib)
-endif()
+#if(${CMAKE_BUILD_TYPE} MATCHES "Debug")
+#set(ASSIMP_LIBRARY_SEARCH_DIR ${CMAKE_SOURCE_DIR}/External/assimp-build/lib/*d.lib ${CMAKE_SOURCE_DIR}/External/assimp-build/contrib/*d.lib)
+#else()
+#set(ASSIMP_LIBRARY_SEARCH_DIR ${CMAKE_SOURCE_DIR}/External/assimp-build/lib/*.lib ${CMAKE_SOURCE_DIR}/External/assimp-build/contrib/*.lib)
+#endif()
 
 file(GLOB_RECURSE ADD_LIBS 
 	"${CMAKE_SOURCE_DIR}/External/additonal_libs/*"
 	${ASSIMP_LIBRARY_SEARCH_DIR}
 )
+add_library(ImGui STATIC ${IMGUI_SOURCE})
+target_include_directories(ImGui PUBLIC
+   ${CMAKE_SOURCE_DIR}/External/imgui/backends
+   ${CMAKE_SOURCE_DIR}/External/imgui
+   SYSTEM
+	${GLFW3_INCLUDE_DIR}
+	${Vulkan_INCLUDE_DIRS}
+)
 
-set(LIBS ${GLFW3_LIBRARY} ${Vulkan_LIBRARIES} ${ADD_LIBS} EASTL EAStdC EAAssert EAThread ${ASSIMP_LIBRARY} TracyClient)
+
+set(LIBS ${GLFW3_LIBRARY} ${Vulkan_LIBRARIES} ${ADD_LIBS} assimp EASTL EAStdC EAAssert EAThread ${ASSIMP_LIBRARY} TracyClient ImGui)
+
 
 link_directories(${CMAKE_SOURCE_DIR}/External/additional_libs)
 
@@ -131,7 +156,7 @@ file(GLOB_RECURSE HEADERS
 	"${CMAKE_SOURCE_DIR}/Src/*.h"
 	"${CMAKE_SOURCE_DIR}/Src/*.inl"
 )
-add_executable(${NAME} ${SOURCE} ${HEADERS} ${IMGUI_SOURCE})
+add_executable(${NAME} ${SOURCE} ${HEADERS})
 
 set_target_properties(${NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin")
 set_target_properties(${NAME} PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/bin/")
@@ -140,25 +165,13 @@ target_include_directories(${NAME}
 PUBLIC
 	${CMAKE_SOURCE_DIR}/Src
 SYSTEM
-	${CMAKE_SOURCE_DIR}/configuration
 	${IMGUI_INCLUDE_DIR}
 	${DIRECTXMATH_INCLUDE_DIR}
 	${Vulkan_INCLUDE_DIRS}
 	${GLFW3_INCLUDE_DIR}
-	${EASTL_ROOT_DIR}
-	${CMAKE_SOURCE_DIR}/External/EAStdC/include/
-	${CMAKE_SOURCE_DIR}/External/EAAssert/include/
-	${CMAKE_SOURCE_DIR}/External/EAThread/include/
-	${CMAKE_SOURCE_DIR}/External/stb/
-	${CMAKE_SOURCE_DIR}/External/Assimp/include/
-	${CMAKE_SOURCE_DIR}/External/assimp-build/include/
-	${CMAKE_SOURCE_DIR}/External/SimpleMath/
-	${CMAKE_SOURCE_DIR}/External/VulkanMemoryAllocator/include/
-	${CMAKE_SOURCE_DIR}/External/Aftermath/include/
-	${CMAKE_SOURCE_DIR}/External/GLslang/include/
 )
 
-target_compile_definitions(${NAME} PRIVATE CONV_DEBUG=1)
+target_compile_definitions(${NAME} PRIVATE CONV_DEBUG=1 PROFILING_ENABLED=1)
 set(GLSLANG_LIB_DIR "${CMAKE_SOURCE_DIR}/External/additional_libs/glsl/")
 set(GLSLANG_LIBS)
 
@@ -191,23 +204,23 @@ foreach(COMPONENT ${GLSLANG_COMPONENTS})
     set(GLSLANG_LIBS ${GLSLANG_LIBS} ${COMPONENT})
 endforeach()
 
-target_link_libraries(${NAME} ${LIBS} GPUOpen::VulkanMemoryAllocator ${GLSLANG_LIBS})
+target_link_libraries(${NAME} PRIVATE ${LIBS} GPUOpen::VulkanMemoryAllocator ${GLSLANG_LIBS})
 
-if(WIN32)
-add_custom_target(
-    my_custom_target_that_always_runs ALL
-    DEPENDS ${CMAKE_SOURCE_DIR}/Shaders/Compiled/__header.h 
-	${CMAKE_SOURCE_DIR}/bin/Shaders/___header.h
-	${CMAKE_SOURCE_DIR}/bin/Shaders/____header.h
-)
-add_custom_command(OUTPUT ${CMAKE_SOURCE_DIR}/Shaders/Compiled/__header.h
-					COMMAND cmd /C ${CMAKE_SOURCE_DIR}/Scripts/CompileShaders.bat	
-					VERBATIM)
-add_custom_command(OUTPUT ${CMAKE_SOURCE_DIR}/bin/Shaders/___header.h
-					COMMAND cmd /C ${CMAKE_SOURCE_DIR}/Scripts/CopyShaders.bat
-					DEPENDS ${CMAKE_SOURCE_DIR}/Shaders/Compiled/__header.h
-					)
-add_custom_command(OUTPUT ${CMAKE_SOURCE_DIR}/bin/Shaders/____header.h
-					COMMAND cmd /C ${CMAKE_SOURCE_DIR}/Scripts/CopyTextures.bat
-					)
-endif()
+#if(WIN32)
+#add_custom_target(
+#    my_custom_target_that_always_runs ALL
+#    DEPENDS ${CMAKE_SOURCE_DIR}/Shaders/Compiled/__header.h 
+#	${CMAKE_SOURCE_DIR}/bin/Shaders/___header.h
+#	${CMAKE_SOURCE_DIR}/bin/Shaders/____header.h
+#)
+#add_custom_command(OUTPUT ${CMAKE_SOURCE_DIR}/Shaders/Compiled/__header.h
+#					COMMAND cmd /C ${CMAKE_SOURCE_DIR}/Scripts/CompileShaders.bat	
+#					VERBATIM)
+#add_custom_command(OUTPUT ${CMAKE_SOURCE_DIR}/bin/Shaders/___header.h
+#					COMMAND cmd /C ${CMAKE_SOURCE_DIR}/Scripts/CopyShaders.bat
+#					DEPENDS ${CMAKE_SOURCE_DIR}/Shaders/Compiled/__header.h
+#					)
+#add_custom_command(OUTPUT ${CMAKE_SOURCE_DIR}/bin/Shaders/____header.h
+#					COMMAND cmd /C ${CMAKE_SOURCE_DIR}/Scripts/CopyTextures.bat
+#					)
+#endif()

@@ -20,7 +20,7 @@ public:
 	void Init();
 	void DispatchAllRequests();
 
-	void HandleRequests();
+	void CheckRequests();
 
 	struct CommandBufferRequest
 	{
@@ -40,7 +40,7 @@ public:
 	// Data for more complex transfer commands, allowing to define offsets and other parameters
 	struct TransferDestinationData
 	{
-		RenderingData* pRenderingDataToFill{ nullptr };
+		BufferData* pBuffersToFill{ nullptr };
 	};
 
 	struct SynchronizableCommand
@@ -56,7 +56,9 @@ public:
 	{
 		stltype::vector<CompleteVertex> vertices;
 		stltype::vector<u32> indices;
-		RenderingData* pRenderingDataToFill{ nullptr };
+		u64 vertexOffset{ 0 };
+		u64 indexOffset{ 0 };
+		BufferData* pBuffersToFill{ nullptr };
 	};
 
 	struct SSBOTransfer : SynchronizableCommand
@@ -101,6 +103,7 @@ protected:
 protected:
 	//threadSTL::Futex m_fencesToWaitOnMutex{};
 
+	ProfiledLockable(CustomMutex, m_dispatchMutex);
 	struct InFlightRequest
 	{
 		stltype::vector<CommandBufferRequest> requests;

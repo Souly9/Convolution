@@ -12,6 +12,7 @@ void ApplicationStateManager::ProcessStateUpdates()
 		updateFunction(newState);
 	}
 	m_updateFunctions.clear();
+	m_updateStateFutex.Unlock();
 	if (m_pNextScene != nullptr)
 	{
 		SwitchSceneInternal();
@@ -23,7 +24,6 @@ void ApplicationStateManager::ProcessStateUpdates()
 		state = newState;
 	}
 	m_currentState = currentState;
-	m_updateStateFutex.Unlock();
 }
 void ApplicationStateManager::SwitchSceneInternal()
 {

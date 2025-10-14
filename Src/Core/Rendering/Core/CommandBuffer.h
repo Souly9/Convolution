@@ -1,5 +1,6 @@
 #pragma once
 #include <EASTL/fixed_function.h>
+#include "RenderingTypeDefs.h"
 
 using ExecutionFinishedCallback = stltype::fixed_function<128, void(void)>;
 
@@ -12,7 +13,7 @@ struct BeginRenderingBaseCmd : public CommandBase
 {
 	DirectX::XMINT2 offset = { 0, 0 };
 	DirectX::XMINT2 extents = { 0, 0 };
-	stltype::vector<ColorAttachment>& colorAttachments;
+	stltype::vector<ColorAttachment> colorAttachments;
 	DepthAttachment* pDepthAttachment;
 
 	BeginRenderingBaseCmd(stltype::vector<ColorAttachment>& cs, DepthAttachment* pDepth)
@@ -23,24 +24,24 @@ struct BeginRenderingBaseCmd : public CommandBase
 
 struct BeginRenderingCmd : public BeginRenderingBaseCmd
 {
-	const PSO& pso;
+	PSO* pso;
 
 	IndexBuffer* pIndexBuffer{ nullptr };
 	VertexBuffer* pVertexBuffer{ nullptr };
 	IndirectDrawCommandBuffer* drawCmdBuffer{ nullptr };
 
-	BeginRenderingCmd(const PSO& p, stltype::vector<ColorAttachment>& cs, DepthAttachment* pDepth) : BeginRenderingBaseCmd(cs, pDepth), pso(p)
+	BeginRenderingCmd(PSO* p, stltype::vector<ColorAttachment>& cs, DepthAttachment* pDepth) : BeginRenderingBaseCmd(cs, pDepth), pso(p)
 	{
 	}
 };
 
 struct BinRenderDataCmd : public CommandBase
 {
-	VertexBuffer& vertexBuffer;
-	IndexBuffer& indexBuffer;
+	VertexBuffer* vertexBuffer;
+	IndexBuffer* indexBuffer;
 
 	BinRenderDataCmd(VertexBuffer& vB, IndexBuffer& iB)
-		: vertexBuffer(vB), indexBuffer(iB)
+		: vertexBuffer(&vB), indexBuffer(&iB)
 	{
 	}
 };
@@ -63,19 +64,19 @@ struct EndProfilingScopeCmd : public CommandBase
 struct GenericDrawCmd : public CommandBase
 {
 	//ShaderID shaderID;
-	const PSO& pso;
+	PSO* pso;
 	stltype::vector<DescriptorSet*> descriptorSets{};
 
-	GenericDrawCmd(const PSO& ps) : pso(ps) {}
+	GenericDrawCmd(PSO* ps) : pso(ps) {}
 };
 
 struct GenericIndirectDrawCmd : public GenericDrawCmd
 {
-	const IndirectDrawCommandBuffer& drawCmdBuffer;
+	const IndirectDrawCommandBuffer* drawCmdBuffer;
 	u32 drawCount = 5;
 	u32 bufferOffst = 0;
 
-	GenericIndirectDrawCmd(const PSO& ps, const IndirectDrawCommandBuffer& dB) : GenericDrawCmd(ps), drawCmdBuffer(dB) {}
+	GenericIndirectDrawCmd(PSO* ps, const IndirectDrawCommandBuffer& dB) : GenericDrawCmd(ps), drawCmdBuffer(&dB) {}
 };
 
 struct GenericIndexedDrawCmd : public GenericDrawCmd
@@ -85,14 +86,14 @@ struct GenericIndexedDrawCmd : public GenericDrawCmd
 	u32 firstVert{ 0 };
 	u32 firstInstance{ 0 };
 
-	GenericIndexedDrawCmd(const PSO& ps) : GenericDrawCmd(ps) {}
+	GenericIndexedDrawCmd(PSO* ps) : GenericDrawCmd(ps) {}
 };
 
 struct GenericInstancedDrawCmd : public GenericIndexedDrawCmd
 {
 	u32 indexOffset{ 0 };
 
-	GenericInstancedDrawCmd(const PSO& ps) : GenericIndexedDrawCmd(ps) {}
+	GenericInstancedDrawCmd(PSO* ps) : GenericIndexedDrawCmd(ps) {}
 };
 
 struct CopyBaseCmd : public CommandBase

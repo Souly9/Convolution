@@ -40,10 +40,10 @@ namespace CommandHelpers
     static void RecordCommand(BinRenderDataCmd& cmd, CBufferVulkan& buffer)
     {
         // Bind vertex and index buffers
-        VkBuffer vertexBuffer = cmd.vertexBuffer.GetRef();
+        VkBuffer vertexBuffer = cmd.vertexBuffer->GetRef();
         VkDeviceSize offsets[] = { 0 };
         vkCmdBindVertexBuffers(buffer.GetRef(), 0, 1, &vertexBuffer, offsets);
-        vkCmdBindIndexBuffer(buffer.GetRef(), cmd.indexBuffer.GetRef(), 0, VK_INDEX_TYPE_UINT32);
+        vkCmdBindIndexBuffer(buffer.GetRef(), cmd.indexBuffer->GetRef(), 0, VK_INDEX_TYPE_UINT32);
 	}
 
     static void RecordCommand(EndRenderingCmd& cmd, CBufferVulkan& buffer)
@@ -59,12 +59,12 @@ namespace CommandHelpers
             for (u32 i = 0; i < sets.size(); ++i)
                 sets[i] = cmd.descriptorSets[i]->GetRef();
 
-            vkCmdBindDescriptorSets(buffer.GetRef(), VK_PIPELINE_BIND_POINT_GRAPHICS, cmd.pso.GetLayout(), 0, cmd.descriptorSets.size(), sets.data(), 0, nullptr);
+            vkCmdBindDescriptorSets(buffer.GetRef(), VK_PIPELINE_BIND_POINT_GRAPHICS, cmd.pso->GetLayout(), 0, cmd.descriptorSets.size(), sets.data(), 0, nullptr);
         }
         //vkCmdDrawIndexed(buffer.GetRef(), 4, 1, 0, 0, 0);
 
         //vkCmdDraw(buffer.GetRef(), 3, 1, 0, 0);
-        vkCmdDrawIndexedIndirect(buffer.GetRef(), cmd.drawCmdBuffer.GetRef(), cmd.bufferOffst, cmd.drawCount, sizeof(VkDrawIndexedIndirectCommand));
+        vkCmdDrawIndexedIndirect(buffer.GetRef(), cmd.drawCmdBuffer->GetRef(), cmd.bufferOffst, cmd.drawCount, sizeof(VkDrawIndexedIndirectCommand));
     }
     static void RecordCommand(GenericInstancedDrawCmd& cmd, CBufferVulkan& buffer)
     {
@@ -74,7 +74,7 @@ namespace CommandHelpers
             for (u32 i = 0; i < sets.size(); ++i)
                 sets[i] = cmd.descriptorSets[i]->GetRef();
 
-            vkCmdBindDescriptorSets(buffer.GetRef(), VK_PIPELINE_BIND_POINT_GRAPHICS, cmd.pso.GetLayout(), 0, cmd.descriptorSets.size(), sets.data(), 0, nullptr);
+            vkCmdBindDescriptorSets(buffer.GetRef(), VK_PIPELINE_BIND_POINT_GRAPHICS, cmd.pso->GetLayout(), 0, cmd.descriptorSets.size(), sets.data(), 0, nullptr);
         }
 
         vkCmdDrawIndexed(buffer.GetRef(), cmd.vertCount, cmd.instanceCount, cmd.indexOffset, cmd.firstVert, cmd.firstInstance);
@@ -163,20 +163,23 @@ namespace CommandHelpers
 
 CBufferVulkan::CBufferVulkan(VkCommandBuffer commandBuffer) : m_commandBuffer(commandBuffer), m_waitStages{ Conv(SyncStages::TOP_OF_PIPE) }, m_signalStages{Conv(SyncStages::ALL_COMMANDS)}
 {
+    m_commands.reserve(24);
 }
 
 CBufferVulkan::~CBufferVulkan()
 {
     if(m_pool != nullptr && m_pool->GetRef() != VK_NULL_HANDLE)
+    {
+        CallCallbacks();
         vkFreeCommandBuffers(VK_LOGICAL_DEVICE, m_pool->GetRef(), 1, &GetRef());
+    }
 }
 
 void CBufferVulkan::Bake()
 {
     BeginBufferForSingleSubmit();
 
-    vkCmdSetCheckpoint = (PFN_vkCmdSetCheckpointNV)vkGetDeviceProcAddr(VK_LOGICAL_DEVICE, "vkCmdSetCheckpointNV");
-    vkCmdSetCheckpoint(GetRef(), (const void*)m_debugName.data());
+    //vkCmdSetCheckpoint(GetRef(), (const void*)m_debugName.data());
     for (auto& cmd : m_commands)
     {
         stltype::visit([&](auto& c)
@@ -237,9 +240,9 @@ void CBufferVulkan::BeginRendering(BeginRenderingCmd& cmd)
     const auto renderExtent = VkExtent2D(cmd.extents.x, cmd.extents.y);
 	BeginRendering(static_cast<BeginRenderingBaseCmd&>(cmd));
 
-    vkCmdBindPipeline(GetRef(), VK_PIPELINE_BIND_POINT_GRAPHICS, cmd.pso.GetRef());
+    vkCmdBindPipeline(GetRef(), VK_PIPELINE_BIND_POINT_GRAPHICS, cmd.pso->GetRef());
 
-    if (cmd.pso.HasDynamicViewScissorState())
+    if (cmd.pso->HasDynamicViewScissorState())
     {
         VkViewport viewport{};
         viewport.x = 0.0f;
@@ -316,8 +319,6 @@ void CBufferVulkan::EndBuffer()
 void CBufferVulkan::ResetBuffer()
 {
     vkResetCommandBuffer(GetRef(), /*VkCommandBufferResetFlagBits*/ 0);
-    CallCallbacks();
-    m_commands.clear();
 }
 
 void CBufferVulkan::Destroy()

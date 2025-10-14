@@ -49,13 +49,19 @@ bool ECS::System::STransform::AccessesAnyComponents(const stltype::vector<C_ID>&
 
 mathstl::Matrix ECS::System::STransform::ComputeModelMatrix(const ECS::Components::Transform* pTransform)
 {
-	const auto position = XMLoadFloat3(&pTransform->position);
-	const auto rotation = XMLoadFloat3(&pTransform->rotation);
-	const auto scale = XMLoadFloat3(&pTransform->scale);
+	using namespace mathstl;
+	Vector3 scale(pTransform->scale);
+	// Degrees to radians
+	Vector3 rotation(pTransform->rotation); 
+	rotation *= XM_PI / 180.f;
 
-	const auto transformQuat = XMQuaternionNormalize(XMQuaternionRotationRollPitchYawFromVector(rotation));
+	Vector3 position(pTransform->position);
 
-	return XMMatrixTransformation(XMVectorZero(), XMVectorZero(), scale, XMVectorZero(), transformQuat, position);
+	Quaternion transformQuat = Quaternion::CreateFromYawPitchRoll(rotation.y, rotation.x, rotation.z);
+
+	return Matrix::CreateScale(scale) *
+		Matrix::CreateFromQuaternion(transformQuat) *
+		Matrix::CreateTranslation(position);
 }
 
 void ECS::System::STransform::ComputeModelMatrixRecursive(Entity entity)
@@ -68,6 +74,6 @@ void ECS::System::STransform::ComputeModelMatrixRecursive(Entity entity)
 	else
 	{
 		ComputeModelMatrixRecursive(pTransform->parent);
-		m_cachedDataMap[entity.ID] = m_cachedDataMap[pTransform->parent.ID] * localModelMatrix;
+		m_cachedDataMap[entity.ID] = localModelMatrix * m_cachedDataMap[pTransform->parent.ID];
 	}
 }

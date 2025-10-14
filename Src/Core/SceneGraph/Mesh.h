@@ -1,17 +1,7 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Rendering/Core/Defines/VertexDefines.h"
-
-struct AABB
-{
-	mathstl::Vector3 extents{ 0.5f, 0.5f, 0.5f };
-	mathstl::Vector3 center{};
-
-	bool IsValid()
-	{
-		return extents.LengthSquared() != 0 && center.LengthSquared() != 0;
-	}
-};
+#include "Core/Rendering/Core/Defines/GlobalBuffers.h"
 
 struct Mesh
 {
@@ -56,6 +46,8 @@ public:
 		Cube
 	};
 	Mesh* GetPrimitiveMesh(PrimitiveType type);
+
+	const stltype::vector<stltype::unique_ptr<Mesh>>& GetMeshes() const { return m_meshes; }
 private:
 	stltype::vector<stltype::unique_ptr<Mesh>> m_meshes;
 	stltype::hash_map<const Mesh*, AABB> m_meshAABBs;
@@ -64,3 +56,5 @@ private:
 };
 
 extern stltype::unique_ptr<MeshManager> g_pMeshManager;
+
+static inline constexpr MeshManager::PrimitiveType s_lightDebugMeshPrimitive = MeshManager::PrimitiveType::Cube;

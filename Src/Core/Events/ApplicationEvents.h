@@ -25,3 +25,7 @@ struct ShaderHotReloadEventData
 {
 };
 using ShaderHotReloadEventCallback = stltype::fixed_function<8, void(const ShaderHotReloadEventData&)>;
+struct SceneLoadedEventData
+{
+};
+using SceneLoadedEventCallback = stltype::fixed_function<8, void(const SceneLoadedEventData&)>;

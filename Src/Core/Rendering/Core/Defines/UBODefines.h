@@ -20,7 +20,16 @@ namespace UBO
 		TransformSSBO,
 		PerPassObjectSSBO,
 		TileArraySSBO,
+		InstanceDataSSBO,
 		Custom // Just indicate the class itself will specify all binding slots and so on
+	};
+
+	enum class DescriptorContentsType
+	{
+		LightData,
+		GlobalInstanceData,
+		GBuffer,
+		BindlessTextureArray
 	};
 
 	static inline DescriptorType GetDescriptorType(BufferType type)
@@ -33,9 +42,10 @@ namespace UBO
 	static inline stltype::hash_map<BufferType, u32> s_UBOTypeToBindingSlot = {
 		{ BufferType::View, s_viewBindingSlot },
 		{ BufferType::RenderPass, s_renderPassBindingSlot },
-		{ BufferType::GlobalObjectDataSSBOs, s_globalObjectDataBindingSlot },
+		{ BufferType::GlobalObjectDataSSBOs, s_globalMaterialBufferSlot },
 		{ BufferType::TileArraySSBO, s_tileArrayBindingSlot },
 		{ BufferType::PerPassObjectSSBO, s_perPassObjectDataBindingSlot },
+		{ BufferType::InstanceDataSSBO, s_globalInstanceDataSSBOSlot },
 		{ BufferType::TransformSSBO, s_modelSSBOBindingSlot },
 		{ BufferType::LightUniformsUBO, s_globalLightUniformsBindingSlot },
 		{ BufferType::GBufferUBO, s_globalGbufferPostProcessUBOSlot }
@@ -48,6 +58,7 @@ namespace UBO
 		{ BufferType::GlobalObjectDataSSBOs, ShaderTypeBits::All },
 		{ BufferType::TileArraySSBO, ShaderTypeBits::All },
 		{ BufferType::PerPassObjectSSBO, ShaderTypeBits::All },
+		{ BufferType::InstanceDataSSBO, ShaderTypeBits::All },
 		{ BufferType::TransformSSBO, ShaderTypeBits::All },
 		{ BufferType::LightUniformsUBO, ShaderTypeBits::All },
 		{ BufferType::GBufferUBO, ShaderTypeBits::All }
