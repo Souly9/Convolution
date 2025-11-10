@@ -9,9 +9,11 @@ namespace UBO
 	enum class BufferType : u32
 	{
 		View,
+		ShadowmapViewUBO,
 		RenderPass,
 		LightUniformsUBO,
 		GBufferUBO, // Gives access to all gbuffer textures as bindless textures
+		ShadowmapUBO, // Contains all bindless handles for the scene shadowmaps
 		GenericUBO,
 
 		GenericSSBO,
@@ -41,14 +43,15 @@ namespace UBO
 	}
 	static inline stltype::hash_map<BufferType, u32> s_UBOTypeToBindingSlot = {
 		{ BufferType::View, s_viewBindingSlot },
-		{ BufferType::RenderPass, s_renderPassBindingSlot },
 		{ BufferType::GlobalObjectDataSSBOs, s_globalMaterialBufferSlot },
 		{ BufferType::TileArraySSBO, s_tileArrayBindingSlot },
 		{ BufferType::PerPassObjectSSBO, s_perPassObjectDataBindingSlot },
 		{ BufferType::InstanceDataSSBO, s_globalInstanceDataSSBOSlot },
 		{ BufferType::TransformSSBO, s_modelSSBOBindingSlot },
 		{ BufferType::LightUniformsUBO, s_globalLightUniformsBindingSlot },
-		{ BufferType::GBufferUBO, s_globalGbufferPostProcessUBOSlot }
+		{ BufferType::GBufferUBO, s_globalGbufferPostProcessUBOSlot },
+		{ BufferType::ShadowmapUBO, s_shadowmapUBOBindingSlot },
+		{ BufferType::ShadowmapViewUBO, s_shadowmapViewUBOBindingSlot } 
 
 	};
 
@@ -61,7 +64,9 @@ namespace UBO
 		{ BufferType::InstanceDataSSBO, ShaderTypeBits::All },
 		{ BufferType::TransformSSBO, ShaderTypeBits::All },
 		{ BufferType::LightUniformsUBO, ShaderTypeBits::All },
-		{ BufferType::GBufferUBO, ShaderTypeBits::All }
+		{ BufferType::GBufferUBO, ShaderTypeBits::All },
+		{ BufferType::ShadowmapUBO, ShaderTypeBits::All },
+		{ BufferType::ShadowmapViewUBO, ShaderTypeBits::All }
 
 	};
 }

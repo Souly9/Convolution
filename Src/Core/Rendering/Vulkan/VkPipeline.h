@@ -43,7 +43,6 @@ public:
 	const VkDescriptorSetLayout& GetPipelineSpecificLayout() const { return m_descriptorSetLayout.GetRef(); }
 
 private:
-
 	VkPipelineDynamicStateCreateInfo CreateDynamicPipelineInfo(const stltype::vector<VkDynamicState>& dynamicStates);
 
 	VkPipelineVertexInputStateCreateInfo CreateVertexInputInfo(const PipeVertInfo& vertexInputs);
@@ -62,7 +61,7 @@ private:
 	VkPipelineColorBlendStateCreateInfo CreateColorBlendInfo(const ColorBlendInfo& info, const stltype::vector<VkPipelineColorBlendAttachmentState>& colorBlendAttachments);
 
 	VkPipelineDepthStencilStateCreateInfo CreateDepthStencilLayout();
-	VkPipelineLayout CreatePipelineLayout(const DescriptorSetLayoutInfo& layoutInfo);
+	VkPipelineLayout CreatePipelineLayout(const DescriptorSetLayoutInfo& layoutInfo, const PushConstantInfo& pushConstantInfo);
 
 	VkPipelineLayout m_pipelineLayout{ VK_NULL_HANDLE };
 

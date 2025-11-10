@@ -78,7 +78,10 @@ void GenBufferVulkan::FillAndTransfer(StagingBuffer& stgBuffer, CommandBuffer* t
         auto memory = stgBuffer.GetMemoryHandle();
         transferBuffer->AddExecutionFinishedCallback([memory]()
             {
-                g_pGPUMemoryManager->TryFreeMemory(memory);
+                g_pDeleteQueue->RegisterDeleteForNextFrame([memory]() mutable
+                    {
+                        g_pGPUMemoryManager->TryFreeMemory(memory);
+                    });
             });
 
         // Guarantee it won't get freed until we hit the callback

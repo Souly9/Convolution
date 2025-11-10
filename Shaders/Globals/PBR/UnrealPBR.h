@@ -1,23 +1,32 @@
 const float PI = 3.14159265359;
 // Hardcoded radius for pointlights for simplification
 const float PointLightRadius = 500.0;
+const float MIN_DENOMINATOR = 0.000001;
 
-// Epic's attentuation function from UE4
+// Epic's attentuation function 
 float compAttentuation(vec3 worldPos, vec3 lightPos)
 {
 	float dist = length(lightPos - worldPos);
 
-	float num = clamp(1.0 - pow(pow((dist / PointLightRadius), 4.0), 2.0), 0.0, 1.0);
-	return num / ((dist * dist) + 1.0);
+	// 1. Inverse Square Falloff
+	float attenuation = 1.0 / max(dist * dist, MIN_DENOMINATOR);
+
+	// 2. Smooth Step Radius Cutoff (Epic's $1 - (d/R)^4)^2$ approximation)
+	float factor = clamp(1.0 - pow(dist / PointLightRadius, 4.0), 0.0, 1.0);
+	factor *= factor; 
+
+	return attenuation * factor;
 }
 
 /*
 * Implementation of Epic's UE4 BRDF
 */
 
-vec3 fresnelSchlick(float cosTheta, vec3 materialReflection)
+vec3 fresnelSchlick(float cosTheta, vec3 F0)
 {
-	return materialReflection + (1.0 - materialReflection) * pow(2.0, -5.55473 * cosTheta - 6.98316) * cosTheta;
+	// Clamp cosTheta to prevent artifacts when it approaches 0 or is negative
+	cosTheta = clamp(cosTheta, 0.0, 1.0);
+	return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
 }
 
 float DistributionGGX(vec3 normal, vec3 halfway, float roughness)
@@ -40,57 +49,80 @@ float GeometrySchlickGGX(float NdotV, float k)
 	return NdotV / denom;
 }
 
-float GeometrySmith(vec3 normal, vec3 viewDir, vec3 lightDir, float roughness)
+float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
 {
-	float NdotV = max(dot(normal, viewDir), 0.0);
-	float NdotL = max(dot(normal, lightDir), 0.0);
+	float NdotV = max(dot(N, V), 0.0);
+	float NdotL = max(dot(N, L), 0.0);
 
-	float r = roughness + 1.0;
-	float k = (r * r) / 8.0;
+	float k = roughness * 0.5;
 
 	float schlickV = GeometrySchlickGGX(NdotV, k);
 	float schlickL = GeometrySchlickGGX(NdotL, k);
 	return (schlickV * schlickL);
-
 }
 
-vec3 computePointLight(vec3 worldPos, vec3 lightPos, vec3 viewDir, vec3 normal,
-	vec3 halfwayDir, vec3 lightColor, vec3 diffuse, float roughness, float metallic)
+vec3 computePBRDirectLight(vec3 L, vec3 radiance, vec3 viewDir, vec3 normal,
+	vec3 diffuseAlbedo, float roughness, float metallic)
 {
-	vec3 wi = normalize(lightPos - worldPos);
-	float cosTheta = max(dot(normal, wi), 0.0);
-	float attentuation = compAttentuation(worldPos, lightPos);
+	vec3 H = normalize(viewDir + L); // Halfway vector calculation
+	float NdotL = max(dot(normal, L), 0.0);
+	float HdotV = max(dot(H, viewDir), 0.0);
 
-	vec3 radiance = (lightColor * attentuation);
-	// Hardcoded for everything for now
-	vec3 materialReflection = vec3(0.04);
-	materialReflection = mix(materialReflection, diffuse, metallic);
+	// F0 (Base Reflection)
+	vec3 F0 = vec3(0.04);
+	F0 = mix(F0, diffuseAlbedo, metallic);
 
-	vec3 Fresnel = vec3(0);
+	// 1. Fresnel (F)
+	vec3 F = fresnelSchlick(HdotV, F0);
 
-	// Clamp dot product
-	Fresnel = fresnelSchlick(max(dot(halfwayDir, viewDir), 0.0), materialReflection);
+	// 2. Normal Distribution Function (D)
+	float NDF = DistributionGGX(normal, H, roughness);
 
-	float NDF = DistributionGGX(normal, halfwayDir, roughness);
-	float G = GeometrySmith(normal, viewDir, wi, roughness);
+	// 3. Geometry (G)
+	float G = GeometrySmith(normal, viewDir, L, roughness);
 
-	vec3 numerator = NDF * G * Fresnel;
-	float denominator = 4.0 * max(dot(normal, viewDir), 0.0) * max(dot(normal, wi), 0.0);
-	vec3 specular = vec3(0);
-	// floored to delta to prevent artifacts
-	specular = numerator / max(denominator, 0.000001);
+	// Specular BRDF (D * G * F) / (4 * NdotV * NdotL)
+	vec3 numerator = NDF * G * F;
+	float denominator = 4.0 * max(dot(normal, viewDir), 0.0) * NdotL;
+	vec3 specular = numerator / max(denominator, MIN_DENOMINATOR);
 
-	// No metallic support
-	vec3 kD = vec3(1.0) - Fresnel;
+	// Diffuse component (Energy Conservation)
+	// kD = (1 - F_specular) * (1 - metallic)
+	vec3 kD = vec3(1.0) - F;
 	kD *= 1.0 - metallic;
 
-	float NdotL = max(dot(normal, wi), 0.0);
-	return (kD * (diffuse / PI) + specular) * radiance * NdotL;
+	// Final PBR equation: (kD * DiffuseBRDF + SpecularBRDF) * Radiance * NdotL
+	vec3 diffuseBRDF = diffuseAlbedo / PI; // Lambertian diffuse
+	return (kD * diffuseBRDF + specular) * radiance * NdotL;
+}
+
+
+// --- Light Type Wrappers ---
+vec3 computePointLight(vec3 worldPos, vec3 lightPos, vec3 viewDir, vec3 normal,
+	vec3 lightColor, vec3 diffuseAlbedo, float roughness, float metallic)
+{
+	vec3 L = normalize(lightPos - worldPos);
+	float attenuation = compAttentuation(worldPos, lightPos);
+	vec3 radiance = lightColor * attenuation;
+
+	return computePBRDirectLight(L, radiance, viewDir, normal,
+		diffuseAlbedo, roughness, metallic);
+}
+
+vec3 computeDirLight(vec3 lightDir, vec3 viewDir, vec3 normal,
+	vec3 lightColor, vec3 diffuseAlbedo, float roughness, float metallic)
+{
+	// (attenuation is 1.0)
+	vec3 L = normalize(-lightDir);
+	vec3 radiance = lightColor;
+
+	return computePBRDirectLight(L, radiance, viewDir, normal,
+		diffuseAlbedo, roughness, metallic);
 }
 
 vec3 computeAmbient(vec3 color)
 {
-	return lightUniforms.data.LightGlobals.x * color;
+	return 0.1 * color;
 }
 
 // Implemented with https://www.shadertoy.com/view/lslGzl

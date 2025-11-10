@@ -18,16 +18,20 @@ static inline ColorAttachment CreateDefaultColorAttachment(TexFormat format, Loa
 
 	return ColorAttachment::Create(colorAttachmentInfo, pTex);
 }
-static inline DepthAttachment CreateDefaultDepthAttachment(LoadOp loadOp, Texture* pTex)
+static inline DepthAttachment CreateDefaultDepthAttachment(TexFormat format, LoadOp loadOp, Texture* pTex)
 {
 	DepthBufferAttachmentInfo depthAttachmentInfo{};
-	depthAttachmentInfo.format = DEPTH_BUFFER_FORMAT;
+	depthAttachmentInfo.format = format;
 	depthAttachmentInfo.loadOp = loadOp;
 	depthAttachmentInfo.stencilLoadOp = loadOp;
 	depthAttachmentInfo.initialLayout = ImageLayout::UNDEFINED;
 	depthAttachmentInfo.finalLayout = ImageLayout::DEPTH_STENCIL;
 
 	return DepthAttachment::Create(depthAttachmentInfo, pTex);
+}
+static inline DepthAttachment CreateDefaultDepthAttachment(LoadOp loadOp, Texture* pTex)
+{
+	return CreateDefaultDepthAttachment(DEPTH_BUFFER_FORMAT, loadOp, pTex);
 }
 
 static inline bool NeedToRender(const IndirectDrawCommandBuffer& buffer)

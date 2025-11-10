@@ -10,7 +10,7 @@ public:
 	void lock() { m_mutex.Lock(); }
 
 private:
-	threadSTL::Mutex m_mutex;
+	threadstl::Mutex m_mutex;
 };
 
 class ThreadBase
@@ -27,14 +27,14 @@ public:
 
 	void ShutdownThread()
 	{
-		if (m_thread.GetStatus() != threadSTL::Thread::Status::kStatusRunning) return;
+		if (m_thread.GetStatus() != threadstl::Thread::Status::kStatusRunning) return;
 		m_keepRunning = false;
 		m_thread.WaitForEnd();
 	}
 
-	void Suspend() { threadSTL::ThreadSleep(10); }
+	void Suspend() { threadstl::ThreadSleep(10); }
 protected:
-	threadSTL::Thread m_thread;
+	threadstl::Thread m_thread;
 	ProfiledLockable(CustomMutex, m_sharedDataMutex);
 	bool m_keepRunning{ true };
 };

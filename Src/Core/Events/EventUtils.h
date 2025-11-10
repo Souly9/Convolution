@@ -3,7 +3,7 @@
 // Defines an event, its callbacks and a mutex since callbacks can be added from multiple threads
 #define EVENT(name) stltype::fixed_function<16, void(const name##EventData&)> m_on##name{}; \
 stltype::vector<name##EventCallback> m_on##name##Callbacks{}; \
-threadSTL::Mutex m_##name##Futex{};
+threadstl::Mutex m_##name##Futex{};
 
 // Defines the events registering and trigger function
 #define EVENT_FUNCTIONS(name) void On##name(const name##EventData& data) \

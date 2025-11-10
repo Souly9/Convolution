@@ -5,23 +5,24 @@
 namespace Bindless
 {
 	// Main bindless buffer for all textures of the scene
-	static inline u32 s_globalBindlessTextureBufferBindingSlot = 400;
-	static inline u32 s_globalBindlessViewMatricesBufferBindingSlot = 300;
 
 	// Maps UBO template type to its binding slot
 	enum class BindlessType : u32
 	{
 		GlobalTextures,
+		GlobalArrayTextures,
 		GlobalMatrices,
 		Custom // Just indicate the class itself will specify all binding slots and so on
 	}; 
 
 	static inline stltype::hash_map<BindlessType, u32> s_BindlessTypeToSlot = {
 		{ BindlessType::GlobalTextures, s_globalBindlessTextureBufferBindingSlot },
+		{ BindlessType::GlobalArrayTextures, s_globalBindlessArrayTextureBufferBindingSlot },
 		{ BindlessType::GlobalMatrices, s_globalBindlessViewMatricesBufferBindingSlot }
 	};
 	static inline stltype::hash_map<BindlessType, u32> s_BindlessTypeToCount = {
 		{ BindlessType::GlobalTextures, MAX_BINDLESS_TEXTURES },
+		{ BindlessType::GlobalArrayTextures, MAX_BINDLESS_TEXTURES },
 		{ BindlessType::GlobalMatrices, 1 }
 	};
 
@@ -30,6 +31,8 @@ namespace Bindless
 		switch (type)
 		{
 			case BindlessType::GlobalTextures:
+				return DescriptorType::BindlessTextures;
+			case BindlessType::GlobalArrayTextures:
 				return DescriptorType::BindlessTextures;
 			case BindlessType::GlobalMatrices:
 				return DescriptorType::UniformBuffer;

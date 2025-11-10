@@ -10,6 +10,12 @@ struct RenderLight
 	mathstl::Vector4 color{1,1,0,1};
 	mathstl::Vector4 cutoff{};
 };
+// Mainly to differentiate between point lights and directional lights etc. for now, might merge these back but want to go with clarity for now
+struct DirectionalRenderLight
+{
+	mathstl::Vector4 direction{};
+	mathstl::Vector4 color{ 1,1,0,1 };
+};
 
 // Uniform data needed by fragment shaders for lighting
 struct LightUniforms
@@ -17,6 +23,15 @@ struct LightUniforms
 	mathstl::Vector4 CameraPos;
 	mathstl::Vector4 LightGlobals; // ambient
 };
+
+inline DirectionalRenderLight ConvertToDirectionalRenderLight(const ECS::Components::Light* light)
+{
+	DirectionalRenderLight renderLight;
+	renderLight.direction = mathstl::Vector4(light->direction.x, light->direction.y, light->direction.z, 1.0f);
+	renderLight.color = light->color;
+
+	return renderLight;
+}
 
 inline RenderLight ConvertToRenderLight(const ECS::Components::Light* light, const ECS::Components::Transform* transform)
 {

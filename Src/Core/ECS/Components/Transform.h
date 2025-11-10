@@ -32,7 +32,7 @@ namespace ECS
 				name = n; 
 			}
 
-			bool HasParent()
+			bool HasParent() const
 			{
 				return parent.ID != INVALID_ENTITY;
 			}

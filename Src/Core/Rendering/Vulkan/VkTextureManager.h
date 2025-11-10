@@ -9,6 +9,21 @@
 
 enum VkFormat;
 
+enum class TextureWrapMode
+{
+	REPEAT,
+	MIRRORED_REPEAT,
+	CLAMP_TO_EDGE,
+	CLAMP_TO_BORDER,
+};
+
+struct TextureSamplerInfo
+{
+	TextureWrapMode wrapU{ TextureWrapMode::REPEAT };
+	TextureWrapMode wrapV{ TextureWrapMode::REPEAT };
+	TextureWrapMode wrapW{ TextureWrapMode::REPEAT };
+};
+
 struct DynamicTextureRequest 
 {
 	DirectX::XMUINT3 extents;
@@ -16,6 +31,7 @@ struct DynamicTextureRequest
 	TexFormat format;
 	Usage usage;
 	Tiling  tiling{ Tiling::OPTIMAL };
+	TextureSamplerInfo samplerInfo;
 	bool hasMipMaps{ false };
 	bool createSampler{ true };
 
@@ -104,8 +120,8 @@ public:
 
 	TextureHandle GenerateHandle();
 
-	void CreateSamplerForTexture(TextureHandle handle, bool useMipMaps);
-	void CreateSamplerForTexture(TextureVulkan* pTex, bool useMipMaps);
+	void CreateSamplerForTexture(TextureHandle handle, bool useMipMaps, TextureSamplerInfo samplerInfo);
+	void CreateSamplerForTexture(TextureVulkan* pTex, bool useMipMaps, TextureSamplerInfo samplerInfo);
 	void CreateImageViewForTexture(TextureHandle handle, bool useMipMaps);
 	void CreateImageViewForTexture(TextureVulkan* pTex, bool useMipMaps);
 
@@ -125,11 +141,13 @@ public:
 	void EnqueueAsyncTextureTransfer(StagingBuffer* pStagingBuffer, const Texture* pTex, const VkImageAspectFlagBits flagBit);
 	void EnqueueAsyncTextureTransfer(StagingBuffer* pStagingBuffer, const TextureHandle handle, const VkImageAspectFlagBits flagBit);
 
+	void FreeTexture(TextureHandle handle);
+
 	stltype::vector<TextureVulkan>& GetSwapChainTextures() { return m_swapChainTextures; }
 	DescriptorSetVulkan* GetBindlessDescriptorSet() { return m_bindlessDescriptorSet; }
 
 protected:
-	VkImageViewCreateInfo GenerateImageViewInfo(VkFormat format, VkImage image);
+	VkImageViewCreateInfo GenerateImageViewInfo(VkFormat format, VkImage image, bool isArray);
 
 	static void SetNoMipMap(VkImageViewCreateInfo& createInfo);
 	static void SetMipMap(VkImageViewCreateInfo& createInfo);

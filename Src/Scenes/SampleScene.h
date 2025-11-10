@@ -52,6 +52,9 @@ public:
 			compL.color = mathstl::Vector4(1, 1, 0, 1);
 			g_pEntityManager->AddComponent(lightEnt, compL);
 		}
+		auto dirLightEnt = g_pEntityManager->CreateEntity(DirectX::XMFLOAT3(11, 50, 0));
+		ECS::Components::Light dirLight{ .direction = mathstl::Vector3(-0.5f, -1.0f, -0.5f), .color = mathstl::Vector4(1.0f, 1.0f, 0.9f, 1.0f), .type = ECS::Components::LightType::Directional, .isShadowCaster = true };
+		g_pEntityManager->AddComponent(dirLightEnt, dirLight);
 		g_pApplicationState->RegisterUpdateFunction([](ApplicationState& state)
 			{
 				g_pEntityManager->MarkComponentDirty(ECS::ComponentID<ECS::Components::Transform>::ID);
@@ -60,7 +63,7 @@ public:
 				g_pMaterialManager->MarkMaterialsDirty();
 			});
 		g_pApplicationState->RegisterUpdateFunction([camEnt](ApplicationState& state) { state.selectedEntities.push_back(camEnt); state.mainCameraEntity = camEnt; });
-		FinishLoad();
+		FinishLoad({ meshEnt });
 	}
 	
 };

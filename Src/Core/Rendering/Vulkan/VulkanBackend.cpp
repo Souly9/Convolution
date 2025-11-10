@@ -220,6 +220,7 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
 	// VK 1.1 features
 	VkPhysicalDeviceVulkan11Features features11{};
 	features11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+	features11.multiview = VK_TRUE;
 	features11.pNext = &features13;
 
 	VkDeviceCreateInfo createInfo{};
@@ -483,7 +484,7 @@ bool RenderBackendImpl<Vulkan>::CreateSwapChain()
 	vkGetSwapchainImagesKHR(m_logicalDevice, m_swapChain, &imageCount, m_swapChainImages.data());
 	
 	m_swapChainImageFormat = surfaceFormat.format;
-	m_swapChainExtent = extent;
+	m_swapChainExtent = mathstl::Vector2(extent.x, extent.y);
 	return true;
 }
 

@@ -102,7 +102,7 @@ private:
     };
     stltype::vector<IncluderPathInfo> m_includerPaths;
     stltype::vector<IncludeResult> m_includerResults;
-    threadSTL::AtomicUint32 m_readShaderFiles = 0;
+    threadstl::AtomicUint32 m_readShaderFiles = 0;
 };
 
 GlslangIncluder s_includer;

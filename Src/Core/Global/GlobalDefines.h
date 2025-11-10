@@ -35,7 +35,7 @@
 #define DEBUG_ASSERT(x) ASSERT(x)
 
 namespace stltype = eastl;
-namespace threadSTL = EA::Thread;
+namespace threadstl = EA::Thread;
 namespace mathstl = DirectX::SimpleMath;
 
 #include "Typedefs.h"
@@ -45,6 +45,8 @@ namespace mathstl = DirectX::SimpleMath;
 const static inline stltype::string ENGINE_NAME = "Convolution";
 constexpr static inline u32 FRAMES_IN_FLIGHT = 2u;
 constexpr static inline u32 SWAPCHAIN_IMAGES = 2u;
+constexpr static inline u32 CSM_INITIAL_CASCADES = 3u;
+constexpr static inline mathstl::Vector2 CSM_DEFAULT_RES = mathstl::Vector2(2048.0f, 2048.0f);
 constexpr static inline u32 MAX_BINDLESS_TEXTURES = 16536;
 constexpr static inline u32 MAX_MESHES = 4096;
 constexpr static inline u32 MAX_TILES = 1;
@@ -86,6 +88,4 @@ using RenderAPI = Vulkan;
 static inline constexpr f32 FLOAT_TOLERANCE = 0.00001f;
 
 static inline constexpr f32 AMBIENT_STRENGTH = 0.1f;
-
-#define MAKE_FLAG_ENUM(name) static inline name operator|(name lhs, name rhs) { return static_cast<name>(static_cast<char>(lhs) | static_cast<char>(rhs)); }
 

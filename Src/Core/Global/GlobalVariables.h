@@ -11,11 +11,11 @@
 #include "Core/Events/EventSystem.h"
 #include "Core/Rendering/Core/ShaderManager.h"
 
-extern threadSTL::Semaphore     g_mainRenderThreadSyncSemaphore;
-extern threadSTL::Semaphore     g_renderThreadReadSemaphore;
-extern threadSTL::Semaphore     g_frameTimerSemaphore;
-extern threadSTL::Semaphore     g_frameTimerSemaphore2;
-extern threadSTL::Semaphore     g_imguiSemaphore;
+extern threadstl::Semaphore     g_mainRenderThreadSyncSemaphore;
+extern threadstl::Semaphore     g_renderThreadReadSemaphore;
+extern threadstl::Semaphore     g_frameTimerSemaphore;
+extern threadstl::Semaphore     g_frameTimerSemaphore2;
+extern threadstl::Semaphore     g_imguiSemaphore;
 
 class MemoryManager;
 class TextureMan;
@@ -46,7 +46,7 @@ extern stltype::unique_ptr<MaterialManager> g_pMaterialManager;
 
 // Holds the frame number of the current frame (aka whether it's the first, second etc. frame of the swapchain)
 extern u32 g_currentFrameNumber;
-extern DirectX::XMUINT2 g_swapChainExtent;
+extern mathstl::Vector2 g_swapChainExtent;
 
 namespace FrameGlobals
 {
@@ -54,9 +54,9 @@ namespace FrameGlobals
 	static inline void SetFrameNumber(u32 frameNumber) { g_currentFrameNumber = frameNumber; }
 	static inline u32 GetPreviousFrameNumber(u32 frameNumber) { return --frameNumber % FRAMES_IN_FLIGHT; }
 
-	static inline  const DirectX::XMUINT2& GetSwapChainExtent() { return g_swapChainExtent; }
+	static inline  const mathstl::Vector2& GetSwapChainExtent() { return g_swapChainExtent; }
 	static inline  f32 GetScreenAspectRatio() { return static_cast<f32>(g_swapChainExtent.x) / static_cast<f32>(g_swapChainExtent.y); }
-	static inline  void SetSwapChainExtent(const DirectX::XMUINT2& swapChainExtent) { g_swapChainExtent = swapChainExtent; }
+	static inline  void SetSwapChainExtent(const mathstl::Vector2& swapChainExtent) { g_swapChainExtent = swapChainExtent; }
 }
 
 #include "Core/Rendering/Core/TextureManager.h"

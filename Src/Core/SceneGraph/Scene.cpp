@@ -20,7 +20,9 @@ void Scene::Unload()
 	g_pEntityManager->UnloadAllEntities();
 }
 
-void Scene::FinishLoad()
+void Scene::FinishLoad(SceneNode root)
 {
+	m_sceneRoot = root;
 	g_pEventSystem->OnSceneLoaded({});
+	m_isLoaded = true;
 }

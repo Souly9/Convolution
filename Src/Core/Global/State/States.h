@@ -22,6 +22,8 @@ struct RendererState
 	stltype::string physicalRenderDeviceName{};
 	u32 triangleCount{};
 	u32 vertexCount{};
+	u32 directionalLightCascades{ CSM_INITIAL_CASCADES };
+	mathstl::Vector2 csmResolution{ CSM_DEFAULT_RES };
 };
 
 struct ApplicationState

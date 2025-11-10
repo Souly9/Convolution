@@ -9,10 +9,10 @@ GraphicsPipelineVulkan::GraphicsPipelineVulkan(const ShaderCollection& shaders, 
 {
 	// Assume we always have a vert and fragment shader here for now
 	Shader& vertShader = *shaders.pVertShader;
-	Shader& fragShader = *shaders.pFragShader;
-	if (vertShader.GetDesc() == VK_NULL_HANDLE || fragShader.GetDesc() == VK_NULL_HANDLE)
+	if (vertShader.GetDesc() == VK_NULL_HANDLE)
 		g_pFileReader->FinishAllRequests();
-	DEBUG_ASSERT(vertShader.GetDesc() != VK_NULL_HANDLE && fragShader.GetDesc() != VK_NULL_HANDLE);
+	// At least one shader must be valid
+	DEBUG_ASSERT(vertShader.GetDesc() != VK_NULL_HANDLE);
 
 	VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
 	vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -20,13 +20,21 @@ GraphicsPipelineVulkan::GraphicsPipelineVulkan(const ShaderCollection& shaders, 
 	vertShaderStageInfo.module = vertShader.GetDesc();
 	vertShaderStageInfo.pName = vertShader.GetName().c_str();
 
-	VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
-	fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-	fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-	fragShaderStageInfo.module = fragShader.GetDesc();
-	fragShaderStageInfo.pName = fragShader.GetName().c_str();
+	auto shaderStages = stltype::vector{ vertShaderStageInfo };
 
-	const auto shaderStages = stltype::vector{ vertShaderStageInfo, fragShaderStageInfo };
+	// Don't always need fragment shader
+	VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
+	if (shaders.pFragShader != nullptr)
+	{
+		Shader& fragShader = *shaders.pFragShader;
+		fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+		fragShaderStageInfo.module = fragShader.GetDesc();
+		fragShaderStageInfo.pName = fragShader.GetName().c_str();
+
+		shaderStages.push_back(fragShaderStageInfo);
+	}
+
 	const auto attachmentCount = pipeInfo.attachmentInfos.colorAttachments.size();
 
 	const auto dymState = CreateDynamicPipelineInfo(g_dynamicStates);
@@ -39,7 +47,7 @@ GraphicsPipelineVulkan::GraphicsPipelineVulkan(const ShaderCollection& shaders, 
 	stltype::vector<VkPipelineColorBlendAttachmentState> blendAttachments;
 	blendAttachments.assign(attachmentCount, colorAttachmentInfo);
 	auto colorBlending = CreateColorBlendInfo(pipeInfo.colorInfo, blendAttachments);
-	m_pipelineLayout = CreatePipelineLayout(pipeInfo.descriptorSetLayout);
+	m_pipelineLayout = CreatePipelineLayout(pipeInfo.descriptorSetLayout, pipeInfo.pushConstantInfo);
 
 	VkGraphicsPipelineCreateInfo pipelineInfo{};
 	pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -51,11 +59,11 @@ GraphicsPipelineVulkan::GraphicsPipelineVulkan(const ShaderCollection& shaders, 
 	pipelineInfo.pRasterizationState = &rasterizer;
 	pipelineInfo.pMultisampleState = &multisampling;
 	pipelineInfo.pColorBlendState = &colorBlending;
-	pipelineInfo.pDynamicState = &dymState;
+	pipelineInfo.pDynamicState = &dymState; 
 	pipelineInfo.layout = m_pipelineLayout;
 	pipelineInfo.subpass = 0;
 	pipelineInfo.renderPass = VK_NULL_HANDLE;
-
+	
 			// Set attachment infos for dynamic rendering
 	VkPipelineRenderingCreateInfo pipelineRenderingCreateInfo{};
 	{
@@ -63,6 +71,7 @@ GraphicsPipelineVulkan::GraphicsPipelineVulkan(const ShaderCollection& shaders, 
 		pipelineRenderingCreateInfo.colorAttachmentCount = pipeInfo.attachmentInfos.colorAttachments.size();;
 		pipelineRenderingCreateInfo.pColorAttachmentFormats = pipeInfo.attachmentInfos.colorAttachments.data(); 
 		pipelineRenderingCreateInfo.depthAttachmentFormat = pipeInfo.attachmentInfos.depthAttachmentFormat;
+		pipelineRenderingCreateInfo.viewMask = pipeInfo.viewMask;
 	}
 
 	pipelineInfo.pNext = &pipelineRenderingCreateInfo;
@@ -238,7 +247,7 @@ VkPipelineDepthStencilStateCreateInfo GraphicsPipelineVulkan::CreateDepthStencil
 	return depthStencil;
 }
 
-VkPipelineLayout GraphicsPipelineVulkan::CreatePipelineLayout(const DescriptorSetLayoutInfo& layoutInfo)
+VkPipelineLayout GraphicsPipelineVulkan::CreatePipelineLayout(const DescriptorSetLayoutInfo& layoutInfo, const PushConstantInfo& pushConstantInfo)
 {
 	m_sharedDescriptorSetLayouts = DescriptorLaytoutUtils::CreateOneDescriptorSetLayoutPerSet(layoutInfo.sharedDescriptors);
 
@@ -252,13 +261,27 @@ VkPipelineLayout GraphicsPipelineVulkan::CreatePipelineLayout(const DescriptorSe
 	}
 	descriptorSetLayouts.emplace_back(m_descriptorSetLayout.GetRef());
 
+	VkPushConstantRange pushConstants{};
+	for (const auto& constant : pushConstantInfo.constants)
+	{
+		pushConstants.stageFlags = Conv(constant.shaderUsage);
+		pushConstants.offset = constant.offset;
+		pushConstants.size = constant.size;
+	}
+
 	VkPipelineLayout pipelineLayout;
 	VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
 	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 	pipelineLayoutInfo.setLayoutCount = descriptorSetLayouts.size();
 	pipelineLayoutInfo.pSetLayouts = descriptorSetLayouts.data();
-	pipelineLayoutInfo.pushConstantRangeCount = 0; // Optional
-	pipelineLayoutInfo.pPushConstantRanges = nullptr; // Optional
+	pipelineLayoutInfo.pushConstantRangeCount = 0; 
+	pipelineLayoutInfo.pPushConstantRanges = nullptr; 
+
+	if (pushConstantInfo.constants.size() > 0)
+	{
+		pipelineLayoutInfo.pushConstantRangeCount = 1;
+		pipelineLayoutInfo.pPushConstantRanges = &pushConstants;
+	}
 	
 	DEBUG_ASSERT(vkCreatePipelineLayout(VkGlobals::GetLogicalDevice(), &pipelineLayoutInfo, VulkanAllocator(), &pipelineLayout) == VK_SUCCESS);
 	return pipelineLayout;

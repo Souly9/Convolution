@@ -73,6 +73,7 @@ void RenderPasses::CompositPass::Render(const MainPassData& data, FrameRendererC
 
 	BeginRenderingCmd cmdBegin{ &m_mainPSO, colorAttachments, nullptr };
 	cmdBegin.extents = extents;
+	cmdBegin.viewport = data.mainView.viewport;
 
 
 	auto& sceneGeometryBuffers = data.pResourceManager->GetSceneGeometryBuffers();
@@ -89,7 +90,7 @@ void RenderPasses::CompositPass::Render(const MainPassData& data, FrameRendererC
 		const auto texArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessTextureArray);
 		const auto tileArraySSBOSet = data.bufferDescriptors.at(UBO::DescriptorContentsType::LightData);
 		const auto gbufferUBO = data.bufferDescriptors.at(UBO::DescriptorContentsType::GBuffer);
-		cmd.descriptorSets = { texArraySet, data.mainView.descriptorSet, transformSSBOSet, tileArraySSBOSet, gbufferUBO };
+		cmd.descriptorSets = { texArraySet, data.mainView.descriptorSet, transformSSBOSet, tileArraySSBOSet, gbufferUBO, ctx.shadowViewUBODescriptor };
 	}
 	StartRenderPassProfilingScope(currentBuffer);
 	currentBuffer->RecordCommand(cmdBegin);
@@ -113,6 +114,7 @@ void RenderPasses::CompositPass::Render(const MainPassData& data, FrameRendererC
 void RenderPasses::CompositPass::CreateSharedDescriptorLayout()
 {
 	m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalTextures, 0));
+	m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalArrayTextures, 0));
 	m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::View, 1));
 	m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::TransformSSBO, 2));
 	m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::GlobalObjectDataSSBOs, 2));
@@ -120,6 +122,8 @@ void RenderPasses::CompositPass::CreateSharedDescriptorLayout()
 	m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::TileArraySSBO, 3));
 	m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::LightUniformsUBO, 3));
 	m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::GBufferUBO, 4));
+	m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::ShadowmapUBO, 4));
+	m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::ShadowmapViewUBO, 5));
 	//m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::PerPassObjectSSBO, 4));
 }
 

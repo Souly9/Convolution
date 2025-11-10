@@ -1,4 +1,5 @@
 #extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_scalar_block_layout : enable
 #include "BindingSlots.h"
 
 #define MAX_LIGHTS_PER_TILE 32
@@ -11,12 +12,19 @@ struct Light
 	vec4 color;
 	vec4 cutoff;
 };
+struct DirectionalLight
+{
+	vec4 direction;
+	vec4 color;
+};
+
 struct Tile
 {
 	Light lights[MAX_LIGHTS_PER_TILE];
 }; 
-layout(std430, set = TileArraySet, binding = GlobalTileArraySSBOSlot) readonly buffer GlobalTileSSBO
+layout(scalar, set = TileArraySet, binding = GlobalTileArraySSBOSlot) readonly buffer GlobalTileSSBO
 {
+	DirectionalLight dirLight;
 	Tile tiles[];
 } lightTileArraySSBO;
 

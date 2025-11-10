@@ -36,7 +36,7 @@ void AsyncQueueHandler::Init()
 		});
 
 	m_keepRunning = true;
-	m_thread = threadSTL::MakeThread([this]
+	m_thread = threadstl::MakeThread([this]
 		{
 			CheckRequests();
 		});
@@ -158,21 +158,8 @@ void AsyncQueueHandler::WaitForFences()
 	{
 		fenceToWaitOn.fence.WaitFor();
 
-		if (fenceToWaitOn.fence.IsSignaled() == false)
-		{
-			u32 cCount = 0;
-			stltype::vector<VkCheckpointData2NV> data;
-			data.reserve(100);
-			PFN_vkGetQueueCheckpointData2NV checkPointFunc = (PFN_vkGetQueueCheckpointData2NV)vkGetDeviceProcAddr(VK_LOGICAL_DEVICE, "vkGetQueueCheckpointData2NV");
-			checkPointFunc(VkGlobals::GetGraphicsQueue(), &cCount, data.data());
-			for (u32 i = 0; i < cCount; ++i)
-			{
-				auto& d = data[i];
-				const char* marker = reinterpret_cast<const char*>(d.pCheckpointMarker);
-				DEBUG_LOG(marker);
-			}
-			DEBUG_ASSERT(false);
-		}
+		DEBUG_ASSERT(fenceToWaitOn.fence.IsSignaled());
+
 		for (auto& cmdBufferRequest : fenceToWaitOn.requests)
 		{
 			if (cmdBufferRequest.pBuffer != nullptr)
@@ -184,19 +171,27 @@ void AsyncQueueHandler::WaitForFences()
 	}
 
 	m_sharedDataMutex.lock();
-	for (const auto& fenceToWaitOn : fences)
+
+	if (m_fencesToWaitOn.empty())
 	{
-		for (auto& cmdBufferRequest : fenceToWaitOn.requests)
+		FreeInFlightCommandBuffers();
+	}
+	else
+	{
+		for (const auto& fenceToWaitOn : fences)
 		{
-			if (cmdBufferRequest.pBuffer != nullptr)
+			for (auto& cmdBufferRequest : fenceToWaitOn.requests)
 			{
-				for (auto& poolPair : m_commandPools)
+				if (cmdBufferRequest.pBuffer != nullptr)
 				{
-					auto& pool = poolPair.second;
-					if (cmdBufferRequest.pBuffer->GetPool() == &pool)
+					for (auto& poolPair : m_commandPools)
 					{
-						pool.ReturnCommandBuffer(cmdBufferRequest.pBuffer);
-						break;
+						auto& pool = poolPair.second;
+						if (cmdBufferRequest.pBuffer->GetPool() == &pool)
+						{
+							pool.ReturnCommandBuffer(cmdBufferRequest.pBuffer);
+							break;
+						}
 					}
 				}
 			}
@@ -229,12 +224,12 @@ void AsyncQueueHandler::BuildTransferCommand(const SSBOTransfer& request, Comman
 	auto offset = request.offset;
 
 	StagingBuffer stgBuffer(request.size);
-	request.pStorageBuffer->FillAndTransfer(stgBuffer, pCmdBuffer, request.data, true, request.offset);
+	request.pStorageBuffer->FillAndTransfer(stgBuffer, pCmdBuffer, request.data, true, offset);
 
 	pCmdBuffer->AddExecutionFinishedCallback(
-		[pStorageBuffer, pDescriptorSet, requestSize, dstBinding, offset]()
+		[pStorageBuffer, pDescriptorSet, requestSize, dstBinding]()
 		{
-			pDescriptorSet->WriteBufferUpdate(*pStorageBuffer, false, requestSize, dstBinding, offset);
+			pDescriptorSet->WriteBufferUpdate(*pStorageBuffer, false, requestSize, dstBinding, 0);
 		});
 	SetBufferSyncInfo(request, pCmdBuffer);
 	pCmdBuffer->Bake();
@@ -279,11 +274,12 @@ void AsyncQueueHandler::SubmitCommandBuffers(stltype::vector<CommandBufferReques
 {
 	if (commandBuffers.empty())
 		return;
-	// The map will group buffers by their QueueType
+
+	// TODO: Not the fastest, should rewrite this
 	stltype::hash_map<QueueType, stltype::vector<CommandBuffer*>> buffersByQueue;
 	stltype::hash_map<QueueType, stltype::vector<CommandBufferRequest>> requestsByQueue;
 
-	// 1. Group the command buffer requests by their intended queue type
+	// Group the command buffer requests by their intended queue type
 	for (const auto& cmdBufferRequest : commandBuffers)
 	{
 		requestsByQueue[cmdBufferRequest.queueType].push_back(cmdBufferRequest);
@@ -291,7 +287,6 @@ void AsyncQueueHandler::SubmitCommandBuffers(stltype::vector<CommandBufferReques
 		buffersByQueue[cmdBufferRequest.queueType].push_back(cmdBufferRequest.pBuffer);
 	}
 
-	// 2. Define a generic submission and fence creation logic
 	auto SubmitAndRecord = [this](
 		const stltype::vector<CommandBuffer*>& buffers,
 		const stltype::vector<CommandBufferRequest>& requests,
@@ -300,18 +295,14 @@ void AsyncQueueHandler::SubmitCommandBuffers(stltype::vector<CommandBufferReques
 			if (buffers.empty())
 				return;
 
-			// Create a unique fence for this submission
 			Fence submissionFence;
 			submissionFence.Create(false);
 
-			// Submit the command buffers to the specific queue
 			SRF::SubmitCommandBufferToQueue(buffers, submissionFence, queueType);
 
-			// Record the fence and original requests for later waiting/cleanup
 			m_fencesToWaitOn.emplace_back(requests, submissionFence);
 		};
 
-	// 3. Iterate over the grouped buffers and submit them
 
 	for (const auto& pair : buffersByQueue)
 	{

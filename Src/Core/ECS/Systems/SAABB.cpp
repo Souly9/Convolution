@@ -10,6 +10,9 @@ void ECS::System::SAABB::Process()
 	auto& transComps = g_pEntityManager->GetComponentVector<Components::Transform>();
 	const auto& meshAABBs = g_pMeshManager->GetMeshAABBs();
 
+	if (meshAABBs.empty())
+		return;
+
 	for (const auto& transform : transComps)
 	{
 		const auto& transformComp = transform.component;

@@ -25,6 +25,6 @@ private:
 	// Not the fastest but okay enough
 	ShaderMap m_compiledShaders;
 	ShaderCompiler m_compiler;
-	threadSTL::AtomicUint32 m_readShaderFiles;
+	threadstl::AtomicUint32 m_readShaderFiles;
 	u32 m_totalShaderFiles;
 };

@@ -59,7 +59,7 @@ void RenderThread::RenderLoop()
 
 RenderPasses::PassManager* RenderThread::Start()
 {
-	m_thread = threadSTL::MakeThread([this]() { RenderLoop(); });
+	m_thread = threadstl::MakeThread([this]() { RenderLoop(); });
 	InitializeThread("Convolution_RenderThread");
 	m_keepRunning = true;
 	return &m_passManager;

@@ -29,8 +29,6 @@ namespace MeshConversion
 	{
 		ScopedZone("Convert Assimp Node");
 
-		Entity localParentEntity = g_pEntityManager->CreateEntity();
-		g_pEntityManager->GetComponentUnsafe<Components::Transform>(localParentEntity)->parent = parentEntity;
 		if (pNode->mNumChildren == 0 && pNode->mNumMeshes != 0)
 		{
 			for (u32 i = 0; i < pNode->mNumMeshes; ++i)
@@ -52,22 +50,22 @@ namespace MeshConversion
 					mathstl::Vector3(aiAABB.mMax.x, aiAABB.mMax.y * 0.6f, aiAABB.mMax.z) * pTransform->scale,
 					pConvMesh);
 
-				pTransform->parent = localParentEntity;
+				pTransform->parent = parentEntity;
 				pTransform->SetName(pAiMesh->mName.C_Str());
 				g_pEntityManager->AddComponent(childEntity, comp);
 			}
-			return localParentEntity;
+			return parentEntity;
 		}
 		else
 		{
 			for (u32 i = 0; i < pNode->mNumChildren; ++i)
 			{
-				if (pNode->mChildren[i]->mNumMeshes == 0)
+				if (pNode->mChildren[i]->mNumMeshes == 0 && pNode->mChildren[i]->mNumChildren == 0)
 				{
 					continue; // Skip empty nodes
 				}
 				else
-					ConvertScene(pScene, pNode->mChildren[i], localParentEntity);
+					ConvertScene(pScene, pNode->mChildren[i], parentEntity);
 			}
 		}
 		
@@ -79,10 +77,27 @@ namespace MeshConversion
 		ScopedZone("Convert Assimp Scene");
 		DEBUG_ASSERT(CheckScene(pScene));
 
-		Entity rootEntity = g_pEntityManager->CreateEntity();
-		Entity parentEntity = rootEntity;
+		Entity rootEntity = g_pEntityManager->CreateEntity(mathstl::Vector3(0,0,0), "RootEntity");
 
-		ConvertScene(pScene, pScene->mRootNode, parentEntity);
+		if (pScene->HasCameras())
+		{
+			auto& aiCam = pScene->mCameras[0];
+			auto camEnt = g_pEntityManager->CreateEntity(Convert(aiCam->mPosition));
+			auto* pTransform = g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(camEnt);
+			pTransform->rotation.y = DirectX::XMConvertToDegrees(atan2f(aiCam->mLookAt.z - aiCam->mPosition.z, aiCam->mLookAt.x - aiCam->mPosition.x));
+			ECS::Components::Camera compV{};
+			g_pEntityManager->AddComponent(camEnt, compV);
+			g_pApplicationState->RegisterUpdateFunction([camEnt](ApplicationState& state) { state.mainCameraEntity = camEnt; });
+		}
+		else
+		{
+			auto camEnt = g_pEntityManager->CreateEntity(mathstl::Vector3(0, 2, -5), "MainCamera");
+			ECS::Components::Camera compV{};
+			g_pEntityManager->AddComponent(camEnt, compV);
+			g_pApplicationState->RegisterUpdateFunction([camEnt](ApplicationState& state) { state.mainCameraEntity = camEnt; });
+		}
+
+		ConvertScene(pScene, pScene->mRootNode, rootEntity);
 
 		g_pApplicationState->RegisterUpdateFunction([](ApplicationState& state) {
 			g_pEntityManager->MarkComponentDirty(ECS::ComponentID<ECS::Components::Transform>::ID);
@@ -139,12 +154,17 @@ namespace MeshConversion
 
 		pMaterial->GetTexture(aiTextureType_DIFFUSE, 0, &path);
 		mat.diffuseTexture = g_pTexManager->MakeTextureBindless(g_pTexManager->SubmitAsyncTextureCreation({ "Resources\\Models\\" + eastl::string(path.C_Str()) }));
-		DEBUG_LOGF("[MeshConverter] Loading Diffuse Texture: {} with handle {}", path.C_Str(), mat.diffuseTexture);
+		//DEBUG_LOGF("[MeshConverter] Loading Diffuse Texture: {} with handle {}", path.C_Str(), mat.diffuseTexture);
 		pMaterial->GetTexture(aiTextureType_NORMALS, 0, &path);
 		//g_pTexManager->SubmitAsyncTextureCreation({ "Resources\\Models\\" + eastl::string(path.C_Str()) });
 
 		aiColor3D diffuse;
 		stltype::string materialName = pMaterial->GetName().C_Str();
+		if (materialName.find("arch") != stltype::string::npos)
+		{
+			static int c = 0;
+			materialName = "hi";
+		}
 		if (AI_SUCCESS != pMaterial->Get(AI_MATKEY_COLOR_DIFFUSE, diffuse))
 		{
 			//DEBUG_LOG_WARN("Couldn't load diffuse color of Material: " + materialName);

@@ -1,11 +1,11 @@
 #include "GlobalDefines.h"
 #include "GlobalVariables.h"
 
-extern threadSTL::Semaphore g_mainRenderThreadSyncSemaphore{0};
-extern threadSTL::Semaphore g_renderThreadReadSemaphore{ 0 };
-extern threadSTL::Semaphore g_frameTimerSemaphore{ 0 }; 
-extern threadSTL::Semaphore g_frameTimerSemaphore2{ 0 };
-extern threadSTL::Semaphore g_imguiSemaphore{ 0 };
+extern threadstl::Semaphore g_mainRenderThreadSyncSemaphore{0};
+extern threadstl::Semaphore g_renderThreadReadSemaphore{ 0 };
+extern threadstl::Semaphore g_frameTimerSemaphore{ 0 }; 
+extern threadstl::Semaphore g_frameTimerSemaphore2{ 0 };
+extern threadstl::Semaphore g_imguiSemaphore{ 0 };
 
 extern stltype::unique_ptr<EventSystem> g_pEventSystem = stltype::make_unique<EventSystem>();
 extern stltype::unique_ptr<WindowManager> g_pWindowManager = nullptr;
@@ -21,4 +21,4 @@ extern stltype::unique_ptr<MeshManager> g_pMeshManager = stltype::make_unique<Me
 extern ApplicationStateManager* g_pApplicationState = nullptr;
 extern stltype::unique_ptr<ShaderManager> g_pShaderManager = stltype::make_unique<ShaderManager>();
 extern u32 g_currentFrameNumber = 0;
-extern DirectX::XMUINT2 g_swapChainExtent = { 0,0 };
+extern mathstl::Vector2 g_swapChainExtent = { 0,0 };

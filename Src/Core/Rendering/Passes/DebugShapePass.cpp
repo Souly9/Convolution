@@ -142,6 +142,7 @@ void RenderPasses::DebugShapePass::Render(const MainPassData& data, FrameRendere
 
 			BeginRenderingCmd cmdBegin{ &m_solidDebugObjectsPSO, colorAttachments, &m_mainRenderingData.depthAttachment };
 			cmdBegin.extents = extents;
+			cmdBegin.viewport = data.mainView.viewport;
 			currentBuffer->RecordCommand(cmdBegin);
 			currentBuffer->RecordCommand(geomBufferCmd);
 			currentBuffer->RecordCommand(cmd);
@@ -155,6 +156,7 @@ void RenderPasses::DebugShapePass::Render(const MainPassData& data, FrameRendere
 
 			BeginRenderingCmd cmdBegin{ &m_wireframeDebugObjectsPSO, colorAttachments, &m_mainRenderingData.depthAttachment };
 			cmdBegin.extents = extents;
+			cmdBegin.viewport = data.mainView.viewport;
 
 			currentBuffer->RecordCommand(cmdBegin);
 			currentBuffer->RecordCommand(geomBufferCmd);

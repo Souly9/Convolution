@@ -6,6 +6,7 @@
 #include "DebugWindows/DebugSettings.h"
 #include "Controls/SelectedEntitiesWindow.h"
 #include "DebugWindows/GBufferWindow.h"
+#include "Controls/SceneGraphWindow.h"
 
 class MainMenuBar : public SelfInstantiatingUIElement<MainMenuBar>
 {
@@ -25,4 +26,5 @@ private:
 	SelectedEntityWindow m_selectedEntitiesWindow;
 	UpdateEventData m_lastUpdateState;
 	GBufferWindow m_gbufferWindow;
+	SceneGraphWindow m_sceneGraphWindow;
 };

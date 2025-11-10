@@ -10,7 +10,7 @@
 #include "FileReader.h"
 #include "MeshConverter.h"
 
-using namespace threadSTL;
+using namespace threadstl;
 
 FileReader::FileReader()
 {
@@ -58,7 +58,7 @@ void FileReader::CheckIORequests()
 	{
 		if (m_requests.empty())
 		{
-			threadSTL::ThreadSleep(50);
+			threadstl::ThreadSleep(50);
 			continue;
 		}
 		m_requestSubmitMutex.Lock();
@@ -149,12 +149,14 @@ void FileReader::ReadMeshFile(const IORequest& request)
 	const auto ext = path.substr(path.find_last_of('.'));
 	DEBUG_ASSERT(importer.IsExtensionSupported(ext.data()));
 	const aiScene* pMeshScene = importer.ReadFile(path.data(), 
+		aiProcess_ConvertToLeftHanded |
 		aiProcess_Triangulate | 
 		aiProcess_JoinIdenticalVertices |
 		aiProcess_RemoveComponent |
 		aiProcess_RemoveRedundantMaterials |
 		aiProcess_GenUVCoords | 
-		aiProcess_GenBoundingBoxes);
+		aiProcess_GenBoundingBoxes |
+		aiProcess_GenSmoothNormals);
 
 	DEBUG_ASSERT(pMeshScene);
 	auto scene = MeshConversion::Convert(pMeshScene);

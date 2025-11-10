@@ -31,7 +31,7 @@ private:
 	void SwitchSceneInternal();
 
 	static inline constexpr u32 MAX_STATES = 2;
-	threadSTL::Mutex m_updateStateFutex;
+	threadstl::Mutex m_updateStateFutex;
 	// Double buffered application state to make multi threaded access easier
 	stltype::fixed_vector<ApplicationState, MAX_STATES, false> m_appStates{ MAX_STATES };
 	stltype::fixed_vector<ApplicationStateUpdateFunction, 32> m_updateFunctions;
