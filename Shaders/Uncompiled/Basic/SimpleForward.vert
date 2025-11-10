@@ -27,7 +27,7 @@ void main() {
    OUT.worldPos = worldMat * vec4(inPosition, 1.0);
    OUT.fragTexCoord = inTexCoord0;
    // Supposedly better to take adjugate from world matrix
-   OUT.normal = AdjugateFromWorldMat(worldMat) * normalize(inNormal);
+   OUT.normal = normalize(inNormal);
    OUT.matIdx = GetMaterialIdx(iData);
    gl_Position = ubo.proj * ubo.view * OUT.worldPos;
 }

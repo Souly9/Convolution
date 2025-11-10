@@ -9,6 +9,16 @@ public:
 		bool drawDebugMeshes = m_drawDebugMeshes;
 		ImGui::Begin("Debug Settings", &m_isOpen);
 		ImGui::Checkbox("Draw debug meshes", &drawDebugMeshes);
+		s32 currentCascades = g_pApplicationState->GetCurrentApplicationState().renderState.directionalLightCascades;
+
+		if (ImGui::SliderInt("Directional Light CSM Cascades: ", &currentCascades, 1, 10))
+		{
+			g_pApplicationState->RegisterUpdateFunction([currentCascades](auto& state)
+				{
+					state.renderState.directionalLightCascades = currentCascades;
+				});
+		}
+
 		if (ImGui::Button("Hot Reload Shaders"))
 		{
 			DEBUG_LOG("Hot reloading shaders...");

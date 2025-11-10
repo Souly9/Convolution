@@ -5,7 +5,7 @@
 #define TransformSSBOSet 2
 #define PassPerObjectDataSet 3
 #include "../../Globals/GlobalBuffers.h"
-#include "../../Globals/GBuffer.h"
+#include "../../Globals/GBufferOutput.h"
 #include "../../Globals/Textures.h"
 
 layout(location = 0) in VertexOut
@@ -16,13 +16,13 @@ layout(location = 0) in VertexOut
   flat uint matIdx;
 } IN;
 
-layout(location = GBUFFER_ALBEDO_OUTPUT_IDX) out vec4 outColor;
-layout(location = GBUFFER_MAT_TEXCOORD_OUTPUT_IDX) out vec4 outTexCoordMat;
 
 void main() {
    
   Material mat = globalObjectDataSSBO.materials[IN.matIdx];
 	vec4 fragTexSample = vec4(texture(GlobalBindlessTextures[mat.diffuseTexture], IN.fragTexCoord));
-	outColor = vec4(fragTexSample.xyz, 1);
-	//outTexCoordMat = vec4(IN.fragTexCoord, IN.matIdx, 0);
+
+	StoreAlbedoInGBuffer(vec4(fragTexSample.xyz, 1));
+  StoreNormalAndMaterialInGBuffer(IN.normal, IN.matIdx);
+  StoreWorldPosInGBuffer(IN.worldPos);
 }

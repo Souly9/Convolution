@@ -73,9 +73,21 @@ struct PipelineAttachmentInfo
 	stltype::vector<TexFormat> colorAttachments;
 	TexFormat depthAttachmentFormat;
 };
+
+struct PushConstant
+{
+	ShaderTypeBits shaderUsage{ ShaderTypeBits::Vertex };
+	u32 offset;
+	u32 size;
+};
+struct PushConstantInfo
+{
+	stltype::vector<PushConstant> constants;
+};
 struct PipelineInfo
 {
 	PipelineAttachmentInfo attachmentInfos;
+	PushConstantInfo pushConstantInfo{};
 	ColorBlendInfo colorInfo{};
 	ColorBlendAttachmentInfo colorBlendInfo{};
 	MultisampleInfo multisampleInfo{};
@@ -83,6 +95,7 @@ struct PipelineInfo
 	DirectX::XMFLOAT4 viewPortExtents;
 	DescriptorSetLayoutInfo descriptorSetLayout;
 	Topology topology{ Topology::TriangleList };
+	u32 viewMask{ 0 };
 	bool dynamicViewScissor{ true };
 	bool hasDepth{ true };
 };

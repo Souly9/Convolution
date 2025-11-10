@@ -37,7 +37,7 @@ void VkTextureManager::Init()
 	ScopedZone("VkTextureManager::Init");
 
 	m_keepRunning = true;
-	m_thread = threadSTL::MakeThread([this]
+	m_thread = threadstl::MakeThread([this]
 		{
 			CheckRequests();
 		});
@@ -112,7 +112,15 @@ void VkTextureManager::PostRender()
 	for (u32 i = 0; i < m_texturesToMakeBindless.size(); ++i)
 	{
 		auto* pTex = GetTexture(m_texturesToMakeBindless[i]);
-		m_bindlessDescriptorSet->WriteBindlessTextureUpdate(pTex, m_lastBindlessTextureWriteIdx);
+		// We have two bindless arrays for different texture types
+		if (pTex->GetInfo().extents.z > 1)
+		{
+			m_bindlessDescriptorSet->WriteBindlessTextureUpdate(pTex, m_lastBindlessTextureWriteIdx, s_globalBindlessArrayTextureBufferBindingSlot);
+		}
+		else
+		{
+			m_bindlessDescriptorSet->WriteBindlessTextureUpdate(pTex, m_lastBindlessTextureWriteIdx);
+		}
 		++m_lastBindlessTextureWriteIdx;
 	}
 	m_texturesToMakeBindless.clear();
@@ -165,7 +173,7 @@ void VkTextureManager::CreateTexture(const FileTextureRequest& req)
 	EnqueueAsyncImageLayoutTransition(pTex, ImageLayout::TRANSFER_DST_OPTIMAL, ImageLayout::SHADER_READ_OPTIMAL);
 
 	CreateImageViewForTexture(pTex, false);
-	CreateSamplerForTexture(pTex, false);
+	CreateSamplerForTexture(pTex, false, info.samplerInfo);
 
 	if(req.makeBindless)
 		MakeTextureBindless(req.handle);
@@ -192,7 +200,7 @@ TextureVulkan* VkTextureManager::CreateTextureImmediate(const DynamicTextureRequ
 	CreateImageViewForTexture(pTex, req.hasMipMaps);
 	if (req.createSampler)
 	{
-		CreateSamplerForTexture(pTex, req.hasMipMaps);
+		CreateSamplerForTexture(pTex, req.hasMipMaps, req.samplerInfo);
 	}
 
 	return pTex;
@@ -263,21 +271,21 @@ TextureHandle VkTextureManager::SubmitAsyncDynamicTextureCreation(const DynamicT
 	return handle;
 }
 
-void VkTextureManager::CreateSamplerForTexture(TextureHandle handle, bool useMipMaps)
+void VkTextureManager::CreateSamplerForTexture(TextureHandle handle, bool useMipMaps, TextureSamplerInfo samplerInfo)
 {
 	auto* pTex = GetTexture(handle);
-	CreateSamplerForTexture(pTex, useMipMaps);
+	CreateSamplerForTexture(pTex, useMipMaps, samplerInfo);
 }
 
-void VkTextureManager::CreateSamplerForTexture(TextureVulkan* pTex, bool useMipMaps)
+void VkTextureManager::CreateSamplerForTexture(TextureVulkan* pTex, bool useMipMaps, TextureSamplerInfo info)
 {
 	VkSamplerCreateInfo samplerInfo{};
 	samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-	samplerInfo.magFilter = VK_FILTER_LINEAR;
-	samplerInfo.minFilter = VK_FILTER_LINEAR;
-	samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-	samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-	samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	samplerInfo.magFilter = VK_FILTER_NEAREST;
+	samplerInfo.minFilter = VK_FILTER_NEAREST;
+	samplerInfo.addressModeU = Conv(info.wrapU);
+	samplerInfo.addressModeV = Conv(info.wrapV);
+	samplerInfo.addressModeW = Conv(info.wrapW);
 	samplerInfo.anisotropyEnable = VK_TRUE;
 	samplerInfo.maxAnisotropy = VkGlobals::GetPhysicalDeviceProperties().limits.maxSamplerAnisotropy;
 	samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
@@ -309,7 +317,7 @@ void VkTextureManager::CreateImageViewForTexture(TextureHandle handle, bool useM
 
 void VkTextureManager::CreateImageViewForTexture(TextureVulkan* pTex, bool useMipMaps)
 {
-	auto createInfo = GenerateImageViewInfo(pTex->GetInfo().format, pTex->GetImage());
+	auto createInfo = GenerateImageViewInfo(pTex->GetInfo().format, pTex->GetImage(), (pTex->GetInfo().extents.z > 1));
 	if (useMipMaps == false)
 		SetNoMipMap(createInfo);
 	else
@@ -491,12 +499,27 @@ void VkTextureManager::EnqueueAsyncTextureTransfer(StagingBuffer* pStagingBuffer
 	EnqueueAsyncTextureTransfer(pStagingBuffer, GetTexture(handle), flagBit);
 }
 
-VkImageViewCreateInfo VkTextureManager::GenerateImageViewInfo(VkFormat format, VkImage image)
+void VkTextureManager::FreeTexture(TextureHandle handle)
+{
+	m_sharedDataMutex.lock();
+	if (const auto it = m_textures.find(handle); it == m_textures.end())
+	{
+		DEBUG_LOGF("[VkTextureManager] Tried to free invalid texture handle {}", handle);
+	}
+	else
+	{
+		DEBUG_LOGF("[VkTextureManager] Freeing texture \"{}\" handle {}", it->second.GetDebugName().c_str(), handle);
+		m_textures.erase(it);
+	}
+	m_sharedDataMutex.unlock();
+}
+
+VkImageViewCreateInfo VkTextureManager::GenerateImageViewInfo(VkFormat format, VkImage image, bool isArray)
 {
 	VkImageViewCreateInfo createInfo{};
 	createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 	createInfo.image = image;
-	createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	createInfo.viewType = isArray ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
 	createInfo.format = format;
 	createInfo.subresourceRange.aspectMask = format == DEPTH_BUFFER_FORMAT ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
 	return createInfo;
@@ -569,6 +592,14 @@ void VkTextureManager::SetLayoutBarrierMasks(ImageLayoutTransitionCmd& transitio
 		transitionCmd.srcStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
 		transitionCmd.dstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
 	}
+	else if (oldLayout == ImageLayout::DEPTH_STENCIL && newLayout == ImageLayout::SHADER_READ_OPTIMAL)
+	{
+		transitionCmd.srcAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+		transitionCmd.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+
+		transitionCmd.srcStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
+		transitionCmd.dstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+	}
 	else if (oldLayout == ImageLayout::UNDEFINED && newLayout == ImageLayout::DEPTH_STENCIL)
 	{
 		transitionCmd.srcAccessMask = 0;
@@ -590,7 +621,6 @@ TextureHandle VkTextureManager::GenerateHandle()
 
 VkImageCreateInfo VkTextureManager::FillImageCreateInfoFlat2D(const DynamicTextureRequest& info)
 {
-	DEBUG_ASSERT(info.extents.z == 1);
 
 	VkImageCreateInfo imageInfo{};
 	imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -599,7 +629,7 @@ VkImageCreateInfo VkTextureManager::FillImageCreateInfoFlat2D(const DynamicTextu
 	imageInfo.extent.height = info.extents.y;
 	imageInfo.extent.depth = 1;
 	imageInfo.mipLevels = info.hasMipMaps ? MIPMAP_NUM : 1;
-	imageInfo.arrayLayers = 1;
+	imageInfo.arrayLayers = info.extents.z;
 	imageInfo.format = info.format;
 	imageInfo.tiling = Conv(info.tiling);
 	imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -648,10 +678,12 @@ void VkTextureManager::CreateBindlessDescriptorSet()
 	}
 	if (m_bindlessDescriptorSet == nullptr)
 	{
-		m_bindlessDescriptorSetLayout = DescriptorLaytoutUtils::CreateOneDescriptorSetLayout(PipelineDescriptorLayout(Bindless::BindlessType::GlobalTextures));
+		m_bindlessDescriptorSetLayout = DescriptorLaytoutUtils::CreateOneDescriptorSetForAll({
+			PipelineDescriptorLayout(Bindless::BindlessType::GlobalTextures), PipelineDescriptorLayout(Bindless::BindlessType::GlobalArrayTextures)
+	});
 
 		m_bindlessDescriptorSet = m_bindlessDescriptorPool.CreateDescriptorSet(m_bindlessDescriptorSetLayout.GetRef());
-		m_bindlessDescriptorSet->SetBindingSlot(Bindless::s_globalBindlessTextureBufferBindingSlot);
+		m_bindlessDescriptorSet->SetBindingSlot(s_globalBindlessTextureBufferBindingSlot);
 	}
 }
 

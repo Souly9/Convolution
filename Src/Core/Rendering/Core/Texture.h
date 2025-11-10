@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Global/EnumHelpers.h"
 #include "Core/Rendering/LayerDefines.h"
 #include "Resource.h"
 
@@ -42,7 +43,9 @@ enum class Usage
 	Sampled,
 	AttachmentReadWrite,
 	StencilAttachment,
+	ShadowMap
 };
+MAKE_FLAG_ENUM(Usage)
 
 struct TextureInfoBase
 {

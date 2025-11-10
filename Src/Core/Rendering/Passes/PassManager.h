@@ -4,7 +4,9 @@
 #include "Core/Rendering/Core/Defines/GlobalBuffers.h"
 #include "Core/Rendering/Core/Defines/LightDefines.h"
 #include "Core/Rendering/Core/SharedResourceManager.h"
+#include "Core/Rendering/Core/ShadowMaps.h"
 #include "GBuffer.h"
+#include "LightResourceManager.h"
 
 class SharedResourceManager;
 
@@ -59,7 +61,8 @@ namespace RenderPasses
 	using EntityDebugMeshDataMap = stltype::hash_map<u64, EntityMeshData>;
 	using TransformSystemData = stltype::hash_map<ECS::EntityID, mathstl::Matrix>;
 	using EntityTransformData = stltype::pair<stltype::vector<ECS::EntityID>, stltype::vector<DirectX::XMFLOAT4X4>>;
-	using LightVector = stltype::vector<RenderLight>;
+	using PointLightVector = stltype::vector<RenderLight>;
+	using DirLightVector = stltype::vector<DirectionalRenderLight>;
 	using EntityMaterialMap = stltype::hash_map<u64, stltype::vector<Material*>>;
 
 	struct EntityRenderData
@@ -79,9 +82,15 @@ namespace RenderPasses
 		SharedResourceManager* pResourceManager;
 		GBuffer* pGbuffer;
 		RenderView mainView;
+		mathstl::Matrix mainCamViewMatrix;
+		// Views we want to render with CSMs
+		stltype::vector<CsmRenderView> csmViews;
+		// Views we just render into normal shadowmaps whatever those will end up being
 		stltype::vector<RenderView> shadowViews;
 		stltype::vector<DescriptorSet*> viewDescriptorSets;
 		stltype::hash_map<UBO::DescriptorContentsType, DescriptorSet*> bufferDescriptors;
+		CascadedShadowMap directionalLightShadowMap;
+		u32 cascades;
 	};
 
 	struct RenderPassSynchronizationContext
@@ -105,6 +114,7 @@ namespace RenderPasses
 		// Swapchain texture to render into for final presentation
 		Texture* pCurrentSwapchainTexture{ nullptr };
 
+		DescriptorSet* shadowViewUBODescriptor;
 		DescriptorSet* tileArraySSBODescriptor;
 		DescriptorSet* mainViewUBODescriptor;
 		DescriptorSet* gbufferPostProcessDescriptor;
@@ -127,6 +137,7 @@ namespace RenderPasses
 	struct RendererAttachmentInfo
 	{
 		GBufferInfo gbuffer;
+		CascadedShadowMap directionalLightShadowMap;
 		stltype::hash_map<ColorAttachmentType, stltype::vector<ColorAttachment>> colorAttachments;
 		DepthBufferAttachmentVulkan depthAttachment;
 
@@ -171,7 +182,7 @@ namespace RenderPasses
 		// Can be called from many different threads
 		void SetEntityMeshDataForFrame(EntityMeshDataMap&& data, u32 frameIdx);
 		void SetEntityTransformDataForFrame(TransformSystemData&& data, u32 frameIdx);
-		void SetLightDataForFrame(const LightVector& data, u32 frameIdx);
+		void SetLightDataForFrame(PointLightVector&& data, DirLightVector&& dirLights, u32 frameIdx);
 
 		void SetMainViewData(UBO::ViewUBO&& viewUBO, u32 frameIdx);
 
@@ -191,6 +202,8 @@ namespace RenderPasses
 		void RebuildPipelinesForAllPasses();
 	protected:
 		void PreProcessMeshData(const stltype::vector<PassMeshData>& meshes, u32 lastFrame, u32 curFrame);
+
+		void RecreateShadowMaps(u32 cascades, const mathstl::Vector2& extents);
 
 	private:
 		ProfiledLockable(CustomMutex, m_passDataMutex);
@@ -219,16 +232,20 @@ namespace RenderPasses
 		UniformBuffer m_viewUBO;
 		UniformBuffer m_lightUniformsUBO;
 		UniformBuffer m_gbufferPostProcessUBO;
+		UniformBuffer m_shadowMapUBO;
 		UBO::GlobalTileArraySSBO m_tileArray;
 		GPUMappedMemoryHandle m_mappedViewUBOBuffer;
 		GPUMappedMemoryHandle m_mappedLightUniformsUBO;
 		GPUMappedMemoryHandle m_mappedGBufferPostProcessUBO;
+		GPUMappedMemoryHandle m_mappedShadowMapUBO;
 		DescriptorPool m_descriptorPool;
 
 		// Global tile array SSBO
 		DescriptorSetLayoutVulkan m_tileArraySSBOLayout;
 		// Global view UBO layout
 		DescriptorSetLayoutVulkan m_viewUBOLayout;
+		// Needs separate layout since we update it during rendering of shadow passes and previous passes shouldn't use the old data
+		DescriptorSetLayoutVulkan m_shadowViewUBOLayout;
 		DescriptorSetLayout m_gbufferPostProcessLayout;
 
 		// Global attachment infos for all passes like gbuffer, depth buffer or swapchain textures
@@ -241,7 +258,8 @@ namespace RenderPasses
 			EntityMeshDataMap entityMeshData{};
 			EntityMaterialMap entityMaterialData{};
 			TransformSystemData entityTransformData{};
-			LightVector lightVector{};
+			PointLightVector lightVector{};
+			DirLightVector dirLightVector{};
 			stltype::optional<UBO::ViewUBO> mainViewUBO{};
 			u32 frameIdx{ 99 };
 
@@ -262,6 +280,13 @@ namespace RenderPasses
 			}
 		};
 		RenderDataForPreProcessing m_dataToBePreProcessed;
+
+		struct ShadowMapState
+		{
+			u32 cascadeCount{};
+			mathstl::Vector2 shadowMapExtents{};
+		};
+		ShadowMapState m_currentShadowMapState{};
 
 		u32 m_currentFrame{ 0 };
 		bool m_needsToPropagateMainDataUpdate{ false };

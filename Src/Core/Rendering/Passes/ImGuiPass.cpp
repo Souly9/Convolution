@@ -88,6 +88,7 @@ namespace RenderPasses
 		const DirectX::XMINT2 extents(ex.x, ex.y);
 		BeginRenderingBaseCmd cmdBegin{ colorAttachments, &m_mainRenderingData.depthAttachment };
 		cmdBegin.extents = extents;
+		cmdBegin.viewport = data.mainView.viewport;
 
 		currentBuffer->BeginBufferForSingleSubmit();
 		StartRenderPassProfilingScope(currentBuffer);
@@ -99,8 +100,8 @@ namespace RenderPasses
 		currentBuffer->EndBuffer();
 
 		auto& syncContext = ctx.synchronizationContexts.find(this)->second;
-
-		currentBuffer->AddWaitSemaphore(syncContext.waitSemaphore);
+		
+		currentBuffer->AddWaitSemaphore(&ctx.additionalSynchronizationContexts[0].signalSemaphore);
 		currentBuffer->AddSignalSemaphore(&syncContext.signalSemaphore);
 		AsyncQueueHandler::CommandBufferRequest cmdRequest{
 			.pBuffer = currentBuffer,

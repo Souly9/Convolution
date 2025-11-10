@@ -295,6 +295,9 @@ inline VkImageUsageFlags Conv(const Usage& m)
 			return VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 		case Usage::StencilAttachment:
 			return VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+		case Usage::ShadowMap:
+			return VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+			break;
 		default:
 			DEBUG_ASSERT(false);
 			return 0;
@@ -344,4 +347,22 @@ static inline u32 Conv(SyncStages stage)
 	else
 		DEBUG_ASSERT(false);
 	return vkStage;
+}
+
+static inline VkSamplerAddressMode Conv(TextureWrapMode mode)
+{
+	switch (mode)
+	{
+		case TextureWrapMode::REPEAT:
+			return VK_SAMPLER_ADDRESS_MODE_REPEAT;
+		case TextureWrapMode::MIRRORED_REPEAT:
+			return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+		case TextureWrapMode::CLAMP_TO_EDGE:
+			return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+		case TextureWrapMode::CLAMP_TO_BORDER:
+			return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+		default:
+			DEBUG_ASSERT(false);
+			return VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	}
 }

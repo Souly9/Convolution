@@ -60,7 +60,7 @@ namespace RenderPasses
 	{
 #if CONV_DEBUG
 		pCmdBuffer->RecordCommand(StartProfilingScopeCmd{ 
-			.name=m_passName, 
+			.name=m_passName.c_str(),
 			.color=s_profilingScopeColor 
 			});
 #endif

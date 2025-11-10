@@ -23,6 +23,10 @@ void MainMenuBar::DrawMenuBar(f32 dt, ApplicationInfos& appInfos)
 			{
 				m_selectedEntitiesWindow.SetOpen(true);
 			}
+			if (ImGui::MenuItem("Scene Hierarchy", ""))
+			{
+				m_sceneGraphWindow.SetOpen(true);
+			}
 			ImGui::EndMenu();
 		}
 
@@ -98,6 +102,10 @@ void MainMenuBar::DrawMenuBar(f32 dt, ApplicationInfos& appInfos)
 	if (m_selectedEntitiesWindow.IsOpen())
 	{
 		m_selectedEntitiesWindow.DrawWindow(m_lastUpdateState);
+	}
+	if (m_sceneGraphWindow.IsOpen())
+	{
+		m_sceneGraphWindow.DrawWindow(m_lastUpdateState);
 	}
 
 	if (m_debugSettingsWindow.IsOpen())

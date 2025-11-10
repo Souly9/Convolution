@@ -29,7 +29,7 @@ protected:
 	void FreeVMA();
 private:
 	Allocator m_allocatorMode;
-	threadSTL::Mutex m_mappingMutex;
-	threadSTL::Mutex m_allocatinggMutex;
+	threadstl::Mutex m_mappingMutex;
+	threadstl::Mutex m_allocatinggMutex;
 	stltype::vector<GPUMemoryHandle> m_mappedMemoryHandles{}; // Mostly just for debugging
 };

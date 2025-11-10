@@ -53,6 +53,8 @@ void GPUMemManager<Vulkan>::FreeMemory(GPUMemoryHandle memory)
         {
             return elem.memoryHandle == memory;
         });
+    if (it == s_memoryHandles.end())
+        return;
     if (it->bufferHandle != VK_NULL_HANDLE)
     {
         vmaDestroyBuffer(s_vmaAllocator, it->bufferHandle, it->vmaAllocation);

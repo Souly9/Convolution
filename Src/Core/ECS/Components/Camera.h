@@ -11,7 +11,7 @@ namespace ECS
 		{
 			float fov{ 45.f };
 			float zNear{ 0.1f };
-			float zFar{ 1000.f };
+			float zFar{ 300.f };
 			bool isMainCam{ true };
 		};
 	}

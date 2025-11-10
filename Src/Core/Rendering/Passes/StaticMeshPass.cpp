@@ -21,19 +21,15 @@ namespace RenderPasses
 	{
 		ScopedZone("StaticMeshPass::Init");
 
-		for(u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
-		{
-			m_internalSyncContexts[i].bufferUpdateFinishedSemaphore.Create();
-		}
-
 		const auto& gbufferInfo = attachmentInfo.gbuffer;
 
 		//const auto gbufferPosition = CreateDefaultColorAttachment(attachmentInfo.swapchainTextures[0].GetInfo().format, LoadOp::CLEAR, nullptr);
 		const auto gbufferPosition = CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBufferAlbedo), LoadOp::CLEAR, nullptr);
 		const auto gbufferNormal = CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBufferNormal), LoadOp::CLEAR, nullptr);
 		const auto gbuffer3 = CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::TexCoordMatData), LoadOp::CLEAR, nullptr);
+		const auto gbufferPos = CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::Position), LoadOp::CLEAR, nullptr);
 		m_mainRenderingData.depthAttachment = CreateDefaultDepthAttachment(LoadOp::CLEAR, attachmentInfo.depthAttachment.GetTexture());;
-		m_mainRenderingData.colorAttachments = { gbufferPosition, gbufferNormal, gbuffer3 };
+		m_mainRenderingData.colorAttachments = { gbufferPosition, gbufferNormal, gbuffer3, gbufferPos };
 
 		InitBaseData(attachmentInfo);
 		m_indirectCmdBuffer = IndirectDrawCommandBuffer(1000);
@@ -100,19 +96,22 @@ namespace RenderPasses
 		ColorAttachment gbufferPosition = m_mainRenderingData.colorAttachments[0];
 		ColorAttachment gbufferNormal = m_mainRenderingData.colorAttachments[1];
 		ColorAttachment gbuffer3 = m_mainRenderingData.colorAttachments[2];
+		ColorAttachment gbufferPos = m_mainRenderingData.colorAttachments[3];
 		//gbufferPosition.SetTexture(ctx.gbuffer.Get(GBufferTextureType::GBufferPosition));]
 		gbufferPosition.SetTexture(data.pGbuffer->Get(GBufferTextureType::GBufferAlbedo));
 		gbufferNormal.SetTexture(data.pGbuffer->Get(GBufferTextureType::GBufferNormal));
 		gbuffer3.SetTexture(data.pGbuffer->Get(GBufferTextureType::TexCoordMatData));
+		gbufferPos.SetTexture(data.pGbuffer->Get(GBufferTextureType::Position));
 
-		stltype::vector<ColorAttachment> colorAttachments = { gbufferPosition, gbufferNormal, gbuffer3 };
+		stltype::vector<ColorAttachment> colorAttachments = { gbufferPosition, gbufferNormal, gbuffer3, gbufferPos };
 
 		const auto ex = ctx.pCurrentSwapchainTexture->GetInfo().extents;
 		const DirectX::XMINT2 extents(ex.x, ex.y);
 
 		BeginRenderingCmd cmdBegin{ &m_mainPSO, colorAttachments, &m_mainRenderingData.depthAttachment };
 		cmdBegin.extents = extents;
-	
+		cmdBegin.viewport = data.mainView.viewport;
+
 		GenericIndirectDrawCmd cmd{ &m_mainPSO, m_indirectCmdBuffer };
 		cmd.drawCount = m_indirectCmdBuffer.GetDrawCmdNum();
 
@@ -138,12 +137,7 @@ namespace RenderPasses
 
 		auto& syncContext = ctx.synchronizationContexts.find(this)->second;
 
-		currentBuffer->AddWaitSemaphore(syncContext.waitSemaphore);
-		if (m_needsBufferSync)
-		{
-			m_needsBufferSync = false;
-			currentBuffer->AddWaitSemaphore(&m_internalSyncContexts[ctx.currentFrame].bufferUpdateFinishedSemaphore);
-		}
+		currentBuffer->AddWaitSemaphore(&ctx.pInitialLayoutTransitionSignalSemaphore);
 		currentBuffer->AddSignalSemaphore(&syncContext.signalSemaphore);
 		AsyncQueueHandler::CommandBufferRequest cmdRequest{
 			.pBuffer = currentBuffer,
@@ -156,6 +150,7 @@ namespace RenderPasses
 	void StaticMainMeshPass::CreateSharedDescriptorLayout()
 	{
 		m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalTextures, 0));
+		m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalArrayTextures, 0));
 		m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::View, 1));
 		m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::TransformSSBO, 2));
 		m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::GlobalObjectDataSSBOs, 2));

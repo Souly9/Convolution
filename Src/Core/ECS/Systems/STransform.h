@@ -19,7 +19,7 @@ namespace ECS
 			virtual bool AccessesAnyComponents(const stltype::vector<C_ID>& components) override;
 		protected:
 			mathstl::Matrix ComputeModelMatrix(const ECS::Components::Transform* pTransform);
-			void ComputeModelMatrixRecursive(Entity entity);
+			mathstl::Matrix ComputeModelMatrixRecursive(Entity entity);
 			// Cached model matrices of all entities
 			RenderPasses::TransformSystemData m_cachedDataMap;
 			RenderPasses::PassManager* m_pPassManager;

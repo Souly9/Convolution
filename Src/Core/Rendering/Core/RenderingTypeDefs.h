@@ -34,7 +34,6 @@ class DepthBufferAttachmentVulkan;
 class DescriptorSetVulkan;
 struct MeshResourceData;
 
-
 using GenericBuffer = GenBufferVulkan;
 using VertexBuffer = VertexBufferVulkan;
 using IndexBuffer = IndexBufferVulkan;

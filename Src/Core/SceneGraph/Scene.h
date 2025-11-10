@@ -34,8 +34,13 @@ public:
 	virtual void Load() = 0;
 	virtual void Unload();
 
-	void FinishLoad();
+	void FinishLoad(SceneNode root);
+
+	//ECS::Entity GetRootNode() const { return m_sceneRoot.root; }
+	bool IsFullyLoaded() const { return m_isLoaded; }
 private:
+	// One day I'll rework the scene system to make proper use of this node and refactor them to work more like streamable tiles  
 	SceneNode m_sceneRoot;
 	stltype::string m_name;
+	bool m_isLoaded{ false };
 };

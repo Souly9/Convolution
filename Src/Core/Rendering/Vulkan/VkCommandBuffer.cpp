@@ -15,7 +15,7 @@ namespace CommandHelpers
     {
         VkDebugUtilsLabelEXT profilingScopeInfo = {};
         profilingScopeInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
-        profilingScopeInfo.pLabelName = cmd.name.c_str();
+        profilingScopeInfo.pLabelName = cmd.name;
         memcpy(profilingScopeInfo.color, &cmd.color, sizeof(float) * 4);
 
         if (vkBeginDebugUtilsLabel)
@@ -45,6 +45,11 @@ namespace CommandHelpers
         vkCmdBindVertexBuffers(buffer.GetRef(), 0, 1, &vertexBuffer, offsets);
         vkCmdBindIndexBuffer(buffer.GetRef(), cmd.indexBuffer->GetRef(), 0, VK_INDEX_TYPE_UINT32);
 	}
+
+	static void RecordCommand(PushConstantCmd& cmd, CBufferVulkan& buffer)
+    {
+        vkCmdPushConstants(buffer.GetRef(), cmd.pPSO->GetLayout(), VK_SHADER_STAGE_VERTEX_BIT, cmd.offset, cmd.size, cmd.data);
+    }
 
     static void RecordCommand(EndRenderingCmd& cmd, CBufferVulkan& buffer)
     {
@@ -137,9 +142,12 @@ namespace CommandHelpers
             memoryBarrier.srcAccessMask = cmd.srcAccessMask;
             memoryBarrier.dstAccessMask = cmd.dstAccessMask;
 
-            memoryBarrier.subresourceRange.aspectMask = cmd.newLayout == ImageLayout::DEPTH_STENCIL ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+            memoryBarrier.subresourceRange.aspectMask = (cmd.newLayout == ImageLayout::DEPTH_STENCIL ||
+                cmd.oldLayout == ImageLayout::DEPTH_STENCIL) ? 
+                VK_IMAGE_ASPECT_DEPTH_BIT : 
+                VK_IMAGE_ASPECT_COLOR_BIT;
             memoryBarrier.subresourceRange.baseArrayLayer = cmd.baseArrayLayer;
-            memoryBarrier.subresourceRange.layerCount = cmd.layerCount;
+            memoryBarrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
             memoryBarrier.subresourceRange.baseMipLevel = cmd.mipLevel;
             memoryBarrier.subresourceRange.levelCount = cmd.levelCount;
 
@@ -285,6 +293,7 @@ void CBufferVulkan::BeginRendering(BeginRenderingBaseCmd& cmd)
     renderingInfo.colorAttachmentCount = colorAttachments.size();
     renderingInfo.pColorAttachments = colorAttachments.data();
 
+
     VkRenderingAttachmentInfo depthAttachment{};
     if (cmd.pDepthAttachment)
     {
@@ -295,6 +304,8 @@ void CBufferVulkan::BeginRendering(BeginRenderingBaseCmd& cmd)
         depthAttachment.storeOp = pDepthAttachment->GetDesc().storeOp;
         depthAttachment.clearValue.depthStencil = { 1.0f, 0 };
         depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+
+        renderingInfo.viewMask = cmd.depthLayerMask;
         renderingInfo.pDepthAttachment = &depthAttachment;
     }
 

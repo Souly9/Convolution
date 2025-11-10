@@ -19,7 +19,7 @@ void DescriptorPoolVulkan::Create(const DescriptorPoolCreateInfo& createInfo)
 
 	if (createInfo.enableBindlessTextureDescriptors)
 	{
-		poolSizes.push_back(CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_BINDLESS_TEXTURES));
+		poolSizes.push_back(CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_BINDLESS_TEXTURES * 2));
 	}
 	if (createInfo.enableStorageBufferDescriptors)
 	{
@@ -149,7 +149,7 @@ void DescriptorSetVulkan::WriteBufferUpdate(const GenericBuffer& buffer, bool is
 	vkUpdateDescriptorSets(VK_LOGICAL_DEVICE, 1, &descriptorWrite, 0, nullptr);
 }
 
-void DescriptorSetVulkan::WriteBindlessTextureUpdate(const TextureVulkan* pTex, u32 idx)
+void DescriptorSetVulkan::WriteBindlessTextureUpdate(const TextureVulkan* pTex, u32 idx, u32 bindingSlot)
 {
 	VkDescriptorImageInfo imageInfo{};
 	imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -159,7 +159,7 @@ void DescriptorSetVulkan::WriteBindlessTextureUpdate(const TextureVulkan* pTex, 
 	VkWriteDescriptorSet descriptorWrite{};
 	descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 	descriptorWrite.dstSet = GetRef();
-	descriptorWrite.dstBinding = m_bindingSlot;
+	descriptorWrite.dstBinding = bindingSlot == 0 ? m_bindingSlot : bindingSlot;
 	descriptorWrite.dstArrayElement = idx;
 	descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	descriptorWrite.descriptorCount = 1;

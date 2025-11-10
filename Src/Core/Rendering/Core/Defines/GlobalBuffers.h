@@ -50,12 +50,14 @@ namespace UBO
 		stltype::vector<RenderLight> lights{};
 	};
 	static constexpr u64 TILE_SIZE = sizeof(RenderLight) * MAX_LIGHTS_PER_TILE;
+	
 	// SSBO containing the tile array containing light data etc. used to shade the scene
 	struct GlobalTileArraySSBO
 	{
+		DirectionalRenderLight dirLight;
 		stltype::fixed_vector<Tile, MAX_TILES, false> tiles{};
 	};
-	static constexpr u64 GlobalTileArraySSBOSize = TILE_SIZE * MAX_TILES;
+	static constexpr u64 GlobalTileArraySSBOSize = TILE_SIZE * MAX_TILES + sizeof(DirectionalRenderLight);
 	// SSBO containing the indices for objects rendered by a specific pass to access the global transforms, materials etc.
 	struct PerPassObjectDataSSBO
 	{
@@ -83,5 +85,16 @@ namespace UBO
 		BindlessTextureHandle gbufferUI;
 		// Not valid 
 		// BindlessTextureHandle depthTexture;
+	};
+
+	struct ShadowMapUBO
+	{
+		BindlessTextureHandle directionalLightCSM;
+	};
+
+	struct ShadowmapViewUBO
+	{
+		stltype::array<mathstl::Matrix, 16> lightViewProjMatrices{};
+		f32 cascadeStepSize;
 	};
 }

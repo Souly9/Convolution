@@ -15,6 +15,9 @@ struct BeginRenderingBaseCmd : public CommandBase
 	DirectX::XMINT2 extents = { 0, 0 };
 	stltype::vector<ColorAttachment> colorAttachments;
 	DepthAttachment* pDepthAttachment;
+	u32 depthLayerMask = 0x0;
+
+	mathstl::Viewport viewport;
 
 	BeginRenderingBaseCmd(stltype::vector<ColorAttachment>& cs, DepthAttachment* pDepth)
 		: colorAttachments(cs), pDepthAttachment(pDepth)
@@ -53,7 +56,7 @@ struct EndRenderingCmd : public CommandBase
 
 struct StartProfilingScopeCmd : public CommandBase
 {
-	stltype::string name;
+	const char* name;
 	mathstl::Vector4 color;
 };
 
@@ -105,6 +108,15 @@ struct CopyBaseCmd : public CommandBase
 	CopyBaseCmd(GenericBuffer& src) : srcBuffer(&src) {
 		src.Grab();
 	}
+};
+
+struct PushConstantCmd : public CommandBase
+{
+	u32 size;
+	u32 offset;
+	void* data;
+	PSO* pPSO;
+	//ShaderTypeBits shaderStage;
 };
 
 struct SimpleBufferCopyCmd : public CopyBaseCmd
@@ -169,7 +181,7 @@ struct GenericComputeCmd : public CommandBase
 
 using Command = stltype::variant<CommandBase, GenericDrawCmd, GenericIndirectDrawCmd, GenericIndexedDrawCmd, GenericInstancedDrawCmd, 
 	DrawMeshCmd, GenericComputeCmd, SimpleBufferCopyCmd, ImageBuffyCopyCmd, ImageLayoutTransitionCmd, BeginRenderingBaseCmd, BeginRenderingCmd, EndRenderingCmd,
-	BinRenderDataCmd, StartProfilingScopeCmd, EndProfilingScopeCmd>;
+	BinRenderDataCmd, StartProfilingScopeCmd, EndProfilingScopeCmd, PushConstantCmd>;
 
 // Generic command buffer, basically collects all commands as generic structs first so we can reason about them
 class CBuffer : public TrackedResource

@@ -20,14 +20,13 @@ public:
 					});
 
 
-				FinishLoad();
+				FinishLoad(info.rootNode);
 			}, RequestType::Mesh });
-		auto camEnt = g_pEntityManager->CreateEntity(DirectX::XMFLOAT3(11, 2, 0));
-		auto* pTransform = g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(camEnt);
-		pTransform->rotation.y = 90;
-		ECS::Components::Camera compV{};
-		g_pEntityManager->AddComponent(camEnt, compV);
-		g_pApplicationState->RegisterUpdateFunction([camEnt](ApplicationState& state) { state.selectedEntities.push_back(camEnt); state.mainCameraEntity = camEnt; });
+
+		auto dirLightEnt = g_pEntityManager->CreateEntity(DirectX::XMFLOAT3(11, 50, 0));
+		ECS::Components::Light dirLight{ .direction = mathstl::Vector3(0.5f, -1.0f, 0.5f), .color = mathstl::Vector4(1.0f, 1.0f, 0.9f, 1.0f), .type = ECS::Components::LightType::Directional, .isShadowCaster = true };
+		g_pEntityManager->AddComponent(dirLightEnt, dirLight);
+
 	}
 	static stltype::string GetSceneName() { return "Sponza Scene"; }
 };
