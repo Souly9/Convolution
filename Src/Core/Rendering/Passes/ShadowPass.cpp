@@ -17,7 +17,7 @@ namespace RenderPasses
 		CreateSharedDescriptorLayout();
 	}
 
-	void RenderPasses::CSMPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager)
+	void CSMPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager)
 	{
 		ScopedZone("ShadowPass::Init");
 
@@ -134,8 +134,10 @@ namespace RenderPasses
 
 			f32 cascadeStepSize = (mainCamView.viewport.maxDepth - mainCamView.viewport.minDepth) / static_cast<f32>(data.cascades);
 
+			const u32 matricesSize = static_cast<u32>(sizeof(mathstl::Matrix) * cascadeViewProjMatrices.size());
+
 			memcpy(m_mappedShadowViewUBO, cascadeViewProjMatrices.data(), (u32)(sizeof(mathstl::Matrix) * cascadeViewProjMatrices.size()));
-			memcpy(m_mappedShadowViewUBO, &cascadeStepSize, (u32)(sizeof(f32)));
+			memcpy(reinterpret_cast<uint8_t*>(m_mappedShadowViewUBO) + matricesSize, &cascadeStepSize, (u32)(sizeof(f32)));
 
 			ctx.shadowViewUBODescriptor->WriteBufferUpdate(m_shadowViewUBO, s_shadowmapViewUBOBindingSlot);
 			//currentBuffer->RecordCommand(PushConstantCmd{ .size = (u32)(sizeof(mathstl::Matrix) * cascadeViewProjMatrices.size()), .offset = 0, .data = (void*)matrices.data(), .pPSO = &m_mainPSO});
@@ -184,6 +186,8 @@ namespace RenderPasses
 		stltype::vector<mathstl::Matrix> lightViewProjMatrices;
 		cascadeProjectionMatrices.reserve(cascades);
 		lightViewProjMatrices.reserve(cascades);
+		auto lightLocalDir = lightDir;
+		lightLocalDir.Normalize();
 
 		for (u32 i = 0; i < cascades; ++i)
 		{
@@ -208,10 +212,15 @@ namespace RenderPasses
 			}
 			center /= corners.size();
 
+			auto upVec = mathstl::Vector3(0.0f, 1.0f, 0.0f);
+			if (abs(lightLocalDir.Dot(upVec)) > 0.99)
+			{
+				upVec = mathstl::Vector3(1.0f, 0.0f, 0.0f);
+			}
 			const auto lightView = mathstl::Matrix::CreateLookAt(
-				center - lightDir,
+				center - lightLocalDir,
 				center,
-				mathstl::Vector3(0.0f, 1.0f, 0.0f)
+				upVec
 			);
 			// Min max of our corner points transformed by the lightView matrix
 			mathstl::Vector3 minPoint = mathstl::Vector3(FLT_MAX, FLT_MAX, FLT_MAX);
@@ -224,19 +233,26 @@ namespace RenderPasses
 			}
 
 			// Tune this parameter according to the scene
-			constexpr float zMult = 10.0f;
-			if (minPoint.z < 0)
-				minPoint.z *= zMult;
-			else
-				minPoint.z /= zMult;
-			if (maxPoint.z < 0)
-				maxPoint.z /= zMult;
-			else
-				maxPoint.z *= zMult;
+			constexpr float zMult = 3.0f;
+			f32 zNear = minPoint.z / zMult, zFar = maxPoint.z * zMult;
+
+			if (DirectX::XMScalarNearEqual(minPoint.x, maxPoint.x, 0.0001f))
+			{
+				const float adjust = 0.005f;
+				minPoint.x -= adjust;
+				maxPoint.x += adjust;
+			}
+			if (DirectX::XMScalarNearEqual(minPoint.y, maxPoint.y, 0.0001f))
+			{
+				const float adjust = 0.005f;
+				minPoint.y -= adjust;
+				maxPoint.y += adjust;
+			}
+
 			const auto lightProj = lightView * mathstl::Matrix::CreateOrthographicOffCenter(
 				minPoint.x, maxPoint.x,
 				minPoint.y, maxPoint.y,
-				minPoint.z, maxPoint.z
+				zNear, zFar
 			);
 			lightViewProjMatrices.push_back(
 				lightProj.Transpose()

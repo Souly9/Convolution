@@ -144,6 +144,7 @@ namespace RenderPasses
 	};
 	enum class PassType
 	{
+		PreProcess,
 		Main,
 		UI,
 		Debug,
@@ -205,6 +206,19 @@ namespace RenderPasses
 
 		void RecreateShadowMaps(u32 cascades, const mathstl::Vector2& extents);
 
+        // Helpers to split large Init / ExecutePasses
+        void InitResourceManagerAndCallbacks();
+        void CreatePassObjectsAndLayouts();
+        void CreateUBOsAndMap();
+        void CreateFrameRendererContexts();
+        void InitPassesAndImGui();
+
+        bool AnyPassWantsToRender() const;
+        void BuildSyncContextsIfNeeded(bool& rebuildSyncs, FrameRendererContext& ctx);
+        void PrepareMainPassDataForFrame(MainPassData& mainPassData, FrameRendererContext& ctx, u32 frameIdx);
+        void PerformInitialLayoutTransitions(FrameRendererContext& ctx, const stltype::vector<const Texture*>& gbufferTextures, Texture* pSwapChainTexture, Semaphore& imageAvailableSemaphore);
+        void RenderAllPassGroups(const MainPassData& mainPassData, FrameRendererContext& ctx, const stltype::hash_map<ConvolutionRenderPass*, RenderPassSynchronizationContext>& syncContexts, Semaphore& imageAvailableSemaphore);
+
 	private:
 		ProfiledLockable(CustomMutex, m_passDataMutex);
 
@@ -251,7 +265,13 @@ namespace RenderPasses
 		// Global attachment infos for all passes like gbuffer, depth buffer or swapchain textures
 		RendererAttachmentInfo m_globalRendererAttachments;
 
+		// Depth texture created during Init and used later for attachments/ImGui
+		Texture* m_pDepthTexture{ nullptr };
+
 		u32 m_currentSwapChainIdx;
+
+        void CreateDepthAttachment();
+
 		// struct to hold data for all meshes for the next frame to be rendered, uses more memory but allows for async pre-processing and we shouldn't rebuild data often anyway
 		struct RenderDataForPreProcessing
 		{

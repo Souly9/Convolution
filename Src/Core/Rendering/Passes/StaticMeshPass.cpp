@@ -28,7 +28,7 @@ namespace RenderPasses
 		const auto gbufferNormal = CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBufferNormal), LoadOp::CLEAR, nullptr);
 		const auto gbuffer3 = CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::TexCoordMatData), LoadOp::CLEAR, nullptr);
 		const auto gbufferPos = CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::Position), LoadOp::CLEAR, nullptr);
-		m_mainRenderingData.depthAttachment = CreateDefaultDepthAttachment(LoadOp::CLEAR, attachmentInfo.depthAttachment.GetTexture());;
+		m_mainRenderingData.depthAttachment = CreateDefaultDepthAttachment(LoadOp::LOAD, attachmentInfo.depthAttachment.GetTexture());
 		m_mainRenderingData.colorAttachments = { gbufferPosition, gbufferNormal, gbuffer3, gbufferPos };
 
 		InitBaseData(attachmentInfo);
@@ -137,7 +137,7 @@ namespace RenderPasses
 
 		auto& syncContext = ctx.synchronizationContexts.find(this)->second;
 
-		currentBuffer->AddWaitSemaphore(&ctx.pInitialLayoutTransitionSignalSemaphore);
+		currentBuffer->AddWaitSemaphore(syncContext.waitSemaphore);
 		currentBuffer->AddSignalSemaphore(&syncContext.signalSemaphore);
 		AsyncQueueHandler::CommandBufferRequest cmdRequest{
 			.pBuffer = currentBuffer,

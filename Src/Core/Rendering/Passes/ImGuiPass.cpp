@@ -27,7 +27,7 @@ namespace RenderPasses
 		ScopedZone("ImGuiPass::Init");
 
 		const auto gbufferUI = CreateDefaultColorAttachment(attachmentInfo.gbuffer.GetFormat(GBufferTextureType::GBufferUI), LoadOp::CLEAR, nullptr);
-		m_mainRenderingData.depthAttachment = CreateDefaultDepthAttachment(LoadOp::CLEAR, attachmentInfo.depthAttachment.GetTexture());;
+		m_mainRenderingData.depthAttachment = CreateDefaultDepthAttachment(LoadOp::LOAD, attachmentInfo.depthAttachment.GetTexture());;
 		m_mainRenderingData.colorAttachments = { gbufferUI };
 		InitBaseData(attachmentInfo);
 
