@@ -24,10 +24,10 @@ struct LightUniforms
 	mathstl::Vector4 LightGlobals; // ambient
 };
 
-inline DirectionalRenderLight ConvertToDirectionalRenderLight(const ECS::Components::Light* light)
+inline DirectionalRenderLight ConvertToDirectionalRenderLight(const ECS::Components::Light* light, const ECS::Components::Transform* pTransform)
 {
 	DirectionalRenderLight renderLight;
-	renderLight.direction = mathstl::Vector4(light->direction.x, light->direction.y, light->direction.z, 1.0f);
+	renderLight.direction = mathstl::Vector4(pTransform->position.x, pTransform->position.y, pTransform->position.z, 1.0f);
 	renderLight.color = light->color;
 
 	return renderLight;

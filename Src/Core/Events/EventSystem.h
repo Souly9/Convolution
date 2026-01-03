@@ -24,13 +24,13 @@ using MouseEventCallback = stltype::fixed_function<16, void(const MouseEventData
 struct BaseInitEventData
 {
 };
-using BaseInitEventCallback = stltype::fixed_function<16, void(const BaseInitEventData&)>;
+using BaseInitEventCallback = stltype::fixed_function<16, void(const BaseInitEventData&)>
+;
 struct AppInitEventData
 {
 	ECS::System::SystemInitData systemInitData;
 };
 using AppInitEventCallback = stltype::fixed_function<16, void(const AppInitEventData&)>;
-
 
 // Simple class to define a base eventsystem
 class EventSystem
@@ -50,6 +50,7 @@ public:
 	EVENT_FUNCTIONS(PostFrame);
 	EVENT_FUNCTIONS(ShaderHotReload);
 	EVENT_FUNCTIONS(SceneLoaded);
+	EVENT_FUNCTIONS(RightMouseClick);
 protected:
 	EVENT(Mouse);
 	EVENT(Update);
@@ -65,4 +66,5 @@ protected:
 	EVENT(PostFrame);
 	EVENT(ShaderHotReload);
 	EVENT(SceneLoaded);
+	EVENT(RightMouseClick);
 };

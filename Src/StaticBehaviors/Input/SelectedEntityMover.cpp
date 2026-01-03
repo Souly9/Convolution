@@ -1,11 +1,13 @@
 #include "Core/ECS/EntityManager.h"
 #include "SelectedEntityMover.h"
 
-// s_moveVector is basically the movement described in untransformed world space where x is regarded as forward and y as up
+// s_moveVector is basically the movement described in untransformed world space where x is regarded as forward and y is up
 mathstl::Vector2 s_moveVector = { 0, 0 };
 mathstl::Vector2 s_scrollVector = { 0, 0 };
+mathstl::Vector2 s_mouseRotateDelta = { 0, 0 };
 f32 s_moveSpeed = 0.005f;
 f32 s_scrollSpeed = 1.f;
+f32 s_rotateSpeed = 0.1f; // degrees per pixel
 
 void SelectedEntityMover::RegisterCallbacks()
 {
@@ -13,6 +15,7 @@ void SelectedEntityMover::RegisterCallbacks()
 	g_pEventSystem->AddKeyPressEventCallback([](const auto& d) { OnKeyPress(d); });
 	g_pEventSystem->AddKeyHoldEventCallback([](const auto& d) { OnKeyPress({d.key}); });
 	g_pEventSystem->AddScrollEventCallback([](const auto& d) { OnScroll(d); });
+	g_pEventSystem->AddRightMouseClickEventCallback([](const auto& d) { OnRightMouse(d); });
 }
 
 void SelectedEntityMover::OnKeyPress(const KeyPressEventData& data)
@@ -41,38 +44,70 @@ void SelectedEntityMover::OnScroll(const ScrollEventData& data)
 	s_scrollVector += data.scrollOffset * s_scrollSpeed;
 }
 
+void SelectedEntityMover::OnRightMouse(const RightMouseClickEventData& data)
+{
+	// accumulate rotation delta while right mouse pressed
+	if (data.pressed)
+	{
+		s_mouseRotateDelta.x += data.mouseDelta.x;
+		s_mouseRotateDelta.y += data.mouseDelta.y;
+	}
+}
+
 void SelectedEntityMover::OnUpdate(const UpdateEventData& data)
 {
+	// always operate on the main camera entity
 	if (data.state.mainCameraEntity.IsValid() == false)
 		return;
 
 	using namespace DirectX;
-	if ((abs)(s_moveVector.x) > FLOAT_TOLERANCE || (abs)(s_moveVector.y) > FLOAT_TOLERANCE)
-	{
-		const auto moveVector = mathstl::Vector3(s_moveVector.y, 0, s_moveVector.x);
 
+	const bool hasMove = (abs)(s_moveVector.x) > FLOAT_TOLERANCE || (abs)(s_moveVector.y) > FLOAT_TOLERANCE;
+	const bool hasScroll = (abs)(s_scrollVector.x) > FLOAT_TOLERANCE || (abs)(s_scrollVector.y) > FLOAT_TOLERANCE;
+
+	// Apply rotation from mouse if any
+	if ((abs)(s_mouseRotateDelta.x) > FLOAT_TOLERANCE || (abs)(s_mouseRotateDelta.y) > FLOAT_TOLERANCE)
+	{
 		auto* pCamTransform = g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(data.state.mainCameraEntity);
 		DEBUG_ASSERT(pCamTransform);
 
-		const auto mainCamRotation = pCamTransform->rotation;
-		const auto mainCamRotMat = mathstl::Matrix::CreateFromYawPitchRoll(mainCamRotation);
-		pCamTransform->position = mathstl::Vector3::Transform(moveVector, mainCamRotMat) + pCamTransform->position;
+		// horizontal mouse -> yaw (y), vertical mouse -> pitch (x)
+		pCamTransform->rotation.y += s_mouseRotateDelta.x * s_rotateSpeed;
+		pCamTransform->rotation.x += s_mouseRotateDelta.y * s_rotateSpeed;
 
-		g_pEntityManager->MarkComponentDirty(C_ID(Transform));
+		// avoid flipping
+		const f32 pitchLimit = 89.9f;
+		if (pCamTransform->rotation.x > pitchLimit) pCamTransform->rotation.x = pitchLimit;
+		if (pCamTransform->rotation.x < -pitchLimit) pCamTransform->rotation.x = -pitchLimit;
+
+		g_pEntityManager->MarkComponentDirty(data.state.mainCameraEntity, C_ID(Transform));
 	}
-	else if ((abs)(s_scrollVector.x) > FLOAT_TOLERANCE || (abs)(s_scrollVector.y) > FLOAT_TOLERANCE)
-	{
-		const auto moveVector = mathstl::Vector3(s_scrollVector.x, 0, -s_scrollVector.y);
 
+	if (hasMove || hasScroll)
+	{
 		auto* pCamTransform = g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(data.state.mainCameraEntity);
 		DEBUG_ASSERT(pCamTransform);
 
-		const auto mainCamRotation = pCamTransform->rotation;
-		const auto mainCamRotMat = mathstl::Matrix::CreateFromYawPitchRoll(mainCamRotation);
-		pCamTransform->position = mathstl::Vector3::Transform(moveVector, mainCamRotMat) + pCamTransform->position;
+		mathstl::Vector3 rotRad = pCamTransform->rotation;
+		rotRad *= (DirectX::XM_PI / 180.0f);
+		const auto mainCamRotMat = mathstl::Matrix::CreateFromYawPitchRoll(rotRad);
 
-		g_pEntityManager->MarkComponentDirty(C_ID(Transform));
+		// Local-space move
+		// key movement -> (y, 0, x)
+		// scroll -> (scroll.x, 0, -scroll.y)
+		mathstl::Vector3 localMove;
+		localMove.x = s_moveVector.y + s_scrollVector.x; // right
+		localMove.y = 0.0f;
+		localMove.z = s_moveVector.x - s_scrollVector.y; // forward
+
+		// Transform local movement by camera rotation and apply
+		pCamTransform->position = mathstl::Vector3::Transform(localMove, mainCamRotMat) + pCamTransform->position;
+
+		g_pEntityManager->MarkComponentDirty(data.state.mainCameraEntity, C_ID(Transform));
 	}
+
+	// reset accumulators
 	s_moveVector = XMFLOAT2(0, 0);
 	s_scrollVector = XMFLOAT2(0, 0);
+	s_mouseRotateDelta = XMFLOAT2(0, 0);
 }

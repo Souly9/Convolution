@@ -23,6 +23,7 @@ void ECS::System::SLight::SyncData(u32 currentFrame)
 	for (const auto& entity : entities)
 	{
 		const auto* pLightComponent = g_pEntityManager->GetComponentUnsafe<Components::Light>(entity);
+		const auto* pTransformComp = g_pEntityManager->GetComponentUnsafe<Components::Transform>(entity);
 		if (pLightComponent->type == Components::LightType::Directional)
 		{
 			if (numOfDirLights >= 1)
@@ -30,12 +31,11 @@ void ECS::System::SLight::SyncData(u32 currentFrame)
 				DEBUG_LOG_WARN("More than one directional light found in scene! Only the first one will be used for rendering.");
 				continue;
 			}
-			dirLight = ConvertToDirectionalRenderLight(pLightComponent);
+			dirLight = ConvertToDirectionalRenderLight(pLightComponent, pTransformComp);
 			numOfDirLights++;
 		}
 		else
 		{
-			const auto* pTransformComp = g_pEntityManager->GetComponentUnsafe<Components::Transform>(entity);
 
 			lights.push_back(ConvertToRenderLight(pLightComponent, pTransformComp));
 		}

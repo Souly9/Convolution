@@ -8,9 +8,9 @@ float computeShadow(vec4 fragPosViewSpace, vec4 fragPosWorldSpace, vec3 fragNorm
     float cascadeStepSize = shadowmapViewUBO.cascadeStepSize;
     for (int i = 0; i < cascadeCount - 1; ++i)
     {
-        if (depthValue < cascadeStepSize + (cascadeStepSize * i))
+        if (depthValue < (cascadeStepSize + (cascadeStepSize * i)))
         {
-            cascadeIndex = i + 1;
+            cascadeIndex = i;
             break;
         }
     }
@@ -21,15 +21,15 @@ float computeShadow(vec4 fragPosViewSpace, vec4 fragPosWorldSpace, vec3 fragNorm
     projCoords = projCoords * 0.5 + 0.5;
     if (projCoords.z > 1.0)
     {
-        return 1.0; // Not in shadow
+        return 0.0; 
     }
-    
-    vec3 coords = vec3(projCoords.xy, cascadeIndex);
+    vec2 uv = projCoords.xy * 0.5 + 0.5; 
+    float currentDepth = projCoords.z; 
+    vec3 coords = vec3(uv, cascadeIndex);
     float closestDepth = texture(
         GlobalBindlessArrayTextures[shadowmapUBO.directionalShadowMapIdx],
         coords
     ).r;
-    float currentDepth = projCoords.z;
 
     // Apply bias to prevent shadow acne
     float bias = max(0.005 * (1.0 - dot(normalize(fragNormal), lightDir)), 0.0005);
