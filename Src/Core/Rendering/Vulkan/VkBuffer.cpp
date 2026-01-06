@@ -1,6 +1,8 @@
-#include "VkGlobals.h"
-#include "Utils/VkEnumHelpers.h"
 #include "VkBuffer.h"
+#include "Core/Global/GlobalVariables.h"
+#include "Core/Rendering/Core/Utils/DeleteQueue.h"
+#include "Utils/VkEnumHelpers.h"
+#include "VkGlobals.h"
 
 GenBufferVulkan::GenBufferVulkan(BufferCreateInfo& info)
 {
@@ -24,34 +26,32 @@ void GenBufferVulkan::Create(BufferCreateInfo& info)
     {
         bufferInfo.queueFamilyIndexCount = info.isExclusive ? 0 : 2;
         const auto& queues = VkGlobals::GetQueueFamilyIndices();
-        u32 families[] = { queues.graphicsFamily.value(), queues.transferFamily.value() };
+        u32 families[] = {queues.graphicsFamily.value(), queues.transferFamily.value()};
         bufferInfo.pQueueFamilyIndices = families;
     }
     m_allocatedMemory = g_pGPUMemoryManager->AllocateBuffer(info.usage, bufferInfo, m_buffer);
     m_info.size = size;
     m_info.usage = info.usage;
 
-    //DEBUG_ASSERT(vkCreateBuffer(VK_LOGICAL_DEVICE, &bufferInfo, VulkanAllocator(), &m_buffer) == VK_SUCCESS);
-    //DEBUG_ASSERT(m_buffer != VK_NULL_HANDLE);
-    //VkMemoryRequirements memRequirements;
-    //vkGetBufferMemoryRequirements(VK_LOGICAL_DEVICE, m_buffer, &memRequirements);
+    // DEBUG_ASSERT(vkCreateBuffer(VK_LOGICAL_DEVICE, &bufferInfo, VulkanAllocator(), &m_buffer) == VK_SUCCESS);
+    // DEBUG_ASSERT(m_buffer != VK_NULL_HANDLE);
+    // VkMemoryRequirements memRequirements;
+    // vkGetBufferMemoryRequirements(VK_LOGICAL_DEVICE, m_buffer, &memRequirements);
 
-    //m_allocatedMemory = g_pGPUMemoryManager->AllocateMemory(info.size, mainBufferProperties, memRequirements);
+    // m_allocatedMemory = g_pGPUMemoryManager->AllocateMemory(info.size, mainBufferProperties, memRequirements);
     //
-    //vkBindBufferMemory(VK_LOGICAL_DEVICE, m_buffer, m_allocatedMemory, 0);
+    // vkBindBufferMemory(VK_LOGICAL_DEVICE, m_buffer, m_allocatedMemory, 0);
 }
 
 void GenBufferVulkan::CleanUp()
 {
-    if (m_buffer == VK_NULL_HANDLE) return;
+    if (m_buffer == VK_NULL_HANDLE)
+        return;
 
     auto memory = m_allocatedMemory;
     m_buffer = VK_NULL_HANDLE;
 
-    g_pDeleteQueue->RegisterDeleteForNextFrame([memory]() mutable
-        {
-            g_pGPUMemoryManager->TryFreeMemory(memory);
-        });
+    g_pDeleteQueue->RegisterDeleteForNextFrame([memory]() mutable { g_pGPUMemoryManager->TryFreeMemory(memory); });
 }
 
 void GenBufferVulkan::FillImmediate(const void* data)
@@ -60,7 +60,8 @@ void GenBufferVulkan::FillImmediate(const void* data)
     MapAndCopyToMemory(GetMemoryHandle(), data, GetInfo().size, 0);
 }
 
-void GenBufferVulkan::FillAndTransfer(StagingBuffer& stgBuffer, CommandBuffer* transferBuffer, const void* data, bool freeStagingBuffer, u64 offset)
+void GenBufferVulkan::FillAndTransfer(
+    StagingBuffer& stgBuffer, CommandBuffer* transferBuffer, const void* data, bool freeStagingBuffer, u64 offset)
 {
     CheckCopyArgs(data, UINT64_MAX, 0);
     DEBUG_ASSERT(stgBuffer.GetRef() != VK_NULL_HANDLE);
@@ -68,20 +69,18 @@ void GenBufferVulkan::FillAndTransfer(StagingBuffer& stgBuffer, CommandBuffer* t
     const auto sizeToTransfer = stgBuffer.GetInfo().size;
     MapAndCopyToMemory(stgBuffer.GetMemoryHandle(), data, sizeToTransfer, offset);
     SimpleBufferCopyCmd copyCmd{stgBuffer, this};
-	copyCmd.srcOffset = 0;
-	copyCmd.dstOffset = offset;
-	copyCmd.size = sizeToTransfer;
+    copyCmd.srcOffset = 0;
+    copyCmd.dstOffset = offset;
+    copyCmd.size = sizeToTransfer;
 
     if (freeStagingBuffer)
     {
         auto buffer = stgBuffer.GetRef();
         auto memory = stgBuffer.GetMemoryHandle();
-        transferBuffer->AddExecutionFinishedCallback([memory]()
-            {
+        transferBuffer->AddExecutionFinishedCallback(
+            [memory]() {
                 g_pDeleteQueue->RegisterDeleteForNextFrame([memory]() mutable
-                    {
-                        g_pGPUMemoryManager->TryFreeMemory(memory);
-                    });
+                                                           { g_pGPUMemoryManager->TryFreeMemory(memory); });
             });
 
         // Guarantee it won't get freed until we hit the callback
@@ -106,8 +105,8 @@ void GenBufferVulkan::NamingCallBack(const stltype::string& name)
     VkDebugUtilsObjectNameInfoEXT nameInfo = {};
     nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
     nameInfo.objectType = VK_OBJECT_TYPE_BUFFER;
-    nameInfo.objectHandle = (uint64_t)GetRef();     
-    nameInfo.pObjectName = name.c_str(); 
+    nameInfo.objectHandle = (uint64_t)GetRef();
+    nameInfo.pObjectName = name.c_str();
 
     vkSetDebugUtilsObjectName(VK_LOGICAL_DEVICE, &nameInfo);
 }
@@ -129,7 +128,7 @@ void GenBufferVulkan::CheckCopyArgs(const void* data, u64 size, u64 offset)
 VertexBufferVulkan::VertexBufferVulkan(u64 size)
 {
     BufferCreateInfo info{};
-	info.size = size;
+    info.size = size;
     info.usage = BufferUsage::Vertex;
     Create(info);
 }
@@ -185,23 +184,26 @@ IndirectDrawCountBuffer::IndirectDrawCountBuffer(u64 numOfCounts)
     Create(info);
 }
 
-void IndirectDrawCommandBuffer::AddIndexedDrawCmd(u32 indexCount, u32 instanceCount, u32 firstIndex, u32 vertexOffset, u32 firstInstance)
+void IndirectDrawCommandBuffer::AddIndexedDrawCmd(
+    u32 indexCount, u32 instanceCount, u32 firstIndex, u32 vertexOffset, u32 firstInstance)
 {
-    if(m_indexedIndirectCmds.capacity() == m_indexedIndirectCmds.size())
+    if (m_indexedIndirectCmds.capacity() == m_indexedIndirectCmds.size())
     {
-		// Allocate enough space for all commands from the get go please
+        // Allocate enough space for all commands from the get go please
         DEBUG_ASSERT(false);
-	}
+    }
     m_indexedIndirectCmds.emplace_back(indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
 }
 
 void IndirectDrawCommandBuffer::FillCmds()
 {
-    memcpy((char*)m_mappedMemoryHandle, (void*)m_indexedIndirectCmds.data(), m_indexedIndirectCmds.size() * sizeof(IndexedIndirectDrawCmd));
+    memcpy((char*)m_mappedMemoryHandle,
+           (void*)m_indexedIndirectCmds.data(),
+           m_indexedIndirectCmds.size() * sizeof(IndexedIndirectDrawCmd));
 }
 
 void IndirectDrawCommandBuffer::EmptyCmds()
 {
     m_indexedIndirectCmds.clear();
-    //memcpy((char*)m_mappedMemoryHandle, (void*)0, m_info.size);
+    // memcpy((char*)m_mappedMemoryHandle, (void*)0, m_info.size);
 }

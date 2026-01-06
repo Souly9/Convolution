@@ -1,23 +1,32 @@
 #pragma once
 #include "BackendDefines.h"
+#include "Core/Rendering/Core/Resource.h"
 
 // Merely a wrapper for VkDescriptorSetLayout
 class DescriptorSetLayoutVulkan : public TrackedResource
 {
 public:
-	DescriptorSetLayoutVulkan() {}
-	DescriptorSetLayoutVulkan(VkDescriptorSetLayout& layout) : m_descriptorSetLayout(layout) {}
+    DescriptorSetLayoutVulkan()
+    {
+    }
+    DescriptorSetLayoutVulkan(VkDescriptorSetLayout& layout) : m_descriptorSetLayout(layout)
+    {
+    }
 
-	~DescriptorSetLayoutVulkan() 
-	{
-		TRACKED_DESC_IMPL
-	}
+    ~DescriptorSetLayoutVulkan()
+    {
+        TRACKED_DESC_IMPL
+    }
 
-	virtual void CleanUp() override;
+    virtual void CleanUp() override;
 
-	const VkDescriptorSetLayout& GetRef() const { return m_descriptorSetLayout; }
+    const VkDescriptorSetLayout& GetRef() const
+    {
+        return m_descriptorSetLayout;
+    }
 
-	virtual void NamingCallBack(const stltype::string& name) override;
+    virtual void NamingCallBack(const stltype::string& name) override;
+
 private:
-	VkDescriptorSetLayout m_descriptorSetLayout{ VK_NULL_HANDLE };
+    VkDescriptorSetLayout m_descriptorSetLayout{VK_NULL_HANDLE};
 };

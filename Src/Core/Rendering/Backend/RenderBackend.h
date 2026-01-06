@@ -1,11 +1,7 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
 
-template<typename API>
-class RenderBackendImpl
-{
-};
-
+#include "RenderBackendBase.h"
 
 using RenderBackend = RenderBackendImpl<RenderAPI>;
 

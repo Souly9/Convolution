@@ -1,41 +1,56 @@
-
 float computeShadow(vec4 fragPosViewSpace, vec4 fragPosWorldSpace, vec3 fragNormal, vec3 lightDir)
 {
+    // 1. Cascade Selection
     float depthValue = abs(fragPosViewSpace.z);
-
-    int cascadeIndex = 0;
     int cascadeCount = 3;
     float cascadeStepSize = shadowmapViewUBO.cascadeStepSize;
-    for (int i = 0; i < cascadeCount - 1; ++i)
+
+    int cascadeIndex = 0;
+    if (cascadeStepSize > 0.0)
     {
-        if (depthValue < (cascadeStepSize + (cascadeStepSize * i)))
+        cascadeIndex = int(floor(depthValue / cascadeStepSize));
+        cascadeIndex = clamp(cascadeIndex, 0, cascadeCount - 1);
+    }
+
+    // 2. Project to Light Space
+    vec4 fragPosLightSpace = shadowmapViewUBO.csmViewMatrices[cascadeIndex] * fragPosWorldSpace;
+    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
+
+    // 3. Transform to [0,1] range
+    // NOTE: If using standard Vulkan clip space (Y-down), ensure your matrix handles the flip, 
+    // otherwise manual flip: projCoords.y = -projCoords.y; might be needed here.
+    projCoords.xy = projCoords.xy * 0.5 + 0.5;
+
+    // 4. Boundary Checks
+    if (projCoords.z > 1.0 || projCoords.z < 0.0 ||
+        projCoords.x < 0.0 || projCoords.x > 1.0 ||
+        projCoords.y < 0.0 || projCoords.y > 1.0)
+    {
+        return 1.0;
+    }
+
+    // 5. Bias Calculation
+    float nDotL = max(dot(normalize(fragNormal), lightDir), 0.0);
+    float bias = max(0.005 * (1.0 - nDotL), 0.001);
+
+    // 6. PCF Sampling 
+    float shadow = 0.0;
+    float currentDepth = projCoords.z;
+
+    vec2 texelSize = 1.0 / vec2(textureSize(GlobalBindlessArrayTextures[shadowmapUBO.directionalShadowMapIdx], 0).xy);
+
+    // 3x3 Loop
+    for (int x = -1; x <= 1; ++x)
+    {
+        for (int y = -1; y <= 1; ++y)
         {
-            cascadeIndex = i;
-            break;
+            vec3 coords = vec3(projCoords.xy + vec2(x, y) * texelSize, float(cascadeIndex));
+            float pcfDepth = texture(GlobalBindlessArrayTextures[shadowmapUBO.directionalShadowMapIdx], coords).r;
+
+            // Check shadow
+            shadow += (currentDepth - bias) > pcfDepth ? 0.0 : 1.0;
         }
     }
-    vec4 fragPosLightSpace = shadowmapViewUBO.csmViewMatrices[cascadeIndex] * fragPosWorldSpace;
-    // perform perspective divide
-    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
-    // transform to [0,1] range
-    projCoords = projCoords * 0.5 + 0.5;
-    if (projCoords.z > 1.0)
-    {
-        return 0.0; 
-    }
-    vec2 uv = projCoords.xy * 0.5 + 0.5; 
-    float currentDepth = projCoords.z; 
-    vec3 coords = vec3(uv, cascadeIndex);
-    float closestDepth = texture(
-        GlobalBindlessArrayTextures[shadowmapUBO.directionalShadowMapIdx],
-        coords
-    ).r;
 
-    // Apply bias to prevent shadow acne
-    float bias = max(0.005 * (1.0 - dot(normalize(fragNormal), lightDir)), 0.0005);
-
-    float shadow = (currentDepth - bias) > closestDepth ? 0.0 : 1.0; 
-
-    return shadow;
-
+    return shadow / 9.0;
 }

@@ -1,11 +1,11 @@
-#include "Core/Global/GlobalDefines.h"
 #include "VkDescriptorSetLayout.h"
+#include "Core/Global/GlobalDefines.h"
 #include "VkGlobals.h"
-
 
 void DescriptorSetLayoutVulkan::CleanUp()
 {
-	VK_FREE_IF(m_descriptorSetLayout, vkDestroyDescriptorSetLayout(VK_LOGICAL_DEVICE, m_descriptorSetLayout, VulkanAllocator()));
+    VK_FREE_IF(m_descriptorSetLayout,
+               vkDestroyDescriptorSetLayout(VK_LOGICAL_DEVICE, m_descriptorSetLayout, VulkanAllocator()));
 }
 
 void DescriptorSetLayoutVulkan::NamingCallBack(const stltype::string& name)

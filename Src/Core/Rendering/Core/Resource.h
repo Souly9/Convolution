@@ -1,116 +1,129 @@
 #pragma once
 
-#define TRACKED_DESC_IMPL DecRef(); if(ShouldDestroy()) { CleanUp(); }
+#define TRACKED_DESC_IMPL                                                                                              \
+    DecRef();                                                                                                          \
+    if (ShouldDestroy())                                                                                               \
+    {                                                                                                                  \
+        CleanUp();                                                                                                     \
+    }
 
 // Generic render resource
 class Resource
 {
 public:
-	Resource() = default;
-	virtual ~Resource() = default;
+    Resource() = default;
+    virtual ~Resource() = default;
 };
 
 // Resource that tracks references to itself and destroys itself when no references are left
 // Mostly hacky and for my own convenience...
-// If we copy/move the resource we just tell the original one that a new reference is created, leading to it not deleting the underlying vulkan etc. pointer 
+// If we copy/move the resource we just tell the original one that a new reference is created, leading to it not
+// deleting the underlying vulkan etc. pointer
 class TrackedResource : public Resource
 {
 public:
-	TrackedResource() = default;
-	virtual void CleanUp() {}
+    TrackedResource() = default;
+    virtual void CleanUp()
+    {
+    }
 
-	virtual ~TrackedResource() {}
+    virtual ~TrackedResource()
+    {
+    }
 
-	void DecRef()
-	{
-		if (m_refCounter != 0)
-			--m_refCounter;
-	}
-	bool ShouldDestroy() const
-	{
-		return m_refCounter == 0;
-	}
+    void DecRef()
+    {
+        if (m_refCounter != 0)
+            --m_refCounter;
+    }
+    bool ShouldDestroy() const
+    {
+        return m_refCounter == 0;
+    }
 
-	// Artifically increases refcounter to prevent deletion, DecRef needs to be called to properly track it again
-	void Grab() const
-	{
-		++m_refCounter;
-	}
-	TrackedResource(const TrackedResource& other)
-	{
-		m_refCounter = other.m_refCounter.load();
+    // Artifically increases refcounter to prevent deletion, DecRef needs to be called to properly track it again
+    void Grab() const
+    {
+        ++m_refCounter;
+    }
+    TrackedResource(const TrackedResource& other)
+    {
+        m_refCounter = other.m_refCounter.load();
 #ifdef CONV_DEBUG
-		m_debugName = other.m_debugName;
+        m_debugName = other.m_debugName;
 #endif
-		other.Grab();
-	}
-	TrackedResource& operator=(const TrackedResource& other)
-	{
-		if (this == &other)
-			return *this;
-		this->DecRef();
-		if (ShouldDestroy())
-			CleanUp();
-		this->m_refCounter = other.m_refCounter.load();
+        other.Grab();
+    }
+    TrackedResource& operator=(const TrackedResource& other)
+    {
+        if (this == &other)
+            return *this;
+        this->DecRef();
+        if (ShouldDestroy())
+            CleanUp();
+        this->m_refCounter = other.m_refCounter.load();
 #ifdef CONV_DEBUG
-		this->m_debugName = other.m_debugName;
+        this->m_debugName = other.m_debugName;
 #endif
-		other.Grab();
-		return *this;
-	}
-	TrackedResource(TrackedResource&& other) noexcept
-	{
-		m_refCounter = other.m_refCounter.load();
+        other.Grab();
+        return *this;
+    }
+    TrackedResource(TrackedResource&& other) noexcept
+    {
+        m_refCounter = other.m_refCounter.load();
 #ifdef CONV_DEBUG
-		m_debugName = other.m_debugName;
+        m_debugName = other.m_debugName;
 #endif
-		other.Grab();
-	}
+        other.Grab();
+    }
 
-	TrackedResource& operator=(TrackedResource&& other) noexcept
-	{
-		if (this == &other)
-			return *this;
+    TrackedResource& operator=(TrackedResource&& other) noexcept
+    {
+        if (this == &other)
+            return *this;
 
-		this->DecRef();
-		if (ShouldDestroy())
-			CleanUp();
-		this->m_refCounter = other.m_refCounter.load();
+        this->DecRef();
+        if (ShouldDestroy())
+            CleanUp();
+        this->m_refCounter = other.m_refCounter.load();
 #ifdef CONV_DEBUG
-		this->m_debugName = other.m_debugName;
+        this->m_debugName = other.m_debugName;
 #endif
-		other.Grab();
-		return *this;
-	}
+        other.Grab();
+        return *this;
+    }
 
-	void SetName(stltype::string&& name)
-	{
+    void SetName(stltype::string&& name)
+    {
 #ifdef CONV_DEBUG
-		m_debugName = name; 
+        m_debugName = name;
 #endif
-	}
-	void SetName(const stltype::string& name)
-	{
+    }
+    void SetName(const stltype::string& name)
+    {
 #ifdef CONV_DEBUG
-		m_debugName = name;
+        m_debugName = name;
 #endif
-	}
+    }
 
-	// can not be purely virtual since we need to create this class sometimes
-	virtual void NamingCallBack(const stltype::string& name) {}
+    // can not be purely virtual since we need to create this class sometimes
+    virtual void NamingCallBack(const stltype::string& name)
+    {
+    }
 
-	stltype::string GetDebugName() const
-	{
+    stltype::string GetDebugName() const
+    {
 #ifdef CONV_DEBUG
-		return m_debugName;
+        return m_debugName;
 #else
-		return "";
+        return "";
 #endif
-	}
+    }
+
 protected:
 #ifdef CONV_DEBUG
-	stltype::string m_debugName;
+    stltype::string m_debugName;
 #endif
 
-	mutable stltype::atomic<u32> m_refCounter{ 1 };
+    mutable stltype::atomic<u32> m_refCounter{1};
 };

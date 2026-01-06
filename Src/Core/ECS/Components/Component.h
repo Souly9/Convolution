@@ -3,10 +3,10 @@
 
 namespace ECS
 {
-	namespace Components
-	{
-		struct IComponent
-		{
-		};
-	}
-}
+namespace Components
+{
+struct IComponent
+{
+};
+} // namespace Components
+} // namespace ECS

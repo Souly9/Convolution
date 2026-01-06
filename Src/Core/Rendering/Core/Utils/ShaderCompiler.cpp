@@ -1,10 +1,12 @@
-#include "Core/Global/GlobalDefines.h"
 #include "ShaderCompiler.h"
 #include "../ShaderManager.h"
+#include "Core/Global/GlobalDefines.h"
+#include "Core/Global/GlobalVariables.h"
+#include "Core/IO/FileReader.h"
+#include <filesystem>
 #include <glslang/Public/ResourceLimits.h>
 #include <glslang/Public/ShaderLang.h>
 #include <glslang/SPIRV/GlslangToSpv.h>
-#include <filesystem>
 
 namespace fs = std::filesystem;
 
@@ -14,8 +16,8 @@ class GlslangIncluder : public glslang::TShader::Includer
 public:
     // Implement the logic to find and load the included file content
     virtual IncludeResult* includeSystem(const char* headerName,
-        const char* includerName,
-        size_t inclusionDepth) override
+                                         const char* includerName,
+                                         size_t inclusionDepth) override
     {
         if (headerName == nullptr || includerName == nullptr)
         {
@@ -29,10 +31,9 @@ public:
 
         stltype::string fileName = headerName;
         fileName = fileName.substr(fileName.find_last_of('/') + 1);
-        const auto& pathInfo = std::find_if(m_includerPaths.begin(), m_includerPaths.end(), [&](const IncluderPathInfo& info)
-            {
-                return info.fileName == fileName;
-            });
+        const auto& pathInfo = std::find_if(m_includerPaths.begin(),
+                                            m_includerPaths.end(),
+                                            [&](const IncluderPathInfo& info) { return info.fileName == fileName; });
         const auto it = m_includerMap.find(pathInfo->absolutePath);
         DEBUG_ASSERT(it != m_includerMap.end());
 
@@ -42,8 +43,8 @@ public:
     }
 
     virtual IncludeResult* includeLocal(const char* headerName,
-        const char* includerName,
-        size_t inclusionDepth) override
+                                        const char* includerName,
+                                        size_t inclusionDepth) override
     {
         return nullptr;
     }
@@ -61,7 +62,6 @@ public:
         m_includerResults.reserve(150);
         for (const auto& entry : fs::recursive_directory_iterator(rootDir.c_str()))
         {
-
             if (entry.is_regular_file())
             {
                 ++m_readShaderFiles;
@@ -72,33 +72,33 @@ public:
                 }
                 else
                 {
-					absolutePath = entry.path().string().c_str();
+                    absolutePath = entry.path().string().c_str();
                 }
                 stltype::string fileName = entry.path().filename().string().c_str();
                 DEBUG_LOGF("Discovered include file {}", absolutePath.c_str());
 
-                IORequest req
-                {
-                    .filePath = absolutePath,
-                    .callback = [this, fileName](ReadBytesInfo& data)
-                    {
-                        m_includerMap[data.filePath] = data.bytes;
-                        m_includerPaths.emplace_back(fileName, data.filePath);
-                        --m_readShaderFiles;
-                    },
-                    .requestType = RequestType::Bytes
+                IORequest req{.filePath = absolutePath,
+                              .callback =
+                                  [this, fileName](ReadBytesInfo& data)
+                              {
+                                  m_includerMap[data.filePath] = data.bytes;
+                                  m_includerPaths.emplace_back(fileName, data.filePath);
+                                  --m_readShaderFiles;
+                              },
+                              .requestType = RequestType::Bytes
 
                 };
                 g_pFileReader->SubmitIORequest(req);
             }
         }
     }
+
 private:
     IncluderMap m_includerMap;
     struct IncluderPathInfo
     {
-		stltype::string fileName;
-		stltype::string absolutePath;
+        stltype::string fileName;
+        stltype::string absolutePath;
     };
     stltype::vector<IncluderPathInfo> m_includerPaths;
     stltype::vector<IncludeResult> m_includerResults;
@@ -112,33 +112,18 @@ static SpirVBinary CompileShader(EShLanguage type, const stltype::vector<char>& 
     ScopedZone("ShaderCompiler::CompileShader");
     DEBUG_LOGF("Compiling shader {}", fileName);
 
-
     glslang::TShader shader(type);
-    int lengths[] = { (int)shaderSource.size() };
+    int lengths[] = {(int)shaderSource.size()};
     auto source = reinterpret_cast<const char*>(shaderSource.data());
     shader.setStringsWithLengths(&source, lengths, 1);
 
-    shader.setEnvClient(
-        glslang::EShClientVulkan,       
-        glslang::EShTargetVulkan_1_4
-    );
+    shader.setEnvClient(glslang::EShClientVulkan, glslang::EShTargetVulkan_1_4);
 
-    shader.setEnvTarget(
-        glslang::EShTargetSpv,         
-        glslang::EShTargetSpv_1_6
-    ); 
+    shader.setEnvTarget(glslang::EShTargetSpv, glslang::EShTargetSpv_1_6);
 
     EShMessages messages = (EShMessages)(EShMsgDefault | EShMsgVulkanRules | EShMsgSpvRules);
-    
-    if (shader.parse(
-        GetDefaultResources(),
-        100,
-        ENoProfile,
-        false,
-        true,
-        messages,
-        s_includer
-    ) == false)
+
+    if (shader.parse(GetDefaultResources(), 100, ENoProfile, false, true, messages, s_includer) == false)
     {
         const auto pLog = shader.getInfoLog();
         DEBUG_LOGF("Shader compilation failed: {}", pLog);
@@ -156,7 +141,7 @@ static SpirVBinary CompileShader(EShLanguage type, const stltype::vector<char>& 
         DEBUG_LOGF("Shader linking debug log: {}", program.getInfoDebugLog());
         return {};
     }
-	DEBUG_LOGF("Shader linking succeeded!");
+    DEBUG_LOGF("Shader linking succeeded!");
     const auto inter = shader.getIntermediate();
 
     std::vector<u32> tmp;
@@ -177,7 +162,7 @@ static SpirVBinary CompileShader(EShLanguage type, const stltype::vector<char>& 
 
     if (rslt.words.empty())
     {
-		DEBUG_LOGF("SPIR-V conversion failed: {}", logger.getAllMessages());
+        DEBUG_LOGF("SPIR-V conversion failed: {}", logger.getAllMessages());
         return {};
     }
 
@@ -194,36 +179,38 @@ ShaderMap ShaderCompiler::CompileAllShaders()
     for (auto& data : m_compileData)
     {
         EShLanguage type;
-		switch (data.type)
-		{
-		case ShaderTypeBits::Vertex:
-			type = EShLangVertex;
-			break;
-		case ShaderTypeBits::Fragment:
-			type = EShLangFragment;
-			break;
-		case ShaderTypeBits::Compute:
-			type = EShLangCompute;
-			break;
-        default:
-			DEBUG_ASSERT(false);
-			break;
-		}
+        switch (data.type)
+        {
+            case ShaderTypeBits::Vertex:
+                type = EShLangVertex;
+                break;
+            case ShaderTypeBits::Fragment:
+                type = EShLangFragment;
+                break;
+            case ShaderTypeBits::Compute:
+                type = EShLangCompute;
+                break;
+            default:
+                DEBUG_ASSERT(false);
+                break;
+        }
         const auto spirv = CompileShader(type, data.contents, data.fileName.c_str());
         if (spirv.words.empty())
-		{
-			DEBUG_LOGF("Shader compilation failed: {}", data.fileName);
+        {
+            DEBUG_LOGF("Shader compilation failed: {}", data.fileName);
             m_dataFutex.unlock();
             return {};
-		}
+        }
         rsltMap.emplace(BuildOutputFileName(data.fileName), spirv);
     }
     glslang::FinalizeProcess();
-	m_dataFutex.unlock();
-	return rsltMap;
+    m_dataFutex.unlock();
+    return rsltMap;
 }
 
-void ShaderCompiler::AddShaderCode(ShaderTypeBits type, const stltype::string& fileName, stltype::vector<char>&& contents)
+void ShaderCompiler::AddShaderCode(ShaderTypeBits type,
+                                   const stltype::string& fileName,
+                                   stltype::vector<char>&& contents)
 {
     m_dataFutex.lock();
     m_compileData.emplace_back(type, fileName, contents);

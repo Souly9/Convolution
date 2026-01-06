@@ -1,12 +1,13 @@
 #include "STransform.h"
+#include "Core/ECS/EntityManager.h"
 
 using namespace DirectX;
 
 void ECS::System::STransform::Init(const SystemInitData& data)
 {
-	m_pPassManager = data.pPassManager;
+    m_pPassManager = data.pPassManager;
 
-	m_cachedDataMap.reserve(256);
+    m_cachedDataMap.reserve(256);
 }
 
 /**
@@ -54,7 +55,8 @@ mathstl::Matrix ECS::System::STransform::ComputeModelMatrixRecursive(Entity enti
 void ECS::System::STransform::Process()
 {
     ScopedZone("Transform System::Process");
-    stltype::vector<ComponentHolder<Components::Transform>>& transComps = g_pEntityManager->GetComponentVector<Components::Transform>();
+    stltype::vector<ComponentHolder<Components::Transform>>& transComps =
+        g_pEntityManager->GetComponentVector<Components::Transform>();
 
     // 1. Clear the cache for the new frame
     m_cachedDataMap.clear();
@@ -72,7 +74,8 @@ void ECS::System::STransform::Process()
         }
 
         // 2b. Populate children lists.
-        // We iterate through all transforms and add *ourselves* to our *parent's* list.
+        // We iterate through all transforms and add *ourselves* to our *parent's*
+        // list.
         for (auto& transformHolder : transComps)
         {
             ECS::Components::Transform& transform = transformHolder.component;
@@ -80,7 +83,8 @@ void ECS::System::STransform::Process()
             {
                 // Find the parent's component
                 // This assumes the parent entity is valid and has a transform.
-                ECS::Components::Transform* pParentTransform = g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(transform.parent);
+                ECS::Components::Transform* pParentTransform =
+                    g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(transform.parent);
 
                 // Add this entity to its parent's list of children
                 if (pParentTransform)
@@ -106,11 +110,9 @@ void ECS::System::STransform::Process()
         mathstl::Matrix worldModel = ComputeModelMatrixRecursive(transformHolder.entity);
 
         // 3b. Decompose the final matrix back into the component
-        worldModel.Decompose(
-            transformHolder.component.worldScale,
-            transformHolder.component.worldRotation,
-            transformHolder.component.worldPosition
-        );
+        worldModel.Decompose(transformHolder.component.worldScale,
+                             transformHolder.component.worldRotation,
+                             transformHolder.component.worldPosition);
     }
 }
 
@@ -126,7 +128,8 @@ void ECS::System::STransform::SyncData(u32 currentFrame)
 
 bool ECS::System::STransform::AccessesAnyComponents(const stltype::vector<C_ID>& components)
 {
-    return stltype::find(components.begin(), components.end(), ComponentID<Components::Transform>::ID) != components.end();
+    return stltype::find(components.begin(), components.end(), ComponentID<Components::Transform>::ID) !=
+           components.end();
 }
 
 mathstl::Matrix ECS::System::STransform::ComputeModelMatrix(const ECS::Components::Transform* pTransform)
@@ -141,8 +144,6 @@ mathstl::Matrix ECS::System::STransform::ComputeModelMatrix(const ECS::Component
 
     Quaternion transformQuat = Quaternion::CreateFromYawPitchRoll(rotation.y, rotation.x, rotation.z);
 
-    return Matrix::CreateScale(scale) *
-        Matrix::CreateFromQuaternion(transformQuat) *
-        Matrix::CreateTranslation(position);
+    return Matrix::CreateScale(scale) * Matrix::CreateFromQuaternion(transformQuat) *
+           Matrix::CreateTranslation(position);
 }
-

@@ -1,45 +1,50 @@
 #pragma once
+#include "BackendDefines.h"
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Rendering/Core/Synchronization.h"
-#include "BackendDefines.h"
 
-template<>
+template <>
 class SemaphoreImpl<Vulkan> : public GPUSyncer
 {
 public:
-	~SemaphoreImpl();
+    ~SemaphoreImpl();
 
-	void Create();
+    void Create();
 
-	virtual void CleanUp() override;
+    virtual void CleanUp() override;
 
-	void Reset();
+    void Reset();
 
-	VkSemaphore GetRef() const;
+    VkSemaphore GetRef() const;
 
-	virtual void NamingCallBack(const stltype::string& name) override;
+    virtual void NamingCallBack(const stltype::string& name) override;
+
 private:
-	VkSemaphore m_semaphore{ VK_NULL_HANDLE };
+    VkSemaphore m_semaphore{VK_NULL_HANDLE};
 };
 
-template<>
+template <>
 class FenceImpl<Vulkan> : public CPUSyncer
 {
 public:
-	~FenceImpl();
+    ~FenceImpl();
 
-	void Create(bool signaled = true);
+    void Create(bool signaled = true);
 
-	virtual void CleanUp() override;
+    virtual void CleanUp() override;
 
-	void WaitFor(const u64& timeout = UINT64_MAX) const;
-	bool IsSignaled() const;
+    void WaitFor(const u64& timeout = UINT64_MAX) const;
+    bool IsSignaled() const;
 
-	void Reset();
+    void Reset();
 
-	VkFence GetRef() const;
+    VkFence GetRef() const;
 
-	virtual void NamingCallBack(const stltype::string& name) override;
+    virtual void NamingCallBack(const stltype::string& name) override;
+
 private:
-	VkFence m_fence{ VK_NULL_HANDLE };
+    VkFence m_fence{VK_NULL_HANDLE};
+#ifdef CONV_DEBUG
+    bool m_signaled = false;
+#endif
 };

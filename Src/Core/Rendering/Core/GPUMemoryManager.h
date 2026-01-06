@@ -3,12 +3,12 @@
 
 enum class Allocator
 {
-	// Just allocating each block through vulkans allocator functions, so will run against the limits super fast
-	Default,
-	// Classic vulkan memory allocator library
-	VMA,
-	// Own memory allocator, which I will implement one day TM
-	Convolution
+    // Just allocating each block through vulkans allocator functions, so will run against the limits super fast
+    Default,
+    // Classic vulkan memory allocator library
+    VMA,
+    // Own memory allocator, which I will implement one day TM
+    Convolution
 };
 
 IMPLEMENT_GRAPHICS_API

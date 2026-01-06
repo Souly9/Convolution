@@ -1,5 +1,5 @@
-#include "VkGlobals.h"
 #include "VkSynchronization.h"
+#include "VkGlobals.h"
 
 SemaphoreImpl<Vulkan>::~SemaphoreImpl()
 {
@@ -11,17 +11,15 @@ void SemaphoreImpl<Vulkan>::Create()
     VkSemaphoreTypeCreateInfo timelineInfo{};
     timelineInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
     timelineInfo.semaphoreType = VK_SEMAPHORE_TYPE_BINARY;
-    timelineInfo.initialValue = 0; 
+    timelineInfo.initialValue = 0;
     VkSemaphoreCreateInfo semaphoreInfo{};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    semaphoreInfo.pNext = &timelineInfo; 
+    semaphoreInfo.pNext = &timelineInfo;
     DEBUG_ASSERT(vkCreateSemaphore(VK_LOGICAL_DEVICE, &semaphoreInfo, VulkanAllocator(), &m_semaphore) == VK_SUCCESS);
 }
 
-void SemaphoreImpl<Vulkan>::CleanUp()
-{
-    VK_FREE_IF(m_semaphore, vkDestroySemaphore(VK_LOGICAL_DEVICE, m_semaphore, VulkanAllocator()))
-}
+void SemaphoreImpl<Vulkan>::CleanUp(){
+    VK_FREE_IF(m_semaphore, vkDestroySemaphore(VK_LOGICAL_DEVICE, m_semaphore, VulkanAllocator()))}
 
 VkSemaphore SemaphoreImpl<Vulkan>::GetRef() const
 {
@@ -70,7 +68,7 @@ bool FenceImpl<Vulkan>::IsSignaled() const
     auto rslt = vkGetFenceStatus(VK_LOGICAL_DEVICE, m_fence);
     if (rslt == VK_SUCCESS)
     {
-        return  true;
+        return true;
     }
     return false;
 }

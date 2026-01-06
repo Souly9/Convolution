@@ -1,0 +1,29 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "CMake: Build (RelWithDebInfo)",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build",
+                "${workspaceFolder}/out/build/RelWithDebInfo",
+                "--config",
+                "RelWithDebInfo"
+            ],
+            "group": "build"
+        },
+        {
+            "label": "CMake: Configure (RelWithDebInfo)",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "-DCMAKE_BUILD_TYPE=RelWithDebInfo",
+                "-S",
+                "${workspaceFolder}",
+                "-B",
+                "${workspaceFolder}/out/build/RelWithDebInfo"
+            ]
+        }
+    ]
+}

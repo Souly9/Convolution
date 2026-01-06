@@ -1,0 +1,17 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Convolution (LLDB)",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/bin/Convolution.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}/bin",
+            "console": "integratedTerminal",
+            "sourceMap": {
+                "${workspaceFolder}/out/build/RelWithDebInfo": "${workspaceFolder}"
+            }
+        }
+    ]
+}

@@ -1,9 +1,11 @@
-#include "Core/Global/GlobalDefines.h"
 #include "Transform.h"
-#include "../ComponentDefines.h"
+#include "Core/ECS/ComponentDefines.h"
+#include "Core/ECS/EntityManager.h"
+#include "Core/Global/GlobalDefines.h"
+#include "Core/Global/GlobalVariables.h"
 
 void ECS::Components::Transform::Scale(f32 s)
 {
-	scale *= s;
-	g_pEntityManager->MarkComponentDirty(C_ID(Transform));
+    scale *= s;
+    g_pEntityManager->MarkComponentDirty(C_ID(Transform));
 }

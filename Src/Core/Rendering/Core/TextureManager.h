@@ -7,4 +7,3 @@ using TextureManager = VkTextureManager;
 #include "Core/Rendering/Vulkan/VkTextureManager.h"
 #endif
 extern stltype::unique_ptr<TextureManager> g_pTexManager;
-

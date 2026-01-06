@@ -1,28 +1,29 @@
 #pragma once
-#include "Core/Global/GlobalDefines.h"
-#include "Core/ECS/Components/Component.h"
 #include "Core/ECS//Systems/System.h"
+#include "Core/ECS/Components/Component.h"
+#include "Core/Global/GlobalDefines.h"
 #include "Core/Rendering/Passes/PassManager.h"
 
 namespace ECS
 {
-	namespace System
-	{
-		class STransform : public ISystem
-		{
-		public:
-			void Init(const SystemInitData& data) override;
+namespace System
+{
+class STransform : public ISystem
+{
+public:
+    void Init(const SystemInitData& data) override;
 
-			virtual void Process() override;
-			virtual void SyncData(u32 currentFrame) override;
+    virtual void Process() override;
+    virtual void SyncData(u32 currentFrame) override;
 
-			virtual bool AccessesAnyComponents(const stltype::vector<C_ID>& components) override;
-		protected:
-			mathstl::Matrix ComputeModelMatrix(const ECS::Components::Transform* pTransform);
-			mathstl::Matrix ComputeModelMatrixRecursive(Entity entity);
-			// Cached model matrices of all entities
-			RenderPasses::TransformSystemData m_cachedDataMap;
-			RenderPasses::PassManager* m_pPassManager;
-		};
-	}
-}
+    virtual bool AccessesAnyComponents(const stltype::vector<C_ID>& components) override;
+
+protected:
+    mathstl::Matrix ComputeModelMatrix(const ECS::Components::Transform* pTransform);
+    mathstl::Matrix ComputeModelMatrixRecursive(Entity entity);
+    // Cached model matrices of all entities
+    RenderPasses::TransformSystemData m_cachedDataMap;
+    RenderPasses::PassManager* m_pPassManager;
+};
+} // namespace System
+} // namespace ECS

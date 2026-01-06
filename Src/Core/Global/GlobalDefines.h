@@ -1,47 +1,38 @@
 #pragma once
+
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
-#include <EASTL/allocator.h>
-#include <EAStdC/EAString.h>
-#include <EASTL/string.h>
-#include <EASTL/string_view.h>
-#include <EASTL/variant.h>
-#include <EASTL/array.h>
-#include <EASTL/vector.h>
-#include <EASTL/bit.h>
-#include <EASTL/unique_ptr.h>
-#include <EASTL/shared_ptr.h>
-#include <EASTL/optional.h>
-#include <DirectXMath.h>
-#include <DirectXPackedVector.h>
-#include <SimpleMath/SimpleMath.h>
-#include <cassert>
-#include <functional>
-#include <EASTL/hash_map.h>
-#include <EASTL/fixed_vector.h>
-#include <EASTL/fixed_string.h>
-#include <EAThread/eathread_thread.h>
-#include <EAThread/eathread_futex.h>
-#include <EASTL/bitset.h>
-#include <EASTL/fixed_function.h>
 
-#if CONV_DEBUG
+// Note: External libraries and common system headers are now in PCH.h
+#include "Typedefs.h"
+#include <cassert>
+
+// Configuration Macros
+#ifdef CONV_DEBUG
 #define ASSERT(x) assert(x)
-#else 
+#else
 #undef CONV_DEBUG
 #define ASSERT(x) x
 #endif
 #define DEBUG_ASSERT(x) ASSERT(x)
 
-namespace stltype = eastl;
-namespace threadstl = EA::Thread;
-namespace mathstl = DirectX::SimpleMath;
+// Forward Decls
+struct VkAllocationCallbacks;
+inline VkAllocationCallbacks* VulkanAllocator()
+{
+    return nullptr;
+};
 
-#include "Typedefs.h"
-#include "Core/../../Shaders/Globals/BindingSlots.h"
-#include "Core/ECS/Entity.h"
+class AvailableRenderBackends
+{
+};
+class Vulkan : AvailableRenderBackends
+{
+};
+using RenderAPI = Vulkan;
 
+// Constants
 const static inline stltype::string ENGINE_NAME = "Convolution";
 constexpr static inline u32 FRAMES_IN_FLIGHT = 2u;
 constexpr static inline u32 SWAPCHAIN_IMAGES = 2u;
@@ -49,43 +40,28 @@ constexpr static inline u32 CSM_INITIAL_CASCADES = 3u;
 constexpr static inline mathstl::Vector2 CSM_DEFAULT_RES = mathstl::Vector2(2048.0f, 2048.0f);
 constexpr static inline u32 MAX_BINDLESS_TEXTURES = 16536;
 constexpr static inline u32 MAX_MESHES = 4096;
+constexpr static inline u32 MAX_MATERIALS = 256;
+constexpr static inline u32 MAX_ENTITIES = 4096;
 constexpr static inline u32 MAX_TILES = 1;
 constexpr static inline u32 MAX_LIGHTS_PER_TILE = 32;
 
-// memory
-// Want to switch to custom allocators one day
-struct VkAllocationCallbacks;
-inline VkAllocationCallbacks* VulkanAllocator() { return nullptr; };
-
-class AvailableRenderBackends {};
-class Vulkan : AvailableRenderBackends {};
-using RenderAPI = Vulkan;
-
+// Definitions
 #define USE_VULKAN
 
 #ifdef USE_VULKAN
-
 #define SEPERATE_TRANSFERQUEUE true
 #define GLFW_INCLUDE_VULKAN
-#define CONV_MIN_VULKAN_VERSION VK_API_VERSION_1_4
+#define CONV_MIN_VULKAN_VERSION     VK_API_VERSION_1_4
 #define CONV_DESIRED_VULKAN_VERSION VK_API_VERSION_1_4
-
 #endif
 
-#define IMPLEMENT_GRAPHICS_API template<class BackendAPI> requires stltype::is_base_of_v<AvailableRenderBackends, BackendAPI>
-#define GLOBAL_INCLUDES 
+#define IMPLEMENT_GRAPHICS_API                                                                                         \
+    template <class BackendAPI>                                                                                        \
+        requires stltype::is_base_of_v<AvailableRenderBackends, BackendAPI>
 
-#include "Core/Global/State/States.h"
-
-#include "LogDefines.h"
-#include "GlobalVariables.h"
-#include "Core/Events/EventSystem.h"
-#include "Profiling.h"
-
-#define CUR_FRAME FrameGlobals::GetFrameNumber()
+// Logic Macros
+#define CUR_FRAME          FrameGlobals::GetFrameNumber()
 #define COMP_ID(component) ECS::ComponentID<ECS::Components::##component>::ID
 
 static inline constexpr f32 FLOAT_TOLERANCE = 0.00001f;
-
 static inline constexpr f32 AMBIENT_STRENGTH = 0.1f;
-

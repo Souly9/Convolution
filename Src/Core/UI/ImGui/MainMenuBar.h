@@ -1,30 +1,31 @@
 #pragma once
-#include <imgui/imgui.h>
-#include "UIElement.h"
+#include "Controls/SceneGraphWindow.h"
+#include "Controls/SelectedEntitiesWindow.h"
+#include "DebugWindows/DebugSettings.h"
+#include "DebugWindows/GBufferWindow.h"
 #include "DebugWindows/InfoWindow.h"
 #include "DebugWindows/StatsWindow.h"
-#include "DebugWindows/DebugSettings.h"
-#include "Controls/SelectedEntitiesWindow.h"
-#include "DebugWindows/GBufferWindow.h"
-#include "Controls/SceneGraphWindow.h"
+#include "UIElement.h"
+#include <imgui/imgui.h>
 
 class MainMenuBar : public SelfInstantiatingUIElement<MainMenuBar>
 {
 public:
-	MainMenuBar();
+    MainMenuBar();
 
-	void DrawMenuBar(f32 dt, ApplicationInfos& appInfos);
+    void DrawMenuBar(f32 dt, ApplicationInfos& appInfos);
 
-	void OnUpdate(const UpdateEventData& d)
-	{
-		m_lastUpdateState = d;
-	}
+    void OnUpdate(const UpdateEventData& d)
+    {
+        m_lastUpdateState = d;
+    }
+
 private:
-	InfoWindow m_debugInfoWindow;
-	StatsWindow m_statsWindow;
-	DebugSettingsWindow m_debugSettingsWindow;
-	SelectedEntityWindow m_selectedEntitiesWindow;
-	UpdateEventData m_lastUpdateState;
-	GBufferWindow m_gbufferWindow;
-	SceneGraphWindow m_sceneGraphWindow;
+    InfoWindow m_debugInfoWindow;
+    StatsWindow m_statsWindow;
+    DebugSettingsWindow m_debugSettingsWindow;
+    SelectedEntityWindow m_selectedEntitiesWindow;
+    UpdateEventData m_lastUpdateState;
+    GBufferWindow m_gbufferWindow;
+    SceneGraphWindow m_sceneGraphWindow;
 };

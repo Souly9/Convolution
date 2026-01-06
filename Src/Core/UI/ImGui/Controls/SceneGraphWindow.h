@@ -1,19 +1,18 @@
-#pragma once 
-#include "Core/Global/GlobalDefines.h"
-#include "Core/ECS/EntityManager.h"
+#pragma once
 #include "../DebugWindows/InfoWindow.h"
+#include "Core/Global/CommonGlobals.h"
 
 class SceneGraphWindow : public InfoWindow
 {
 public:
-	void DrawWindow(const UpdateEventData& data)
-	{
-		ImGui::Begin("Scene", &m_isOpen);
+    void DrawWindow(const UpdateEventData& data)
+    {
+        ImGui::Begin("Scene", &m_isOpen);
 
-		if (data.state.pCurrentScene != nullptr && data.state.pCurrentScene->IsFullyLoaded())
-		{
-			const auto transforms = g_pEntityManager->GetComponentVector<ECS::Components::Transform>();
-			stltype::queue<const ECS::ComponentHolder<ECS::Components::Transform>*> rootTransformQueue;
+        if (data.state.pCurrentScene != nullptr && data.state.pCurrentScene->IsFullyLoaded())
+        {
+            const auto transforms = g_pEntityManager->GetComponentVector<ECS::Components::Transform>();
+            stltype::queue<const ECS::ComponentHolder<ECS::Components::Transform>*> rootTransformQueue;
             for (auto& transHolder : transforms)
             {
                 const auto& transform = transHolder.component;
@@ -31,10 +30,9 @@ public:
 
                 DrawSceneNode(transformHolder->component, transformHolder->entity);
             }
-		}
-		ImGui::End();
-
-	}
+        }
+        ImGui::End();
+    }
 
 private:
     static void DrawSceneNode(const ECS::Components::Transform& transform, ECS::Entity ent)
@@ -52,9 +50,11 @@ private:
 
         if (ImGui::IsItemClicked())
         {
-            g_pApplicationState->RegisterUpdateFunction([ent](ApplicationState& state) { 
-                state.selectedEntities.clear(); 
-                state.selectedEntities.push_back(ent);  
+            g_pApplicationState->RegisterUpdateFunction(
+                [ent](ApplicationState& state)
+                {
+                    state.selectedEntities.clear();
+                    state.selectedEntities.push_back(ent);
                 });
         }
 
@@ -62,7 +62,7 @@ private:
         {
             for (ECS::Entity child : transform.children)
             {
-				auto pChildTransform = g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(child);
+                auto pChildTransform = g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(child);
                 DrawSceneNode(*pChildTransform, child);
             }
 
