@@ -1,6 +1,8 @@
 #include "ShaderManager.h"
+#include "Core/Global/GlobalVariables.h"
+#include "Core/IO/FileReader.h"
 #include "Utils/ShaderCompiler.h"
-// Using the normal filesystem lib here for simplicity 
+// Using the normal filesystem lib here for simplicity
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -37,7 +39,7 @@ bool ShaderManager::ReadAllSourceShaders()
         if (entry.is_regular_file())
         {
             ++m_totalShaderFiles;
-            
+
             stltype::string path(entry.path().string().c_str());
             const stltype::string extension = entry.path().extension().string().c_str();
             stltype::string filename = entry.path().filename().string().c_str();
@@ -48,29 +50,28 @@ bool ShaderManager::ReadAllSourceShaders()
             ShaderTypeBits shaderType;
             if (extension == ".vert")
             {
-				shaderType = ShaderTypeBits::Vertex;
+                shaderType = ShaderTypeBits::Vertex;
             }
-			else if (extension == ".frag")
-			{
-				shaderType = ShaderTypeBits::Fragment;
-			}
-			else if (extension == ".comp")
-			{
-				shaderType = ShaderTypeBits::Compute;
-			}
-			else
-			{
-				DEBUG_ASSERT(false);
-			}
-            IORequest req
+            else if (extension == ".frag")
             {
-                .filePath = path,
-                .callback = [this, shaderType](ReadBytesInfo& data)
-                {
-                    m_compiler.AddShaderCode(shaderType, data.filePath, std::move(data.bytes));
-                    ++m_readShaderFiles;
-                },
-                .requestType = RequestType::Bytes
+                shaderType = ShaderTypeBits::Fragment;
+            }
+            else if (extension == ".comp")
+            {
+                shaderType = ShaderTypeBits::Compute;
+            }
+            else
+            {
+                DEBUG_ASSERT(false);
+            }
+            IORequest req{.filePath = path,
+                          .callback =
+                              [this, shaderType](ReadBytesInfo& data)
+                          {
+                              m_compiler.AddShaderCode(shaderType, data.filePath, std::move(data.bytes));
+                              ++m_readShaderFiles;
+                          },
+                          .requestType = RequestType::Bytes
 
             };
             g_pFileReader->SubmitIORequest(req);
@@ -81,28 +82,28 @@ bool ShaderManager::ReadAllSourceShaders()
 
 bool ShaderManager::CompileAllShaders()
 {
-    while(m_readShaderFiles != m_totalShaderFiles)
-	{
-	}
+    while (m_readShaderFiles != m_totalShaderFiles)
+    {
+    }
     DEBUG_LOGF("Compiling {} shader files", m_totalShaderFiles);
     m_compiledShaders = m_compiler.CompileAllShaders();
-	// Only get filled map when compilation was successful
+    // Only get filled map when compilation was successful
     return m_compiledShaders.size() > 0;
 }
 
 bool ShaderManager::ReloadAllShaders()
 {
     DEBUG_LOGF("Reloading {} shader files", m_totalShaderFiles);
-    //CleanShaderOutputDirectory();
-	return ReadAllSourceShaders();
+    // CleanShaderOutputDirectory();
+    return ReadAllSourceShaders();
 }
 
 const SpirVBinary& ShaderManager::GetShader(const stltype::string_view& relativePath)
 {
     if (const auto it = m_compiledShaders.find(relativePath.data()); it != m_compiledShaders.end())
-	{
-		return it->second;
-	}
+    {
+        return it->second;
+    }
     DEBUG_ASSERT(false);
-	return {};
+    return {};
 }

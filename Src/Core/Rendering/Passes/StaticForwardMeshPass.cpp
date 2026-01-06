@@ -1,11 +1,11 @@
-//#include "StaticMeshPass.h"
-//#include "Core/Rendering/Vulkan/VkGlobals.h"
-//#include "Core/Global/GlobalVariables.h"
-//#include "Core/Rendering/Core/RenderingTypeDefs.h"
-//#include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
-//#include "Utils/RenderPassUtils.h"
+// #include "StaticMeshPass.h"
+// #include "Core/Rendering/Vulkan/VkGlobals.h"
+// #include "Core/Global/GlobalVariables.h"
+// #include "Core/Rendering/Core/RenderingTypeDefs.h"
+// #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
+// #include "Utils/RenderPassUtils.h"
 //
-//namespace RenderPasses
+// namespace RenderPasses
 //{
 //	void StaticMainMeshPass::BuildBuffers()
 //	{
@@ -29,26 +29,31 @@
 //
 //		const auto& gbufferInfo = attachmentInfo.gbuffer;
 //
-//		//const auto gbufferPosition = CreateDefaultColorAttachment(attachmentInfo.swapchainTextures[0].GetInfo().format, LoadOp::CLEAR, nullptr);
-//		const auto gbufferPosition = CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBufferPosition), LoadOp::CLEAR, nullptr);
-//		//const auto gbufferNormal = CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBufferNormal), LoadOp::CLEAR, nullptr);
-//		//const auto gbuffer3 = CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBuffer3), LoadOp::CLEAR, nullptr);
-//		m_mainRenderingData.depthAttachment = CreateDefaultDepthAttachment(LoadOp::CLEAR, attachmentInfo.depthAttachment.GetTexture());;
-//		m_mainRenderingData.colorAttachments = { gbufferPosition };
+//		//const auto gbufferPosition =
+//CreateDefaultColorAttachment(attachmentInfo.swapchainTextures[0].GetInfo().format, LoadOp::CLEAR, nullptr); 		const auto
+//gbufferPosition = CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBufferPosition),
+//LoadOp::CLEAR, nullptr);
+//		//const auto gbufferNormal =
+//CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBufferNormal), LoadOp::CLEAR, nullptr);
+//		//const auto gbuffer3 = CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBuffer3),
+//LoadOp::CLEAR, nullptr); 		m_mainRenderingData.depthAttachment = CreateDefaultDepthAttachment(LoadOp::CLEAR,
+//attachmentInfo.depthAttachment.GetTexture());; 		m_mainRenderingData.colorAttachments = { gbufferPosition };
 //
 //		//g_pTexManager->SubmitAsyncTextureCreation({ "Resources\\Textures\\texture.jpg" });
 //
 //		PipelineInfo info{};
 //		//info.descriptorSetLayout.pipelineSpecificDescriptors.emplace_back();
 //		info.descriptorSetLayout.sharedDescriptors = m_sharedDescriptors;
-//		info.attachmentInfos = CreateAttachmentInfo({ m_mainRenderingData.colorAttachments }, m_mainRenderingData.depthAttachment);
-//		m_mainPSO = PSO(ShaderCollection{ &mainVert, &mainFrag }, PipeVertInfo{ m_vertexInputDescription, m_attributeDescriptions }, info);
+//		info.attachmentInfos = CreateAttachmentInfo({ m_mainRenderingData.colorAttachments },
+//m_mainRenderingData.depthAttachment); 		m_mainPSO = PSO(ShaderCollection{ &mainVert, &mainFrag }, PipeVertInfo{
+//m_vertexInputDescription, m_attributeDescriptions }, info);
 //
 //		InitBaseData(attachmentInfo);
 //		m_indirectCmdBuffer = IndirectDrawCommandBuffer(1000);
 //	}
 //
-//	void StaticMainMeshPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes, FrameRendererContext& previousFrameCtx, u32 thisFrameNum)
+//	void StaticMainMeshPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes, FrameRendererContext&
+//previousFrameCtx, u32 thisFrameNum)
 //	{
 //		AsyncQueueHandler::MeshTransfer cmd{};
 //		cmd.vertices.reserve(meshes.size() * 200);
@@ -73,7 +78,8 @@
 //			data.perObjectDataIdx.push_back(g_pMaterialManager->GetMaterialIdx(meshData.meshData.pMaterial));
 //			data.transformIdx.push_back(meshData.transformIdx);
 //
-//			GenerateDrawCommandForMesh(meshData, offsets, cmd.vertices, cmd.indices, m_indirectCmdBuffer, m_indirectCountBuffer);
+//			GenerateDrawCommandForMesh(meshData, offsets, cmd.vertices, cmd.indices, m_indirectCmdBuffer,
+//m_indirectCountBuffer);
 //			++offsets.instanceCount;
 //		}
 //		VertexBuffer vB{ cmd.vertices.size() * sizeof(CompleteVertex) };
@@ -125,7 +131,8 @@
 //		{
 //			const auto transformSSBOSet = data.bufferDescriptors.at(UBO::BufferType::TransformSSBO);
 //			const auto tileArraySSBOSet = data.bufferDescriptors.at(UBO::BufferType::TileArraySSBO);
-//			cmd.descriptorSets = { g_pTexManager->GetBindlessDescriptorSet(), data.mainView.descriptorSet, transformSSBOSet, passCtx.m_perObjectDescriptor };
+//			cmd.descriptorSets = { g_pTexManager->GetBindlessDescriptorSet(), data.mainView.descriptorSet,
+//transformSSBOSet, passCtx.m_perObjectDescriptor };
 //		}
 //		cmdBegin.drawCmdBuffer = &m_indirectCmdBuffer;
 //		currentBuffer->SetName("StaticMeshPass_CmdBuffer");
@@ -166,4 +173,4 @@
 //	{
 //		return NeedToRender(m_mainRenderingData);
 //	}
-//}
+// }

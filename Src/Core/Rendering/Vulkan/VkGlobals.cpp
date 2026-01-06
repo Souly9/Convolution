@@ -1,6 +1,6 @@
 #include "VkGlobals.h"
-#include "VkTextureManager.h"
 #include "VkGPUMemoryManager.h"
+#include "VkTextureManager.h"
 
 VkDevice VkGlobals::s_logicalDevice = nullptr;
 VkFormat VkGlobals::s_swapChainImageFormat{};
@@ -18,122 +18,122 @@ VulkanContext VkGlobals::s_context{};
 
 VkDevice VkGlobals::GetLogicalDevice()
 {
-	DEBUG_ASSERT(s_logicalDevice != nullptr);
-	return s_logicalDevice;
+    DEBUG_ASSERT(s_logicalDevice != nullptr);
+    return s_logicalDevice;
 }
 
 VkFormat VkGlobals::GetSwapChainImageFormat()
 {
-	return s_swapChainImageFormat;
+    return s_swapChainImageFormat;
 }
 
 VkSwapchainKHR VkGlobals::GetMainSwapChain()
 {
-	return s_mainSwapChain;
+    return s_mainSwapChain;
 }
 
 VkQueue VkGlobals::GetPresentQueue()
 {
-	return s_presentQueue;
+    return s_presentQueue;
 }
 
 VkQueue VkGlobals::GetGraphicsQueue()
 {
-	return s_graphicsQueue;
+    return s_graphicsQueue;
 }
 
 Queues VkGlobals::GetAllQueues()
 {
-	return s_queues;
+    return s_queues;
 }
 
 const stltype::vector<Texture*>& VkGlobals::GetSwapChainImages()
 {
-	return s_swapChainImages;
+    return s_swapChainImages;
 }
 
 QueueFamilyIndices VkGlobals::GetQueueFamilyIndices()
 {
-	return s_indices;
+    return s_indices;
 }
 
 VkPhysicalDevice VkGlobals::GetPhysicalDevice()
 {
-	DEBUG_ASSERT(s_physicalDevice != nullptr);
-	return s_physicalDevice;
+    DEBUG_ASSERT(s_physicalDevice != nullptr);
+    return s_physicalDevice;
 }
 
 const VkPhysicalDeviceProperties& VkGlobals::GetPhysicalDeviceProperties()
 {
-	return s_physicalDeviceProperties;
+    return s_physicalDeviceProperties;
 }
 
 Texture* VkGlobals::GetDepthStencilBuffer()
 {
-	return s_pDepthStencilBuffer;
+    return s_pDepthStencilBuffer;
 }
 
 void VkGlobals::SetContext(const VulkanContext& context)
 {
-	s_context = context;
+    s_context = context;
 }
 
 void VkGlobals::SetPhysicalDeviceProperties(const VkPhysicalDeviceProperties& physDeviceProps)
 {
-	s_physicalDeviceProperties = physDeviceProps;
+    s_physicalDeviceProperties = physDeviceProps;
 }
 
 void VkGlobals::SetLogicalDevice(VkDevice physDevice)
 {
-	s_logicalDevice = physDevice;
+    s_logicalDevice = physDevice;
 }
 
 void VkGlobals::SetSwapChainImageFormat(VkFormat imageFormat)
 {
-	s_swapChainImageFormat = imageFormat;
+    s_swapChainImageFormat = imageFormat;
 }
 
 void VkGlobals::SetMainSwapChain(const VkSwapchainKHR swapChain)
 {
-	s_mainSwapChain = swapChain;
+    s_mainSwapChain = swapChain;
 }
 
 void VkGlobals::SetPresentQueue(const VkQueue presentQueue)
 {
-	s_presentQueue = presentQueue;
+    s_presentQueue = presentQueue;
 }
 
 void VkGlobals::SetGraphicsQueue(const VkQueue graphicsQueue)
 {
-	s_graphicsQueue = graphicsQueue;
+    s_graphicsQueue = graphicsQueue;
 }
 
 void VkGlobals::SetAllQueues(const Queues& queues)
 {
-	s_queues = queues;
+    s_queues = queues;
 }
 
 void VkGlobals::SetQueueFamilyIndices(const QueueFamilyIndices& indices)
 {
-	s_indices = indices;
+    s_indices = indices;
 }
 
 void VkGlobals::SetPhysicalDevice(const VkPhysicalDevice& physDevice)
 {
-	s_physicalDevice = physDevice;
+    s_physicalDevice = physDevice;
 }
 
 void VkGlobals::SetDepthStencilBuffer(Texture* pDepthTex)
 {
-	s_pDepthStencilBuffer = pDepthTex;
+    s_pDepthStencilBuffer = pDepthTex;
 }
 
 const VulkanContext& VkGlobals::GetContext()
 {
-	return s_context;
+    return s_context;
 }
 
 void VkGlobals::SetSwapChainImages(const stltype::vector<Texture*>& images)
 {
-	s_swapChainImages = images;
+    s_swapChainImages = images;
 }

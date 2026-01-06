@@ -1,14 +1,18 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
+#include "Core/Rendering/Core/Synchronization.h"
 
 namespace SRF
 {
-	IMPLEMENT_GRAPHICS_API
-	static inline void QueryImageForPresentationFromMainSwapchain(const Semaphore& imageAvailableSemaphore, const Fence& imageAvailableFence, u32& imageIndex, u64 timeout = UINT64_MAX);
+IMPLEMENT_GRAPHICS_API
+static inline void QueryImageForPresentationFromMainSwapchain(const Semaphore& imageAvailableSemaphore,
+                                                              const Fence& imageAvailableFence,
+                                                              u32& imageIndex,
+                                                              u64 timeout = UINT64_MAX);
 
-	IMPLEMENT_GRAPHICS_API
-	static inline void SubmitForPresentationToMainSwapchain(Semaphore* pWaitSemaphore, u32 swapChainIdx);
-}
+IMPLEMENT_GRAPHICS_API
+static inline void SubmitForPresentationToMainSwapchain(Semaphore* pWaitSemaphore, u32 swapChainIdx);
+} // namespace SRF
 
 #ifdef USE_VULKAN
 #include "Core/Rendering/Vulkan/VkStaticFunctions.inl"

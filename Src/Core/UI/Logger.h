@@ -6,7 +6,7 @@ struct ApplicationInfos;
 class Logger
 {
 public:
-	virtual void Show(const ApplicationInfos&) const = 0;
+    virtual void Show(const ApplicationInfos&) const = 0;
 
-	virtual void Clear() = 0;
+    virtual void Clear() = 0;
 };

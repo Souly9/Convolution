@@ -2,17 +2,17 @@
 
 struct MaterialProperties
 {
-	mathstl::Vector4 baseColor{ 1.0 };
-	mathstl::Vector4 metallic { 0.05 };
-	mathstl::Vector4 emissive;
-	mathstl::Vector4 roughness { 0.4 };
+    mathstl::Vector4 baseColor{1.0};
+    mathstl::Vector4 metallic{0.05};
+    mathstl::Vector4 emissive;
+    mathstl::Vector4 roughness{0.4};
 };
 struct Material
 {
-	MaterialProperties properties;
-	u32 diffuseTexture;
-	u32 normalTexture;
+    MaterialProperties properties;
+    u32 diffuseTexture;
+    u32 normalTexture;
 
-	u32 p;
-	u32 p2;
+    u32 p;
+    u32 p2;
 };

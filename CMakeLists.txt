@@ -1,10 +1,10 @@
-﻿cmake_minimum_required (VERSION 3.5)
+﻿cmake_minimum_required (VERSION 3.20)
 include(FetchContent)
 Set(FETCHCONTENT_QUIET FALSE)
 
 #set(UNITY_BUILD ON)
 # Clang complains about all these in our libraries...
-#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unsafe-buffer-usage -Wno-switch-default -Wno-format")
+#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unsafe-buffer-usage -Wno-switch-default -Wno-format -Wno-nontrivial-memcall -Wno-error")
 
 find_package(Git REQUIRED)
 if(Git_FOUND)
@@ -21,7 +21,7 @@ set(LLVM_ENABLE_EH ON)
 
 set(FETCHCONTENT_BASE_DIR "${CMAKE_SOURCE_DIR}/External/")
 
-set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED on)
 
 option(CONNECT_TO_GIT "Fetch dependancies from git" ON)
@@ -143,6 +143,27 @@ target_include_directories(ImGui PUBLIC
 	${Vulkan_INCLUDE_DIRS}
 )
 
+if(${CMAKE_BUILD_TYPE} MATCHES "Debug" OR ${CMAKE_BUILD_TYPE} MATCHES "RelWithDebInfo")
+    add_compile_definitions(CONV_DEBUG)
+    if (MSVC)
+        # Use /Z7 (debug info in .obj) instead of /Zi (PDB) for better LLDB compatibility
+        add_compile_options(/Z7)
+        string(REPLACE "/Zi" "" CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
+        string(REPLACE "/Zi" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
+        string(REPLACE "/Zi" "" CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO}")
+        string(REPLACE "/Zi" "" CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
+    endif()
+endif()
+
+# Fix Assimp warnings
+if(TARGET assimp)
+    if(MSVC)
+        target_compile_options(assimp PRIVATE)
+    else()
+        target_compile_options(assimp PRIVATE -Wno-error -Wno-nontrivial-memcall)
+    endif()
+endif()
+
 
 set(LIBS ${GLFW3_LIBRARY} ${Vulkan_LIBRARIES} ${ADD_LIBS} assimp EASTL EAStdC EAAssert EAThread ${ASSIMP_LIBRARY} TracyClient ImGui)
 
@@ -158,6 +179,26 @@ file(GLOB_RECURSE HEADERS
 )
 add_executable(${NAME} ${SOURCE} ${HEADERS})
 
+# Add natvis files for debugger visualization (embedded in PDB)
+target_sources(${NAME} PRIVATE
+    ${CMAKE_SOURCE_DIR}/External/EASTL/doc/EASTL.natvis
+    ${CMAKE_SOURCE_DIR}/External/VMA/src/vk_mem_alloc.natvis
+    ${CMAKE_SOURCE_DIR}/External/imgui/misc/debuggers/imgui.natvis
+)
+
+# Also Copy natvis files to bin directory for LLDB support
+add_custom_command(TARGET ${NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_SOURCE_DIR}/External/EASTL/doc/EASTL.natvis
+        $<TARGET_FILE_DIR:${NAME}>/EASTL.natvis
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_SOURCE_DIR}/External/VMA/src/vk_mem_alloc.natvis
+        $<TARGET_FILE_DIR:${NAME}>/vk_mem_alloc.natvis
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_SOURCE_DIR}/External/imgui/misc/debuggers/imgui.natvis
+        $<TARGET_FILE_DIR:${NAME}>/imgui.natvis
+)
+
 set_target_properties(${NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin")
 set_target_properties(${NAME} PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/bin/")
 
@@ -169,9 +210,24 @@ SYSTEM
 	${DIRECTXMATH_INCLUDE_DIR}
 	${Vulkan_INCLUDE_DIRS}
 	${GLFW3_INCLUDE_DIR}
+    ${CMAKE_SOURCE_DIR}/External/
+    # External Libraries explicitly added for safety
+    ${CMAKE_SOURCE_DIR}/External/EASTL/include
+    ${CMAKE_SOURCE_DIR}/External/EASTL/test/packages/EABase/include/Common
+    ${CMAKE_SOURCE_DIR}/External/eabase-src/include/Common
+    ${CMAKE_SOURCE_DIR}/External/EAThread/include
+    ${CMAKE_SOURCE_DIR}/External/EAAssert/include
+    ${CMAKE_SOURCE_DIR}/External/Assimp/include
+    ${CMAKE_SOURCE_DIR}/External/imgui
 )
 
-target_compile_definitions(${NAME} PRIVATE CONV_DEBUG=1 PROFILING_ENABLED=1)
+target_compile_definitions(${NAME} PRIVATE 
+    $<$<CONFIG:Debug>:CONV_DEBUG=1>
+    PROFILING_ENABLED=1
+)
+
+target_precompile_headers(${NAME} PRIVATE "Src/PCH.h")
+
 set(GLSLANG_LIB_DIR "${CMAKE_SOURCE_DIR}/External/additional_libs/glsl/")
 set(GLSLANG_LIBS)
 

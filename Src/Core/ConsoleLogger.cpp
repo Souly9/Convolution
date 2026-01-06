@@ -3,15 +3,15 @@
 
 void ConsoleLogger::ShowInfo(const stltype::string& message)
 {
-	std::cout << message.c_str() << '\n';
+    std::cout << message.c_str() << '\n';
 }
 
 void ConsoleLogger::ShowError(const stltype::string& message)
 {
-	std::cout << "ERROR: " << message.c_str() << '\n';
+    std::cout << "ERROR: " << message.c_str() << '\n';
 }
 
 void ConsoleLogger::ShowWarning(const stltype::string& message)
 {
-	std::cout << "WARNING: " << message.c_str() << '\n';
+    std::cout << "WARNING: " << message.c_str() << '\n';
 }

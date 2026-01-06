@@ -1,26 +1,18 @@
 #pragma once
 #include "GlobalDefines.h"
 #include <EAThread/eathread_condition.h>
-#include "Core/WindowManager.h"
-#include "Core/ConsoleLogger.h"
-#include "Core/TimeData.h"
-#include "Core/IO/FileReader.h"
-#include "Core/ECS/EntityManager.h"
-#include "Core/Rendering/Core/Utils/DeleteQueue.h"
-#include "State/ApplicationState.h"
-#include "Core/Events/EventSystem.h"
-#include "Core/Rendering/Core/ShaderManager.h"
 
-extern threadstl::Semaphore     g_mainRenderThreadSyncSemaphore;
-extern threadstl::Semaphore     g_renderThreadReadSemaphore;
-extern threadstl::Semaphore     g_frameTimerSemaphore;
-extern threadstl::Semaphore     g_frameTimerSemaphore2;
-extern threadstl::Semaphore     g_imguiSemaphore;
+extern threadstl::Semaphore g_mainRenderThreadSyncSemaphore;
+extern threadstl::Semaphore g_renderThreadReadSemaphore;
+extern threadstl::Semaphore g_frameTimerSemaphore;
+extern threadstl::Semaphore g_frameTimerSemaphore2;
+extern threadstl::Semaphore g_imguiSemaphore;
 
 class MemoryManager;
 class TextureMan;
 class ConsoleLogger;
 class TimeData;
+class WindowManager;
 class FileReader;
 class DeleteQueue;
 class EventSystem;
@@ -28,9 +20,23 @@ struct ApplicationState;
 class ApplicationStateManager;
 class ShaderManager;
 class MaterialManager;
+
+#ifdef USE_VULKAN
+class VkTextureManager;
+using TextureManager = VkTextureManager;
+#else
+class TextureManager;
+#endif
+
+template <class BackendAPI>
+    requires stltype::is_base_of_v<AvailableRenderBackends, BackendAPI>
+class GPUMemManager;
+
+class AsyncQueueHandler;
+class MeshManager;
 namespace ECS
 {
-	class EntityManager;
+class EntityManager;
 }
 
 extern stltype::unique_ptr<WindowManager> g_pWindowManager;
@@ -43,24 +49,46 @@ extern ApplicationStateManager* g_pApplicationState;
 extern stltype::unique_ptr<ECS::EntityManager> g_pEntityManager;
 extern stltype::unique_ptr<ShaderManager> g_pShaderManager;
 extern stltype::unique_ptr<MaterialManager> g_pMaterialManager;
+extern stltype::unique_ptr<TextureManager> g_pTexManager;
+extern stltype::unique_ptr<AsyncQueueHandler> g_pQueueHandler;
+extern stltype::unique_ptr<MeshManager> g_pMeshManager;
 
-// Holds the frame number of the current frame (aka whether it's the first, second etc. frame of the swapchain)
+#ifdef USE_VULKAN
+extern stltype::unique_ptr<GPUMemManager<Vulkan>> g_pGPUMemoryManager;
+#else
+// Define for other APIs if needed
+#endif
+
+// Holds the frame number of the current frame (aka whether it's the first,
+// second etc. frame of the swapchain)
 extern u32 g_currentFrameNumber;
 extern mathstl::Vector2 g_swapChainExtent;
 
 namespace FrameGlobals
 {
-	static inline u32 GetFrameNumber() { return g_currentFrameNumber; }
-	static inline void SetFrameNumber(u32 frameNumber) { g_currentFrameNumber = frameNumber; }
-	static inline u32 GetPreviousFrameNumber(u32 frameNumber) { return --frameNumber % FRAMES_IN_FLIGHT; }
-
-	static inline  const mathstl::Vector2& GetSwapChainExtent() { return g_swapChainExtent; }
-	static inline  f32 GetScreenAspectRatio() { return static_cast<f32>(g_swapChainExtent.x) / static_cast<f32>(g_swapChainExtent.y); }
-	static inline  void SetSwapChainExtent(const mathstl::Vector2& swapChainExtent) { g_swapChainExtent = swapChainExtent; }
+static inline u32 GetFrameNumber()
+{
+    return g_currentFrameNumber;
+}
+static inline void SetFrameNumber(u32 frameNumber)
+{
+    g_currentFrameNumber = frameNumber;
+}
+static inline u32 GetPreviousFrameNumber(u32 frameNumber)
+{
+    return --frameNumber % FRAMES_IN_FLIGHT;
 }
 
-#include "Core/Rendering/Core/TextureManager.h"
-#include "Core/SceneGraph/Mesh.h"
-#include "Core/Rendering/Core/Material.h"
-#include "Core/Rendering/Core/MaterialManager.h"
-#include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
+static inline const mathstl::Vector2& GetSwapChainExtent()
+{
+    return g_swapChainExtent;
+}
+static inline f32 GetScreenAspectRatio()
+{
+    return static_cast<f32>(g_swapChainExtent.x) / static_cast<f32>(g_swapChainExtent.y);
+}
+static inline void SetSwapChainExtent(const mathstl::Vector2& swapChainExtent)
+{
+    g_swapChainExtent = swapChainExtent;
+}
+} // namespace FrameGlobals

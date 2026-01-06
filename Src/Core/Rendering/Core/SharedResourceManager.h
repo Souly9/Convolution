@@ -1,76 +1,96 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
+#include "Core/Global/Profiling.h"
+#include "Core/Global/ThreadBase.h"
+#include "Core/Rendering/Core/Defines/GlobalBuffers.h"
+#include "Core/Rendering/Core/RenderingIncludes.h"
+#include "Core/Rendering/Vulkan/VkDescriptorSetLayout.h"
+#include "Core/SceneGraph/Mesh.h"
 
 namespace RenderPasses
 {
-	struct PassMeshData;
+struct PassMeshData;
 };
-// Main class to manage scene-wide resources like vertex/index buffers and other things needed for our gpu driven pipeline
-// All scene geometry is uploaded into one giant buffer for now, managed by this manager who gives out mesh handles to the rest of the engine
-// Handles contain all the info to find the meshes and their materials in the buffers
-// Want to split the buffer to allow streaming of meshes eventually...
-// Mainly communicating with the PassManager
+// Main class to manage scene-wide resources like vertex/index buffers and other
+// things needed for our gpu driven pipeline All scene geometry is uploaded into
+// one giant buffer for now, managed by this manager who gives out mesh handles
+// to the rest of the engine Handles contain all the info to find the meshes and
+// their materials in the buffers Want to split the buffer to allow streaming of
+// meshes eventually... Mainly communicating with the PassManager
 class SharedResourceManager
 {
 public:
-	void Init();
+    void Init();
 
-	// Mainly for batch uploading all the scene geometry at scene load time, no debug geometry
-	void UploadSceneGeometry(const stltype::vector<stltype::unique_ptr<Mesh>>& meshes);
+    // Mainly for batch uploading all the scene geometry at scene load time, no
+    // debug geometry
+    void UploadSceneGeometry(const stltype::vector<stltype::unique_ptr<Mesh>>& meshes);
 
-	// Whenever the scene is updated we need to update the instance data
-	// This function is used for non-mesh updates, I assume the scene mesh data itself won't update much 
-	// Changing a material/scaling a mesh will be way more common hence this separation
-	void UpdateInstanceDataSSBO(stltype::vector<RenderPasses::PassMeshData>& meshes, u32 thisFrameNum);
+    // Whenever the scene is updated we need to update the instance data
+    // This function is used for non-mesh updates, I assume the scene mesh data
+    // itself won't update much Changing a material/scaling a mesh will be way
+    // more common hence this separation
+    void UpdateInstanceDataSSBO(stltype::vector<RenderPasses::PassMeshData>& meshes, u32 thisFrameNum);
 
-	MeshHandle UploadMesh(const Mesh& mesh);
-	MeshHandle GetMeshHandle(const Mesh* pMesh) const;
+    MeshHandle UploadMesh(const Mesh& mesh);
+    MeshHandle GetMeshHandle(const Mesh* pMesh) const;
 
-	void UploadDebugMesh(const Mesh& mesh);
+    void UploadDebugMesh(const Mesh& mesh);
 
-	void WriteInstanceSSBODescriptorUpdate(u32 targetFrame);
+    void WriteInstanceSSBODescriptorUpdate(u32 targetFrame);
 
-	void UpdateTransformBuffer(const stltype::vector<DirectX::XMFLOAT4X4>& transformBuffer, u32 thisFrame);
-	void UpdateGlobalMaterialBuffer(const UBO::MaterialBuffer& materialBuffer, u32 thisFrame);
+    void UpdateTransformBuffer(const stltype::vector<DirectX::XMFLOAT4X4>& transformBuffer, u32 thisFrame);
+    void UpdateGlobalMaterialBuffer(const UBO::MaterialBuffer& materialBuffer, u32 thisFrame);
 
-	DescriptorSet* GetInstanceSSBODescriptorSet(u32 frameIdx) { return m_frameData[frameIdx].pSceneInstanceSSBOSet; }
+    DescriptorSet* GetInstanceSSBODescriptorSet(u32 frameIdx)
+    {
+        return m_frameData[frameIdx].pSceneInstanceSSBOSet;
+    }
 
-	const BufferData& GetSceneGeometryBuffers() const { return m_sceneGeometryBuffers; }
-	BufferData& GetSceneGeometryBuffers() { return m_sceneGeometryBuffers; }
+    const BufferData& GetSceneGeometryBuffers() const
+    {
+        return m_sceneGeometryBuffers;
+    }
+    BufferData& GetSceneGeometryBuffers()
+    {
+        return m_sceneGeometryBuffers;
+    }
+
 protected:
-	void UpdateInstanceBuffer(const Mesh& mesh);
-	void UpdateSceneGeometryBuffer(const Mesh& mesh);
+    void UpdateInstanceBuffer(const Mesh& mesh);
+    void UpdateSceneGeometryBuffer(const Mesh& mesh);
 
-	ProfiledLockable(CustomMutex, m_bufferUpdateMutex);
-	BufferData m_sceneGeometryBuffers;
-	// Seperating the debug stuff to update it easier and so on, not sure about it though...
-	BufferData m_debugGeometryBuffers;
-	StorageBuffer m_transformBuffer;
-	StorageBuffer m_sceneInstanceBuffer;
-	StorageBuffer m_materialBuffer;
+    ProfiledLockable(CustomMutex, m_bufferUpdateMutex);
+    BufferData m_sceneGeometryBuffers;
+    // Seperating the debug stuff to update it easier and so on, not sure about it
+    // though...
+    BufferData m_debugGeometryBuffers;
+    StorageBuffer m_transformBuffer;
+    StorageBuffer m_sceneInstanceBuffer;
+    StorageBuffer m_materialBuffer;
 
-	DescriptorSetLayoutVulkan m_sceneInstanceSSBOLayout;
-	DescriptorPool m_descriptorPool;
-	struct FrameData
-	{
-		DescriptorSet* pSceneInstanceSSBOSet;
-	};
-	stltype::fixed_vector<FrameData, FRAMES_IN_FLIGHT, false> m_frameData;
+    DescriptorSetLayoutVulkan m_sceneInstanceSSBOLayout;
+    DescriptorPool m_descriptorPool;
+    struct FrameData
+    {
+        DescriptorSet* pSceneInstanceSSBOSet;
+    };
+    stltype::fixed_vector<FrameData, FRAMES_IN_FLIGHT, false> m_frameData;
 
-	struct BufferStats
-	{
-		u64 vertBufferOffset{0};
-		u64 indexBufferOffset{0};
-		u64 instanceBufferIdx{0};
-		u64 vertexCount{0};
-		u64 indexCount{0};
-		u64 instanceCount{0};
-	};
-	BufferStats m_bufferOffsetData;
-	BufferStats m_debugBufferOffsetData;
+    struct BufferStats
+    {
+        u64 vertBufferOffset{0};
+        u64 indexBufferOffset{0};
+        u64 instanceBufferIdx{0};
+        u64 vertexCount{0};
+        u64 indexCount{0};
+        u64 instanceCount{0};
+    };
+    BufferStats m_bufferOffsetData;
+    BufferStats m_debugBufferOffsetData;
 
-	// Duplicating it on cpu side for more efficient processing
-	stltype::vector<UBO::InstanceData> m_currentFrameInstanceData;
+    // Duplicating it on cpu side for more efficient processing
+    stltype::vector<UBO::InstanceData> m_currentFrameInstanceData;
 
-	stltype::hash_map<const Mesh*, MeshHandle> m_meshHandles;
+    stltype::hash_map<const Mesh*, MeshHandle> m_meshHandles;
 };

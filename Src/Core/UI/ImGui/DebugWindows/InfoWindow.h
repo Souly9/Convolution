@@ -1,19 +1,29 @@
 #pragma once
+#include "Core/Global/GlobalDefines.h"
+#include "Core/UI/LogData.h"
+#include <imgui.h>
 
 class ImGuiWindow
 {
 public:
-    void SetOpen(bool open) { m_isOpen = open; }
-    bool IsOpen() { return m_isOpen; }
+    void SetOpen(bool open)
+    {
+        m_isOpen = open;
+    }
+    bool IsOpen()
+    {
+        return m_isOpen;
+    }
+
 protected:
-    bool m_isOpen{ true };
+    bool m_isOpen{true};
 };
 
 class InfoWindow : public ImGuiWindow
 {
 public:
-	void DrawWindow(f32 dt, ApplicationInfos& appInfos)
-	{
+    void DrawWindow(f32 dt, ApplicationInfos& appInfos)
+    {
         ImGui::Begin("Log", &m_isOpen);
 
         // Options menu
@@ -45,7 +55,8 @@ public:
         {
             AddLog(str);
         }
-        if (ImGui::BeginChild("logScrollRegion", ImVec2(0, 0), ImGuiChildFlags_None, ImGuiWindowFlags_HorizontalScrollbar))
+        if (ImGui::BeginChild(
+                "logScrollRegion", ImVec2(0, 0), ImGuiChildFlags_None, ImGuiWindowFlags_HorizontalScrollbar))
         {
             if (clear)
                 Clear();
@@ -58,7 +69,8 @@ public:
                 for (int line_no = 0; line_no < m_lineOffsets.Size; line_no++)
                 {
                     const char* line_start = buf + m_lineOffsets[line_no];
-                    const char* line_end = (line_no + 1 < m_lineOffsets.Size) ? (buf + m_lineOffsets[line_no + 1] - 1) : buf_end;
+                    const char* line_end =
+                        (line_no + 1 < m_lineOffsets.Size) ? (buf + m_lineOffsets[line_no + 1] - 1) : buf_end;
                     if (m_filter.PassFilter(line_start, line_end))
                         ImGui::TextUnformatted(line_start, line_end);
                 }
@@ -72,7 +84,8 @@ public:
                     for (int line_no = clipper.DisplayStart; line_no < clipper.DisplayEnd; line_no++)
                     {
                         const char* line_start = buf + m_lineOffsets[line_no];
-                        const char* line_end = (line_no + 1 < m_lineOffsets.Size) ? (buf + m_lineOffsets[line_no + 1] - 1) : buf_end;
+                        const char* line_end =
+                            (line_no + 1 < m_lineOffsets.Size) ? (buf + m_lineOffsets[line_no + 1] - 1) : buf_end;
                         ImGui::TextUnformatted(line_start, line_end);
                     }
                 }
@@ -80,15 +93,14 @@ public:
             }
             ImGui::PopStyleVar();
 
-            // Keep up at the bottom of the scroll region if we were already at the bottom at the beginning of the frame.
-            // Using a scrollbar or mouse-wheel will take away from the bottom edge.
+            // Keep up at the bottom of the scroll region if we were already at the bottom at the beginning of the
+            // frame. Using a scrollbar or mouse-wheel will take away from the bottom edge.
             if (m_autoScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY())
                 ImGui::SetScrollHereY(1.0f);
         }
         ImGui::EndChild();
         ImGui::End();
-	}
-
+    }
 
     void Clear()
     {
@@ -110,5 +122,5 @@ private:
     ImGuiTextBuffer m_buffer;
     ImGuiTextFilter m_filter;
     ImVector<int> m_lineOffsets; // Index to lines offset. We maintain this with AddLog() calls.
-    bool m_autoScroll{ true };  // Keep scrolling if already at the bottom.
+    bool m_autoScroll{true};     // Keep scrolling if already at the bottom.
 };

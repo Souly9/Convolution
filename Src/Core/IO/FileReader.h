@@ -1,35 +1,35 @@
 #pragma once
 struct ReadTextureInfo;
 struct SceneNode;
-#include "Core/SceneGraph/Scene.h"
 #include "Core/Global/GlobalDefines.h"
+#include "Core/SceneGraph/Scene.h"
 #include <EASTL/fixed_function.h>
 #include <EASTL/queue.h>
 
 struct ReadTextureInfo
 {
-	stltype::string filePath;
-	DirectX::XMINT2 extents;
-	unsigned char* pixels;
-	s32 texChannels;
+    stltype::string filePath;
+    DirectX::XMINT2 extents;
+    unsigned char* pixels;
+    s32 texChannels;
 };
 
 struct ReadBytesInfo
 {
-	stltype::vector<char> bytes;
-	stltype::string filePath;
+    stltype::vector<char> bytes;
+    stltype::string filePath;
 };
 
 struct ReadMeshInfo
 {
-	SceneNode rootNode;
+    SceneNode rootNode;
 };
 
 enum class RequestType
 {
-	Bytes,
-	Image,
-	Mesh
+    Bytes,
+    Image,
+    Mesh
 };
 
 using IOImageReadCallback = stltype::fixed_function<20, void(const ReadTextureInfo&)>;
@@ -40,37 +40,37 @@ using IOCallback = stltype::variant<IOImageReadCallback, IOByteReadCallback, IOM
 
 struct IORequest
 {
-	stltype::string filePath;
-	IOCallback callback;
-	RequestType requestType;
+    stltype::string filePath;
+    IOCallback callback;
+    RequestType requestType;
 };
 
 class FileReader
 {
 public:
-	FileReader();
-	~FileReader();
+    FileReader();
+    ~FileReader();
 
-	// Stalls main thread through sleep until all requests are finished
-	void FinishAllRequests();
-	void CancelAllRequests();
+    // Stalls main thread through sleep until all requests are finished
+    void FinishAllRequests();
+    void CancelAllRequests();
 
-	void SubmitIORequest(const IORequest& request);
+    void SubmitIORequest(const IORequest& request);
 
-	void CheckIORequests();
+    void CheckIORequests();
 
-	static void FreeImageData(unsigned char* pixels);
+    static void FreeImageData(unsigned char* pixels);
 
-	void ReadImageFile(const IORequest& request);
+    void ReadImageFile(const IORequest& request);
+
 protected:
+    void ReadFileAsGenericBytes(const IORequest& request);
+    stltype::vector<char> ReadFileAsGenericBytes(const char* filePath);
 
-	void ReadFileAsGenericBytes(const IORequest& request);
-	stltype::vector<char> ReadFileAsGenericBytes(const char* filePath);
+    void ReadMeshFile(const IORequest& request);
 
-	void ReadMeshFile(const IORequest& request);
-	
-	threadstl::Thread m_ioThread;
-	threadstl::Mutex m_requestSubmitMutex{};
-	stltype::queue<IORequest> m_requests{}; // Pending requests, read by iothread
-	bool m_keepRunning{ true };
+    threadstl::Thread m_ioThread;
+    threadstl::Mutex m_requestSubmitMutex{};
+    stltype::queue<IORequest> m_requests{}; // Pending requests, read by iothread
+    bool m_keepRunning{true};
 };

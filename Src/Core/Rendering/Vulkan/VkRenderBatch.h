@@ -6,7 +6,7 @@
 class VkRenderBatch : public RBatch
 {
 public:
-	void Start();
-	void DispatchDraw();
-	void End();
+    void Start();
+    void DispatchDraw();
+    void End();
 };
