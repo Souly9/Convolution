@@ -73,16 +73,13 @@ void DepthPrePass::RebuildInternalData(const stltype::vector<PassMeshData>& mesh
     m_indirectCmdBuffer.FillCmds();
 }
 
-void DepthPrePass::Render(const MainPassData& data, FrameRendererContext& ctx)
+void DepthPrePass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
 {
     ScopedZone("DepthPrePass::Render");
 
     const auto currentFrame = ctx.imageIdx;
     UpdateContextForFrame(currentFrame);
     const auto& passCtx = m_perObjectFrameContexts[currentFrame];
-
-    CommandBuffer* currentBuffer = m_cmdBuffers[currentFrame];
-    DEBUG_ASSERT(currentBuffer);
 
     const auto ex = m_mainRenderingData.depthAttachment.GetTexture()->GetInfo().extents;
     const DirectX::XMINT2 extents(ex.x, ex.y);
@@ -103,29 +100,13 @@ void DepthPrePass::Render(const MainPassData& data, FrameRendererContext& ctx)
 
     cmdBegin.drawCmdBuffer = &m_indirectCmdBuffer;
 
-    StartRenderPassProfilingScope(currentBuffer);
-    currentBuffer->RecordCommand(cmdBegin);
+    StartRenderPassProfilingScope(pCmdBuffer);
+    pCmdBuffer->RecordCommand(cmdBegin);
     BinRenderDataCmd geomBufferCmd(sceneGeometryBuffers.GetVertexBuffer(), sceneGeometryBuffers.GetIndexBuffer());
-    currentBuffer->RecordCommand(geomBufferCmd);
-
-    currentBuffer->RecordCommand(cmd);
-
-    currentBuffer->RecordCommand(EndRenderingCmd{});
-    EndRenderPassProfilingScope(currentBuffer);
-
-    currentBuffer->Bake();
-
-    auto& syncContext = ctx.synchronizationContexts.find(this)->second;
-
-    currentBuffer->AddWaitSemaphore(syncContext.waitSemaphore);
-    currentBuffer->SetWaitStages(SyncStages::EARLY_FRAGMENT_TESTS);
-    currentBuffer->SetSignalStages(SyncStages::DEPTH_OUTPUT);
-    currentBuffer->AddSignalSemaphore(&syncContext.signalSemaphore);
-    AsyncQueueHandler::CommandBufferRequest cmdRequest{
-        .pBuffer = currentBuffer,
-        .queueType = QueueType::Graphics,
-    };
-    g_pQueueHandler->SubmitCommandBufferThisFrame(cmdRequest);
+    pCmdBuffer->RecordCommand(geomBufferCmd);
+    pCmdBuffer->RecordCommand(cmd);
+    pCmdBuffer->RecordCommand(EndRenderingCmd{});
+    EndRenderPassProfilingScope(pCmdBuffer);
 }
 
 void DepthPrePass::CreateSharedDescriptorLayout()

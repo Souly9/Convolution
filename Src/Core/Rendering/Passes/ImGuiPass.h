@@ -25,7 +25,7 @@ public:
     {
     }
 
-    virtual void Render(const MainPassData& data, FrameRendererContext& ctx) override;
+    virtual void Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer) override;
 
     virtual void CreateSharedDescriptorLayout() override
     {

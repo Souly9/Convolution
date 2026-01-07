@@ -8,7 +8,6 @@
 #include "Core/SceneGraph/Mesh.h"
 #include <EAThread/eathread.h>
 
-
 enum class QueueType
 {
     Transfer,
@@ -128,6 +127,9 @@ protected:
     stltype::vector<InFlightRequest> m_fencesToWaitOn;
 
     stltype::hash_map<QueueType, CommandPool> m_commandPools{};
+
+    // Semaphores used to bridge timeline semaphore waits to binary semaphore waits required for presentation
+    stltype::vector<Semaphore> m_presentBridgeSemaphores;
 
     stltype::vector<CommandBufferRequest> m_commandBufferRequests{};
 

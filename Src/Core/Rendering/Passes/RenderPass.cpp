@@ -12,18 +12,10 @@ ConvolutionRenderPass::ConvolutionRenderPass(const stltype::string& name)
     : m_passName{name}
 #endif
 {
-    m_pMainPool = new CommandPool();
-    *m_pMainPool = CommandPool::Create(VkGlobals::GetQueueFamilyIndices().graphicsFamily.value());
 }
 
 ConvolutionRenderPass::~ConvolutionRenderPass()
 {
-    if (m_pMainPool)
-    {
-        m_pMainPool->CleanUp();
-        delete m_pMainPool;
-        m_pMainPool = nullptr;
-    }
 }
 
 void ConvolutionRenderPass::SetVertexInputDescriptions(VertexInputDefines::VertexAttributeTemplates vertexInputType)
@@ -41,15 +33,6 @@ void ConvolutionRenderPass::SetVertexInputDescriptions(VertexInputDefines::Verte
 
 void ConvolutionRenderPass::InitBaseData(const RendererAttachmentInfo& attachmentInfo)
 {
-    m_cmdBuffers = m_pMainPool->CreateCommandBuffers(CommandBufferCreateInfo{}, SWAPCHAIN_IMAGES);
-
-#if CONV_DEBUG
-    for (auto& cmdBuffer : m_cmdBuffers)
-    {
-        DEBUG_ASSERT(cmdBuffer);
-        cmdBuffer->SetName(stltype::string(m_passName + "_CmdBuffer"));
-    }
-#endif
 }
 
 u32 ConvolutionRenderPass::SetVertexAttributes(

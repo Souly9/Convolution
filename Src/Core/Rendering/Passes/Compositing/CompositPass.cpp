@@ -53,14 +53,11 @@ void RenderPasses::CompositPass::RebuildInternalData(const stltype::vector<PassM
     m_indirectCmdBuffer.FillCmds();
 }
 
-void RenderPasses::CompositPass::Render(const MainPassData& data, FrameRendererContext& ctx)
+void RenderPasses::CompositPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
 {
     const auto currentFrame = ctx.currentFrame;
     UpdateContextForFrame(currentFrame);
     const auto& passCtx = m_perObjectFrameContexts[currentFrame];
-
-    CommandBuffer* currentBuffer = m_cmdBuffers[currentFrame];
-    DEBUG_ASSERT(currentBuffer);
 
     ColorAttachment swapchainAttachment = m_mainRenderingData.colorAttachments[0];
     swapchainAttachment.SetTexture(ctx.pCurrentSwapchainTexture);
@@ -79,10 +76,8 @@ void RenderPasses::CompositPass::Render(const MainPassData& data, FrameRendererC
 
     GenericIndirectDrawCmd cmd{&m_mainPSO, m_indirectCmdBuffer};
     cmd.drawCount = m_indirectCmdBuffer.GetDrawCmdNum();
-    if (data.bufferDescriptors.empty())
-    {
-    }
-    else
+
+    if (data.bufferDescriptors.empty() == false)
     {
         const auto transformSSBOSet = data.bufferDescriptors.at(UBO::DescriptorContentsType::GlobalInstanceData);
         const auto texArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessTextureArray);
@@ -95,26 +90,12 @@ void RenderPasses::CompositPass::Render(const MainPassData& data, FrameRendererC
                               gbufferUBO,
                               ctx.shadowViewUBODescriptor};
     }
-    StartRenderPassProfilingScope(currentBuffer);
-    currentBuffer->RecordCommand(cmdBegin);
-    currentBuffer->RecordCommand(geomBufferCmd);
-    currentBuffer->RecordCommand(cmd);
-    currentBuffer->RecordCommand(EndRenderingCmd{});
-    EndRenderPassProfilingScope(currentBuffer);
-    currentBuffer->Bake();
-
-    auto& syncContext = ctx.synchronizationContexts[this];
-    currentBuffer->AddWaitSemaphore(syncContext.waitSemaphore);
-    currentBuffer->AddSignalSemaphore(&syncContext.signalSemaphore);
-
-    currentBuffer->SetWaitStages(SyncStages::FRAGMENT_SHADER);
-    currentBuffer->SetSignalStages(SyncStages::COLOR_ATTACHMENT_OUTPUT);
-
-    AsyncQueueHandler::CommandBufferRequest cmdRequest{
-        .pBuffer = currentBuffer,
-        .queueType = QueueType::Graphics,
-    };
-    g_pQueueHandler->SubmitCommandBufferThisFrame(cmdRequest);
+    StartRenderPassProfilingScope(pCmdBuffer);
+    pCmdBuffer->RecordCommand(cmdBegin);
+    pCmdBuffer->RecordCommand(geomBufferCmd);
+    pCmdBuffer->RecordCommand(cmd);
+    pCmdBuffer->RecordCommand(EndRenderingCmd{});
+    EndRenderPassProfilingScope(pCmdBuffer);
 }
 
 void RenderPasses::CompositPass::CreateSharedDescriptorLayout()
@@ -135,5 +116,5 @@ void RenderPasses::CompositPass::CreateSharedDescriptorLayout()
 
 bool RenderPasses::CompositPass::WantsToRender() const
 {
-    return NeedToRender(m_indirectCmdBuffer);
+    return true;
 }

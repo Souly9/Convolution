@@ -37,7 +37,7 @@ public:
                                      FrameRendererContext& previousFrameCtx,
                                      u32 thisFrameNum) = 0;
 
-    virtual void Render(const MainPassData& data, FrameRendererContext& ctx) = 0;
+    virtual void Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer) = 0;
 
     virtual void CreateSharedDescriptorLayout() = 0;
 
@@ -66,9 +66,6 @@ protected:
     stltype::vector<PipelineDescriptorLayout> m_sharedDescriptors{};
 
     VkVertexInputBindingDescription m_vertexInputDescription{};
-
-    CommandPool* m_pMainPool{nullptr}; // Changed to pointer to avoid incomplete type
-    stltype::vector<CommandBuffer*> m_cmdBuffers;
 
 #if CONV_DEBUG
     stltype::string m_passName;

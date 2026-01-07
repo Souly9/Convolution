@@ -48,3 +48,27 @@ private:
     bool m_signaled = false;
 #endif
 };
+
+template <>
+class TimelineSemaphoreImpl<Vulkan> : public GPUSyncer
+{
+public:
+    ~TimelineSemaphoreImpl();
+
+    void Create(u64 initialValue = 0);
+
+    virtual void CleanUp() override;
+
+    VkSemaphore GetRef() const;
+
+    u64 GetValue() const;
+
+    void HostSignal(u64 value);
+
+    void Wait(u64 value, u64 timeout = UINT64_MAX) const;
+
+    virtual void NamingCallBack(const stltype::string& name) override;
+
+private:
+    VkSemaphore m_semaphore{VK_NULL_HANDLE};
+};

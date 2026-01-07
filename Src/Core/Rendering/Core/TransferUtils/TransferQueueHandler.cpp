@@ -101,7 +101,7 @@ void AsyncQueueHandler::SubmitSwapchainPresentRequestForThisFrame(const PresentR
 
 void AsyncQueueHandler::SubmitToSwapchainForPresentation(const stltype::vector<PresentRequest>& requests)
 {
-    for (auto& request : requests)
+    for (const auto& request : requests)
     {
         SRF::SubmitForPresentationToMainSwapchain<RenderAPI>(request.pWaitSemaphore, request.swapChainImageIdx);
     }

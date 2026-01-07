@@ -3,7 +3,6 @@
 #include "Core/Rendering/Core/RenderingForwardDecls.h"
 #include "LightDefines.h"
 
-
 namespace UBO
 {
 using MaterialBuffer = stltype::fixed_vector<Material, MAX_MATERIALS, false>;
@@ -100,6 +99,8 @@ struct ShadowMapUBO
 struct ShadowmapViewUBO
 {
     stltype::array<mathstl::Matrix, 16> lightViewProjMatrices{};
-    f32 cascadeStepSize;
+    stltype::array<mathstl::Vector4, 4> cascadeSplits{};
+    s32 cascadeCount;
+    f32 _pad[3];
 };
 } // namespace UBO

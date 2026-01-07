@@ -3,7 +3,6 @@
 #include "Core/Rendering/Core/Resource.h"
 #include "Core/Rendering/Vulkan/BackendDefines.h"
 
-
 enum class SyncStages
 {
     NONE = 0,
@@ -41,6 +40,10 @@ class FenceImpl : public CPUSyncer
 {
 };
 
+IMPLEMENT_GRAPHICS_API
+class TimelineSemaphoreImpl : public GPUSyncer
+{
+};
 // Declare specializations for Vulkan
 template <>
 class SemaphoreImpl<Vulkan>;
@@ -48,9 +51,13 @@ class SemaphoreImpl<Vulkan>;
 template <>
 class FenceImpl<Vulkan>;
 
+template <>
+class TimelineSemaphoreImpl<Vulkan>;
+
 using Semaphore = SemaphoreImpl<Vulkan>;
 using Fence = FenceImpl<Vulkan>;
 using CPUSynchObject = FenceImpl<Vulkan>;
+using TimelineSemaphore = TimelineSemaphoreImpl<Vulkan>;
 
 // Note: VkSynchronization.h provides the DEFINITIONS of the specializations.
 // It is NOT included here to avoid circular dependencies.

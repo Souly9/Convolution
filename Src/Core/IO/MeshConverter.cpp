@@ -127,7 +127,7 @@ Mesh* ExtractMesh(const aiMesh* pMesh)
     ScopedZone("Convert Assimp Mesh");
 
     auto* pConvMesh = g_pMeshManager->AllocateMesh(pMesh->mNumVertices, pMesh->mNumFaces);
-    for (u32 i = 0; i <= pMesh->mNumVertices - 1; ++i)
+    for (u32 i = 0; i < pMesh->mNumVertices; ++i)
     {
         auto& vertex = pConvMesh->vertices.push_back();
         vertex.position = Convert(pMesh->mVertices[i]);
@@ -163,18 +163,34 @@ Material* ExtractMaterial(const aiMaterial* pMaterial)
     ScopedZone("Convert Assimp material");
     aiString path;
     Material mat{};
+    stltype::string materialName = pMaterial->GetName().C_Str();
 
-    pMaterial->GetTexture(aiTextureType_DIFFUSE, 0, &path);
-    mat.diffuseTexture = g_pTexManager->MakeTextureBindless(
-        g_pTexManager->SubmitAsyncTextureCreation({"Resources\\Models\\" + eastl::string(path.C_Str())}));
+    if (pMaterial->GetTexture(aiTextureType_DIFFUSE, 0, &path) == AI_SUCCESS && path.length > 0)
+    {
+        stltype::string texPath = "Resources\\Models\\" + eastl::string(path.C_Str());
+        DEBUG_LOGF(
+            "[MeshConverter] Material '{}': Loading diffuse texture '{}'", materialName.c_str(), texPath.c_str());
+        mat.diffuseTexture = g_pTexManager->MakeTextureBindless(g_pTexManager->SubmitAsyncTextureCreation({texPath}));
+    }
+    else
+    {
+        aiString texturePath;
+        auto result = pMaterial->GetTexture(aiTextureType_DIFFUSE, 0, &texturePath);
+        DEBUG_LOGF("[MeshConverter] Material '{}': No diffuse texture (GetTexture result={}, path.length={})",
+                   materialName.c_str(),
+                   (int)result,
+                   path.length);
+    }
+
     // DEBUG_LOGF("[MeshConverter] Loading Diffuse Texture: {} with handle {}",
     // path.C_Str(), mat.diffuseTexture);
-    pMaterial->GetTexture(aiTextureType_NORMALS, 0, &path);
+
+    // Normal map loading (currently commented out/unused structure but pattern would be similar)
+    // pMaterial->GetTexture(aiTextureType_NORMALS, 0, &path);
     // g_pTexManager->SubmitAsyncTextureCreation({ "Resources\\Models\\" +
     // eastl::string(path.C_Str()) });
 
     aiColor3D diffuse;
-    stltype::string materialName = pMaterial->GetName().C_Str();
     if (materialName.find("arch") != stltype::string::npos)
     {
         static int c = 0;

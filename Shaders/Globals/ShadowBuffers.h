@@ -1,6 +1,8 @@
 
 layout(set = ShadowViewUBOSet, binding = ShadowMapDataBindingSlot) uniform ShadowmapViewUBO
 {
-    mat4 csmViewMatrices[MAX_CASCADE_COUNT];
-    float cascadeStepSize;
-} shadowmapViewUBO;
+    mat4 csmViewMatrices[16];
+    vec4 cascadeSplits[4];
+    int cascadeCount;
+}
+shadowmapViewUBO;

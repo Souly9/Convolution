@@ -219,27 +219,30 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
     }
 
     // Enabling bindless textures
-    VkPhysicalDeviceDescriptorIndexingFeatures indexingFeaturesBindlessTextures{};
-    indexingFeaturesBindlessTextures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
-    indexingFeaturesBindlessTextures.descriptorBindingPartiallyBound = VK_TRUE;
-    indexingFeaturesBindlessTextures.runtimeDescriptorArray = VK_TRUE;
-    indexingFeaturesBindlessTextures.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
-    indexingFeaturesBindlessTextures.descriptorBindingVariableDescriptorCount = VK_TRUE;
-    indexingFeaturesBindlessTextures.descriptorBindingUniformBufferUpdateAfterBind = VK_TRUE;
-    indexingFeaturesBindlessTextures.pNext = nullptr;
-
     // VK 1.3 features
     VkPhysicalDeviceVulkan13Features features13{};
     features13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
     features13.dynamicRendering = VK_TRUE;
     features13.synchronization2 = VK_TRUE;
-    features13.pNext = &indexingFeaturesBindlessTextures;
+    features13.pNext = nullptr;
+
+    // VK 1.2 features (timeline semaphore and bindless support)
+    VkPhysicalDeviceVulkan12Features features12{};
+    features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+    features12.timelineSemaphore = VK_TRUE;
+    // Descriptor indexing features promoted to 1.2
+    features12.descriptorBindingPartiallyBound = VK_TRUE;
+    features12.runtimeDescriptorArray = VK_TRUE;
+    features12.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
+    features12.descriptorBindingVariableDescriptorCount = VK_TRUE;
+    features12.descriptorBindingUniformBufferUpdateAfterBind = VK_TRUE;
+    features12.pNext = &features13;
 
     // VK 1.1 features
     VkPhysicalDeviceVulkan11Features features11{};
     features11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
     features11.multiview = VK_TRUE;
-    features11.pNext = &features13;
+    features11.pNext = &features12;
 
     VkDeviceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;

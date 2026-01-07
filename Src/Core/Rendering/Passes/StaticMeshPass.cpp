@@ -89,7 +89,9 @@ void StaticMainMeshPass::RebuildInternalData(const stltype::vector<PassMeshData>
     // m_needsBufferSync = true;
 }
 
-void RenderPasses::StaticMainMeshPass::Render(const MainPassData& data, FrameRendererContext& ctx)
+void RenderPasses::StaticMainMeshPass::Render(const MainPassData& data,
+                                              FrameRendererContext& ctx,
+                                              CommandBuffer* pCmdBuffer)
 {
     ScopedZone("StaticMeshPass::Render");
 
@@ -97,15 +99,10 @@ void RenderPasses::StaticMainMeshPass::Render(const MainPassData& data, FrameRen
     UpdateContextForFrame(currentFrame);
     const auto& passCtx = m_perObjectFrameContexts[currentFrame];
 
-    CommandBuffer* currentBuffer = m_cmdBuffers[currentFrame];
-    DEBUG_ASSERT(currentBuffer);
-    // currentBuffer->ResetBuffer();
-
     ColorAttachment gbufferPosition = m_mainRenderingData.colorAttachments[0];
     ColorAttachment gbufferNormal = m_mainRenderingData.colorAttachments[1];
     ColorAttachment gbuffer3 = m_mainRenderingData.colorAttachments[2];
     ColorAttachment gbufferPos = m_mainRenderingData.colorAttachments[3];
-    // gbufferPosition.SetTexture(ctx.gbuffer.Get(GBufferTextureType::GBufferPosition));]
     gbufferPosition.SetTexture(data.pGbuffer->Get(GBufferTextureType::GBufferAlbedo));
     gbufferNormal.SetTexture(data.pGbuffer->Get(GBufferTextureType::GBufferNormal));
     gbuffer3.SetTexture(data.pGbuffer->Get(GBufferTextureType::TexCoordMatData));
@@ -134,29 +131,13 @@ void RenderPasses::StaticMainMeshPass::Render(const MainPassData& data, FrameRen
             texArraySet, data.mainView.descriptorSet, transformSSBOSet, passCtx.m_perObjectDescriptor};
     }
     cmdBegin.drawCmdBuffer = &m_indirectCmdBuffer;
-    StartRenderPassProfilingScope(currentBuffer);
-    currentBuffer->RecordCommand(cmdBegin);
+    StartRenderPassProfilingScope(pCmdBuffer);
+    pCmdBuffer->RecordCommand(cmdBegin);
     BinRenderDataCmd geomBufferCmd(sceneGeometryBuffers.GetVertexBuffer(), sceneGeometryBuffers.GetIndexBuffer());
-    currentBuffer->RecordCommand(geomBufferCmd);
-    currentBuffer->RecordCommand(cmd);
-    currentBuffer->RecordCommand(EndRenderingCmd{});
-    EndRenderPassProfilingScope(currentBuffer);
-
-    currentBuffer->Bake();
-
-    auto& syncContext = ctx.synchronizationContexts.find(this)->second;
-
-    currentBuffer->AddWaitSemaphore(syncContext.waitSemaphore);
-    currentBuffer->AddSignalSemaphore(&syncContext.signalSemaphore);
-
-    currentBuffer->SetWaitStages(SyncStages::EARLY_FRAGMENT_TESTS);
-    currentBuffer->SetSignalStages(SyncStages::COLOR_ATTACHMENT_OUTPUT);
-
-    AsyncQueueHandler::CommandBufferRequest cmdRequest{
-        .pBuffer = currentBuffer,
-        .queueType = QueueType::Graphics,
-    };
-    g_pQueueHandler->SubmitCommandBufferThisFrame(cmdRequest);
+    pCmdBuffer->RecordCommand(geomBufferCmd);
+    pCmdBuffer->RecordCommand(cmd);
+    pCmdBuffer->RecordCommand(EndRenderingCmd{});
+    EndRenderPassProfilingScope(pCmdBuffer);
 }
 
 void StaticMainMeshPass::CreateSharedDescriptorLayout()

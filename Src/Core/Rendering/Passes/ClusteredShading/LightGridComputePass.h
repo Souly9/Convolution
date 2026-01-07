@@ -18,7 +18,7 @@ public:
     virtual void RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
                                      FrameRendererContext& previousFrameCtx,
                                      u32 thisFrameNum) override;
-    virtual void Render(const MainPassData& data, FrameRendererContext& ctx) override;
+    virtual void Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer) override;
     virtual void CreateSharedDescriptorLayout() override;
     // Always want to composite
     virtual bool WantsToRender() const override;

@@ -68,15 +68,9 @@ void RenderPasses::ImGuiPass::Init(RendererAttachmentInfo& attachmentInfo, const
     ImGui_ImplVulkan_Init(&info);
 }
 
-void RenderPasses::ImGuiPass::Render(const MainPassData& data, FrameRendererContext& ctx)
+void RenderPasses::ImGuiPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
 {
     ScopedZone("ImGuiPass::Render");
-
-    const auto currentFrame = ctx.currentFrame;
-    const auto imageIdx = ctx.imageIdx;
-
-    CommandBuffer* currentBuffer = m_cmdBuffers[currentFrame];
-    DEBUG_ASSERT(currentBuffer);
 
     ImGuiIO& io = ImGui::GetIO();
     ImGui::Render();
@@ -93,24 +87,11 @@ void RenderPasses::ImGuiPass::Render(const MainPassData& data, FrameRendererCont
     cmdBegin.extents = extents;
     cmdBegin.viewport = data.mainView.viewport;
 
-    currentBuffer->BeginBufferForSingleSubmit();
-    StartRenderPassProfilingScope(currentBuffer);
-    currentBuffer->BeginRendering(cmdBegin);
-
-    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), currentBuffer->GetRef());
-    currentBuffer->EndRendering();
-    EndRenderPassProfilingScope(currentBuffer);
-    currentBuffer->EndBuffer();
-
-    auto& syncContext = ctx.synchronizationContexts.find(this)->second;
-
-    currentBuffer->AddWaitSemaphore(&ctx.additionalSynchronizationContexts[0].signalSemaphore);
-    currentBuffer->AddSignalSemaphore(&syncContext.signalSemaphore);
-    AsyncQueueHandler::CommandBufferRequest cmdRequest{
-        .pBuffer = currentBuffer,
-        .queueType = QueueType::Graphics,
-    };
-    g_pQueueHandler->SubmitCommandBufferThisFrame(cmdRequest);
+    StartRenderPassProfilingScope(pCmdBuffer);
+    pCmdBuffer->BeginRendering(cmdBegin);
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), pCmdBuffer->GetRef());
+    pCmdBuffer->EndRendering();
+    EndRenderPassProfilingScope(pCmdBuffer);
 }
 
 void ImGuiPass::UpdateImGuiScaling()

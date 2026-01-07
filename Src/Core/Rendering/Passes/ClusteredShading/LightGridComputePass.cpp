@@ -2,7 +2,6 @@
 
 RenderPasses::LightGridComputePass::LightGridComputePass() : GenericGeometryPass("LightGridComputePass")
 {
-    SetVertexInputDescriptions(VertexInputDefines::VertexAttributeTemplates::Complete);
     CreateSharedDescriptorLayout();
 }
 
@@ -15,106 +14,24 @@ void RenderPasses::LightGridComputePass::Init(RendererAttachmentInfo& attachment
     const auto swapChainAttachment = CreateDefaultColorAttachment(SWAPCHAINFORMAT, LoadOp::CLEAR, nullptr);
     m_mainRenderingData.colorAttachments = {swapChainAttachment};
 
-    InitBaseData(attachmentInfo);
-    m_indirectCmdBuffer = IndirectDrawCommandBuffer(10);
-    AsyncQueueHandler::MeshTransfer cmd{};
-    cmd.name = "LightGridComputePass_MeshTransfer";
-    cmd.pBuffersToFill = &m_mainRenderingData;
-    UBO::PerPassObjectDataSSBO data{};
-    GenericGeometryPass::DrawCmdOffsets offsets{};
-
     BuildPipelines();
 }
 
 void RenderPasses::LightGridComputePass::BuildPipelines()
 {
     ScopedZone("LightGridComputePass::BuildPipelines");
-    auto mainVert = Shader("Shaders/Simple.vert.spv", "main");
-    auto mainFrag = Shader("Shaders/Simple.frag.spv", "main");
-
-    PipelineInfo info{};
-    info.descriptorSetLayout.sharedDescriptors = m_sharedDescriptors;
-    info.attachmentInfos = CreateAttachmentInfo({m_mainRenderingData.colorAttachments});
-    info.hasDepth = false;
-    m_mainPSO = PSO(
-        ShaderCollection{&mainVert, &mainFrag}, PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions}, info);
 }
 
 void RenderPasses::LightGridComputePass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
                                                              FrameRendererContext& previousFrameCtx,
                                                              u32 thisFrameNum)
 {
-    m_indirectCmdBuffer.EmptyCmds();
-    const auto pFullScreenQuadMesh = g_pMeshManager->GetPrimitiveMesh(MeshManager::PrimitiveType::Quad);
-    const auto meshHandle = previousFrameCtx.pResourceManager->GetMeshHandle(pFullScreenQuadMesh);
-    m_indirectCmdBuffer.AddIndexedDrawCmd(
-        meshHandle.indexCount, 1, meshHandle.indexBufferOffset, meshHandle.vertBufferOffset, 0);
-    RebuildPerObjectBuffer({0});
-    m_indirectCmdBuffer.FillCmds();
 }
 
-void RenderPasses::LightGridComputePass::Render(const MainPassData& data, FrameRendererContext& ctx)
+void RenderPasses::LightGridComputePass::Render(const MainPassData& data,
+                                                FrameRendererContext& ctx,
+                                                CommandBuffer* pCmdBuffer)
 {
-    const auto currentFrame = ctx.currentFrame;
-    UpdateContextForFrame(currentFrame);
-    const auto& passCtx = m_perObjectFrameContexts[currentFrame];
-
-    CommandBuffer* currentBuffer = m_cmdBuffers[currentFrame];
-    DEBUG_ASSERT(currentBuffer);
-
-    ColorAttachment swapchainAttachment = m_mainRenderingData.colorAttachments[0];
-    swapchainAttachment.SetTexture(ctx.pCurrentSwapchainTexture);
-
-    stltype::vector<ColorAttachment> colorAttachments = {swapchainAttachment};
-
-    const auto ex = ctx.pCurrentSwapchainTexture->GetInfo().extents;
-    const DirectX::XMINT2 extents(ex.x, ex.y);
-
-    BeginRenderingCmd cmdBegin{&m_mainPSO, colorAttachments, nullptr};
-    cmdBegin.extents = extents;
-    cmdBegin.viewport = data.mainView.viewport;
-
-    auto& sceneGeometryBuffers = data.pResourceManager->GetSceneGeometryBuffers();
-    BinRenderDataCmd geomBufferCmd(sceneGeometryBuffers.GetVertexBuffer(), sceneGeometryBuffers.GetIndexBuffer());
-
-    GenericIndirectDrawCmd cmd{&m_mainPSO, m_indirectCmdBuffer};
-    cmd.drawCount = m_indirectCmdBuffer.GetDrawCmdNum();
-    if (data.bufferDescriptors.empty())
-    {
-    }
-    else
-    {
-        const auto transformSSBOSet = data.bufferDescriptors.at(UBO::DescriptorContentsType::GlobalInstanceData);
-        const auto texArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessTextureArray);
-        const auto tileArraySSBOSet = data.bufferDescriptors.at(UBO::DescriptorContentsType::LightData);
-        const auto gbufferUBO = data.bufferDescriptors.at(UBO::DescriptorContentsType::GBuffer);
-        cmd.descriptorSets = {texArraySet,
-                              data.mainView.descriptorSet,
-                              transformSSBOSet,
-                              tileArraySSBOSet,
-                              gbufferUBO,
-                              ctx.shadowViewUBODescriptor};
-    }
-    StartRenderPassProfilingScope(currentBuffer);
-    currentBuffer->RecordCommand(cmdBegin);
-    currentBuffer->RecordCommand(geomBufferCmd);
-    currentBuffer->RecordCommand(cmd);
-    currentBuffer->RecordCommand(EndRenderingCmd{});
-    EndRenderPassProfilingScope(currentBuffer);
-    currentBuffer->Bake();
-
-    auto& syncContext = ctx.synchronizationContexts[this];
-    currentBuffer->AddWaitSemaphore(syncContext.waitSemaphore);
-    currentBuffer->AddSignalSemaphore(&syncContext.signalSemaphore);
-
-    currentBuffer->SetWaitStages(SyncStages::FRAGMENT_SHADER);
-    currentBuffer->SetSignalStages(SyncStages::COLOR_ATTACHMENT_OUTPUT);
-
-    AsyncQueueHandler::CommandBufferRequest cmdRequest{
-        .pBuffer = currentBuffer,
-        .queueType = QueueType::Graphics,
-    };
-    g_pQueueHandler->SubmitCommandBufferThisFrame(cmdRequest);
 }
 
 void RenderPasses::LightGridComputePass::CreateSharedDescriptorLayout()
