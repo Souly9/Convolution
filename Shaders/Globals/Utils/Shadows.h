@@ -2,14 +2,16 @@ float computeShadow(vec4 fragPosViewSpace, vec4 fragPosWorldSpace, vec3 fragNorm
 {
     // 1. Cascade Selection
     float depthValue = abs(fragPosViewSpace.z);
-    int cascadeCount = 3;
-    float cascadeStepSize = shadowmapViewUBO.cascadeStepSize;
+    int cascadeCount = shadowmapViewUBO.cascadeCount;
 
-    int cascadeIndex = 0;
-    if (cascadeStepSize > 0.0)
+    int cascadeIndex = cascadeCount - 1;
+    for (int i = 0; i < cascadeCount - 1; ++i)
     {
-        cascadeIndex = int(floor(depthValue / cascadeStepSize));
-        cascadeIndex = clamp(cascadeIndex, 0, cascadeCount - 1);
+        if (depthValue < shadowmapViewUBO.cascadeSplits[i / 4][i % 4])
+        {
+            cascadeIndex = i;
+            break;
+        }
     }
 
     // 2. Project to Light Space
@@ -17,14 +19,13 @@ float computeShadow(vec4 fragPosViewSpace, vec4 fragPosWorldSpace, vec3 fragNorm
     vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
 
     // 3. Transform to [0,1] range
-    // NOTE: If using standard Vulkan clip space (Y-down), ensure your matrix handles the flip, 
+    // NOTE: If using standard Vulkan clip space (Y-down), ensure your matrix handles the flip,
     // otherwise manual flip: projCoords.y = -projCoords.y; might be needed here.
     projCoords.xy = projCoords.xy * 0.5 + 0.5;
 
     // 4. Boundary Checks
-    if (projCoords.z > 1.0 || projCoords.z < 0.0 ||
-        projCoords.x < 0.0 || projCoords.x > 1.0 ||
-        projCoords.y < 0.0 || projCoords.y > 1.0)
+    if (projCoords.z > 1.0 || projCoords.z < 0.0 || projCoords.x < 0.0 || projCoords.x > 1.0 || projCoords.y < 0.0 ||
+        projCoords.y > 1.0)
     {
         return 1.0;
     }
@@ -33,7 +34,7 @@ float computeShadow(vec4 fragPosViewSpace, vec4 fragPosWorldSpace, vec3 fragNorm
     float nDotL = max(dot(normalize(fragNormal), lightDir), 0.0);
     float bias = max(0.005 * (1.0 - nDotL), 0.001);
 
-    // 6. PCF Sampling 
+    // 6. PCF Sampling
     float shadow = 0.0;
     float currentDepth = projCoords.z;
 

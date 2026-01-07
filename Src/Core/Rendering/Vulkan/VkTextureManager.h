@@ -15,7 +15,6 @@
 #include <EASTL/deque.h>
 #include <EASTL/queue.h>
 
-
 enum VkFormat;
 
 struct TextureSamplerInfo
@@ -75,10 +74,15 @@ struct AsyncLayoutTransitionRequest
     stltype::vector<const Texture*> textures;
     ImageLayout oldLayout;
     ImageLayout newLayout;
-    // Optional semaphores to wait on and signal, these are for the entire command buffer, multiple equests can be
-    // batched into one
+    // Optional semaphores to wait on and signal
     Semaphore* pWaitSemaphore{nullptr};
     Semaphore* pSignalSemaphore{nullptr};
+
+    // Timeline semaphores
+    TimelineSemaphore* pTimelineWaitSemaphore{nullptr};
+    u64 timelineWaitValue{0};
+    TimelineSemaphore* pTimelineSignalSemaphore{nullptr};
+    u64 timelineSignalValue{0};
 };
 
 using TextureRequest = stltype::variant<FileTextureRequest, DynamicTextureRequest, AsyncLayoutTransitionRequest>;

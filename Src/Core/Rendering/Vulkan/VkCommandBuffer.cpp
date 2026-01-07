@@ -2,6 +2,7 @@
 #include "Core/Rendering/Core/TextureManager.h"
 #include "Core/Rendering/Vulkan/VkAttachment.h"
 #include "Core/Rendering/Vulkan/VkPipeline.h"
+#include "Core/Rendering/Vulkan/VkSynchronization.h"
 #include "Core/Rendering/Vulkan/VkTexture.h"
 #include "Utils/VkEnumHelpers.h"
 #include "VkGlobals.h"
@@ -240,6 +241,22 @@ void CBufferVulkan::AddSignalSemaphore(Semaphore* pSemaphore)
     m_signalSemaphores.push_back(pSemaphore->GetRef());
 }
 
+void CBufferVulkan::SetTimelineWait(TimelineSemaphore* pSemaphore, u64 waitValue)
+{
+    if (pSemaphore == nullptr)
+        return;
+    m_timelineWaitSemaphore = pSemaphore->GetRef();
+    m_timelineWaitValue = waitValue;
+}
+
+void CBufferVulkan::SetTimelineSignal(TimelineSemaphore* pSemaphore, u64 signalValue)
+{
+    if (pSemaphore == nullptr)
+        return;
+    m_timelineSignalSemaphore = pSemaphore->GetRef();
+    m_timelineSignalValue = signalValue;
+}
+
 void CBufferVulkan::SetWaitStages(SyncStages stages)
 {
     m_waitStages = Conv(stages);
@@ -352,6 +369,7 @@ void CBufferVulkan::EndBuffer()
 
 void CBufferVulkan::ResetBuffer()
 {
+    ClearSemaphores();
     vkResetCommandBuffer(GetRef(), /*VkCommandBufferResetFlagBits*/ 0);
 }
 

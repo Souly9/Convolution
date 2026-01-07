@@ -10,7 +10,6 @@
 #include "ShadowPass.h"
 #include "StaticMeshPass.h"
 
-
 #include <cstring>
 #include <imgui/backends/imgui_impl_vulkan.h>
 
@@ -70,9 +69,11 @@ void RenderPasses::PassManager::CreateUBOsAndMap()
 
 void RenderPasses::PassManager::CreateFrameRendererContexts()
 {
+    m_frameRendererContexts.resize(SWAPCHAIN_IMAGES);
     for (size_t i = 0; i < SWAPCHAIN_IMAGES; i++)
     {
-        FrameRendererContext frameContext{};
+        auto& frameContext = m_frameRendererContexts[i];
+        frameContext.frameTimeline.Create(0);
         frameContext.pInitialLayoutTransitionSignalSemaphore.Create();
         frameContext.pPresentLayoutTransitionSignalSemaphore.Create();
         frameContext.nonLoadRenderingFinished.Create();
@@ -86,6 +87,7 @@ void RenderPasses::PassManager::CreateFrameRendererContexts()
         frameContext.gbufferPostProcessDescriptor->SetBindingSlot(s_globalGbufferPostProcessUBOSlot);
 
         const auto numberString = stltype::to_string(i);
+        frameContext.frameTimeline.SetName("Frame Timeline Semaphore " + numberString);
         frameContext.pInitialLayoutTransitionSignalSemaphore.SetName("Initial Layout Transition Signal Semaphore " +
                                                                      numberString);
         frameContext.pPresentLayoutTransitionSignalSemaphore.SetName("Present Layout Transition Signal Semaphore " +
@@ -96,12 +98,16 @@ void RenderPasses::PassManager::CreateFrameRendererContexts()
         m_imageAvailableFences[i].Create(false);
         m_imageAvailableFences[i].SetName("Image Available Fence " + numberString);
         m_imageAvailableSemaphores[i].SetName("Image Available Semaphore " + numberString);
+        // Create render finished fence as signaled so first frame doesn't wait
+        m_renderFinishedFences[i].Create(true);
+        m_renderFinishedFences[i].SetName("Render Finished Fence " + numberString);
 
         // Tile array data
         frameContext.tileArraySSBODescriptor = m_descriptorPool.CreateDescriptorSet(m_tileArraySSBOLayout.GetRef());
         frameContext.tileArraySSBODescriptor->SetBindingSlot(s_tileArrayBindingSlot);
 
-        m_frameRendererContexts.push_back(frameContext);
+        // Point the rendering finished semaphore to the present transition semaphore for presentation sync
+        frameContext.renderingFinishedSemaphore = &frameContext.pPresentLayoutTransitionSignalSemaphore;
 
         UBO::ViewUBO view{};
         UpdateMainViewUBO((const void*)&view, sizeof(UBO::ViewUBO), i);
@@ -213,75 +219,7 @@ bool RenderPasses::PassManager::AnyPassWantsToRender() const
     return false;
 }
 
-void RenderPasses::PassManager::BuildSyncContextsIfNeeded(bool& rebuildSyncs, FrameRendererContext& ctx)
-{
-    auto& syncContexts = ctx.synchronizationContexts;
-
-    for (const auto& passes : m_passes)
-    {
-        if (passes.first == PassType::PostProcess || passes.first == PassType::Composite)
-            continue;
-
-        for (const auto& pass : passes.second)
-        {
-            if ((pass->WantsToRender() && syncContexts.find(pass.get()) == syncContexts.end()) ||
-                (pass->WantsToRender() == false && syncContexts.find(pass.get()) != syncContexts.end()))
-            {
-                rebuildSyncs = true;
-                break;
-            }
-        }
-    }
-
-    if (rebuildSyncs)
-    {
-        auto& additionalSyncContexts = ctx.additionalSynchronizationContexts;
-        Semaphore* waitSemaphore = &ctx.pInitialLayoutTransitionSignalSemaphore;
-
-        auto fillSyncContextForPasses = [](const auto& passes, auto& syncContexts, Semaphore*& waitSemaphore)
-        {
-            for (auto& pass : passes)
-            {
-                if (pass->WantsToRender())
-                {
-                    auto& syncContext = syncContexts[pass.get()];
-                    syncContext.signalSemaphore.Create();
-                    syncContext.waitSemaphore = waitSemaphore;
-                    waitSemaphore = &syncContext.signalSemaphore;
-                }
-            }
-        };
-
-        auto AddNonPassDependency = [](stltype::vector<RenderPassSynchronizationContext>& additionalSyncContexts,
-                                       Semaphore*& waitSemaphore,
-                                       u32 stageIdx)
-        {
-            additionalSyncContexts.emplace(additionalSyncContexts.begin() + stageIdx, waitSemaphore);
-            additionalSyncContexts[stageIdx].signalSemaphore.Create();
-            waitSemaphore = &additionalSyncContexts[stageIdx].signalSemaphore;
-        };
-
-        syncContexts.clear();
-        syncContexts.reserve(100);
-        additionalSyncContexts.clear();
-        additionalSyncContexts.reserve(100);
-        fillSyncContextForPasses(m_passes[PassType::PreProcess], syncContexts, waitSemaphore);
-        fillSyncContextForPasses(m_passes[PassType::Main], syncContexts, waitSemaphore);
-        fillSyncContextForPasses(m_passes[PassType::Debug], syncContexts, waitSemaphore);
-        fillSyncContextForPasses(m_passes[PassType::Shadow], syncContexts, waitSemaphore);
-
-        AddNonPassDependency(additionalSyncContexts, waitSemaphore, 0);
-        // AddNonPassDependency(additionalSyncContexts, waitSemaphore, shadowReadTransition);
-        fillSyncContextForPasses(m_passes[PassType::UI], syncContexts, waitSemaphore);
-
-        AddNonPassDependency(additionalSyncContexts, waitSemaphore, 1);
-
-        fillSyncContextForPasses(m_passes[PassType::Composite], syncContexts, waitSemaphore);
-
-        AddNonPassDependency(additionalSyncContexts, waitSemaphore, 2);
-        ctx.renderingFinishedSemaphore = waitSemaphore;
-    }
-}
+// Timeline semaphore is used for pass group synchronization - no rebuild needed
 
 void RenderPasses::PassManager::PrepareMainPassDataForFrame(MainPassData& mainPassData,
                                                             FrameRendererContext& ctx,
@@ -300,11 +238,16 @@ void RenderPasses::PassManager::PerformInitialLayoutTransitions(FrameRendererCon
                                                                 Semaphore& imageAvailableSemaphore)
 {
     // Transfer swap chain image from present to render layout before rendering
-    AsyncLayoutTransitionRequest transitionRequest{.textures = gbufferTextures,
-                                                   .oldLayout = ImageLayout::UNDEFINED,
-                                                   .newLayout = ImageLayout::COLOR_ATTACHMENT,
-                                                   .pWaitSemaphore = &imageAvailableSemaphore,
-                                                   .pSignalSemaphore = &ctx.pInitialLayoutTransitionSignalSemaphore};
+    u64 signalValue = ctx.nextTimelineValue++;
+
+    AsyncLayoutTransitionRequest transitionRequest{
+        .textures = gbufferTextures,
+        .oldLayout = ImageLayout::UNDEFINED,
+        .newLayout = ImageLayout::COLOR_ATTACHMENT,
+        .pWaitSemaphore = &imageAvailableSemaphore,
+        // Signal timeline instead of loose binary semaphore to close the sync chain
+        .pTimelineSignalSemaphore = &ctx.frameTimeline,
+        .timelineSignalValue = signalValue};
     g_pTexManager->EnqueueAsyncImageLayoutTransition(transitionRequest);
 
     {
@@ -318,80 +261,161 @@ void RenderPasses::PassManager::PerformInitialLayoutTransitions(FrameRendererCon
     g_pTexManager->DispatchAsyncOps("Initial layout transition");
 }
 
-void RenderPasses::PassManager::RenderAllPassGroups(
-    const MainPassData& mainPassData,
-    FrameRendererContext& ctx,
-    const stltype::hash_map<ConvolutionRenderPass*, RenderPassSynchronizationContext>& syncContexts,
-    Semaphore& imageAvailableSemaphore)
+void RenderPasses::PassManager::InitPassGroupContexts()
 {
-    auto RenderAllPasses =
-        [](auto& passes, const MainPassData& mainPassData, FrameRendererContext& ctx, const auto& syncContexts)
+    for (auto groupType : GROUP_EXECUTION_ORDER)
     {
-        for (auto& pass : passes)
+        auto& groupCtx = m_passGroupContexts[groupType];
+        if (!groupCtx.initialized)
         {
-            if (syncContexts.find(pass.get()) == syncContexts.end())
-                continue;
-
-            pass->Render(mainPassData, ctx);
+            groupCtx.cmdPool = CommandPool::Create(VkGlobals::GetQueueFamilyIndices().graphicsFamily.value());
+            auto buffers = groupCtx.cmdPool.CreateCommandBuffers(CommandBufferCreateInfo{}, SWAPCHAIN_IMAGES);
+            for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
+                groupCtx.cmdBuffers[i] = buffers[i];
+            groupCtx.initialized = true;
         }
-    };
+    }
+}
 
+bool RenderPasses::PassManager::RenderPassGroup(PassType groupType, const MainPassData& data, FrameRendererContext& ctx)
+{
+    if (m_passes.find(groupType) == m_passes.end())
+    {
+        return false;
+    }
+
+    bool hasActivePasses = false;
+    for (auto& pass : m_passes[groupType])
+    {
+        if (pass->WantsToRender())
+        {
+            hasActivePasses = true;
+            break;
+        }
+    }
+
+    if (!hasActivePasses)
+    {
+        return false;
+    }
+
+    // Timeline semaphore: wait on previous value, signal next value
+    u64 waitValue = ctx.nextTimelineValue - 1;
+    u64 signalValue = ctx.nextTimelineValue++;
+
+    auto& groupCtx = m_passGroupContexts[groupType];
+    CommandBuffer* cmdBuffer = groupCtx.cmdBuffers[ctx.imageIdx];
+    static_cast<CBufferVulkan*>(cmdBuffer)->ResetBuffer();
+    cmdBuffer->BeginBufferForSingleSubmit();
+
+    for (auto& pass : m_passes[groupType])
+    {
+        if (pass->WantsToRender())
+            pass->Render(data, ctx, cmdBuffer);
+    }
+
+    cmdBuffer->EndBuffer();
+
+    // Use timeline semaphore for synchronization
+    cmdBuffer->SetTimelineWait(&ctx.frameTimeline, waitValue);
+    cmdBuffer->SetTimelineSignal(&ctx.frameTimeline, signalValue);
+    cmdBuffer->SetWaitStages(SyncStages::TOP_OF_PIPE);
+    cmdBuffer->SetSignalStages(SyncStages::BOTTOM_OF_PIPE);
+
+    g_pQueueHandler->SubmitCommandBufferThisFrame({cmdBuffer, QueueType::Graphics});
+    return true;
+}
+
+void RenderPasses::PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
+                                                    FrameRendererContext& ctx,
+                                                    Semaphore& imageAvailableSemaphore)
+{
     stltype::vector<const Texture*> gbufferTextures = m_gbuffer.GetAllTexturesWithoutUI();
     const auto* pUITexture = m_gbuffer.Get(GBufferTextureType::GBufferUI);
-    stltype::vector<const Texture*> gbufferAndSwapchainTextures = gbufferTextures;
-    gbufferAndSwapchainTextures.push_back(ctx.pCurrentSwapchainTexture);
-    gbufferAndSwapchainTextures.push_back(pUITexture);
-    // Transfer swap chain image from present to render layout before rendering
-    auto pSwapChainTexture = ctx.pCurrentSwapchainTexture;
+    stltype::vector<const Texture*> allTextures = gbufferTextures;
+    allTextures.push_back(ctx.pCurrentSwapchainTexture);
+    allTextures.push_back(pUITexture);
 
-    PerformInitialLayoutTransitions(ctx, gbufferAndSwapchainTextures, pSwapChainTexture, imageAvailableSemaphore);
+    // === INITIAL TRANSITIONS ===
+    PerformInitialLayoutTransitions(ctx, allTextures, ctx.pCurrentSwapchainTexture, imageAvailableSemaphore);
 
-    RenderAllPasses(m_passes[PassType::PreProcess], mainPassData, ctx, syncContexts);
-    RenderAllPasses(m_passes[PassType::Main], mainPassData, ctx, syncContexts);
-    RenderAllPasses(m_passes[PassType::Debug], mainPassData, ctx, syncContexts);
-    RenderAllPasses(m_passes[PassType::Shadow], mainPassData, ctx, syncContexts);
+    // === GEOMETRY PASSES ===
+    RenderPassGroup(PassType::PreProcess, mainPassData, ctx);
+    RenderPassGroup(PassType::Main, mainPassData, ctx);
+    RenderPassGroup(PassType::Debug, mainPassData, ctx);
+    RenderPassGroup(PassType::Shadow, mainPassData, ctx);
 
-    {
-        AsyncLayoutTransitionRequest transitionRequest{
-            .textures = gbufferTextures,
-            .oldLayout = ImageLayout::COLOR_ATTACHMENT,
-            .newLayout = ImageLayout::SHADER_READ_OPTIMAL,
-            .pWaitSemaphore = ctx.additionalSynchronizationContexts[0].waitSemaphore,
-            .pSignalSemaphore = &ctx.additionalSynchronizationContexts[0].signalSemaphore};
-        g_pTexManager->EnqueueAsyncImageLayoutTransition(transitionRequest);
-    }
-    {
-        AsyncLayoutTransitionRequest transitionRequest{
-            .textures = {m_globalRendererAttachments.directionalLightShadowMap.pTexture},
-            .oldLayout = ImageLayout::DEPTH_STENCIL,
-            .newLayout = ImageLayout::SHADER_READ_OPTIMAL,
-        };
-        g_pTexManager->EnqueueAsyncImageLayoutTransition(transitionRequest);
-    }
-    g_pTexManager->DispatchAsyncOps("Color to shader read transition");
-    RenderAllPasses(m_passes[PassType::UI], mainPassData, ctx, syncContexts);
-    {
-        AsyncLayoutTransitionRequest transitionRequest{
-            .textures = {pUITexture},
-            .oldLayout = ImageLayout::COLOR_ATTACHMENT,
-            .newLayout = ImageLayout::SHADER_READ_OPTIMAL,
-            .pWaitSemaphore = ctx.additionalSynchronizationContexts[1].waitSemaphore,
-            .pSignalSemaphore = &ctx.additionalSynchronizationContexts[1].signalSemaphore};
-        g_pTexManager->EnqueueAsyncImageLayoutTransition(transitionRequest);
-    }
-    g_pTexManager->DispatchAsyncOps("UI gbuffer to shader read transition");
-    RenderAllPasses(m_passes[PassType::Composite], mainPassData, ctx, syncContexts);
+    // === TRANSITION: GBuffer + Shadow → Shader Read ===
+    TransitionGBuffersToShaderRead(ctx, gbufferTextures);
 
-    {
-        AsyncLayoutTransitionRequest transitionRequest{
-            .textures = {ctx.pCurrentSwapchainTexture},
-            .oldLayout = ImageLayout::COLOR_ATTACHMENT,
-            .newLayout = ImageLayout::PRESENT,
-            .pWaitSemaphore = ctx.additionalSynchronizationContexts[2].waitSemaphore,
-            .pSignalSemaphore = &ctx.additionalSynchronizationContexts[2].signalSemaphore};
-        g_pTexManager->EnqueueAsyncImageLayoutTransition(transitionRequest);
-    }
-    g_pTexManager->DispatchAsyncOps("Color to present transition");
+    // === UI PASS ===
+    RenderPassGroup(PassType::UI, mainPassData, ctx);
+
+    // === TRANSITION: UI → Shader Read ===
+    TransitionUIToShaderRead(ctx, pUITexture);
+
+    // === COMPOSITE PASS (always renders) ===
+    RenderPassGroup(PassType::Composite, mainPassData, ctx);
+
+    // === TRANSITION: Swapchain → Present (always runs since Composite always renders) ===
+    TransitionSwapchainToPresent(ctx);
+}
+
+Semaphore* RenderPasses::PassManager::GetLastActiveGroupSemaphore(FrameRendererContext& ctx)
+{
+    // Unused with updated timeline logic, but kept for signature compatibility if needed or return nullptr
+    return nullptr;
+}
+
+void RenderPasses::PassManager::TransitionGBuffersToShaderRead(FrameRendererContext& ctx,
+                                                               const stltype::vector<const Texture*>& gbufferTextures)
+{
+    // Wait for the last timeline value signaled by any render pass
+    u64 waitValue = ctx.nextTimelineValue - 1;
+
+    AsyncLayoutTransitionRequest gbufferTransition{.textures = gbufferTextures,
+                                                   .oldLayout = ImageLayout::COLOR_ATTACHMENT,
+                                                   .newLayout = ImageLayout::SHADER_READ_OPTIMAL,
+                                                   // Wait on the timeline semaphore
+                                                   .pTimelineWaitSemaphore = &ctx.frameTimeline,
+                                                   .timelineWaitValue = waitValue};
+    g_pTexManager->EnqueueAsyncImageLayoutTransition(gbufferTransition);
+
+    AsyncLayoutTransitionRequest shadowTransition{
+        .textures = {m_globalRendererAttachments.directionalLightShadowMap.pTexture},
+        .oldLayout = ImageLayout::DEPTH_STENCIL,
+        .newLayout = ImageLayout::SHADER_READ_OPTIMAL};
+    g_pTexManager->EnqueueAsyncImageLayoutTransition(shadowTransition);
+
+    g_pTexManager->DispatchAsyncOps("GBuffer to shader read");
+}
+
+void RenderPasses::PassManager::TransitionUIToShaderRead(FrameRendererContext& ctx, const Texture* pUITexture)
+{
+    AsyncLayoutTransitionRequest transitionRequest{.textures = {pUITexture},
+                                                   .oldLayout = ImageLayout::COLOR_ATTACHMENT,
+                                                   .newLayout = ImageLayout::SHADER_READ_OPTIMAL};
+    g_pTexManager->EnqueueAsyncImageLayoutTransition(transitionRequest);
+    g_pTexManager->DispatchAsyncOps("UI to shader read");
+
+    // Composite pass will use timeline semaphore - transition semaphore handled separately
+}
+
+void RenderPasses::PassManager::TransitionSwapchainToPresent(FrameRendererContext& ctx)
+{
+    // Wait on the timeline to ensure all passes completed before transitioning
+    u64 waitValue = ctx.nextTimelineValue - 1;
+
+    AsyncLayoutTransitionRequest transitionRequest{.textures = {ctx.pCurrentSwapchainTexture},
+                                                   .oldLayout = ImageLayout::COLOR_ATTACHMENT,
+                                                   .newLayout = ImageLayout::PRESENT,
+                                                   // Signal the binary semaphore for presentation to wait on
+                                                   .pSignalSemaphore = &ctx.pPresentLayoutTransitionSignalSemaphore,
+                                                   // Wait on timeline semaphore to ensure all rendering is done
+                                                   .pTimelineWaitSemaphore = &ctx.frameTimeline,
+                                                   .timelineWaitValue = waitValue};
+    g_pTexManager->EnqueueAsyncImageLayoutTransition(transitionRequest);
+    g_pTexManager->DispatchAsyncOps("Swapchain to present");
 }
 
 void RenderPasses::PassManager::Init()
@@ -400,6 +424,7 @@ void RenderPasses::PassManager::Init()
     CreatePassObjectsAndLayouts();
     CreateUBOsAndMap();
     CreateFrameRendererContexts();
+    InitPassGroupContexts();
     InitPassesAndImGui();
 }
 
@@ -407,14 +432,14 @@ void RenderPasses::PassManager::ExecutePasses(u32 frameIdx)
 {
     auto& mainPassData = m_mainPassData.at(frameIdx);
 
-    if (!AnyPassWantsToRender())
-        return;
-
+    // UI and Composite always render, so we always have something to present
     auto& ctx = m_frameRendererContexts.at(m_currentSwapChainIdx);
 
-    bool rebuildSyncs = false;
-    BuildSyncContextsIfNeeded(rebuildSyncs, ctx);
+    // Verify semaphore pointers
+    DEBUG_ASSERT(ctx.renderingFinishedSemaphore == &ctx.pPresentLayoutTransitionSignalSemaphore);
+    DEBUG_ASSERT(ctx.renderingFinishedSemaphore->GetRef() != VK_NULL_HANDLE);
 
+    // Use frameIdx for semaphore selection as that's what BlockUntilPassesFinished uses for Acquire
     auto& imageAvailableSemaphore = m_imageAvailableSemaphores.at(frameIdx);
 
     ctx.imageIdx = m_currentSwapChainIdx;
@@ -423,14 +448,12 @@ void RenderPasses::PassManager::ExecutePasses(u32 frameIdx)
 
     PrepareMainPassDataForFrame(mainPassData, ctx, frameIdx);
 
-    // Use the synchronization contexts for the current frame
-    auto& syncContexts = ctx.synchronizationContexts;
+    RenderAllPassGroups(mainPassData, ctx, imageAvailableSemaphore);
 
-    RenderAllPassGroups(mainPassData, ctx, syncContexts, imageAvailableSemaphore);
-
-    AsyncQueueHandler::PresentRequest presentRequest{.pWaitSemaphore =
-                                                         &ctx.additionalSynchronizationContexts[2].signalSemaphore,
+    // UI and Composite always render, so we always present
+    AsyncQueueHandler::PresentRequest presentRequest{.pWaitSemaphore = ctx.renderingFinishedSemaphore,
                                                      .swapChainImageIdx = m_currentSwapChainIdx};
+
     g_pQueueHandler->SubmitSwapchainPresentRequestForThisFrame(presentRequest);
     g_pQueueHandler->DispatchAllRequests();
 }
@@ -600,6 +623,11 @@ void RenderPasses::PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
         }
 
         auto& mainPassData = m_mainPassData.at(frameIdx);
+        // Set the camera view matrix for shadow cascade computation
+        if (m_dataToBePreProcessed.mainViewUBO.has_value())
+        {
+            mainPassData.mainCamViewMatrix = m_dataToBePreProcessed.mainViewUBO->view;
+        }
         // Light uniforms
         {
             LightUniforms data;
@@ -796,6 +824,8 @@ void RenderPasses::PassManager::RecreateShadowMaps(u32 cascades, const mathstl::
     auto& csm = m_globalRendererAttachments.directionalLightShadowMap;
     if (csm.pTexture != nullptr)
     {
+        // Kinda okay because changing cascades can be slow!
+        vkDeviceWaitIdle(VkGlobals::GetLogicalDevice());
         g_pTexManager->FreeTexture(csm.handle);
     }
     csm.cascades = cascades;

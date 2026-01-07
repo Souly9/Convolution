@@ -14,6 +14,11 @@ endif()
 project ("Convolution")
 set(NAME "Convolution")
 
+# Enable multi-core compilation for MSVC
+if(MSVC)
+    add_compile_options(/MP)
+endif()
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/Modules)
 set(LLVM_ENABLE_RTTI ON) 
@@ -106,12 +111,29 @@ FetchContent_Declare(
 )
 add_subdirectory("${CMAKE_SOURCE_DIR}/External/VMA")
 
-# Set some Assimp specific options to control what gets built
-set(ASSIMP_BUILD_ASSIMP_TOOLS OFF CACHE BOOL "Disable Assimp tools build")
-set(ASSIMP_BUILD_TESTS OFF CACHE BOOL "Disable Assimp tests build")
-set(ASSIMP_BUILD_SAMPLES OFF CACHE BOOL "Disable Assimp samples build")
-set(ASSIMP_INSTALL OFF CACHE BOOL "Disable installation of Assimp")
-set(ASSIMP_INJECT_RUNTIME_PATH OFF CACHE BOOL "Disable rpath injection")
+# GLFW build options - disable docs, examples, and tests
+set(GLFW_BUILD_DOCS OFF CACHE BOOL "Disable GLFW documentation" FORCE)
+set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "Disable GLFW examples" FORCE)
+set(GLFW_BUILD_TESTS OFF CACHE BOOL "Disable GLFW tests" FORCE)
+set(GLFW_INSTALL OFF CACHE BOOL "Disable GLFW installation" FORCE)
+
+# Assimp build options - disable unused components
+set(ASSIMP_BUILD_ASSIMP_TOOLS OFF CACHE BOOL "Disable Assimp tools build" FORCE)
+set(ASSIMP_BUILD_TESTS OFF CACHE BOOL "Disable Assimp tests build" FORCE)
+set(ASSIMP_BUILD_SAMPLES OFF CACHE BOOL "Disable Assimp samples build" FORCE)
+set(ASSIMP_INSTALL OFF CACHE BOOL "Disable installation of Assimp" FORCE)
+set(ASSIMP_INJECT_DEBUG_POSTFIX OFF CACHE BOOL "Disable debug postfix" FORCE)
+set(ASSIMP_WARNINGS_AS_ERRORS OFF CACHE BOOL "Disable warnings as errors" FORCE)
+
+# Disable all importers by default, enable only what we need
+set(ASSIMP_BUILD_ALL_IMPORTERS_BY_DEFAULT OFF CACHE BOOL "Disable all importers" FORCE)
+set(ASSIMP_BUILD_FBX_IMPORTER ON CACHE BOOL "Enable FBX importer" FORCE)
+set(ASSIMP_BUILD_OBJ_IMPORTER ON CACHE BOOL "Enable OBJ importer" FORCE)
+set(ASSIMP_BUILD_GLTF_IMPORTER ON CACHE BOOL "Enable glTF importer" FORCE)
+set(ASSIMP_BUILD_COLLADA_IMPORTER ON CACHE BOOL "Enable Collada importer" FORCE)
+
+# Disable all exporters (not needed for import-only workflow)
+set(ASSIMP_BUILD_ALL_EXPORTERS_BY_DEFAULT OFF CACHE BOOL "Disable all exporters" FORCE)
 
 FetchContent_MakeAvailable(EASTL EAStdC EAAssert EAThread GLFW3 IMGUI DIRECTXMATH ASSIMP TRACY)
 
@@ -143,8 +165,8 @@ target_include_directories(ImGui PUBLIC
 	${Vulkan_INCLUDE_DIRS}
 )
 
+add_compile_definitions(CONV_DEBUG)
 if(${CMAKE_BUILD_TYPE} MATCHES "Debug" OR ${CMAKE_BUILD_TYPE} MATCHES "RelWithDebInfo")
-    add_compile_definitions(CONV_DEBUG)
     if (MSVC)
         # Use /Z7 (debug info in .obj) instead of /Zi (PDB) for better LLDB compatibility
         add_compile_options(/Z7)

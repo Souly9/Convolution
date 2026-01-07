@@ -1,10 +1,8 @@
 #pragma once
 
 // Temporarily disabled due to missing stdint.h in TracySystem.hpp
-#ifdef PROFILING_ENABLED
-#undef PROFILING_ENABLED
-#endif
-#define PROFILING_ENABLED 0
+
+#define PROFILING_ENABLED 1
 
 #if PROFILING_ENABLED
 #include <Tracy/public/tracy/Tracy.hpp>

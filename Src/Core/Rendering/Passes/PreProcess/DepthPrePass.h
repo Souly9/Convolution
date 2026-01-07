@@ -20,7 +20,7 @@ protected:
     void RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
                              FrameRendererContext& previousFrameCtx,
                              u32 thisFrameNum) override;
-    void Render(const MainPassData& data, FrameRendererContext& ctx) override;
+    void Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer) override;
     void CreateSharedDescriptorLayout() override;
     void Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager) override;
     bool WantsToRender() const override;

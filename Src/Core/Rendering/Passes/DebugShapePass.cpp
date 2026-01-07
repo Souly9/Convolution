@@ -114,15 +114,14 @@ void RenderPasses::DebugShapePass::RebuildInternalData(const stltype::vector<Pas
     m_indirectCmdBufferWireFrame.FillCmds();
 }
 
-void RenderPasses::DebugShapePass::Render(const MainPassData& data, FrameRendererContext& ctx)
+void RenderPasses::DebugShapePass::Render(const MainPassData& data,
+                                          FrameRendererContext& ctx,
+                                          CommandBuffer* pCmdBuffer)
 {
     ScopedZone("DebugShapePass::Render");
     const auto currentFrame = ctx.currentFrame;
     UpdateContextForFrame(currentFrame);
     const auto& passCtx = m_perObjectFrameContexts[currentFrame];
-
-    CommandBuffer* currentBuffer = m_cmdBuffers[currentFrame];
-    DEBUG_ASSERT(currentBuffer);
 
     ColorAttachment swapChainColorAttachment = m_mainRenderingData.colorAttachments[0];
     swapChainColorAttachment.SetTexture(data.pGbuffer->Get(GBufferTextureType::GBufferAlbedo));
@@ -134,7 +133,6 @@ void RenderPasses::DebugShapePass::Render(const MainPassData& data, FrameRendere
     auto& sceneGeometryBuffers = data.pResourceManager->GetSceneGeometryBuffers();
     BinRenderDataCmd geomBufferCmd(sceneGeometryBuffers.GetVertexBuffer(), sceneGeometryBuffers.GetIndexBuffer());
 
-    // Only if we have valid descriptors
     if (data.bufferDescriptors.empty() == false)
     {
         const auto transformSSBOSet = data.bufferDescriptors.at(UBO::DescriptorContentsType::GlobalInstanceData);
@@ -148,10 +146,10 @@ void RenderPasses::DebugShapePass::Render(const MainPassData& data, FrameRendere
             BeginRenderingCmd cmdBegin{&m_solidDebugObjectsPSO, colorAttachments, &m_mainRenderingData.depthAttachment};
             cmdBegin.extents = extents;
             cmdBegin.viewport = data.mainView.viewport;
-            currentBuffer->RecordCommand(cmdBegin);
-            currentBuffer->RecordCommand(geomBufferCmd);
-            currentBuffer->RecordCommand(cmd);
-            currentBuffer->RecordCommand(EndRenderingCmd{});
+            pCmdBuffer->RecordCommand(cmdBegin);
+            pCmdBuffer->RecordCommand(geomBufferCmd);
+            pCmdBuffer->RecordCommand(cmd);
+            pCmdBuffer->RecordCommand(EndRenderingCmd{});
         }
         if (m_indirectCmdBufferWireFrame.GetDrawCmdNum() > 0)
         {
@@ -164,23 +162,12 @@ void RenderPasses::DebugShapePass::Render(const MainPassData& data, FrameRendere
             cmdBegin.extents = extents;
             cmdBegin.viewport = data.mainView.viewport;
 
-            currentBuffer->RecordCommand(cmdBegin);
-            currentBuffer->RecordCommand(geomBufferCmd);
-            currentBuffer->RecordCommand(cmd);
-            currentBuffer->RecordCommand(EndRenderingCmd{});
+            pCmdBuffer->RecordCommand(cmdBegin);
+            pCmdBuffer->RecordCommand(geomBufferCmd);
+            pCmdBuffer->RecordCommand(cmd);
+            pCmdBuffer->RecordCommand(EndRenderingCmd{});
         }
     }
-    currentBuffer->Bake();
-
-    auto& syncContext = ctx.synchronizationContexts.find(this)->second;
-
-    currentBuffer->AddWaitSemaphore(syncContext.waitSemaphore);
-    currentBuffer->AddSignalSemaphore(&syncContext.signalSemaphore);
-    AsyncQueueHandler::CommandBufferRequest cmdRequest{
-        .pBuffer = currentBuffer,
-        .queueType = QueueType::Graphics,
-    };
-    g_pQueueHandler->SubmitCommandBufferThisFrame(cmdRequest);
 }
 
 void RenderPasses::DebugShapePass::CreateSharedDescriptorLayout()

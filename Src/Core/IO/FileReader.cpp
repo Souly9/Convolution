@@ -61,8 +61,13 @@ void FileReader::CheckIORequests()
             threadstl::ThreadSleep(50);
             continue;
         }
+
+        // Copy and pop request while holding lock, then release before processing
+        // This avoids deadlock when mesh loading triggers texture IO requests
         m_requestSubmitMutex.Lock();
         const IORequest request = m_requests.front();
+        m_requests.pop();
+        m_requestSubmitMutex.Unlock();
 
         switch (request.requestType)
         {
@@ -85,8 +90,6 @@ void FileReader::CheckIORequests()
                 DEBUG_ASSERT(false);
                 break;
         }
-        m_requests.pop();
-        m_requestSubmitMutex.Unlock();
     }
 }
 

@@ -48,7 +48,7 @@ void CSMPass::BuildPipelines()
     info.attachmentInfos =
         CreateAttachmentInfo({m_mainRenderingData.colorAttachments}, m_mainRenderingData.depthAttachment);
     info.viewMask = 0x00000007;
-    info.rasterizerInfo.cullmode = Cullmode::Front;
+    info.rasterizerInfo.cullmode = Cullmode::Back;
     m_mainPSO = PSO(
         ShaderCollection{&mainVert, &mainFrag}, PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions}, info);
 }
@@ -82,17 +82,13 @@ void CSMPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
     // m_needsBufferSync = true;
 }
 
-void RenderPasses::CSMPass::Render(const MainPassData& data, FrameRendererContext& ctx)
+void RenderPasses::CSMPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
 {
     ScopedZone("ShadowPass::Render");
 
     const auto currentFrame = ctx.imageIdx;
     UpdateContextForFrame(currentFrame);
     const auto& passCtx = m_perObjectFrameContexts[currentFrame];
-
-    CommandBuffer* currentBuffer = m_cmdBuffers[currentFrame];
-    DEBUG_ASSERT(currentBuffer);
-    // currentBuffer->ResetBuffer();
 
     const auto ex = data.directionalLightShadowMap.pTexture->GetInfo().extents;
     const DirectX::XMINT2 extents(ex.x, ex.y);
@@ -121,61 +117,49 @@ void RenderPasses::CSMPass::Render(const MainPassData& data, FrameRendererContex
                               ctx.shadowViewUBODescriptor};
     }
     cmdBegin.drawCmdBuffer = &m_indirectCmdBuffer;
-    StartRenderPassProfilingScope(currentBuffer);
-    currentBuffer->RecordCommand(cmdBegin);
+    StartRenderPassProfilingScope(pCmdBuffer);
+    pCmdBuffer->RecordCommand(cmdBegin);
     BinRenderDataCmd geomBufferCmd(sceneGeometryBuffers.GetVertexBuffer(), sceneGeometryBuffers.GetIndexBuffer());
-    currentBuffer->RecordCommand(geomBufferCmd);
+    pCmdBuffer->RecordCommand(geomBufferCmd);
 
     const auto mainCamView = data.mainView;
     stltype::vector<stltype::vector<mathstl::Matrix>> matrices;
     matrices.reserve(data.csmViews.size());
-    // for (const auto& csmView : data.csmViews)
     if (data.csmViews.empty() == false)
     {
         const auto& csmView = data.csmViews[0];
+        stltype::array<f32, 16> splits{};
         auto cascadeViewProjMatrices = ComputeLightViewProjMatrices(data.cascades,
                                                                     mainCamView.fov,
                                                                     mainCamView.viewport.minDepth,
                                                                     mainCamView.viewport.maxDepth,
                                                                     mathstl::Vector2(extents.x, extents.y),
                                                                     data.mainCamViewMatrix,
-                                                                    csmView.dir);
+                                                                    csmView.dir,
+                                                                    splits);
         matrices.push_back(cascadeViewProjMatrices);
 
-        f32 cascadeStepSize =
-            (mainCamView.viewport.maxDepth - mainCamView.viewport.minDepth) / static_cast<f32>(data.cascades);
+        UBO::ShadowmapViewUBO uboData;
+        uboData.cascadeCount = (s32)data.cascades;
+        if (cascadeViewProjMatrices.size() <= 16)
+        {
+            std::copy(
+                cascadeViewProjMatrices.begin(), cascadeViewProjMatrices.end(), uboData.lightViewProjMatrices.begin());
+        }
 
-        const u32 matricesSize = static_cast<u32>(sizeof(mathstl::Matrix) * cascadeViewProjMatrices.size());
+        for (u32 i = 0; i < 4; ++i)
+        {
+            uboData.cascadeSplits[i] =
+                mathstl::Vector4(splits[i * 4 + 0], splits[i * 4 + 1], splits[i * 4 + 2], splits[i * 4 + 3]);
+        }
 
-        memcpy(m_mappedShadowViewUBO,
-               cascadeViewProjMatrices.data(),
-               (u32)(sizeof(mathstl::Matrix) * cascadeViewProjMatrices.size()));
-        memcpy(reinterpret_cast<uint8_t*>(m_mappedShadowViewUBO) + matricesSize, &cascadeStepSize, (u32)(sizeof(f32)));
-
+        memcpy(m_mappedShadowViewUBO, &uboData, sizeof(UBO::ShadowmapViewUBO));
         ctx.shadowViewUBODescriptor->WriteBufferUpdate(m_shadowViewUBO, s_shadowmapViewUBOBindingSlot);
-        // currentBuffer->RecordCommand(PushConstantCmd{ .size = (u32)(sizeof(mathstl::Matrix) *
-        // cascadeViewProjMatrices.size()), .offset = 0, .data = (void*)matrices.data(), .pPSO = &m_mainPSO});
-        currentBuffer->RecordCommand(cmd);
+        pCmdBuffer->RecordCommand(cmd);
     }
 
-    currentBuffer->RecordCommand(EndRenderingCmd{});
-    EndRenderPassProfilingScope(currentBuffer);
-
-    currentBuffer->Bake();
-
-    auto& syncContext = ctx.synchronizationContexts.find(this)->second;
-
-    currentBuffer->AddWaitSemaphore(syncContext.waitSemaphore);
-    currentBuffer->AddSignalSemaphore(&syncContext.signalSemaphore);
-
-    currentBuffer->SetWaitStages(SyncStages::EARLY_FRAGMENT_TESTS);
-    currentBuffer->SetSignalStages(SyncStages::COLOR_ATTACHMENT_OUTPUT);
-
-    AsyncQueueHandler::CommandBufferRequest cmdRequest{
-        .pBuffer = currentBuffer,
-        .queueType = QueueType::Graphics,
-    };
-    g_pQueueHandler->SubmitCommandBufferThisFrame(cmdRequest);
+    pCmdBuffer->RecordCommand(EndRenderingCmd{});
+    EndRenderPassProfilingScope(pCmdBuffer);
 }
 
 void CSMPass::CreateSharedDescriptorLayout()
@@ -203,7 +187,8 @@ stltype::vector<mathstl::Matrix> CSMPass::ComputeLightViewProjMatrices(u32 casca
                                                                        f32 mainCamFar,
                                                                        mathstl::Vector2 mainFrustumExtents,
                                                                        const mathstl::Matrix& mainCamView,
-                                                                       const mathstl::Vector3& lightDir)
+                                                                       const mathstl::Vector3& lightDir,
+                                                                       stltype::array<f32, 16>& splits)
 {
     stltype::vector<mathstl::Matrix> cascadeProjectionMatrices;
     stltype::vector<mathstl::Matrix> lightViewProjMatrices;
@@ -212,13 +197,29 @@ stltype::vector<mathstl::Matrix> CSMPass::ComputeLightViewProjMatrices(u32 casca
     auto lightLocalDir = lightDir;
     lightLocalDir.Normalize();
 
+    const float lambda = 0.95f; // Logarithmic split factor
+
+    float logBase = mainCamFar / mainCamNear;
+    float logStep = std::pow(logBase, 1.0f / static_cast<float>(cascades));
+    float linearStep = (mainCamFar - mainCamNear) / static_cast<float>(cascades);
+
+    float currentLog = mainCamNear;
+    float currentUni = mainCamNear;
+    float cascadeNear = mainCamNear;
+
     for (u32 i = 0; i < cascades; ++i)
     {
-        const f32 cascadeNear = mainCamNear + (mainCamFar - mainCamNear) * (i / static_cast<f32>(cascades));
-        const f32 cascadeFar = mainCamNear + (mainCamFar - mainCamNear) * ((i + 1) / static_cast<f32>(cascades));
+        currentLog *= logStep;
+        currentUni += linearStep;
+
+        float cascadeFar = lambda * currentLog + (1.0f - lambda) * currentUni;
+
+        if (i < 16)
+            splits[i] = cascadeFar;
 
         cascadeProjectionMatrices.push_back(mathstl::Matrix::CreatePerspectiveFieldOfView(
             DirectX::XMConvertToRadians(fov), mainFrustumExtents.x / mainFrustumExtents.y, cascadeNear, cascadeFar));
+        cascadeNear = cascadeFar;
     }
 
     for (const auto& projMatrix : cascadeProjectionMatrices)
@@ -248,9 +249,11 @@ stltype::vector<mathstl::Matrix> CSMPass::ComputeLightViewProjMatrices(u32 casca
         }
 
         // Tune this parameter according to the scene
-        constexpr float zMult = 3.0f;
-        f32 zNear = minPoint.z / zMult, zFar = maxPoint.z * zMult;
+        constexpr float zMargin = 3000.0f;
+        f32 zNear = minPoint.z - zMargin;
+        f32 zFar = maxPoint.z + zMargin;
 
+        // Stabilize shadow map by snapping to texels
         if (DirectX::XMScalarNearEqual(minPoint.x, maxPoint.x, 0.0001f))
         {
             const float adjust = 0.005f;

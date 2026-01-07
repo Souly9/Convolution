@@ -70,10 +70,40 @@ public:
     void AddWaitSemaphore(Semaphore* pSemaphore);
     void AddSignalSemaphore(Semaphore* pSemaphore);
 
+    // Timeline semaphore support
+    void SetTimelineWait(TimelineSemaphore* pSemaphore, u64 waitValue);
+    void SetTimelineSignal(TimelineSemaphore* pSemaphore, u64 signalValue);
+
+    bool HasTimelineSemaphores() const
+    {
+        return m_timelineWaitSemaphore != VK_NULL_HANDLE || m_timelineSignalSemaphore != VK_NULL_HANDLE;
+    }
+
+    VkSemaphore GetTimelineWaitSemaphore() const
+    {
+        return m_timelineWaitSemaphore;
+    }
+    VkSemaphore GetTimelineSignalSemaphore() const
+    {
+        return m_timelineSignalSemaphore;
+    }
+    u64 GetTimelineWaitValue() const
+    {
+        return m_timelineWaitValue;
+    }
+    u64 GetTimelineSignalValue() const
+    {
+        return m_timelineSignalValue;
+    }
+
     void ClearSemaphores()
     {
         m_waitSemaphores.clear();
         m_signalSemaphores.clear();
+        m_timelineWaitSemaphore = VK_NULL_HANDLE;
+        m_timelineSignalSemaphore = VK_NULL_HANDLE;
+        m_timelineWaitValue = 0;
+        m_timelineSignalValue = 0;
     }
 
     void SetWaitStages(SyncStages stages);
@@ -94,6 +124,12 @@ protected:
     // Optional semaphores to wait on and signal, used when submitting the command buffer
     stltype::vector<RawSemaphoreHandle> m_waitSemaphores;
     stltype::vector<RawSemaphoreHandle> m_signalSemaphores;
+
+    // Timeline semaphores (only one pair per command buffer)
+    VkSemaphore m_timelineWaitSemaphore{VK_NULL_HANDLE};
+    VkSemaphore m_timelineSignalSemaphore{VK_NULL_HANDLE};
+    u64 m_timelineWaitValue{0};
+    u64 m_timelineSignalValue{0};
 
     CommandPoolVulkan* m_pool{nullptr};
     VkCommandBuffer m_commandBuffer{VK_NULL_HANDLE};

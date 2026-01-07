@@ -19,7 +19,6 @@
 #include "GBuffer.h"
 #include "LightResourceManager.h"
 
-
 class SharedResourceManager;
 
 namespace RenderPasses
@@ -127,18 +126,63 @@ struct MainPassData
     u32 cascades;
 };
 
-struct RenderPassSynchronizationContext
+enum class PassType
 {
-    Semaphore* waitSemaphore;
-    Semaphore signalSemaphore;
+    PreProcess,
+    Main,
+    UI,
+    Debug,
+    Shadow,
+    PostProcess,
+    Composite
+};
+
+// ============================================================================
+// PASS GROUP EXECUTION ORDER
+// Defines the order in which pass groups are executed and synchronized.
+// Each group uses a single command buffer and waits on the previous group.
+// ============================================================================
+inline constexpr PassType GROUP_EXECUTION_ORDER[] = {
+    PassType::PreProcess, PassType::Main, PassType::Debug, PassType::Shadow, PassType::UI, PassType::Composite};
+inline constexpr u32 GROUP_COUNT = sizeof(GROUP_EXECUTION_ORDER) / sizeof(PassType);
+
+// Helper to get pass type name for logging
+inline const char* GetPassTypeName(PassType type)
+{
+    switch (type)
+    {
+        case PassType::PreProcess:
+            return "PreProcess";
+        case PassType::Main:
+            return "Main";
+        case PassType::Debug:
+            return "Debug";
+        case PassType::Shadow:
+            return "Shadow";
+        case PassType::UI:
+            return "UI";
+        case PassType::Composite:
+            return "Composite";
+        case PassType::PostProcess:
+            return "PostProcess";
+        default:
+            return "Unknown";
+    }
+}
+
+struct PassGroupContext
+{
+    CommandPool cmdPool;
+    stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> cmdBuffers{SWAPCHAIN_IMAGES};
+    bool initialized{false};
 };
 
 struct FrameRendererContext
 {
-    stltype::hash_map<ConvolutionRenderPass*, RenderPassSynchronizationContext> synchronizationContexts{};
-    stltype::vector<RenderPassSynchronizationContext> additionalSynchronizationContexts{};
-    // Signaled when the swapchain image is transitioned to the initial layout for
-    // rendering
+    // Timeline semaphore for pass group synchronization
+    TimelineSemaphore frameTimeline{};
+    u64 nextTimelineValue{1}; // Reset to 1 each frame, 0 is initial value
+
     Semaphore pInitialLayoutTransitionSignalSemaphore{};
     // Signaled when the swapchain image is transitioned to the present layout
     Semaphore pPresentLayoutTransitionSignalSemaphore{};
@@ -175,16 +219,6 @@ struct RendererAttachmentInfo
     CascadedShadowMap directionalLightShadowMap;
     stltype::hash_map<ColorAttachmentType, stltype::vector<ColorAttachment>> colorAttachments;
     DepthBufferAttachmentVulkan depthAttachment;
-};
-enum class PassType
-{
-    PreProcess,
-    Main,
-    UI,
-    Debug,
-    Shadow,
-    PostProcess,
-    Composite
 };
 
 struct InstancedMeshDataInfo
@@ -250,17 +284,23 @@ protected:
     void InitPassesAndImGui();
 
     bool AnyPassWantsToRender() const;
-    void BuildSyncContextsIfNeeded(bool& rebuildSyncs, FrameRendererContext& ctx);
     void PrepareMainPassDataForFrame(MainPassData& mainPassData, FrameRendererContext& ctx, u32 frameIdx);
     void PerformInitialLayoutTransitions(FrameRendererContext& ctx,
                                          const stltype::vector<const Texture*>& gbufferTextures,
                                          Texture* pSwapChainTexture,
                                          Semaphore& imageAvailableSemaphore);
-    void RenderAllPassGroups(
-        const MainPassData& mainPassData,
-        FrameRendererContext& ctx,
-        const stltype::hash_map<ConvolutionRenderPass*, RenderPassSynchronizationContext>& syncContexts,
-        Semaphore& imageAvailableSemaphore);
+    void RenderAllPassGroups(const MainPassData& mainPassData,
+                             FrameRendererContext& ctx,
+                             Semaphore& imageAvailableSemaphore);
+    bool RenderPassGroup(PassType groupType, const MainPassData& data, FrameRendererContext& ctx);
+    void InitPassGroupContexts();
+
+    // Layout transition helpers
+    Semaphore* GetLastActiveGroupSemaphore(FrameRendererContext& ctx);
+    void TransitionGBuffersToShaderRead(FrameRendererContext& ctx,
+                                        const stltype::vector<const Texture*>& gbufferTextures);
+    void TransitionUIToShaderRead(FrameRendererContext& ctx, const Texture* pUITexture);
+    void TransitionSwapchainToPresent(FrameRendererContext& ctx);
 
 private:
     ProfiledLockable(CustomMutex, m_passDataMutex);
@@ -274,10 +314,12 @@ private:
     // Pass data for each frame
     stltype::hash_map<PassType, stltype::vector<stltype::unique_ptr<ConvolutionRenderPass>>> m_passes{};
     stltype::fixed_vector<MainPassData, FRAMES_IN_FLIGHT> m_mainPassData{FRAMES_IN_FLIGHT};
-    // Signaled when the swapchain image is available for rendering
     stltype::fixed_vector<FrameRendererContext, SWAPCHAIN_IMAGES> m_frameRendererContexts{};
     stltype::fixed_vector<Semaphore, SWAPCHAIN_IMAGES> m_imageAvailableSemaphores{SWAPCHAIN_IMAGES};
     stltype::fixed_vector<Fence, SWAPCHAIN_IMAGES> m_imageAvailableFences{SWAPCHAIN_IMAGES};
+    // Fences to track when rendering to each swapchain image completes (for semaphore reuse safety)
+    stltype::fixed_vector<Fence, SWAPCHAIN_IMAGES> m_renderFinishedFences{SWAPCHAIN_IMAGES};
+    stltype::hash_map<PassType, PassGroupContext> m_passGroupContexts{};
     stltype::hash_map<ECS::EntityID, u32> m_entityToTransformUBOIdx{};
     stltype::hash_map<ECS::EntityID, u32> m_entityToObjectDataIdx{};
 
