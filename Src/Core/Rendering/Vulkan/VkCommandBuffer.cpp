@@ -6,6 +6,8 @@
 #include "Core/Rendering/Vulkan/VkTexture.h"
 #include "Utils/VkEnumHelpers.h"
 #include "VkGlobals.h"
+#include <backends/imgui_impl_vulkan.h>
+#include <imgui.h>
 
 namespace CommandHelpers
 {
@@ -39,6 +41,16 @@ static void RecordCommand(EndProfilingScopeCmd& cmd, CBufferVulkan& buffer)
 static void RecordCommand(BeginRenderingCmd& cmd, CBufferVulkan& buffer)
 {
     buffer.BeginRendering(cmd);
+}
+
+static void RecordCommand(BeginRenderingBaseCmd& cmd, CBufferVulkan& buffer)
+{
+    buffer.BeginRendering(cmd);
+}
+
+static void RecordCommand(CommandBase& cmd, CBufferVulkan& buffer)
+{
+    // No-op for base command
 }
 
 static void RecordCommand(BinRenderDataCmd& cmd, CBufferVulkan& buffer)
@@ -195,6 +207,14 @@ static void RecordCommand(ImageLayoutTransitionCmd& cmd, CBufferVulkan& buffer)
     // Call the new pipeline barrier command.
     vkCmdPipelineBarrier2(buffer.GetRef(), &dependencyInfo);
 }
+
+static void RecordCommand(ImGuiDrawCmd& cmd, CBufferVulkan& buffer)
+{
+    // Ensure we are in a valid state to render ImGui
+    // This assumes ImGui_ImplVulkan_RenderDrawData handles all necessary state setup or that it's compatible with
+    // current state
+    ImGui_ImplVulkan_RenderDrawData(cmd.drawData, buffer.GetRef());
+}
 } // namespace CommandHelpers
 
 CBufferVulkan::CBufferVulkan(VkCommandBuffer commandBuffer)
@@ -273,7 +293,8 @@ void CBufferVulkan::BeginBuffer()
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
     beginInfo.pInheritanceInfo = nullptr; // Optional
-    DEBUG_ASSERT(vkBeginCommandBuffer(GetRef(), &beginInfo) == VK_SUCCESS);
+    VkResult result = vkBeginCommandBuffer(GetRef(), &beginInfo);
+    DEBUG_ASSERT(result == VK_SUCCESS);
 }
 
 void CBufferVulkan::BeginBufferForSingleSubmit()
@@ -282,7 +303,8 @@ void CBufferVulkan::BeginBufferForSingleSubmit()
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     beginInfo.pInheritanceInfo = nullptr; // Optional
-    DEBUG_ASSERT(vkBeginCommandBuffer(GetRef(), &beginInfo) == VK_SUCCESS);
+    VkResult result = vkBeginCommandBuffer(GetRef(), &beginInfo);
+    DEBUG_ASSERT(result == VK_SUCCESS);
 }
 
 void CBufferVulkan::BeginRendering(BeginRenderingCmd& cmd)
@@ -364,7 +386,8 @@ void CBufferVulkan::EndRendering()
 
 void CBufferVulkan::EndBuffer()
 {
-    DEBUG_ASSERT(vkEndCommandBuffer(GetRef()) == VK_SUCCESS);
+    VkResult result = vkEndCommandBuffer(GetRef());
+    DEBUG_ASSERT(result == VK_SUCCESS);
 }
 
 void CBufferVulkan::ResetBuffer()

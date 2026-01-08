@@ -9,7 +9,6 @@
 #include "PreProcess/DepthPrePass.h"
 #include "ShadowPass.h"
 #include "StaticMeshPass.h"
-
 #include <cstring>
 #include <imgui/backends/imgui_impl_vulkan.h>
 
@@ -306,7 +305,6 @@ bool RenderPasses::PassManager::RenderPassGroup(PassType groupType, const MainPa
     auto& groupCtx = m_passGroupContexts[groupType];
     CommandBuffer* cmdBuffer = groupCtx.cmdBuffers[ctx.imageIdx];
     static_cast<CBufferVulkan*>(cmdBuffer)->ResetBuffer();
-    cmdBuffer->BeginBufferForSingleSubmit();
 
     for (auto& pass : m_passes[groupType])
     {
@@ -314,7 +312,8 @@ bool RenderPasses::PassManager::RenderPassGroup(PassType groupType, const MainPa
             pass->Render(data, ctx, cmdBuffer);
     }
 
-    cmdBuffer->EndBuffer();
+    // Bake the command buffer - this actually records the commands to Vulkan API
+    cmdBuffer->Bake();
 
     // Use timeline semaphore for synchronization
     cmdBuffer->SetTimelineWait(&ctx.frameTimeline, waitValue);
@@ -355,6 +354,7 @@ void RenderPasses::PassManager::RenderAllPassGroups(const MainPassData& mainPass
     TransitionUIToShaderRead(ctx, pUITexture);
 
     // === COMPOSITE PASS (always renders) ===
+    // Note: Swapchain was already transitioned to COLOR_ATTACHMENT in PerformInitialLayoutTransitions
     RenderPassGroup(PassType::Composite, mainPassData, ctx);
 
     // === TRANSITION: Swapchain → Present (always runs since Composite always renders) ===
@@ -370,17 +370,20 @@ Semaphore* RenderPasses::PassManager::GetLastActiveGroupSemaphore(FrameRendererC
 void RenderPasses::PassManager::TransitionGBuffersToShaderRead(FrameRendererContext& ctx,
                                                                const stltype::vector<const Texture*>& gbufferTextures)
 {
-    // Wait for the last timeline value signaled by any render pass
+    // Wait for the last timeline value signaled by any render pass, then signal next
     u64 waitValue = ctx.nextTimelineValue - 1;
+    u64 signalValue = ctx.nextTimelineValue++;
 
     AsyncLayoutTransitionRequest gbufferTransition{.textures = gbufferTextures,
                                                    .oldLayout = ImageLayout::COLOR_ATTACHMENT,
                                                    .newLayout = ImageLayout::SHADER_READ_OPTIMAL,
-                                                   // Wait on the timeline semaphore
                                                    .pTimelineWaitSemaphore = &ctx.frameTimeline,
-                                                   .timelineWaitValue = waitValue};
+                                                   .timelineWaitValue = waitValue,
+                                                   .pTimelineSignalSemaphore = &ctx.frameTimeline,
+                                                   .timelineSignalValue = signalValue};
     g_pTexManager->EnqueueAsyncImageLayoutTransition(gbufferTransition);
 
+    // Shadow transition is batched into same command buffer, no separate sync needed
     AsyncLayoutTransitionRequest shadowTransition{
         .textures = {m_globalRendererAttachments.directionalLightShadowMap.pTexture},
         .oldLayout = ImageLayout::DEPTH_STENCIL,
@@ -392,13 +395,34 @@ void RenderPasses::PassManager::TransitionGBuffersToShaderRead(FrameRendererCont
 
 void RenderPasses::PassManager::TransitionUIToShaderRead(FrameRendererContext& ctx, const Texture* pUITexture)
 {
+    u64 waitValue = ctx.nextTimelineValue - 1;
+    u64 signalValue = ctx.nextTimelineValue++;
+
     AsyncLayoutTransitionRequest transitionRequest{.textures = {pUITexture},
                                                    .oldLayout = ImageLayout::COLOR_ATTACHMENT,
-                                                   .newLayout = ImageLayout::SHADER_READ_OPTIMAL};
+                                                   .newLayout = ImageLayout::SHADER_READ_OPTIMAL,
+                                                   .pTimelineWaitSemaphore = &ctx.frameTimeline,
+                                                   .timelineWaitValue = waitValue,
+                                                   .pTimelineSignalSemaphore = &ctx.frameTimeline,
+                                                   .timelineSignalValue = signalValue};
     g_pTexManager->EnqueueAsyncImageLayoutTransition(transitionRequest);
     g_pTexManager->DispatchAsyncOps("UI to shader read");
+}
 
-    // Composite pass will use timeline semaphore - transition semaphore handled separately
+void RenderPasses::PassManager::TransitionSwapchainToColorAttachment(FrameRendererContext& ctx)
+{
+    u64 waitValue = ctx.nextTimelineValue - 1;
+    u64 signalValue = ctx.nextTimelineValue++;
+
+    AsyncLayoutTransitionRequest transitionRequest{.textures = {ctx.pCurrentSwapchainTexture},
+                                                   .oldLayout = ImageLayout::UNDEFINED,
+                                                   .newLayout = ImageLayout::COLOR_ATTACHMENT,
+                                                   .pTimelineWaitSemaphore = &ctx.frameTimeline,
+                                                   .timelineWaitValue = waitValue,
+                                                   .pTimelineSignalSemaphore = &ctx.frameTimeline,
+                                                   .timelineSignalValue = signalValue};
+    g_pTexManager->EnqueueAsyncImageLayoutTransition(transitionRequest);
+    g_pTexManager->DispatchAsyncOps("Swapchain to color attachment");
 }
 
 void RenderPasses::PassManager::TransitionSwapchainToPresent(FrameRendererContext& ctx)
@@ -434,6 +458,8 @@ void RenderPasses::PassManager::ExecutePasses(u32 frameIdx)
 
     // UI and Composite always render, so we always have something to present
     auto& ctx = m_frameRendererContexts.at(m_currentSwapChainIdx);
+    // Note: Timeline value is NOT reset between frames - timeline semaphores must monotonically increase.
+    // Each swapchain image has its own context, so the timeline just keeps incrementing for that image.
 
     // Verify semaphore pointers
     DEBUG_ASSERT(ctx.renderingFinishedSemaphore == &ctx.pPresentLayoutTransitionSignalSemaphore);
@@ -456,6 +482,13 @@ void RenderPasses::PassManager::ExecutePasses(u32 frameIdx)
 
     g_pQueueHandler->SubmitSwapchainPresentRequestForThisFrame(presentRequest);
     g_pQueueHandler->DispatchAllRequests();
+
+    // Retrieve the fence for the current frame index (not swapchain index, but the virtual frame index we are
+    // executing)
+    auto& renderFinishedFence = m_renderFinishedFences.at(frameIdx);
+    // Signal the fence on the graphics queue to mark this frame's execution as finished
+    // We submit an empty command buffer list which effectively just signals the fence when previous commands are done
+    SRF::SubmitCommandBufferToQueue({}, renderFinishedFence, QueueType::Graphics);
 }
 
 // Ensure destructor symbol exists
@@ -780,8 +813,13 @@ void RenderPasses::PassManager::BlockUntilPassesFinished(u32 frameIdx)
     imageAvailableFence.WaitFor();
     imageAvailableFence.Reset();
 
+    // Also wait for the previous frame's execution to finish before we start overwriting its resources
+    auto& renderFinishedFence = m_renderFinishedFences.at(frameIdx);
+    renderFinishedFence.WaitFor();
+    renderFinishedFence.Reset();
+
     // g_pQueueHandler->WaitForFences();
-    // vkQueueWaitIdle(VkGlobals::GetGraphicsQueue());
+    //  vkQueueWaitIdle(VkGlobals::GetGraphicsQueue());
 }
 
 void RenderPasses::PassManager::RebuildPipelinesForAllPasses()

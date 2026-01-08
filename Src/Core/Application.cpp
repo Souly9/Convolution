@@ -3,6 +3,7 @@
 #include "Core/Rendering/Core/ShaderManager.h"
 #include "Core/Rendering/RenderLayer.h"
 #include "Core/Rendering/Vulkan/VkGlobals.h"
+#include "Scenes/SampleScene.h"
 #include "Scenes/SponzaScene.h"
 #include "StaticBehaviors/StaticBehaviorCollection.h"
 #include "TimeData.h"

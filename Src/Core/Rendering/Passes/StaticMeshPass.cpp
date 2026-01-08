@@ -121,6 +121,12 @@ void RenderPasses::StaticMainMeshPass::Render(const MainPassData& data,
     cmd.drawCount = m_indirectCmdBuffer.GetDrawCmdNum();
 
     auto& sceneGeometryBuffers = data.pResourceManager->GetSceneGeometryBuffers();
+    if (sceneGeometryBuffers.GetVertexBuffer().GetRef() == VK_NULL_HANDLE ||
+        sceneGeometryBuffers.GetIndexBuffer().GetRef() == VK_NULL_HANDLE)
+    {
+        return;
+    }
+
     if (data.bufferDescriptors.empty())
         cmd.descriptorSets = {g_pTexManager->GetBindlessDescriptorSet()};
     else

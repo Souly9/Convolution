@@ -300,6 +300,7 @@ protected:
     void TransitionGBuffersToShaderRead(FrameRendererContext& ctx,
                                         const stltype::vector<const Texture*>& gbufferTextures);
     void TransitionUIToShaderRead(FrameRendererContext& ctx, const Texture* pUITexture);
+    void TransitionSwapchainToColorAttachment(FrameRendererContext& ctx);
     void TransitionSwapchainToPresent(FrameRendererContext& ctx);
 
 private:
