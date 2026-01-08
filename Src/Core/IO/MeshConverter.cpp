@@ -168,8 +168,6 @@ Material* ExtractMaterial(const aiMaterial* pMaterial)
     if (pMaterial->GetTexture(aiTextureType_DIFFUSE, 0, &path) == AI_SUCCESS && path.length > 0)
     {
         stltype::string texPath = "Resources\\Models\\" + eastl::string(path.C_Str());
-        DEBUG_LOGF(
-            "[MeshConverter] Material '{}': Loading diffuse texture '{}'", materialName.c_str(), texPath.c_str());
         mat.diffuseTexture = g_pTexManager->MakeTextureBindless(g_pTexManager->SubmitAsyncTextureCreation({texPath}));
     }
     else

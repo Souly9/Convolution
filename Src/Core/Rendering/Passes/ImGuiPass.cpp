@@ -88,9 +88,9 @@ void RenderPasses::ImGuiPass::Render(const MainPassData& data, FrameRendererCont
     cmdBegin.viewport = data.mainView.viewport;
 
     StartRenderPassProfilingScope(pCmdBuffer);
-    pCmdBuffer->BeginRendering(cmdBegin);
-    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), pCmdBuffer->GetRef());
-    pCmdBuffer->EndRendering();
+    pCmdBuffer->RecordCommand(cmdBegin);
+    pCmdBuffer->RecordCommand(ImGuiDrawCmd(ImGui::GetDrawData()));
+    pCmdBuffer->RecordCommand(EndRenderingCmd{});
     EndRenderPassProfilingScope(pCmdBuffer);
 }
 

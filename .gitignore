@@ -36,3 +36,8 @@ Shaders/Compiled/*
 
 !External/additional_libs/*
 !Resources\*
+build/**
+.cache/**
+.agent/**
+.vs/**
+out/**

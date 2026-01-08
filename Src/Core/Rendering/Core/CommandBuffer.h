@@ -5,7 +5,6 @@
 #include "RenderingForwardDecls.h"
 #include <EASTL/fixed_function.h>
 
-
 using ExecutionFinishedCallback = stltype::fixed_function<128, void(void)>;
 
 struct CommandBase
@@ -196,6 +195,17 @@ struct GenericComputeCmd : public CommandBase
 {
 };
 
+// Need to forward declare ImDrawData since we can't include imgui.h here easily
+struct ImDrawData;
+
+struct ImGuiDrawCmd : public CommandBase
+{
+    ImDrawData* drawData;
+    ImGuiDrawCmd(ImDrawData* d) : drawData(d)
+    {
+    }
+};
+
 using Command = stltype::variant<CommandBase,
                                  GenericDrawCmd,
                                  GenericIndirectDrawCmd,
@@ -212,7 +222,8 @@ using Command = stltype::variant<CommandBase,
                                  BinRenderDataCmd,
                                  StartProfilingScopeCmd,
                                  EndProfilingScopeCmd,
-                                 PushConstantCmd>;
+                                 PushConstantCmd,
+                                 ImGuiDrawCmd>;
 
 // Generic command buffer, basically collects all commands as generic structs first so we can reason about them
 class CBuffer : public TrackedResource
