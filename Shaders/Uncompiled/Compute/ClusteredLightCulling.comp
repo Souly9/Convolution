@@ -1,6 +1,124 @@
 #version 450
-layout(local_size_x = 16, local_size_y = 16) in;
+#extension GL_ARB_shading_language_include : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_shader_atomic_int_add : enable
 
-void main() {
-    uint index = gl_GlobalInvocationID.x;
+#define TileArraySet 1
+#include "../../Globals/LightData.h"
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+// Push constants for dynamic cluster config
+layout(push_constant) uniform PushConstants
+{
+    ivec3 clusterCount;
+    uint numLights;
+    vec4 nearFar; // x=near, y=far
+}
+pc;
+
+#define MAX_LIGHTS_PER_CLUSTER 64
+// Match C++ Define
+#define MAX_SCENE_LIGHTS  1024
+#define MAX_CLUSTERS      (16 * 32 * 64)
+#define MAX_LIGHT_INDICES (MAX_CLUSTERS * 128)
+
+// Bindings
+// ViewUBO (Set 0, Binding 300)
+layout(set = 0, binding = 300) uniform ViewUBO
+{
+    mat4 view;
+    mat4 projection;
+    mat4 viewProjection;
+    mat4 viewInverse;
+    mat4 projectionInverse;
+    vec4 viewPos;
+}
+viewData;
+
+// ClusterGrid (Set 0, Binding 1) - Pass local
+layout(std430, set = 2, binding = 1) readonly buffer ClusterGrid
+{
+    vec4 clusters[]; // minBounds, maxBounds pairs
+}
+clusterGrid;
+
+// Shared memory for local light accumulation (64 threads * 64 lights * 4 bytes = 16KB)
+shared uint sharedLightIndices[64][MAX_LIGHTS_PER_CLUSTER];
+
+bool sphereIntersectsAABB(vec3 center, float radius, vec3 aabbMin, vec3 aabbMax)
+{
+    vec3 closest = clamp(center, aabbMin, aabbMax);
+    float distSq = dot(center - closest, center - closest);
+    return distSq <= (radius * radius);
+}
+
+void main()
+{
+    // Calculate global cluster coordinates
+    // We assume 8x8x1 threads, and workgroups dispatched to cover clusterCount
+    uint clusterX = gl_GlobalInvocationID.x;
+    uint clusterY = gl_GlobalInvocationID.y;
+    uint clusterZ = gl_GlobalInvocationID.z;
+
+    if (clusterX >= pc.clusterCount.x || clusterY >= pc.clusterCount.y || clusterZ >= pc.clusterCount.z)
+        return;
+
+    uint clusterIdx = clusterX + clusterY * pc.clusterCount.x + clusterZ * pc.clusterCount.x * pc.clusterCount.y;
+    uint localIdx = gl_LocalInvocationIndex; // Flat index within workgroup (0..63)
+
+    // Get cluster AABB from buffer
+    // clusterGrid.clusters stores min and max as vec4s. Index = clusterIdx * 2.
+    vec3 aabbMin = clusterGrid.clusters[clusterIdx * 2].xyz;
+    vec3 aabbMax = clusterGrid.clusters[clusterIdx * 2 + 1].xyz;
+
+    // Local counter for lights in this cluster
+    uint visibleCount = 0;
+
+    // Iterate over all scene lights
+    uint totalLights = lightData.numLights;
+
+    // Safety clamp
+    totalLights = min(totalLights, MAX_SCENE_LIGHTS);
+
+    for (uint i = 0; i < totalLights; ++i)
+    {
+        // Check if we have space
+        if (visibleCount >= MAX_LIGHTS_PER_CLUSTER)
+            break;
+
+        Light light = lightData.lights[i];
+
+        // Transform light position to view space for intersection test with View-Space AABB (or is AABB in view space?)
+        // LightGridComputePass generates AABBs in View Space (if based on frustum slicing).
+        // Light position in buffer is World Space?
+        // Renderer usually uploads World Space lights.
+        // So we need to transform light to View Space.
+
+        vec3 lightPos = (viewData.view * vec4(light.position.xyz, 1.0)).xyz;
+        float lightRange = light.direction.w;
+
+        if (sphereIntersectsAABB(lightPos, lightRange, aabbMin, aabbMax))
+        {
+            sharedLightIndices[localIdx][visibleCount++] = i;
+        }
+    }
+
+    // Write to global buffers using fixed stride
+    // Base index into clusterLightIndices
+    // We use MAX_LIGHTS_PER_CLUSTER stride strictly.
+    uint baseIndex = clusterIdx * MAX_LIGHTS_PER_CLUSTER;
+
+    // 1. Write the offset to the offsets buffer
+    lightData.clusterOffsets[clusterIdx] = baseIndex;
+
+    // 2. Write the count at the beginning of the block
+    lightData.clusterLightIndices[baseIndex] = visibleCount;
+
+    // 3. Write the light indices
+    for (uint i = 0; i < visibleCount; ++i)
+    {
+        lightData.clusterLightIndices[baseIndex + 1 + i] = sharedLightIndices[localIdx][i];
+    }
 }

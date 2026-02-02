@@ -4,6 +4,7 @@
 #include "DebugWindows/DebugSettings.h"
 #include "DebugWindows/GBufferWindow.h"
 #include "DebugWindows/InfoWindow.h"
+#include "DebugWindows/RenderSettingsWindow.h"
 #include "DebugWindows/StatsWindow.h"
 #include "UIElement.h"
 #include <imgui/imgui.h>
@@ -28,4 +29,5 @@ private:
     UpdateEventData m_lastUpdateState;
     GBufferWindow m_gbufferWindow;
     SceneGraphWindow m_sceneGraphWindow;
+    RenderSettingsWindow m_renderSettingsWindow;
 };

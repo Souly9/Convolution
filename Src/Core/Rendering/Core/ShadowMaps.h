@@ -14,4 +14,5 @@ struct CascadedShadowMap
     TextureHandle handle;
     BindlessTextureHandle bindlessHandle;
     Texture* pTexture;
+    stltype::vector<VkImageView> cascadeViews; // Per-layer 2D views for debug display
 };

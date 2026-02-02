@@ -15,63 +15,42 @@ public:
 
     void DrawWindow(f32 dt)
     {
+        if (!m_isOpen)
+            return;
+
         auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
         auto& gbufferIDs = renderState.gbufferImGuiIDs;
-        auto gbufferCount = (int)gbufferIDs.size();
-        if (gbufferCount == 0)
+        auto& csmIDs = renderState.csmCascadeImGuiIDs;
+
+        if (gbufferIDs.size() < 3)
             return;
-        struct OtherBuffer
+
+        ImGui::Begin("GBuffer Viewer", &m_isOpen);
+
+        // Display only Normals, Albedo, and UVs/Mat G-buffers
+        // Note: UI texture is excluded because ImGui renders to it (would cause read-while-write)
+        // Depth and CSM require proper layout transitions before ImGui can sample them
+        stltype::vector<stltype::pair<stltype::string, u64>> buffers;
+        buffers.push_back({"Normals", gbufferIDs[0]});
+        buffers.push_back({"Albedo", gbufferIDs[1]});
+        buffers.push_back({"UVs/Mat", gbufferIDs[2]});
+
+        // Calculate grid columns (3 columns max)
+        int columns = 3;
+        int rows = (static_cast<int>(buffers.size()) + columns - 1) / columns;
+        ImVec2 windowSize = ImGui::GetContentRegionAvail();
+        ImVec2 cellSize =
+            ImVec2(windowSize.x / static_cast<f32>(columns) - 10.0f, windowSize.y / static_cast<f32>(rows) - 25.0f);
+
+        if (ImGui::BeginTable("GBufferGrid", columns, ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_Borders))
         {
-            stltype::string label;
-            u64 textureID;
-        };
-
-        // ** ACTION REQUIRED: Populate this vector with your buffers **
-        stltype::vector<OtherBuffer> otherBuffers = {//{ "Depth Buffer", renderState.depthbufferImGuiID },
-                                                     {"Lighting Buffer", renderState.dirLightCSMImGuiID}};
-        stltype::vector<OtherBuffer> gBuffers = {
-            {"Normals", gbufferIDs[0]},
-            {"Albedo", gbufferIDs[1]},
-            {"UVsMat", gbufferIDs[2]},
-            {"UI", gbufferIDs[3]},
-        };
-        auto otherBuffersCount = (int)otherBuffers.size();
-
-        ImGui::Begin("GBuffer & Other Buffers", &m_isOpen);
-        ImGui::Separator();
-
-        if (ImGui::BeginTable("GBuffersRow", gbufferCount, ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_Borders))
-        {
-            for (const auto& buffer : gBuffers)
+            for (const auto& buffer : buffers)
             {
                 ImGui::TableNextColumn();
-                ImGui::Text("%s Gbuffer", buffer.label.c_str());
-                ImVec2 cell_size = ImGui::GetContentRegionAvail();
-                cell_size.y /= 2.f;
-
-                ImGui::Image((ImTextureID)buffer.textureID, cell_size);
+                ImGui::Text("%s", buffer.first.c_str());
+                ImGui::Image((ImTextureID)buffer.second, cellSize);
             }
             ImGui::EndTable();
-        }
-
-        if (otherBuffersCount > 0)
-        {
-            ImGui::Separator();
-            ImGui::Text("Other Buffers");
-
-            if (ImGui::BeginTable(
-                    "OtherBuffersRow", otherBuffersCount, ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_Borders))
-            {
-                for (const auto& buffer : otherBuffers)
-                {
-                    ImGui::TableNextColumn();
-                    ImGui::Text("%s", buffer.label.c_str());
-                    ImVec2 cell_size = ImGui::GetContentRegionAvail();
-
-                    ImGui::Image((ImTextureID)buffer.textureID, cell_size);
-                }
-                ImGui::EndTable();
-            }
         }
 
         ImGui::End();

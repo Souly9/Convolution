@@ -8,7 +8,6 @@
 #include "Core/Rendering/Core/MaterialManager.h"
 #include "Core/Rendering/Core/TextureManager.h"
 #include "Core/SceneGraph/Mesh.h"
-#include "Core/WindowManager.h"
 
 namespace MeshConversion
 {

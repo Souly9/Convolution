@@ -27,8 +27,8 @@ void RenderPasses::DebugShapePass::Init(RendererAttachmentInfo& attachmentInfo,
     m_mainRenderingData.colorAttachments = {gbufferPosition};
 
     InitBaseData(attachmentInfo);
-    m_indirectCmdBufferWireFrame = IndirectDrawCommandBuffer(500);
-    m_indirectCmdBufferOpaque = IndirectDrawCommandBuffer(500);
+    m_indirectCmdBufferWireFrame = IndirectDrawCommandBuffer(5000);
+    m_indirectCmdBufferOpaque = IndirectDrawCommandBuffer(5000);
 
     BuildPipelines();
 }
@@ -58,7 +58,6 @@ void RenderPasses::DebugShapePass::RebuildInternalData(const stltype::vector<Pas
                                                        FrameRendererContext& previousFrameCtx,
                                                        u32 thisFrameNum)
 {
-    return;
     ScopedZone("DebugShapePass::Rebuild");
 
     m_instancedMeshInfoMap.clear();
@@ -131,6 +130,11 @@ void RenderPasses::DebugShapePass::Render(const MainPassData& data,
     const DirectX::XMINT2 extents(ex.x, ex.y);
 
     auto& sceneGeometryBuffers = data.pResourceManager->GetSceneGeometryBuffers();
+    if (sceneGeometryBuffers.GetVertexBuffer().GetRef() == VK_NULL_HANDLE ||
+        sceneGeometryBuffers.GetIndexBuffer().GetRef() == VK_NULL_HANDLE)
+    {
+        return;
+    }
     BinRenderDataCmd geomBufferCmd(sceneGeometryBuffers.GetVertexBuffer(), sceneGeometryBuffers.GetIndexBuffer());
 
     if (data.bufferDescriptors.empty() == false)

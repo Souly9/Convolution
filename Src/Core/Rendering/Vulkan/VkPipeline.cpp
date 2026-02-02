@@ -357,7 +357,12 @@ VkPipelineLayout PipelineVulkanBase::CreatePipelineLayout(const DescriptorSetLay
     {
         descriptorSetLayouts.emplace_back(layout.GetRef());
     }
-    descriptorSetLayouts.emplace_back(m_descriptorSetLayout.GetRef());
+
+    // Only add pipeline-specific layout if there are bindings defined
+    if (layoutInfo.pipelineSpecificDescriptors.empty() == false)
+    {
+        descriptorSetLayouts.emplace_back(m_descriptorSetLayout.GetRef());
+    }
 
     VkPushConstantRange pushConstants{};
     for (const auto& constant : pushConstantInfo.constants)

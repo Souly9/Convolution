@@ -45,19 +45,43 @@ static constexpr u64 GlobalPerObjectDataSSBOSize = sizeof(GlobalInstanceSSBO);
 static constexpr u64 GlobalMaterialSSBOSize = sizeof(GlobalMaterialSSBO);
 static constexpr u64 GlobalTransformSSBOSize = sizeof(GlobalTransformSSBO::modelMatrices);
 
-struct Tile
+// Cluster bounds for intersection testing
+struct ClusterAABB
 {
-    stltype::vector<RenderLight> lights{};
+    mathstl::Vector4 minBounds; // xyz=min, w=unused
+    mathstl::Vector4 maxBounds; // xyz=max, w=unused
 };
-static constexpr u64 TILE_SIZE = sizeof(RenderLight) * MAX_LIGHTS_PER_TILE;
 
-// SSBO containing the tile array containing light data etc. used to shade the scene
-struct GlobalTileArraySSBO
+// All scene lights SSBO
+struct LightClusterSSBO
 {
     DirectionalRenderLight dirLight;
-    stltype::fixed_vector<Tile, MAX_TILES, false> tiles{};
+    u32 numLights;
+    u32 _pad[3];
+    stltype::array<RenderLight, MAX_SCENE_LIGHTS> lights;
+
+    // Cluster light indices (output from LightGridComputePass)
+    stltype::array<u32, MAX_CLUSTERS + 1> clusterOffsets;       // +1 for end sentinel
+    stltype::array<u32, MAX_LIGHT_INDICES> clusterLightIndices; // counts + light indices
 };
-static constexpr u64 GlobalTileArraySSBOSize = sizeof(struct GlobalTileArraySSBO);
+
+// Cluster grid bounds (generated from frustum)
+struct ClusterGridSSBO
+{
+    stltype::array<ClusterAABB, MAX_CLUSTERS> clusters;
+};
+
+// Compacted light indices output - offsets first, then count+indices per cluster
+struct ClusterLightIndexSSBO
+{
+    stltype::array<u32, MAX_CLUSTERS + 1> offsets;  // +1 for end sentinel
+    stltype::array<u32, MAX_LIGHT_INDICES> indices; // counts + light indices
+};
+
+static constexpr u64 LightClusterSSBOSize = sizeof(LightClusterSSBO);
+static constexpr u64 ClusterGridSSBOSize = sizeof(ClusterGridSSBO);
+static constexpr u64 ClusterLightIndexSSBOSize = sizeof(ClusterLightIndexSSBO);
+
 // SSBO containing the indices for objects rendered by a specific pass to access the global transforms, materials etc.
 struct PerPassObjectDataSSBO
 {

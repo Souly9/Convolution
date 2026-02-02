@@ -199,6 +199,10 @@ struct FrameRendererContext
     DescriptorSet* mainViewUBODescriptor;
     DescriptorSet* gbufferPostProcessDescriptor;
 
+    // Shadow view UBO pointers for passes to update
+    UniformBuffer* pShadowViewUBO{nullptr};
+    GPUMappedMemoryHandle pMappedShadowViewUBO{nullptr};
+
     Semaphore* renderingFinishedSemaphore;
     Fence* renderingFinishedFence{nullptr};
 
@@ -259,8 +263,8 @@ public:
     void RegisterDebugCallbacks();
 
     void UpdateMainViewUBO(const void* data, size_t size, u32 frameIdx);
-    void UpdateWholeTileArraySSBO(const UBO::GlobalTileArraySSBO& data, u32 frameIdx);
-    void UpateTileInTileSSBO(const UBO::Tile& tile, u32 tileIdx, u32 frameIdx);
+    void UpdateShadowViewUBO(const UBO::ShadowmapViewUBO& data, u32 frameIdx);
+    void UpdateLightClusterSSBO(const UBO::LightClusterSSBO& data, u32 frameIdx);
 
     void DispatchSSBOTransfer(
         void* data, DescriptorSet* pDescriptor, u32 size, StorageBuffer* pSSBO, u32 offset = 0, u32 dstBinding = 0);
@@ -328,20 +332,22 @@ private:
     PassGeometryData m_currentPassGeometryState{};
 
     // Global transform SSBO
-    StorageBuffer m_tileArraySSBO;
+    StorageBuffer m_lightClusterSSBO;
     UniformBuffer m_viewUBO;
     UniformBuffer m_lightUniformsUBO;
     UniformBuffer m_gbufferPostProcessUBO;
     UniformBuffer m_shadowMapUBO;
-    UBO::GlobalTileArraySSBO m_tileArray;
+    UniformBuffer m_shadowViewUBO;
+    UBO::LightClusterSSBO m_lightCluster;
     GPUMappedMemoryHandle m_mappedViewUBOBuffer;
     GPUMappedMemoryHandle m_mappedLightUniformsUBO;
     GPUMappedMemoryHandle m_mappedGBufferPostProcessUBO;
     GPUMappedMemoryHandle m_mappedShadowMapUBO;
+    GPUMappedMemoryHandle m_mappedShadowViewUBO;
     DescriptorPool m_descriptorPool;
 
-    // Global tile array SSBO
-    DescriptorSetLayoutVulkan m_tileArraySSBOLayout;
+    // Light cluster SSBO layout
+    DescriptorSetLayoutVulkan m_lightClusterSSBOLayout;
     // Global view UBO layout
     DescriptorSetLayoutVulkan m_viewUBOLayout;
     // Needs separate layout since we update it during rendering of shadow passes

@@ -3,6 +3,7 @@
 #include "Core/Rendering/Core/ShaderManager.h"
 #include "Core/Rendering/RenderLayer.h"
 #include "Core/Rendering/Vulkan/VkGlobals.h"
+#include "Scenes/ClusteredLightingScene.h"
 #include "Scenes/SampleScene.h"
 #include "Scenes/SponzaScene.h"
 #include "StaticBehaviors/StaticBehaviorCollection.h"
@@ -24,7 +25,7 @@ Application::Application(bool canRender, RenderLayer<RenderAPI>& layer) : m_rend
     g_pGlobalTimeData->Reset();
 
     FrameGlobals::SetFrameNumber(0);
-    m_applicationState.SetCurrentScene(stltype::make_unique<SponzaScene>());
+    m_applicationState.SetCurrentScene(stltype::make_unique<ClusteredLightingScene>());
     g_pShaderManager->ReadAllSourceShaders();
 
     g_pEventSystem->OnBaseInit({});

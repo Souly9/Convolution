@@ -9,6 +9,7 @@
 #define GlobalPerObjectDataSSBOSlot          502
 #define GlobalInstanceDataSSBOSlot           3
 #define PassPerObjectDataSSBOSlot            1
+#define ClusterGridSSBOSlot                  1
 
 // GBuffer, shadowmaps, post process stuff slots
 #define GlobalGBufferPostProcessUBOSlot 1
