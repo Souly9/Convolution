@@ -21,25 +21,57 @@ MeshManager::MeshManager()
         m_pPlanePrimitive = stltype::make_unique<Mesh>(vertexData, indices);
     }
 
-    // Cube primitive with bad texcoords at top and bottom
+    // Cube primitive with proper per-face normals and UVs (24 vertices, 4 per face)
     {
         stltype::vector<CompleteVertex> vertexData = {
-            CompleteVertex{mathstl::Vector3{0.5f, 0.5f, -0.5f}, mathstl::Vector3{1, 1, -1}, mathstl::Vector2{0.f, 1.f}},
+            // Front face (Z+)
+            CompleteVertex{mathstl::Vector3{-0.5f, -0.5f, 0.5f}, mathstl::Vector3{0, 0, 1}, mathstl::Vector2{0.f, 1.f}},
+            CompleteVertex{mathstl::Vector3{0.5f, -0.5f, 0.5f}, mathstl::Vector3{0, 0, 1}, mathstl::Vector2{1.f, 1.f}},
+            CompleteVertex{mathstl::Vector3{0.5f, 0.5f, 0.5f}, mathstl::Vector3{0, 0, 1}, mathstl::Vector2{1.f, 0.f}},
+            CompleteVertex{mathstl::Vector3{-0.5f, 0.5f, 0.5f}, mathstl::Vector3{0, 0, 1}, mathstl::Vector2{0.f, 0.f}},
+            // Back face (Z-)
             CompleteVertex{
-                mathstl::Vector3{-0.5f, 0.5f, -0.5f}, mathstl::Vector3{-1, 1, -1}, mathstl::Vector2{1.f, 1.f}},
-            CompleteVertex{mathstl::Vector3{-0.5f, 0.5f, 0.5f}, mathstl::Vector3{-1, 1, 1}, mathstl::Vector2{0.f, 1.f}},
-            CompleteVertex{mathstl::Vector3{0.5f, 0.5f, 0.5f}, mathstl::Vector3{1, 1, 1}, mathstl::Vector2{1.f, 1.f}},
+                mathstl::Vector3{0.5f, -0.5f, -0.5f}, mathstl::Vector3{0, 0, -1}, mathstl::Vector2{0.f, 1.f}},
+            CompleteVertex{
+                mathstl::Vector3{-0.5f, -0.5f, -0.5f}, mathstl::Vector3{0, 0, -1}, mathstl::Vector2{1.f, 1.f}},
+            CompleteVertex{
+                mathstl::Vector3{-0.5f, 0.5f, -0.5f}, mathstl::Vector3{0, 0, -1}, mathstl::Vector2{1.f, 0.f}},
+            CompleteVertex{mathstl::Vector3{0.5f, 0.5f, -0.5f}, mathstl::Vector3{0, 0, -1}, mathstl::Vector2{0.f, 0.f}},
+            // Right face (X+)
+            CompleteVertex{mathstl::Vector3{0.5f, -0.5f, 0.5f}, mathstl::Vector3{1, 0, 0}, mathstl::Vector2{0.f, 1.f}},
+            CompleteVertex{mathstl::Vector3{0.5f, -0.5f, -0.5f}, mathstl::Vector3{1, 0, 0}, mathstl::Vector2{1.f, 1.f}},
+            CompleteVertex{mathstl::Vector3{0.5f, 0.5f, -0.5f}, mathstl::Vector3{1, 0, 0}, mathstl::Vector2{1.f, 0.f}},
+            CompleteVertex{mathstl::Vector3{0.5f, 0.5f, 0.5f}, mathstl::Vector3{1, 0, 0}, mathstl::Vector2{0.f, 0.f}},
+            // Left face (X-)
+            CompleteVertex{
+                mathstl::Vector3{-0.5f, -0.5f, -0.5f}, mathstl::Vector3{-1, 0, 0}, mathstl::Vector2{0.f, 1.f}},
+            CompleteVertex{
+                mathstl::Vector3{-0.5f, -0.5f, 0.5f}, mathstl::Vector3{-1, 0, 0}, mathstl::Vector2{1.f, 1.f}},
+            CompleteVertex{mathstl::Vector3{-0.5f, 0.5f, 0.5f}, mathstl::Vector3{-1, 0, 0}, mathstl::Vector2{1.f, 0.f}},
+            CompleteVertex{
 
+                mathstl::Vector3{-0.5f, 0.5f, -0.5f}, mathstl::Vector3{-1, 0, 0}, mathstl::Vector2{0.f, 0.f}},
+            // Top face (Y+)
+            CompleteVertex{mathstl::Vector3{-0.5f, 0.5f, 0.5f}, mathstl::Vector3{0, 1, 0}, mathstl::Vector2{0.f, 1.f}},
+            CompleteVertex{mathstl::Vector3{0.5f, 0.5f, 0.5f}, mathstl::Vector3{0, 1, 0}, mathstl::Vector2{1.f, 1.f}},
+            CompleteVertex{mathstl::Vector3{0.5f, 0.5f, -0.5f}, mathstl::Vector3{0, 1, 0}, mathstl::Vector2{1.f, 0.f}},
+            CompleteVertex{mathstl::Vector3{-0.5f, 0.5f, -0.5f}, mathstl::Vector3{0, 1, 0}, mathstl::Vector2{0.f, 0.f}},
+            // Bottom face (Y-)
             CompleteVertex{
-                mathstl::Vector3{0.5f, -0.5f, -0.5f}, mathstl::Vector3{1, -1, -1}, mathstl::Vector2{0.f, 0.f}},
-            CompleteVertex{mathstl::Vector3{-0.5f, -0.5f, -0.5f}, mathstl::Vector3{-1, -1, -1}, mathstl::Vector2{1, 0}},
-            CompleteVertex{mathstl::Vector3{-0.5f, -0.5f, 0.5f}, mathstl::Vector3{-1, -1, 1}, mathstl::Vector2{0, 0}},
+                mathstl::Vector3{-0.5f, -0.5f, -0.5f}, mathstl::Vector3{0, -1, 0}, mathstl::Vector2{0.f, 1.f}},
             CompleteVertex{
-                mathstl::Vector3{0.5f, -0.5f, 0.5f}, mathstl::Vector3{1, -1, 1}, mathstl::Vector2{1.f, 0.f}}};
+                mathstl::Vector3{0.5f, -0.5f, -0.5f}, mathstl::Vector3{0, -1, 0}, mathstl::Vector2{1.f, 1.f}},
+            CompleteVertex{mathstl::Vector3{0.5f, -0.5f, 0.5f}, mathstl::Vector3{0, -1, 0}, mathstl::Vector2{1.f, 0.f}},
+            CompleteVertex{
+                mathstl::Vector3{-0.5f, -0.5f, 0.5f}, mathstl::Vector3{0, -1, 0}, mathstl::Vector2{0.f, 0.f}},
+        };
         stltype::vector<u32> indices = {
-            0, 1, 2, // Face 0 has three vertices.
-            0, 2, 3, // And so on.
-            0, 4, 5, 0, 5, 1, 1, 5, 6, 1, 6, 2, 2, 6, 7, 2, 7, 3, 3, 7, 4, 3, 4, 0, 4, 7, 6, 4, 6, 5,
+            0,  1,  2,  0,  2,  3,  // Front
+            4,  5,  6,  4,  6,  7,  // Back
+            8,  9,  10, 8,  10, 11, // Right
+            12, 13, 14, 12, 14, 15, // Left
+            16, 17, 18, 16, 18, 19, // Top
+            20, 21, 22, 20, 22, 23, // Bottom
         };
         m_pCubePrimitive = stltype::make_unique<Mesh>(vertexData, indices);
     }

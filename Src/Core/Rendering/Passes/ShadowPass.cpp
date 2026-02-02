@@ -21,9 +21,6 @@ void CSMPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceM
 {
     ScopedZone("ShadowPass::Init");
 
-    m_shadowViewUBO = UniformBuffer(sizeof(UBO::ShadowmapViewUBO));
-    m_mappedShadowViewUBO = m_shadowViewUBO.MapMemory();
-
     const auto csmFormat = attachmentInfo.directionalLightShadowMap.format;
     const auto cascadeAttachment = CreateDefaultDepthAttachment(csmFormat, LoadOp::CLEAR, nullptr);
     m_mainRenderingData.depthAttachment = cascadeAttachment;
@@ -47,7 +44,8 @@ void CSMPass::BuildPipelines()
     info.descriptorSetLayout.sharedDescriptors = m_sharedDescriptors;
     info.attachmentInfos =
         CreateAttachmentInfo({m_mainRenderingData.colorAttachments}, m_mainRenderingData.depthAttachment);
-    info.viewMask = 0x00000007;
+    // Compute viewMask from cascade count: (1 << cascades) - 1 gives bitmask for all layers
+    info.viewMask = (1u << m_cascadeCount) - 1u;
     info.rasterizerInfo.cullmode = Cullmode::Back;
     m_mainPSO = PSO(
         ShaderCollection{&mainVert, &mainFrag}, PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions}, info);
@@ -96,7 +94,8 @@ void RenderPasses::CSMPass::Render(const MainPassData& data, FrameRendererContex
 
     stltype::vector<ColorAttachment> colorAttachments;
     BeginRenderingCmd cmdBegin{&m_mainPSO, colorAttachments, &m_mainRenderingData.depthAttachment};
-    cmdBegin.depthLayerMask = 0x00000007;
+    // Derive layer mask from current cascade count
+    cmdBegin.depthLayerMask = (1u << data.cascades) - 1u;
     cmdBegin.extents = extents;
     cmdBegin.viewport = data.mainView.viewport;
 
@@ -104,6 +103,11 @@ void RenderPasses::CSMPass::Render(const MainPassData& data, FrameRendererContex
     cmd.drawCount = m_indirectCmdBuffer.GetDrawCmdNum();
 
     auto& sceneGeometryBuffers = data.pResourceManager->GetSceneGeometryBuffers();
+    if (sceneGeometryBuffers.GetVertexBuffer().GetRef() == VK_NULL_HANDLE ||
+        sceneGeometryBuffers.GetIndexBuffer().GetRef() == VK_NULL_HANDLE)
+    {
+        return;
+    }
     if (data.bufferDescriptors.empty())
         cmd.descriptorSets = {g_pTexManager->GetBindlessDescriptorSet()};
     else
@@ -153,8 +157,8 @@ void RenderPasses::CSMPass::Render(const MainPassData& data, FrameRendererContex
                 mathstl::Vector4(splits[i * 4 + 0], splits[i * 4 + 1], splits[i * 4 + 2], splits[i * 4 + 3]);
         }
 
-        memcpy(m_mappedShadowViewUBO, &uboData, sizeof(UBO::ShadowmapViewUBO));
-        ctx.shadowViewUBODescriptor->WriteBufferUpdate(m_shadowViewUBO, s_shadowmapViewUBOBindingSlot);
+        memcpy(ctx.pMappedShadowViewUBO, &uboData, sizeof(UBO::ShadowmapViewUBO));
+        ctx.shadowViewUBODescriptor->WriteBufferUpdate(*ctx.pShadowViewUBO, s_shadowmapViewUBOBindingSlot);
         pCmdBuffer->RecordCommand(cmd);
     }
 
@@ -179,6 +183,15 @@ void CSMPass::CreateSharedDescriptorLayout()
 bool CSMPass::WantsToRender() const
 {
     return NeedToRender(m_indirectCmdBuffer);
+}
+
+void CSMPass::SetCascadeCount(u32 cascades)
+{
+    if (m_cascadeCount != cascades)
+    {
+        m_cascadeCount = cascades;
+        BuildPipelines();
+    }
 }
 
 stltype::vector<mathstl::Matrix> CSMPass::ComputeLightViewProjMatrices(u32 cascades,

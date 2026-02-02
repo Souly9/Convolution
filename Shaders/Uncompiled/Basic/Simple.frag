@@ -1,8 +1,10 @@
 #version 450 core
 #extension GL_ARB_shading_language_include : enable
 #extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_scalar_block_layout : enable
 #define ViewUBOSet           1
 #define TransformSSBOSet     2
+#define TileArraySet         3
 #define GBufferUBOSet        4
 #define ShadowViewUBOSet     5
 #define PassPerObjectDataSet 10
@@ -22,6 +24,21 @@ IN;
 
 layout(location = 0) out vec4 outColor;
 
+// CSM debug colors for each cascade layer
+vec3 getCascadeDebugColor(int cascadeIndex)
+{
+    const vec3 cascadeColors[8] = vec3[8](vec3(1.0, 0.2, 0.2), // Red - cascade 0 (closest)
+                                          vec3(0.2, 1.0, 0.2), // Green - cascade 1
+                                          vec3(0.2, 0.2, 1.0), // Blue - cascade 2
+                                          vec3(1.0, 1.0, 0.2), // Yellow - cascade 3
+                                          vec3(1.0, 0.2, 1.0), // Magenta - cascade 4
+                                          vec3(0.2, 1.0, 1.0), // Cyan - cascade 5
+                                          vec3(1.0, 0.6, 0.2), // Orange - cascade 6
+                                          vec3(0.6, 0.2, 1.0)  // Purple - cascade 7
+    );
+    return cascadeColors[clamp(cascadeIndex, 0, 7)];
+}
+
 void main()
 {
     vec2 texCoords = vec2(1.0 - IN.fragTexCoord.x, 1.0 - IN.fragTexCoord.y);
@@ -40,6 +57,37 @@ void main()
     mat4 view = ubo.view;
     vec4 fragPosViewSpace = view * fragPosWorldSpace;
 
+    // Debug View modes
+    int debugViewMode = int(lightUniforms.data.LightGlobals.w);
+
+    // 1 = CSM Debug
+    if (debugViewMode == 1)
+    {
+        int cascadeIdx = getCascadeIndex(fragPosViewSpace);
+        vec3 cascadeColor = getCascadeDebugColor(cascadeIdx);
+        // Mix cascade color with base albedo for context
+        vec3 debugColor = mix(albedo * 0.3, cascadeColor, 0.7);
+        outColor.rgb = debugColor * (1.0 - uiColor.a) + uiColor.rgb * uiColor.a;
+        outColor.a = 1.0;
+        return;
+    }
+    // 2 = Cluster Debug
+    else if (debugViewMode == 2)
+    {
+        uint clusterIdx = getClusterIndex(fragPosViewSpace.xyz, ubo.proj);
+
+        // Use a simple hash to generate a color from the cluster index
+        float r = fract(sin(float(clusterIdx) * 12.9898 + 78.233) * 43758.5453);
+        float g = fract(sin(float(clusterIdx) * 26.6518 + 12.453) * 21356.1235);
+        float b = fract(sin(float(clusterIdx) * 98.3125 + 98.654) * 87541.2356);
+
+        vec3 debugColor = vec3(r, g, b);
+
+        outColor.rgb = debugColor * (1.0 - uiColor.a) + uiColor.rgb * uiColor.a;
+        outColor.a = 1.0;
+        return;
+    }
+
     vec3 normal = fragNormal;
     vec3 worldPos = fragPosWorldSpace.xyz;
     vec3 camPos = lightUniforms.data.CameraPos.xyz;
@@ -57,14 +105,23 @@ void main()
     // (Specular + Diffuse)
     vec3 directLighting = vec3(0.0);
 
-    Light lights[MAX_LIGHTS_PER_TILE] = lightTileArraySSBO.tiles[0].lights;
-    int lightCount = lightTileArraySSBO.tiles.length();
-    // --- Point Light Loop ---
-    for (int i = 0; i < lightCount; ++i)
+    // Clustered Lighting logic
+    uint clusterIdx = getClusterIndex(fragPosViewSpace.xyz, ubo.proj);
+
+    // Read start index from offsets buffer (written by compute shader)
+    uint baseIndex = lightData.clusterOffsets[clusterIdx];
+    uint lightCount = lightData.clusterLightIndices[baseIndex];
+
+    // --- Point/Spot Light Loop ---
+    for (uint i = 0; i < lightCount; ++i)
     {
-        Light light = lights[i];
+        uint lightIdx = lightData.clusterLightIndices[baseIndex + 1 + i];
+        Light light = lightData.lights[lightIdx];
+
         vec3 lightPos = light.position.xyz;
         vec3 lightColor = light.color.xyz;
+        // Direction and other params for spot lights would be accessed here if needed
+        // For now treating as point lights or checking type
 
         vec3 lightContribution =
             computePointLight(worldPos.xyz, lightPos, V, N, lightColor, albedo, roughness, metallic);
@@ -75,7 +132,7 @@ void main()
 
     // --- Directional Light ---
     {
-        DirectionalLight dirLight = lightTileArraySSBO.dirLight;
+        DirectionalLight dirLight = lightData.dirLight;
         vec3 lightDir = normalize(dirLight.direction.xyz);
         vec3 lightColor = dirLight.color.xyz;
 
@@ -83,15 +140,34 @@ void main()
 
         vec3 lightContribution = computeDirLight(lightDir, V, N, lightColor, albedo, roughness, metallic);
 
-        directLighting += lightContribution * dirLightShadow;
+        //directLighting += lightContribution * dirLightShadow;
     }
 
-    vec3 indirectLighting = computeAmbient(albedo);
+    float ambientIntensity = lightUniforms.data.LightGlobals.z;
+    vec3 indirectLighting = computeAmbient(albedo, ambientIntensity);
 
-    vec3 finalHDRColor = directLighting + indirectLighting;
+    // Exposure
+    float exposure = lightUniforms.data.LightGlobals.x;
+    vec3 finalHDRColor = (directLighting + indirectLighting) * exposure;
 
     // Tone Mapping
-    vec3 finalLDRColor = AcesTMO(finalHDRColor);
+    int toneMapperType = int(lightUniforms.data.LightGlobals.y);
+    vec3 finalLDRColor = finalHDRColor;
+
+    if (toneMapperType == 1) // ACES
+    {
+        finalLDRColor = AcesTMO(finalHDRColor);
+    }
+    else if (toneMapperType == 2) // Uncharted
+    {
+        finalLDRColor = Uncharted2TMO(finalHDRColor);
+    }
+    else if (toneMapperType == 3) // GT7
+    {
+        finalLDRColor = GT7TMO(finalHDRColor);
+    }
+    // 0 = None (Linear code will pass through) purely clamped at output if swapchain is integer,
+    // but we use float swapchain so it allows HDR output.
 
     // Apply UI Color overlay / Final output assignment
     outColor.rgb = finalLDRColor * (1.0 - uiColor.a) + uiColor.rgb * uiColor.a;

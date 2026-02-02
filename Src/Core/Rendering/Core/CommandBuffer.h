@@ -191,8 +191,66 @@ struct DrawMeshCmd : public GenericDrawCmd
 {
 };
 
-struct GenericComputeCmd : public CommandBase
+struct BindComputePipelineCmd : public CommandBase
 {
+    ComputePipeline* pPipeline;
+    BindComputePipelineCmd(ComputePipeline* p) : pPipeline(p)
+    {
+    }
+};
+
+struct ComputeDispatchCmd : public CommandBase
+{
+    u32 groupCountX;
+    u32 groupCountY;
+    u32 groupCountZ;
+    ComputeDispatchCmd(u32 x, u32 y, u32 z) : groupCountX(x), groupCountY(y), groupCountZ(z)
+    {
+    }
+};
+
+struct ComputePushConstantCmd : public CommandBase
+{
+    ComputePipeline* pPipeline;
+    u32 offset;
+    u32 size;
+    stltype::array<u8, 128> data; // Fixed-size storage for push constant data
+    template <typename T>
+    ComputePushConstantCmd(ComputePipeline* p, u32 off, const T& d) : pPipeline(p), offset(off), size(sizeof(T))
+    {
+        static_assert(sizeof(T) <= 128, "Push constant data too large");
+        memcpy(data.data(), &d, sizeof(T));
+    }
+};
+
+struct GenericComputeDispatchCmd : public CommandBase
+{
+    ComputePipeline* pPipeline;
+    stltype::vector<DescriptorSet*> descriptorSets{};
+    u32 groupCountX{1};
+    u32 groupCountY{1};
+    u32 groupCountZ{1};
+    u32 pushConstantOffset{0};
+    u32 pushConstantSize{0};
+    stltype::array<u8, 128> pushConstantData{};
+
+    GenericComputeDispatchCmd(ComputePipeline* p) : pPipeline(p)
+    {
+    }
+
+    GenericComputeDispatchCmd(ComputePipeline* p, u32 x, u32 y, u32 z)
+        : pPipeline(p), groupCountX(x), groupCountY(y), groupCountZ(z)
+    {
+    }
+
+    template <typename T>
+    void SetPushConstants(u32 offset, const T& data)
+    {
+        static_assert(sizeof(T) <= 128, "Push constant data too large");
+        pushConstantOffset = offset;
+        pushConstantSize = sizeof(T);
+        memcpy(pushConstantData.data(), &data, sizeof(T));
+    }
 };
 
 // Need to forward declare ImDrawData since we can't include imgui.h here easily
@@ -212,7 +270,10 @@ using Command = stltype::variant<CommandBase,
                                  GenericIndexedDrawCmd,
                                  GenericInstancedDrawCmd,
                                  DrawMeshCmd,
-                                 GenericComputeCmd,
+                                 BindComputePipelineCmd,
+                                 ComputeDispatchCmd,
+                                 ComputePushConstantCmd,
+                                 GenericComputeDispatchCmd,
                                  SimpleBufferCopyCmd,
                                  ImageBuffyCopyCmd,
                                  ImageLayoutTransitionCmd,

@@ -6,6 +6,7 @@
 
 RenderThread::RenderThread(ImGuiManager* pImGuiManager) : m_pImGuiManager(pImGuiManager)
 {
+    m_passManager = stltype::make_unique<RenderPasses::PassManager>();
     m_keepRunning = false;
 }
 
@@ -34,7 +35,7 @@ void RenderThread::RenderLoop()
         {
             g_pEntityManager->SyncSystemData(lastFrame);
 
-            m_passManager.BlockUntilPassesFinished(lastFrame);
+            m_passManager->BlockUntilPassesFinished(lastFrame);
             // Renderer done so we can take care of any deferred deletes
             g_pDeleteQueue->ProcessDeleteQueue();
         }
@@ -44,12 +45,12 @@ void RenderThread::RenderLoop()
         g_imguiSemaphore.Wait();
 
         {
-            m_passManager.PreProcessDataForCurrentFrame(lastFrame);
+            m_passManager->PreProcessDataForCurrentFrame(lastFrame);
         }
 
         {
             g_pQueueHandler->WaitForFences();
-            m_passManager.ExecutePasses(lastFrame);
+            m_passManager->ExecutePasses(lastFrame);
         }
 
         {
@@ -64,5 +65,5 @@ RenderPasses::PassManager* RenderThread::Start()
     m_thread = threadstl::MakeThread([this]() { RenderLoop(); });
     InitializeThread("Convolution_RenderThread");
     m_keepRunning = true;
-    return &m_passManager;
+    return m_passManager.get();
 }

@@ -38,6 +38,10 @@ public:
 
     void FinishLoad(SceneNode root);
 
+    // Creates point lights in a 3D grid around the given position
+    // gridSize^3 total lights (e.g., 8 = 512 lights)
+    static void CreateTestLights(const mathstl::Vector3& centerPos, u32 gridSize = 8, f32 spacing = 3.0f, ECS::Entity parent = {});
+
     // ECS::Entity GetRootNode() const { return m_sceneRoot.root; }
     bool IsFullyLoaded() const
     {

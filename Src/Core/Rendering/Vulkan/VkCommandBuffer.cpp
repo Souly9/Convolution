@@ -215,6 +215,59 @@ static void RecordCommand(ImGuiDrawCmd& cmd, CBufferVulkan& buffer)
     // current state
     ImGui_ImplVulkan_RenderDrawData(cmd.drawData, buffer.GetRef());
 }
+
+static void RecordCommand(BindComputePipelineCmd& cmd, CBufferVulkan& buffer)
+{
+    vkCmdBindPipeline(buffer.GetRef(), VK_PIPELINE_BIND_POINT_COMPUTE, cmd.pPipeline->GetRef());
+}
+
+static void RecordCommand(ComputeDispatchCmd& cmd, CBufferVulkan& buffer)
+{
+    vkCmdDispatch(buffer.GetRef(), cmd.groupCountX, cmd.groupCountY, cmd.groupCountZ);
+}
+
+static void RecordCommand(ComputePushConstantCmd& cmd, CBufferVulkan& buffer)
+{
+    vkCmdPushConstants(buffer.GetRef(),
+                       cmd.pPipeline->GetLayout(),
+                       VK_SHADER_STAGE_COMPUTE_BIT,
+                       cmd.offset,
+                       cmd.size,
+                       cmd.data.data());
+}
+
+static void RecordCommand(GenericComputeDispatchCmd& cmd, CBufferVulkan& buffer)
+{
+    vkCmdBindPipeline(buffer.GetRef(), VK_PIPELINE_BIND_POINT_COMPUTE, cmd.pPipeline->GetRef());
+
+    if (cmd.descriptorSets.empty() == false)
+    {
+        stltype::vector<VkDescriptorSet> sets(cmd.descriptorSets.size());
+        for (u32 i = 0; i < sets.size(); ++i)
+            sets[i] = cmd.descriptorSets[i]->GetRef();
+
+        vkCmdBindDescriptorSets(buffer.GetRef(),
+                                VK_PIPELINE_BIND_POINT_COMPUTE,
+                                cmd.pPipeline->GetLayout(),
+                                0,
+                                static_cast<u32>(sets.size()),
+                                sets.data(),
+                                0,
+                                nullptr);
+    }
+
+    if (cmd.pushConstantSize > 0)
+    {
+        vkCmdPushConstants(buffer.GetRef(),
+                           cmd.pPipeline->GetLayout(),
+                           VK_SHADER_STAGE_COMPUTE_BIT,
+                           cmd.pushConstantOffset,
+                           cmd.pushConstantSize,
+                           cmd.pushConstantData.data());
+    }
+
+    vkCmdDispatch(buffer.GetRef(), cmd.groupCountX, cmd.groupCountY, cmd.groupCountZ);
+}
 } // namespace CommandHelpers
 
 CBufferVulkan::CBufferVulkan(VkCommandBuffer commandBuffer)

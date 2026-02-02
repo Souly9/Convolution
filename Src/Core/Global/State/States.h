@@ -26,12 +26,25 @@ struct RendererState
 {
     stltype::vector<u64> gbufferImGuiIDs{};
     u64 depthbufferImGuiID{};
-    u64 dirLightCSMImGuiID{};
+    stltype::vector<u64> csmCascadeImGuiIDs{}; // Per-cascade ImGui texture IDs
     stltype::string physicalRenderDeviceName{};
     u32 triangleCount{};
     u32 vertexCount{};
     u32 directionalLightCascades{CSM_INITIAL_CASCADES};
     mathstl::Vector2 csmResolution{CSM_DEFAULT_RES};
+    f32 exposure{1.0f};
+    s32 toneMapperType{1}; // 0 = None, 1 = ACES, 2 = Uncharted, 3 = GT7
+    f32 ambientIntensity{0.1f};
+    s32 debugViewMode{0}; // 0 = None, 1 = CSM, 2 = Cluster Debug
+    bool shadowsEnabled{true};
+
+    // Clustered lighting settings
+    DirectX::XMINT3 clusterCount{16, 9, 24};
+    u32 maxLightsPerCluster{128};
+
+    // Clustered lighting debug stats (updated by compute pass)
+    u32 totalClusterCount{0};
+    f32 avgLightsPerCluster{0.0f};
 };
 
 struct ApplicationState

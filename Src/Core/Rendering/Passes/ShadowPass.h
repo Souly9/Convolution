@@ -22,6 +22,9 @@ public:
     virtual void CreateSharedDescriptorLayout() override;
     virtual bool WantsToRender() const override;
 
+    // Sets cascade count and rebuilds pipeline if changed
+    void SetCascadeCount(u32 cascades);
+
 protected:
     stltype::vector<mathstl::Matrix> ComputeLightViewProjMatrices(u32 cascades,
                                                                   f32 fov,
@@ -37,7 +40,7 @@ protected:
     PSO m_mainPSO;
     IndirectDrawCommandBuffer m_indirectCmdBuffer;
     IndirectDrawCountBuffer m_indirectCountBuffer;
-    UniformBuffer m_shadowViewUBO;
-    GPUMappedMemoryHandle m_mappedShadowViewUBO;
+    // Current cascade count for viewMask calculation
+    u32 m_cascadeCount{3};
 };
 } // namespace RenderPasses

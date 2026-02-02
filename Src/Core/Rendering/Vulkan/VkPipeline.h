@@ -85,6 +85,10 @@ public:
     {
         return m_pipeline;
     }
+    VkPipelineLayout GetLayout() const
+    {
+        return m_pipelineLayout;
+    }
 
 private:
     VkPipeline m_pipeline{VK_NULL_HANDLE};

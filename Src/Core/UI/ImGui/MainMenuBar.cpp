@@ -82,6 +82,10 @@ void MainMenuBar::DrawMenuBar(f32 dt, ApplicationInfos& appInfos)
             {
                 m_debugSettingsWindow.SetOpen(true);
             }
+            if (ImGui::MenuItem("Render Settings", ""))
+            {
+                m_renderSettingsWindow.SetOpen(true);
+            }
             if (ImGui::MenuItem("GBuffer", ""))
             {
                 m_gbufferWindow.SetOpen(true);
@@ -112,6 +116,11 @@ void MainMenuBar::DrawMenuBar(f32 dt, ApplicationInfos& appInfos)
     if (m_debugSettingsWindow.IsOpen())
     {
         m_debugSettingsWindow.DrawWindow(dt);
+    }
+
+    if (m_renderSettingsWindow.IsOpen())
+    {
+        m_renderSettingsWindow.DrawWindow(dt);
     }
 
     if (m_gbufferWindow.IsOpen())

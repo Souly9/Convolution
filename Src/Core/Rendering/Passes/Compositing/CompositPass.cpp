@@ -72,6 +72,11 @@ void RenderPasses::CompositPass::Render(const MainPassData& data, FrameRendererC
     cmdBegin.viewport = data.mainView.viewport;
 
     auto& sceneGeometryBuffers = data.pResourceManager->GetSceneGeometryBuffers();
+    if (sceneGeometryBuffers.GetVertexBuffer().GetRef() == VK_NULL_HANDLE ||
+        sceneGeometryBuffers.GetIndexBuffer().GetRef() == VK_NULL_HANDLE)
+    {
+        return;
+    }
     BinRenderDataCmd geomBufferCmd(sceneGeometryBuffers.GetVertexBuffer(), sceneGeometryBuffers.GetIndexBuffer());
 
     GenericIndirectDrawCmd cmd{&m_mainPSO, m_indirectCmdBuffer};

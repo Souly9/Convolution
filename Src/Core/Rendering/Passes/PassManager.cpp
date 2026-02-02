@@ -1,4 +1,5 @@
 #include "PassManager.h"
+#include "ClusteredShading/LightGridComputePass.h"
 #include "Compositing/CompositPass.h"
 #include "Core/Rendering/Core/MaterialManager.h"
 #include "Core/Rendering/Core/RenderingTypeDefs.h"
@@ -21,6 +22,7 @@ void RenderPasses::PassManager::InitResourceManagerAndCallbacks()
     g_pEventSystem->AddShaderHotReloadEventCallback([this](const auto&) { RebuildPipelinesForAllPasses(); });
 
     // Create pass objects
+    AddPass(PassType::PreProcess, stltype::make_unique<RenderPasses::LightGridComputePass>());
     AddPass(PassType::PreProcess, stltype::make_unique<RenderPasses::DepthPrePass>());
     AddPass(PassType::Main, stltype::make_unique<RenderPasses::StaticMainMeshPass>());
     AddPass(PassType::Shadow, stltype::make_unique<RenderPasses::CSMPass>());
@@ -36,7 +38,7 @@ void RenderPasses::PassManager::CreatePassObjectsAndLayouts()
     info.enableStorageBufferDescriptors = true;
     m_descriptorPool.Create(info);
 
-    m_tileArraySSBOLayout = DescriptorLaytoutUtils::CreateOneDescriptorSetForAll(
+    m_lightClusterSSBOLayout = DescriptorLaytoutUtils::CreateOneDescriptorSetForAll(
         {PipelineDescriptorLayout(UBO::BufferType::TileArraySSBO),
          PipelineDescriptorLayout(UBO::BufferType::LightUniformsUBO)});
     m_viewUBOLayout =
@@ -50,20 +52,21 @@ void RenderPasses::PassManager::CreatePassObjectsAndLayouts()
 
 void RenderPasses::PassManager::CreateUBOsAndMap()
 {
-    u64 tileArraySize = UBO::GlobalTileArraySSBOSize;
     u64 viewUBOSize = sizeof(UBO::ViewUBO);
 
-    m_tileArraySSBO = StorageBuffer(tileArraySize, true);
+    m_lightClusterSSBO = StorageBuffer(UBO::LightClusterSSBOSize, true);
 
     m_viewUBO = UniformBuffer(viewUBOSize);
     m_mappedViewUBOBuffer = m_viewUBO.MapMemory();
     m_lightUniformsUBO = UniformBuffer(sizeof(LightUniforms));
     m_gbufferPostProcessUBO = UniformBuffer(sizeof(UBO::GBufferPostProcessUBO));
     m_shadowMapUBO = UniformBuffer(sizeof(UBO::ShadowMapUBO));
+    m_shadowViewUBO = UniformBuffer(sizeof(UBO::ShadowmapViewUBO));
 
     m_mappedLightUniformsUBO = m_lightUniformsUBO.MapMemory();
     m_mappedGBufferPostProcessUBO = m_gbufferPostProcessUBO.MapMemory();
     m_mappedShadowMapUBO = m_shadowMapUBO.MapMemory();
+    m_mappedShadowViewUBO = m_shadowViewUBO.MapMemory();
 }
 
 void RenderPasses::PassManager::CreateFrameRendererContexts()
@@ -78,6 +81,8 @@ void RenderPasses::PassManager::CreateFrameRendererContexts()
         frameContext.nonLoadRenderingFinished.Create();
         frameContext.toReadTransitionFinished.Create();
         frameContext.shadowViewUBODescriptor = m_descriptorPool.CreateDescriptorSet(m_shadowViewUBOLayout.GetRef());
+        // Initialize shadow view UBO descriptor immediately so it's valid before first render
+        frameContext.shadowViewUBODescriptor->WriteBufferUpdate(m_shadowViewUBO, s_shadowmapViewUBOBindingSlot);
         frameContext.mainViewUBODescriptor = m_descriptorPool.CreateDescriptorSet(m_viewUBOLayout.GetRef());
         frameContext.mainViewUBODescriptor->SetBindingSlot(s_viewBindingSlot);
 
@@ -102,11 +107,18 @@ void RenderPasses::PassManager::CreateFrameRendererContexts()
         m_renderFinishedFences[i].SetName("Render Finished Fence " + numberString);
 
         // Tile array data
-        frameContext.tileArraySSBODescriptor = m_descriptorPool.CreateDescriptorSet(m_tileArraySSBOLayout.GetRef());
+        frameContext.tileArraySSBODescriptor = m_descriptorPool.CreateDescriptorSet(m_lightClusterSSBOLayout.GetRef());
         frameContext.tileArraySSBODescriptor->SetBindingSlot(s_tileArrayBindingSlot);
+        // Initialize descriptor with buffers immediately so it's valid before first dispatch
+        frameContext.tileArraySSBODescriptor->WriteSSBOUpdate(m_lightClusterSSBO);
+        frameContext.tileArraySSBODescriptor->WriteBufferUpdate(m_lightUniformsUBO, s_globalLightUniformsBindingSlot);
 
         // Point the rendering finished semaphore to the present transition semaphore for presentation sync
         frameContext.renderingFinishedSemaphore = &frameContext.pPresentLayoutTransitionSignalSemaphore;
+
+        // Set shadow view UBO pointers for passes to use
+        frameContext.pShadowViewUBO = &m_shadowViewUBO;
+        frameContext.pMappedShadowViewUBO = m_mappedShadowViewUBO;
 
         UBO::ViewUBO view{};
         UpdateMainViewUBO((const void*)&view, sizeof(UBO::ViewUBO), i);
@@ -171,10 +183,18 @@ void RenderPasses::PassManager::InitPassesAndImGui()
     // ImGui textures
     VkDescriptorSet depthId = ImGui_ImplVulkan_AddTexture(
         pDepthTex->GetSampler(), pDepthTex->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    VkDescriptorSet csmId =
-        ImGui_ImplVulkan_AddTexture(m_globalRendererAttachments.directionalLightShadowMap.pTexture->GetSampler(),
-                                    m_globalRendererAttachments.directionalLightShadowMap.pTexture->GetImageView(),
-                                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    // Register per-cascade CSM views (already created in RecreateShadowMaps or constructor)
+    auto& csm = m_globalRendererAttachments.directionalLightShadowMap;
+    stltype::vector<u64> cascadeImGuiIDs;
+    cascadeImGuiIDs.reserve(csm.cascades);
+    for (u32 i = 0; i < csm.cascades; ++i)
+    {
+        VkDescriptorSet cascadeDescriptor = ImGui_ImplVulkan_AddTexture(
+            csm.pTexture->GetSampler(), csm.cascadeViews[i], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        cascadeImGuiIDs.push_back(reinterpret_cast<u64>(cascadeDescriptor));
+    }
+
     VkDescriptorSet id1 = ImGui_ImplVulkan_AddTexture(m_gbuffer.Get(GBufferTextureType::GBufferNormal)->GetSampler(),
                                                       m_gbuffer.Get(GBufferTextureType::GBufferNormal)->GetImageView(),
                                                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
@@ -189,9 +209,9 @@ void RenderPasses::PassManager::InitPassesAndImGui()
                                                       m_gbuffer.Get(GBufferTextureType::GBufferUI)->GetImageView(),
                                                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     g_pApplicationState->RegisterUpdateFunction(
-        [depthId, csmId, id1, id2, id3, id4](auto& state)
+        [depthId, cascadeImGuiIDs, id1, id2, id3, id4](auto& state)
         {
-            state.renderState.dirLightCSMImGuiID = reinterpret_cast<u64>(csmId);
+            state.renderState.csmCascadeImGuiIDs = cascadeImGuiIDs;
             state.renderState.depthbufferImGuiID = reinterpret_cast<u64>(depthId);
             state.renderState.gbufferImGuiIDs.clear();
             state.renderState.gbufferImGuiIDs.push_back(reinterpret_cast<u64>(id1));
@@ -482,13 +502,6 @@ void RenderPasses::PassManager::ExecutePasses(u32 frameIdx)
 
     g_pQueueHandler->SubmitSwapchainPresentRequestForThisFrame(presentRequest);
     g_pQueueHandler->DispatchAllRequests();
-
-    // Retrieve the fence for the current frame index (not swapchain index, but the virtual frame index we are
-    // executing)
-    auto& renderFinishedFence = m_renderFinishedFences.at(frameIdx);
-    // Signal the fence on the graphics queue to mark this frame's execution as finished
-    // We submit an empty command buffer list which effectively just signals the fence when previous commands are done
-    SRF::SubmitCommandBufferToQueue({}, renderFinishedFence, QueueType::Graphics);
 }
 
 // Ensure destructor symbol exists
@@ -565,7 +578,7 @@ void RenderPasses::PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
         m_resourceManager.WriteInstanceSSBODescriptorUpdate(targetFrame);
 
         ctx.mainViewUBODescriptor->WriteBufferUpdate(m_viewUBO);
-        ctx.tileArraySSBODescriptor->WriteSSBOUpdate(m_tileArraySSBO);
+        ctx.tileArraySSBODescriptor->WriteSSBOUpdate(m_lightClusterSSBO);
         ctx.tileArraySSBODescriptor->WriteBufferUpdate(m_lightUniformsUBO, s_globalLightUniformsBindingSlot);
     }
 
@@ -661,53 +674,30 @@ void RenderPasses::PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
         {
             mainPassData.mainCamViewMatrix = m_dataToBePreProcessed.mainViewUBO->view;
         }
-        // Light uniforms
-        {
-            LightUniforms data;
-            const auto camEnt = g_pApplicationState->GetCurrentApplicationState().mainCameraEntity;
-            const ECS::Components::Camera* camComp = g_pEntityManager->GetComponent<ECS::Components::Camera>(camEnt);
-            mathstl::Matrix camMatrix = *(transformSSBO.begin() + m_entityToTransformUBOIdx[camEnt.ID]);
-            mathstl::Vector3 camPos, camScale;
-            mathstl::Quaternion camRot;
-            camMatrix.Decompose(camScale, camRot, camPos);
-
-            data.CameraPos = mathstl::Vector4(camPos.x, camPos.y, camPos.z, 1);
-            data.LightGlobals = mathstl::Vector4(0.6, 1, 1, 1);
-
-            mainPassData.mainView.viewport = RenderViewUtils::CreateViewportFromData(
-                FrameGlobals::GetSwapChainExtent(), camComp->zNear, camComp->zFar);
-            mainPassData.mainView.fov = camComp->fov;
-            auto pDescriptor = m_frameRendererContexts[m_dataToBePreProcessed.frameIdx].tileArraySSBODescriptor;
-            auto* pBuffer = &m_lightUniformsUBO;
-            auto mappedBuffer = m_mappedLightUniformsUBO;
-
-            memcpy(mappedBuffer, &data, pBuffer->GetInfo().size);
-            pDescriptor->WriteBufferUpdate(m_lightUniformsUBO, s_globalLightUniformsBindingSlot);
-        }
 
         if (m_dataToBePreProcessed.lightVector.empty() == false ||
             m_dataToBePreProcessed.dirLightVector.empty() == false)
         {
-            // Light data
-            // Also cull lights and so on here
-            auto& tileArray = m_tileArray;
+            // Light data - populate LightClusterSSBO
+            auto& lightCluster = m_lightCluster;
+            lightCluster.numLights = 0;
 
-            tileArray.tiles.clear();
-            tileArray.tiles.resize(MAX_TILES);
-            tileArray.tiles[0].lights.reserve(MAX_LIGHTS_PER_TILE);
             for (const auto& light : m_dataToBePreProcessed.lightVector)
             {
-                tileArray.tiles[0].lights.push_back(light);
+                if (lightCluster.numLights < MAX_SCENE_LIGHTS)
+                {
+                    lightCluster.lights[lightCluster.numLights++] = light;
+                }
             }
             if (m_dataToBePreProcessed.dirLightVector.empty() == false)
             {
                 const auto& dirLight = m_dataToBePreProcessed.dirLightVector[0];
-                tileArray.dirLight.direction =
+                lightCluster.dirLight.direction =
                     mathstl::Vector4(dirLight.direction.x, dirLight.direction.y, dirLight.direction.z, 1);
-                tileArray.dirLight.direction.Normalize();
-                tileArray.dirLight.color = mathstl::Vector4(dirLight.color.x, dirLight.color.y, dirLight.color.z, 1);
+                lightCluster.dirLight.direction.Normalize();
+                lightCluster.dirLight.color = mathstl::Vector4(dirLight.color.x, dirLight.color.y, dirLight.color.z, 1);
             }
-            UpdateWholeTileArraySSBO(tileArray, frameIdx);
+            UpdateLightClusterSSBO(lightCluster, frameIdx);
 
             // Directional lights
             {
@@ -728,6 +718,60 @@ void RenderPasses::PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
         m_frameIdxToPropagate = frameIdx;
         m_dataToBePreProcessed.Clear();
         g_pQueueHandler->DispatchAllRequests();
+    }
+
+    // Light uniforms (updated every frame for camera pos, exposure, ambient, etc.)
+    {
+        auto& mainPassData = m_mainPassData.at(frameIdx);
+        const auto camEnt = g_pApplicationState->GetCurrentApplicationState().mainCameraEntity;
+        const ECS::Components::Camera* camComp = g_pEntityManager->GetComponent<ECS::Components::Camera>(camEnt);
+
+        // Skip if camera component doesn't exist yet
+        if (!camComp)
+            return;
+
+        LightUniforms data;
+
+        // Get camera position from ECS Transform component
+        const ECS::Components::Transform* camTransform =
+            g_pEntityManager->GetComponent<ECS::Components::Transform>(camEnt);
+        mathstl::Vector3 camPos = camTransform ? camTransform->position : mathstl::Vector3::Zero;
+
+        data.CameraPos = mathstl::Vector4(camPos.x, camPos.y, camPos.z, 1);
+        data.LightGlobals = mathstl::Vector4(renderState.exposure,
+                                             static_cast<f32>(renderState.toneMapperType),
+                                             renderState.ambientIntensity,
+                                             static_cast<f32>(renderState.debugViewMode));
+
+        // Cluster parameters
+        // Assume zNear/zFar from camera
+        float zNear = camComp->zNear;
+        float zFar = camComp->zFar;
+        u32 sliceCount = renderState.clusterCount.z;
+
+        // Linear Z slicing
+        // index = (z - zNear) / (zFar - zNear) * sliceCount
+        // index = z * scale + bias
+        // scale = sliceCount / (zFar - zNear)
+        // bias = -zNear * scale
+
+        float scale = (float)sliceCount / (zFar - zNear);
+        float bias = -zNear * scale;
+
+        data.ClusterValues = mathstl::Vector4(scale, bias, (float)sliceCount, renderState.shadowsEnabled ? 1.0f : 0.0f);
+        data.ClusterSize = mathstl::Vector4((float)renderState.clusterCount.x,
+                                            (float)renderState.clusterCount.y,
+                                            (float)renderState.clusterCount.z,
+                                            0.0f); // TODO: Tile size in pixels if needed
+
+        mainPassData.mainView.viewport =
+            RenderViewUtils::CreateViewportFromData(FrameGlobals::GetSwapChainExtent(), camComp->zNear, camComp->zFar);
+        mainPassData.mainView.fov = camComp->fov;
+
+        auto pDescriptor = m_frameRendererContexts[frameIdx].tileArraySSBODescriptor;
+        auto mappedBuffer = m_mappedLightUniformsUBO;
+        memcpy(mappedBuffer, &data, m_lightUniformsUBO.GetInfo().size);
+        pDescriptor->WriteBufferUpdate(m_lightUniformsUBO, s_globalLightUniformsBindingSlot);
     }
 }
 
@@ -813,11 +857,6 @@ void RenderPasses::PassManager::BlockUntilPassesFinished(u32 frameIdx)
     imageAvailableFence.WaitFor();
     imageAvailableFence.Reset();
 
-    // Also wait for the previous frame's execution to finish before we start overwriting its resources
-    auto& renderFinishedFence = m_renderFinishedFences.at(frameIdx);
-    renderFinishedFence.WaitFor();
-    renderFinishedFence.Reset();
-
     // g_pQueueHandler->WaitForFences();
     //  vkQueueWaitIdle(VkGlobals::GetGraphicsQueue());
 }
@@ -860,7 +899,8 @@ void RenderPasses::PassManager::RecreateShadowMaps(u32 cascades, const mathstl::
     ScopedZone("RecreateShadowMaps");
 
     auto& csm = m_globalRendererAttachments.directionalLightShadowMap;
-    if (csm.pTexture != nullptr)
+    // Use cascadeViews.empty() as reliable check - pTexture may have garbage on first call
+    if (!csm.cascadeViews.empty())
     {
         // Kinda okay because changing cascades can be slow!
         vkDeviceWaitIdle(VkGlobals::GetLogicalDevice());
@@ -880,11 +920,55 @@ void RenderPasses::PassManager::RecreateShadowMaps(u32 cascades, const mathstl::
 
     csm.pTexture = g_pTexManager->CreateTextureImmediate(shadowMapInfo);
     csm.bindlessHandle = g_pTexManager->MakeTextureBindless(shadowMapInfo.handle);
+
+    // Create per-cascade 2D image views for ImGui debug display
+    for (auto& view : csm.cascadeViews)
+    {
+        if (view != VK_NULL_HANDLE)
+        {
+            vkDestroyImageView(VkGlobals::GetLogicalDevice(), view, nullptr);
+        }
+    }
+    csm.cascadeViews.clear();
+    csm.cascadeViews.resize(cascades, VK_NULL_HANDLE);
+
+    for (u32 i = 0; i < cascades; ++i)
+    {
+        VkImageViewCreateInfo viewInfo{};
+        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        viewInfo.image = csm.pTexture->GetImage();
+        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        viewInfo.format = csm.format;
+        viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        viewInfo.subresourceRange.baseMipLevel = 0;
+        viewInfo.subresourceRange.levelCount = 1;
+        viewInfo.subresourceRange.baseArrayLayer = i;
+        viewInfo.subresourceRange.layerCount = 1;
+
+        DEBUG_ASSERT(vkCreateImageView(VkGlobals::GetLogicalDevice(), &viewInfo, nullptr, &csm.cascadeViews[i]) ==
+                     VK_SUCCESS);
+    }
+
+    // Note: ImGui registration is done in InitPassesAndImGui after this function is called
+
     // Update gbuffer descriptor set
     std::memcpy(m_mappedShadowMapUBO, &csm.bindlessHandle, sizeof(BindlessTextureHandle));
     for (auto& ctx : m_frameRendererContexts)
     {
         ctx.gbufferPostProcessDescriptor->WriteBufferUpdate(m_shadowMapUBO, s_shadowmapUBOBindingSlot);
+    }
+
+    // Notify CSM pass to rebuild pipeline with new cascade count
+    auto it = m_passes.find(PassType::Shadow);
+    if (it != m_passes.end())
+    {
+        for (auto& pass : it->second)
+        {
+            if (auto* csmPass = dynamic_cast<CSMPass*>(pass.get()))
+            {
+                csmPass->SetCascadeCount(cascades);
+            }
+        }
     }
 }
 
@@ -905,18 +989,20 @@ void RenderPasses::PassManager::UpdateMainViewUBO(const void* data, size_t size,
     pDescriptor->WriteBufferUpdate(*pBuffer);
 }
 
-void RenderPasses::PassManager::UpdateWholeTileArraySSBO(const UBO::GlobalTileArraySSBO& data, u32 frameIdx)
+void RenderPasses::PassManager::UpdateShadowViewUBO(const UBO::ShadowmapViewUBO& data, u32 frameIdx)
 {
-    DispatchSSBOTransfer((void*)&data.dirLight,
+    std::memcpy(m_mappedShadowViewUBO, &data, sizeof(UBO::ShadowmapViewUBO));
+    m_frameRendererContexts[frameIdx].shadowViewUBODescriptor->WriteBufferUpdate(m_shadowViewUBO,
+                                                                                 s_shadowmapViewUBOBindingSlot);
+}
+
+void RenderPasses::PassManager::UpdateLightClusterSSBO(const UBO::LightClusterSSBO& data, u32 frameIdx)
+{
+    // Upload entire LightClusterSSBO (dirLight + numLights + pad + lights array)
+    DispatchSSBOTransfer((void*)&data,
                          m_frameRendererContexts[frameIdx].tileArraySSBODescriptor,
-                         sizeof(data.dirLight),
-                         &m_tileArraySSBO,
+                         UBO::LightClusterSSBOSize,
+                         &m_lightClusterSSBO,
                          0,
-                         s_tileArrayBindingSlot);
-    DispatchSSBOTransfer((void*)data.tiles[0].lights.data(),
-                         m_frameRendererContexts[frameIdx].tileArraySSBODescriptor,
-                         UBO::GlobalTileArraySSBOSize - sizeof(data.dirLight),
-                         &m_tileArraySSBO,
-                         sizeof(data.dirLight),
                          s_tileArrayBindingSlot);
 }

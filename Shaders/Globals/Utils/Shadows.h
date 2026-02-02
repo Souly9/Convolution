@@ -1,6 +1,6 @@
-float computeShadow(vec4 fragPosViewSpace, vec4 fragPosWorldSpace, vec3 fragNormal, vec3 lightDir)
+// Returns cascade index based on view-space depth
+int getCascadeIndex(vec4 fragPosViewSpace)
 {
-    // 1. Cascade Selection
     float depthValue = abs(fragPosViewSpace.z);
     int cascadeCount = shadowmapViewUBO.cascadeCount;
 
@@ -13,6 +13,17 @@ float computeShadow(vec4 fragPosViewSpace, vec4 fragPosWorldSpace, vec3 fragNorm
             break;
         }
     }
+    return cascadeIndex;
+}
+
+float computeShadow(vec4 fragPosViewSpace, vec4 fragPosWorldSpace, vec3 fragNormal, vec3 lightDir)
+{
+    // Check if shadows are globally disabled
+    if (lightUniforms.data.ClusterValues.w < 0.5)
+        return 1.0;
+
+    // 1. Cascade Selection
+    int cascadeIndex = getCascadeIndex(fragPosViewSpace);
 
     // 2. Project to Light Space
     vec4 fragPosLightSpace = shadowmapViewUBO.csmViewMatrices[cascadeIndex] * fragPosWorldSpace;

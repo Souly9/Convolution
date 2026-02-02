@@ -42,8 +42,10 @@ constexpr static inline u32 MAX_BINDLESS_TEXTURES = 16536;
 constexpr static inline u32 MAX_MESHES = 4096;
 constexpr static inline u32 MAX_MATERIALS = 256;
 constexpr static inline u32 MAX_ENTITIES = 4096;
-constexpr static inline u32 MAX_TILES = 1;
-constexpr static inline u32 MAX_LIGHTS_PER_TILE = 32;
+// Clustered lighting
+constexpr static inline u32 MAX_SCENE_LIGHTS = 1024;
+constexpr static inline u32 MAX_CLUSTERS = 16 * 32 * 64;
+constexpr static inline u32 MAX_LIGHT_INDICES = MAX_CLUSTERS * 128;
 
 // Definitions
 #define USE_VULKAN
