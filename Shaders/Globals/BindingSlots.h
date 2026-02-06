@@ -16,5 +16,5 @@
 #define GlobalShadowMapUBOSlot          2
 
 #define MAX_MATERIALS     2048
-#define MAX_ENTITIES      4096
+#define MAX_ENTITIES      65536 * 10
 #define MAX_CASCADE_COUNT 16

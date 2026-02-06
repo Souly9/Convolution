@@ -27,8 +27,8 @@ void RenderPasses::DebugShapePass::Init(RendererAttachmentInfo& attachmentInfo,
     m_mainRenderingData.colorAttachments = {gbufferPosition};
 
     InitBaseData(attachmentInfo);
-    m_indirectCmdBufferWireFrame = IndirectDrawCommandBuffer(5000);
-    m_indirectCmdBufferOpaque = IndirectDrawCommandBuffer(5000);
+    m_indirectCmdBufferWireFrame = IndirectDrawCommandBuffer(250000);
+    m_indirectCmdBufferOpaque = IndirectDrawCommandBuffer(250000);
 
     BuildPipelines();
 }

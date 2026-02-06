@@ -1,6 +1,7 @@
 #include "PassManager.h"
 #include "ClusteredShading/LightGridComputePass.h"
 #include "Compositing/CompositPass.h"
+#include "Core/Rendering/Core/GPUTimingQuery.h"
 #include "Core/Rendering/Core/MaterialManager.h"
 #include "Core/Rendering/Core/RenderingTypeDefs.h"
 #include "Core/Rendering/Core/ShaderManager.h"
@@ -48,6 +49,13 @@ void RenderPasses::PassManager::CreatePassObjectsAndLayouts()
                                                               PipelineDescriptorLayout(UBO::BufferType::ShadowmapUBO)});
     m_shadowViewUBOLayout = DescriptorLaytoutUtils::CreateOneDescriptorSetForAll(
         {PipelineDescriptorLayout(UBO::BufferType::ShadowmapViewUBO)});
+    
+    // Cluster grid
+    PipelineDescriptorLayout clusterGridLayout{};
+    clusterGridLayout.type = DescriptorType::StorageBuffer;
+    clusterGridLayout.bindingSlot = s_clusterGridSSBOBindingSlot;
+    clusterGridLayout.shaderStagesToBind = ShaderTypeBits::Compute;
+    m_clusterGridSSBOLayout = DescriptorLaytoutUtils::CreateOneDescriptorSetForAll({clusterGridLayout});
 }
 
 void RenderPasses::PassManager::CreateUBOsAndMap()
@@ -55,6 +63,7 @@ void RenderPasses::PassManager::CreateUBOsAndMap()
     u64 viewUBOSize = sizeof(UBO::ViewUBO);
 
     m_lightClusterSSBO = StorageBuffer(UBO::LightClusterSSBOSize, true);
+    m_clusterGridSSBO = StorageBuffer(UBO::ClusterGridSSBOSize, true);
 
     m_viewUBO = UniformBuffer(viewUBOSize);
     m_mappedViewUBOBuffer = m_viewUBO.MapMemory();
@@ -112,6 +121,11 @@ void RenderPasses::PassManager::CreateFrameRendererContexts()
         // Initialize descriptor with buffers immediately so it's valid before first dispatch
         frameContext.tileArraySSBODescriptor->WriteSSBOUpdate(m_lightClusterSSBO);
         frameContext.tileArraySSBODescriptor->WriteBufferUpdate(m_lightUniformsUBO, s_globalLightUniformsBindingSlot);
+
+        // Cluster grid descriptor
+        frameContext.clusterGridDescriptor = m_descriptorPool.CreateDescriptorSet(m_clusterGridSSBOLayout.GetRef());
+        frameContext.clusterGridDescriptor->SetBindingSlot(s_clusterGridSSBOBindingSlot);
+        frameContext.clusterGridDescriptor->WriteSSBOUpdate(m_clusterGridSSBO);
 
         // Point the rendering finished semaphore to the present transition semaphore for presentation sync
         frameContext.renderingFinishedSemaphore = &frameContext.pPresentLayoutTransitionSignalSemaphore;
@@ -201,10 +215,9 @@ void RenderPasses::PassManager::InitPassesAndImGui()
     VkDescriptorSet id2 = ImGui_ImplVulkan_AddTexture(m_gbuffer.Get(GBufferTextureType::GBufferAlbedo)->GetSampler(),
                                                       m_gbuffer.Get(GBufferTextureType::GBufferAlbedo)->GetImageView(),
                                                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    VkDescriptorSet id3 =
-        ImGui_ImplVulkan_AddTexture(m_gbuffer.Get(GBufferTextureType::TexCoordMatData)->GetSampler(),
-                                    m_gbuffer.Get(GBufferTextureType::TexCoordMatData)->GetImageView(),
-                                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    VkDescriptorSet id3 = ImGui_ImplVulkan_AddTexture(m_gbuffer.Get(GBufferTextureType::Position)->GetSampler(),
+                                                      m_gbuffer.Get(GBufferTextureType::Position)->GetImageView(),
+                                                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     VkDescriptorSet id4 = ImGui_ImplVulkan_AddTexture(m_gbuffer.Get(GBufferTextureType::GBufferUI)->GetSampler(),
                                                       m_gbuffer.Get(GBufferTextureType::GBufferUI)->GetImageView(),
                                                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
@@ -325,6 +338,10 @@ bool RenderPasses::PassManager::RenderPassGroup(PassType groupType, const MainPa
     auto& groupCtx = m_passGroupContexts[groupType];
     CommandBuffer* cmdBuffer = groupCtx.cmdBuffers[ctx.imageIdx];
     static_cast<CBufferVulkan*>(cmdBuffer)->ResetBuffer();
+
+    // Reset timing queries at the start of the first pass group
+    if (groupType == PassType::PreProcess && m_gpuTimingQuery.IsEnabled())
+        m_gpuTimingQuery.ResetQueries(cmdBuffer, ctx.currentFrame);
 
     for (auto& pass : m_passes[groupType])
     {
@@ -470,6 +487,16 @@ void RenderPasses::PassManager::Init()
     CreateFrameRendererContexts();
     InitPassGroupContexts();
     InitPassesAndImGui();
+
+    // Initialize GPU timing query
+    m_gpuTimingQuery.Init(32); // Support up to 32 passes
+
+    // Wire timing query to all passes
+    for (auto& [type, passes] : m_passes)
+    {
+        for (auto& pPass : passes)
+            pPass->SetTimingQuery(&m_gpuTimingQuery);
+    }
 }
 
 void RenderPasses::PassManager::ExecutePasses(u32 frameIdx)
@@ -502,12 +529,37 @@ void RenderPasses::PassManager::ExecutePasses(u32 frameIdx)
 
     g_pQueueHandler->SubmitSwapchainPresentRequestForThisFrame(presentRequest);
     g_pQueueHandler->DispatchAllRequests();
+
+    // Read previous frame GPU timing results after dispatch commit and push to application state
+    if (m_gpuTimingQuery.IsEnabled())
+    {
+        m_gpuTimingQuery.ReadResults(frameIdx);
+
+        // Push timing data to ApplicationState
+        const auto& results = m_gpuTimingQuery.GetResults();
+        f32 totalTime = m_gpuTimingQuery.GetTotalGPUTimeMs();
+
+        g_pApplicationState->RegisterUpdateFunction(
+            [results, totalTime](ApplicationState& state)
+            {
+                state.renderState.passTimings.clear();
+                state.renderState.passTimings.reserve(results.size());
+                for (const auto& r : results)
+                {
+                    state.renderState.passTimings.push_back({r.passName, r.gpuTimeMs, r.wasRun});
+                }
+                state.renderState.totalGPUTimeMs = totalTime;
+            });
+
+        // Clear run flags after reading so next frame starts fresh
+        m_gpuTimingQuery.ClearRunFlags();
+    }
 }
 
 // Ensure destructor symbol exists
 RenderPasses::PassManager::~PassManager()
 {
-    // cleanup if necessary
+    m_gpuTimingQuery.Destroy();
 }
 
 // Restore functions removed during refactor
@@ -544,10 +596,12 @@ void RenderPasses::PassManager::SetLightDataForFrame(PointLightVector&& data, Di
     m_passDataMutex.unlock();
 }
 
-void RenderPasses::PassManager::SetMainViewData(UBO::ViewUBO&& viewUBO, u32 frameIdx)
+void RenderPasses::PassManager::SetMainViewData(UBO::ViewUBO&& viewUBO, f32 zNear, f32 zFar, u32 frameIdx)
 {
     m_passDataMutex.lock();
     m_dataToBePreProcessed.mainViewUBO = std::move(viewUBO);
+    m_dataToBePreProcessed.zNear = zNear;
+    m_dataToBePreProcessed.zFar = zFar;
     m_dataToBePreProcessed.frameIdx = frameIdx;
     m_passDataMutex.unlock();
 }
@@ -573,7 +627,14 @@ void RenderPasses::PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
         u32 frameToPropagate = m_frameIdxToPropagate;
         u32 targetFrame = FrameGlobals::GetPreviousFrameNumber(m_frameIdxToPropagate);
         m_needsToPropagateMainDataUpdate = false;
-        const auto& ctx = m_frameRendererContexts[targetFrame];
+        // Use m_currentSwapChainIdx because that's the context we are preparing for
+        auto& ctx = m_frameRendererContexts[m_currentSwapChainIdx];
+
+        // Also update zNear/zFar for the target frame if we are propagating
+        // We might be reusing data from m_dataToBePreProcessed if it wasn't cleared yet or if we store last frame data
+        // For now just taking it from current preprocessing data which should be valid if we are here
+        ctx.zNear = m_dataToBePreProcessed.zNear;
+        ctx.zFar = m_dataToBePreProcessed.zFar;
 
         m_resourceManager.WriteInstanceSSBODescriptorUpdate(targetFrame);
 
@@ -665,7 +726,7 @@ void RenderPasses::PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
         if (m_dataToBePreProcessed.mainViewUBO.has_value())
         {
             UpdateMainViewUBO(
-                &m_dataToBePreProcessed.mainViewUBO.value(), sizeof(UBO::ViewUBO), m_dataToBePreProcessed.frameIdx);
+                &m_dataToBePreProcessed.mainViewUBO.value(), sizeof(UBO::ViewUBO), m_currentSwapChainIdx);
         }
 
         auto& mainPassData = m_mainPassData.at(frameIdx);
@@ -695,9 +756,9 @@ void RenderPasses::PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
                 lightCluster.dirLight.direction =
                     mathstl::Vector4(dirLight.direction.x, dirLight.direction.y, dirLight.direction.z, 1);
                 lightCluster.dirLight.direction.Normalize();
-                lightCluster.dirLight.color = mathstl::Vector4(dirLight.color.x, dirLight.color.y, dirLight.color.z, 1);
+                lightCluster.dirLight.color = mathstl::Vector4(dirLight.color.x, dirLight.color.y, dirLight.color.z, dirLight.color.w);
             }
-            UpdateLightClusterSSBO(lightCluster, frameIdx);
+            UpdateLightClusterSSBO(lightCluster, m_currentSwapChainIdx);
 
             // Directional lights
             {
@@ -708,7 +769,7 @@ void RenderPasses::PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
                     auto& dirLightView = mainPassData.csmViews.emplace_back();
                     dirLightView.dir =
                         mathstl::Vector3(dirLight.direction.x, dirLight.direction.y, dirLight.direction.z);
-                    dirLightView.cascades = m_currentShadowMapState.cascadeCount;
+                    dirLightView.cascades = 1; // Force Single Shadow Map
                 }
             }
         }
@@ -768,7 +829,14 @@ void RenderPasses::PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
             RenderViewUtils::CreateViewportFromData(FrameGlobals::GetSwapChainExtent(), camComp->zNear, camComp->zFar);
         mainPassData.mainView.fov = camComp->fov;
 
-        auto pDescriptor = m_frameRendererContexts[frameIdx].tileArraySSBODescriptor;
+        auto& ctx = m_frameRendererContexts[m_currentSwapChainIdx];
+        if (m_dataToBePreProcessed.frameIdx == frameIdx)
+        {
+            ctx.zNear = m_dataToBePreProcessed.zNear;
+            ctx.zFar = m_dataToBePreProcessed.zFar;
+        }
+
+        auto pDescriptor = m_frameRendererContexts[m_currentSwapChainIdx].tileArraySSBODescriptor;
         auto mappedBuffer = m_mappedLightUniformsUBO;
         memcpy(mappedBuffer, &data, m_lightUniformsUBO.GetInfo().size);
         pDescriptor->WriteBufferUpdate(m_lightUniformsUBO, s_globalLightUniformsBindingSlot);
@@ -906,13 +974,13 @@ void RenderPasses::PassManager::RecreateShadowMaps(u32 cascades, const mathstl::
         vkDeviceWaitIdle(VkGlobals::GetLogicalDevice());
         g_pTexManager->FreeTexture(csm.handle);
     }
-    csm.cascades = cascades;
+    csm.cascades = cascades; // FORCE 1 CASCADE
     csm.format = DEPTH_BUFFER_FORMAT;
     DynamicTextureRequest shadowMapInfo{};
     shadowMapInfo.AddName("Directional Light CSM");
     csm.handle = shadowMapInfo.handle = g_pTexManager->GenerateHandle();
-    shadowMapInfo.extents = DirectX::XMUINT3(extents.x, extents.y, cascades);
-    shadowMapInfo.format = DEPTH_BUFFER_FORMAT;
+    shadowMapInfo.extents = DirectX::XMUINT3(extents.x, extents.y, cascades); // 1 Layer
+    shadowMapInfo.format = csm.format;
     shadowMapInfo.usage = Usage::ShadowMap;
     shadowMapInfo.samplerInfo.wrapU = TextureWrapMode::CLAMP_TO_EDGE;
     shadowMapInfo.samplerInfo.wrapV = TextureWrapMode::CLAMP_TO_EDGE;
@@ -930,9 +998,9 @@ void RenderPasses::PassManager::RecreateShadowMaps(u32 cascades, const mathstl::
         }
     }
     csm.cascadeViews.clear();
-    csm.cascadeViews.resize(cascades, VK_NULL_HANDLE);
+    csm.cascadeViews.resize(csm.cascades, VK_NULL_HANDLE);
 
-    for (u32 i = 0; i < cascades; ++i)
+    for (u32 i = 0; i < csm.cascades; ++i)
     {
         VkImageViewCreateInfo viewInfo{};
         viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -1005,4 +1073,15 @@ void RenderPasses::PassManager::UpdateLightClusterSSBO(const UBO::LightClusterSS
                          &m_lightClusterSSBO,
                          0,
                          s_tileArrayBindingSlot);
+}
+
+const stltype::vector<PassTimingResult>& RenderPasses::PassManager::GetPassTimingResults() const
+{
+    static const stltype::vector<PassTimingResult> s_emptyResults;
+    return m_gpuTimingQuery.IsEnabled() ? m_gpuTimingQuery.GetResults() : s_emptyResults;
+}
+
+f32 RenderPasses::PassManager::GetTotalGPUTimeMs() const
+{
+    return m_gpuTimingQuery.IsEnabled() ? m_gpuTimingQuery.GetTotalGPUTimeMs() : 0.f;
 }

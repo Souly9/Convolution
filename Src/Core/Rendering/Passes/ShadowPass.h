@@ -26,15 +26,14 @@ public:
     void SetCascadeCount(u32 cascades);
 
 protected:
-    stltype::vector<mathstl::Matrix> ComputeLightViewProjMatrices(u32 cascades,
-                                                                  f32 fov,
-                                                                  f32 mainCamNear,
-                                                                  f32 mainCamFar,
-                                                                  mathstl::Vector2 mainFrustumExtents,
-                                                                  const mathstl::Matrix& mainCamView,
-                                                                  const mathstl::Vector3& lightDir,
-                                                                  stltype::array<f32, 16>& splits);
-    stltype::vector<mathstl::Vector4> ComputeFrustumCornersWS(const mathstl::Matrix& proj, const mathstl::Matrix& view);
+    stltype::array<mathstl::Matrix, 16> ComputeLightViewProjMatrices(u32 cascades,
+                                                                     f32 fov,
+                                                                     f32 mainCamNear,
+                                                                     f32 mainCamFar,
+                                                                     mathstl::Vector2 mainFrustumExtents,
+                                                                     const mathstl::Vector3& lightDir,
+                                                                     stltype::array<f32, 16>& splits,
+                                                                     u32 shadowMapSize);
 
     // Every pass should only have one pipeline as we're working with uber shaders + bindless
     PSO m_mainPSO;

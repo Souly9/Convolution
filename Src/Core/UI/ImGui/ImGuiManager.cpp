@@ -30,6 +30,8 @@ void ImGuiManager::RenderElements(f32 dt, ApplicationInfos& appInfos)
 {
     ScopedZone("ImGuiManager::RenderElements (All UI Elements)");
 
+    ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
+
     for (ImGuiRenderFunction& renderFunction : s_registeredFunctions)
         renderFunction(dt, appInfos);
 }

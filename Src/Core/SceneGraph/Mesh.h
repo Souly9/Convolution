@@ -58,8 +58,8 @@ public:
 private:
     stltype::vector<stltype::unique_ptr<Mesh>> m_meshes;
     stltype::hash_map<const Mesh*, AABB> m_meshAABBs;
-    stltype::unique_ptr<Mesh> m_pPlanePrimitive;
-    stltype::unique_ptr<Mesh> m_pCubePrimitive;
+    Mesh* m_pPlanePrimitive;
+    Mesh* m_pCubePrimitive;
 };
 
 extern stltype::unique_ptr<MeshManager> g_pMeshManager;

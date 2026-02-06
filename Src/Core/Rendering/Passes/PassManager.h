@@ -4,6 +4,8 @@
 #include "Core/Rendering/Core/AABB.h"
 #include "Core/Rendering/Core/Defines/GlobalBuffers.h"
 #include "Core/Rendering/Core/Defines/LightDefines.h"
+#include "Core/Rendering/Vulkan/VkGPUTimingQuery.h"
+
 
 #include "Core/Events/EventSystem.h"
 #include "Core/Global/ThreadBase.h"
@@ -203,6 +205,10 @@ struct FrameRendererContext
     UniformBuffer* pShadowViewUBO{nullptr};
     GPUMappedMemoryHandle pMappedShadowViewUBO{nullptr};
 
+    // Cluster grid SSBO (managed by PassManager, populated by SClusterAABB)
+    StorageBuffer* pClusterGridBuffer{nullptr};
+    DescriptorSet* clusterGridDescriptor{nullptr};
+
     Semaphore* renderingFinishedSemaphore;
     Fence* renderingFinishedFence{nullptr};
 
@@ -210,6 +216,9 @@ struct FrameRendererContext
     u32 currentFrame;
 
     SharedResourceManager* pResourceManager{nullptr};
+
+    f32 zNear{0.1f};
+    f32 zFar{300.0f};
 };
 
 enum class ColorAttachmentType
@@ -256,7 +265,7 @@ public:
     void SetEntityTransformDataForFrame(TransformSystemData&& data, u32 frameIdx);
     void SetLightDataForFrame(PointLightVector&& data, DirLightVector&& dirLights, u32 frameIdx);
 
-    void SetMainViewData(UBO::ViewUBO&& viewUBO, u32 frameIdx);
+    void SetMainViewData(UBO::ViewUBO&& viewUBO, f32 zNear, f32 zFar, u32 frameIdx);
 
     void PreProcessDataForCurrentFrame(u32 frameIdx);
 
@@ -274,6 +283,10 @@ public:
     // Rebuilding all pipelines for all passes is not the most efficient but we
     // don't have that many and won't be doing it often anyway
     void RebuildPipelinesForAllPasses();
+
+    // GPU timing query accessors
+    const stltype::vector<PassTimingResult>& GetPassTimingResults() const;
+    f32 GetTotalGPUTimeMs() const;
 
 protected:
     void PreProcessMeshData(const stltype::vector<PassMeshData>& meshes, u32 lastFrame, u32 curFrame);
@@ -309,6 +322,13 @@ protected:
 
 private:
     ProfiledLockable(CustomMutex, m_passDataMutex);
+
+    // GPU timing query
+    GPUTimingQuery m_gpuTimingQuery;
+
+    // Cluster Grid Data
+    StorageBuffer m_clusterGridSSBO;
+    DescriptorSetLayout m_clusterGridSSBOLayout;
 
     // Resource Manager
     SharedResourceManager m_resourceManager;
@@ -377,6 +397,8 @@ private:
         PointLightVector lightVector{};
         DirLightVector dirLightVector{};
         stltype::optional<UBO::ViewUBO> mainViewUBO{};
+        f32 zNear{0.1f};
+        f32 zFar{300.0f};
         u32 frameIdx{99};
 
         bool IsValid() const
@@ -386,7 +408,7 @@ private:
         bool IsEmpty() const
         {
             return entityMeshData.size() == 0 && entityTransformData.size() == 0 && lightVector.size() == 0 &&
-                   entityMaterialData.size() == 0;
+                   entityMaterialData.size() == 0 && dirLightVector.size() == 0 && !mainViewUBO.has_value();
         }
 
         void Clear()
@@ -394,6 +416,10 @@ private:
             entityMeshData.clear();
             entityTransformData.clear();
             lightVector.clear();
+            dirLightVector.clear();
+            entityMaterialData.clear();
+            mainViewUBO.reset();
+            frameIdx = 99;
         }
     };
     RenderDataForPreProcessing m_dataToBePreProcessed;

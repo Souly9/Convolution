@@ -20,8 +20,6 @@ void RenderPasses::CompositPass::Init(RendererAttachmentInfo& attachmentInfo,
     AsyncQueueHandler::MeshTransfer cmd{};
     cmd.name = "CompositPass_MeshTransfer";
     cmd.pBuffersToFill = &m_mainRenderingData;
-    UBO::PerPassObjectDataSSBO data{};
-    GenericGeometryPass::DrawCmdOffsets offsets{};
 
     BuildPipelines();
 }

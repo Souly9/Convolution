@@ -18,7 +18,9 @@ MeshManager::MeshManager()
                 mathstl::Vector3{-1, -1, 0.0f}, mathstl::Vector3{0.0f, 0.0f, 1.0f}, mathstl::Vector2{1.f, 1.f}}};
         const stltype::vector<u32> indices = {0, 1, 2, 2, 3, 0};
 
-        m_pPlanePrimitive = stltype::make_unique<Mesh>(vertexData, indices);
+        m_meshes.push_back(stltype::make_unique<Mesh>(vertexData, indices));
+        m_pPlanePrimitive = m_meshes.back().get();
+        CalcAABB(mathstl::Vector3{-1.0f, -1.0f, 0.0f}, mathstl::Vector3{1.0f, 1.0f, 0.0f}, m_pPlanePrimitive);
     }
 
     // Cube primitive with proper per-face normals and UVs (24 vertices, 4 per face)
@@ -73,17 +75,17 @@ MeshManager::MeshManager()
             16, 17, 18, 16, 18, 19, // Top
             20, 21, 22, 20, 22, 23, // Bottom
         };
-        m_pCubePrimitive = stltype::make_unique<Mesh>(vertexData, indices);
+        m_meshes.push_back(stltype::make_unique<Mesh>(vertexData, indices));
+        m_pCubePrimitive = m_meshes.back().get();
+        CalcAABB(mathstl::Vector3{-0.5f}, mathstl::Vector3{0.5f}, m_pCubePrimitive);
     }
-    m_meshes.push_back(stltype::unique_ptr<Mesh>(m_pPlanePrimitive.get()));
-    m_meshes.push_back(stltype::unique_ptr<Mesh>(m_pCubePrimitive.get()));
 }
 
 Mesh* MeshManager::GetPrimitiveMesh(PrimitiveType type)
 {
     if (type == PrimitiveType::Quad)
-        return m_pPlanePrimitive.get();
+        return m_pPlanePrimitive;
     if (type == PrimitiveType::Cube)
-        return m_pCubePrimitive.get();
+        return m_pCubePrimitive;
     return nullptr;
 }

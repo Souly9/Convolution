@@ -55,7 +55,7 @@ inline DirectionalRenderLight ConvertToDirectionalRenderLight(const ECS::Compone
     // Use the light's direction field, not the transform's position
     // w=0.0f indicates this is a direction vector, not a point
     renderLight.direction = mathstl::Vector4(light->direction.x, light->direction.y, light->direction.z, 0.0f);
-    renderLight.color = light->color;
+    renderLight.color = mathstl::Vector4(light->color.x, light->color.y, light->color.z, light->intensity);
 
     return renderLight;
 }

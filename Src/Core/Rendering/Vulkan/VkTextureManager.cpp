@@ -61,7 +61,7 @@ void VkTextureManager::Init()
     m_sharedDataMutex.unlock();
     PostRender();
 
-    m_lastBindlessTextureWriteIdx = 0;
+    m_lastBindlessTextureWriteIdx = 1;
 }
 
 void VkTextureManager::CheckRequests()
@@ -309,7 +309,7 @@ void VkTextureManager::CreateSamplerForTexture(TextureVulkan* pTex, bool useMipM
     samplerInfo.addressModeW = Conv(info.wrapW);
     samplerInfo.anisotropyEnable = VK_TRUE;
     samplerInfo.maxAnisotropy = VkGlobals::GetPhysicalDeviceProperties().limits.maxSamplerAnisotropy;
-    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+    samplerInfo.borderColor = info.borderColor;
     samplerInfo.unnormalizedCoordinates = VK_FALSE;
     samplerInfo.compareEnable = VK_FALSE;
     samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
