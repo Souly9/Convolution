@@ -22,6 +22,13 @@ protected:
     static inline constexpr u8 ShowLogWindowPos = 0;
 };
 
+struct PassTimingStat
+{
+    stltype::string passName;
+    f32 gpuTimeMs{0.f};
+    bool wasRun{false};
+};
+
 struct RendererState
 {
     stltype::vector<u64> gbufferImGuiIDs{};
@@ -34,7 +41,7 @@ struct RendererState
     mathstl::Vector2 csmResolution{CSM_DEFAULT_RES};
     f32 exposure{1.0f};
     s32 toneMapperType{1}; // 0 = None, 1 = ACES, 2 = Uncharted, 3 = GT7
-    f32 ambientIntensity{0.1f};
+    f32 ambientIntensity{0.03f};
     s32 debugViewMode{0}; // 0 = None, 1 = CSM, 2 = Cluster Debug
     bool shadowsEnabled{true};
 
@@ -45,6 +52,11 @@ struct RendererState
     // Clustered lighting debug stats (updated by compute pass)
     u32 totalClusterCount{0};
     f32 avgLightsPerCluster{0.0f};
+    bool showClusterAABBs{false};
+
+    // GPU timing stats (updated by PassManager)
+    stltype::vector<PassTimingStat> passTimings{};
+    f32 totalGPUTimeMs{0.f};
 };
 
 struct ApplicationState
@@ -60,7 +72,7 @@ struct ApplicationState
     Scene* pCurrentScene;
 
     ECS::Entity mainCameraEntity{};
-    bool renderDebugMeshes{true};
+    bool renderDebugMeshes{false};
 
     bool ShouldDisplayDebugObjects() const
     {

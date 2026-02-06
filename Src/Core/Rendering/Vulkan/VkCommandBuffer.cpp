@@ -38,6 +38,20 @@ static void RecordCommand(EndProfilingScopeCmd& cmd, CBufferVulkan& buffer)
     }
 }
 
+static void RecordCommand(ResetQueryPoolCmd& cmd, CBufferVulkan& buffer)
+{
+    VkQueryPool pool = static_cast<VkQueryPool>(cmd.queryPool);
+    vkCmdResetQueryPool(buffer.GetRef(), pool, cmd.firstQuery, cmd.queryCount);
+}
+
+static void RecordCommand(WriteTimestampCmd& cmd, CBufferVulkan& buffer)
+{
+    VkQueryPool pool = static_cast<VkQueryPool>(cmd.queryPool);
+    VkPipelineStageFlagBits stage =
+        cmd.isStart ? VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT : VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    vkCmdWriteTimestamp(buffer.GetRef(), stage, pool, cmd.query);
+}
+
 static void RecordCommand(BeginRenderingCmd& cmd, CBufferVulkan& buffer)
 {
     buffer.BeginRendering(cmd);

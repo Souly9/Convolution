@@ -5,6 +5,7 @@
 void ECS::System::SDebugDisplay::Init(const SystemInitData& data)
 {
     m_pPassManager = data.pPassManager;
+    m_debugMaterial = {};
 
     g_pEventSystem->AddUpdateEventCallback(
         [this](const UpdateEventData& updateData)
@@ -18,42 +19,39 @@ void ECS::System::SDebugDisplay::Init(const SystemInitData& data)
 void ECS::System::SDebugDisplay::Process()
 {
     ScopedZone("DebugDisplay System::Process");
-    if (!m_stateChanged)
-        return;
     bool shouldRender = m_renderDebugMeshes;
+
+    if (!m_stateChanged && !shouldRender)
+        return;
 
     const auto entities = g_pEntityManager->GetAllEntities();
 
     for (const auto& entity : entities)
     {
         const auto* pLightComponent = g_pEntityManager->GetComponent<Components::Light>(entity);
-        if (pLightComponent == nullptr && shouldRender)
-        {
-            DEBUG_ASSERT(g_pEntityManager->GetComponent<Components::DebugRenderComponent>(entity) == nullptr);
-        }
-        else if (pLightComponent != nullptr)
+        if (pLightComponent != nullptr)
         {
             bool hasDebugComp = g_pEntityManager->HasComponent<Components::DebugRenderComponent>(entity);
-            if (!shouldRender && !hasDebugComp)
-                continue;
-            else if (shouldRender && !hasDebugComp)
+            if (shouldRender && !hasDebugComp)
             {
                 Components::DebugRenderComponent lightDebugComp;
                 lightDebugComp.pMesh = g_pMeshManager->GetPrimitiveMesh(MeshManager::PrimitiveType::Cube);
                 lightDebugComp.pMaterial = &m_debugMaterial;
                 g_pEntityManager->AddComponent(entity, lightDebugComp);
-                auto pTransform = g_pEntityManager->GetComponentUnsafe<Components::Transform>(entity);
-                pTransform->scale = mathstl::Vector3(0.5);
-                pTransform->name = "Light";
+                g_pEntityManager->MarkComponentDirty({}, ECS::ComponentID<ECS::Components::RenderComponent>::ID);
+                g_pEntityManager->MarkComponentDirty({}, ECS::ComponentID<ECS::Components::Transform>::ID);
             }
-            else
+            else if (hasDebugComp)
             {
                 auto* pDebugRenderComponent =
                     g_pEntityManager->GetComponentUnsafe<Components::DebugRenderComponent>(entity);
-                pDebugRenderComponent->shouldRender = shouldRender;
+                if (pDebugRenderComponent->shouldRender != shouldRender)
+                {
+                    pDebugRenderComponent->shouldRender = shouldRender;
+                    g_pEntityManager->MarkComponentDirty({}, ECS::ComponentID<ECS::Components::RenderComponent>::ID);
+                    g_pEntityManager->MarkComponentDirty({}, ECS::ComponentID<ECS::Components::Transform>::ID);
+                }
             }
-            g_pEntityManager->MarkComponentDirty({}, ECS::ComponentID<ECS::Components::RenderComponent>::ID);
-            g_pEntityManager->MarkComponentDirty({}, ECS::ComponentID<ECS::Components::Transform>::ID);
         }
     }
 }

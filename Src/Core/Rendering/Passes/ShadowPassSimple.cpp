@@ -47,9 +47,8 @@ void CSMPass::BuildPipelines()
     info.attachmentInfos =
         CreateAttachmentInfo({m_mainRenderingData.colorAttachments}, m_mainRenderingData.depthAttachment);
     // Compute viewMask from cascade count: (1 << cascades) - 1 gives bitmask for all layers
-    u32 mask = (1 << m_cascadeCount) - 1;
-    info.viewMask = mask > 0 ? mask : 1; // Fallback to 1 if count is somehow 0
-    info.rasterizerInfo.cullmode = Cullmode::None;
+    info.viewMask = (1 << m_cascadeCount) - 1;
+    info.rasterizerInfo.cullmode = Cullmode::Back;
     m_mainPSO = PSO(
         ShaderCollection{&mainVert, &mainFrag}, PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions}, info);
 }
@@ -99,11 +98,7 @@ void RenderPasses::CSMPass::Render(const MainPassData& data, FrameRendererContex
     stltype::vector<ColorAttachment> colorAttachments;
     BeginRenderingCmd cmdBegin{&m_mainPSO, colorAttachments, &m_mainRenderingData.depthAttachment};
     // Derive layer mask from current cascade count
-    // Validation requires viewMask to match pipeline masked if multiview.
-    // Pipeline uses info.viewMask = (1 << m_cascadeCount) - 1.
-    // Thus cmdBegin.depthLayerMask MUST match.
-    u32 mask = (1 << m_cascadeCount) - 1;
-    cmdBegin.depthLayerMask = mask > 0 ? mask : 1; // Fallback to 1 if count is somehow 0
+    cmdBegin.depthLayerMask = 0;
     cmdBegin.extents = extents;
 
     GenericIndirectDrawCmd cmd{&m_mainPSO, m_indirectCmdBuffer};
@@ -199,71 +194,67 @@ stltype::array<mathstl::Matrix, 16> CSMPass::ComputeLightViewProjMatrices(u32 ca
 {
     stltype::array<mathstl::Matrix, 16> lightViewProjMatrices;
     
-    // 1. Calculate Frustum Splits
-    float lambda = 0.95f;
-    float clipRange = mainCamFar - mainCamNear;
-    float minZ = mainCamNear;
-    float maxZ = mainCamNear + clipRange;
-    float range = maxZ - minZ;
-    float ratio = maxZ / minZ;
+    auto lightLocalDir = lightDir;
+    lightLocalDir.Normalize();
 
-    // Calculate split distances
-    stltype::vector<float> cascadeSplits;
-    cascadeSplits.resize(cascades);
-    
-    for (u32 i = 0; i < cascades; i++)
-    {
-        float p = (i + 1) / static_cast<float>(cascades);
-        float log = minZ * std::pow(ratio, p);
-        float uniform = minZ + range * p;
-        float d = lambda * (log - uniform) + uniform;
-        cascadeSplits[i] = (d - mainCamNear) / clipRange;
-    }
+    // 1. Calculate Frustum Center
+    // (Unused camera math removed)
 
-    // CSM Logic
-    // Constant Light View Matrix (Centered at World Origin)
-    mathstl::Vector3 lightDirection = lightDir;
-    lightDirection.Normalize();
-    
-    mathstl::Vector3 eye = -lightDirection * 300.0f; 
-    mathstl::Vector3 target = mathstl::Vector3::Zero;
-    
-    mathstl::Matrix lightView = mathstl::Matrix::CreateLookAt(eye, target, mathstl::Vector3(0, 1, 0));
-    if (std::abs(lightDirection.Dot(mathstl::Vector3(0, 1, 0))) > 0.99f)
-         lightView = mathstl::Matrix::CreateLookAt(eye, target, mathstl::Vector3(0, 0, 1));
-    
-    float lastSplitDist = 0.0f;
-    for (u32 i = 0; i < cascades; i++)
-    {
-        // TODO: Tweak this better
-        float boxSize = 1.f * (i + 1); 
-        
-        float minX = -boxSize;
-        float maxX = boxSize;
-        float minY = -boxSize;
-        float maxY = boxSize;
-        float minZ = 0.1f;
-        float maxZ = 300.0f + boxSize * 2.0f; // Sufficient depth
+    mathstl::Vector3 target = mathstl::Vector3(0.0f, 0.0f, 0.0f);
 
-        mathstl::Matrix lightProj = mathstl::Matrix::CreateOrthographicOffCenter(minX, maxX, minY, maxY, minZ, maxZ);
-        
-        // Fix Y flip for Vulkan
-        lightProj._22 *= -1.0f;
-        
-        lightViewProjMatrices[i] = lightView * lightProj;
-        
-        lastSplitDist = cascadeSplits[i];
-    }
+    // 2. Light View Matrix
+    // Look at the frustum center
+    // Eye is backed up along the light direction
+    float standoff = 300.0f; 
+    mathstl::Vector3 eye = target - lightLocalDir * standoff;
+
+    auto upVec = mathstl::Vector3(0.0f, 1.0f, 0.0f);
+    // If light is parallel to up, pick another up
+    if (std::abs(lightLocalDir.Dot(upVec)) > 0.99f)
+        upVec = mathstl::Vector3(0.0f, 0.0f, 1.0f);
     
-    // Fill splits for shader (convert back to view space depth)
-    for(u32 i=0; i<cascades; ++i)
-    {
-         float splitDist = cascadeSplits[i];
-         splits[i] = minZ + splitDist * clipRange;
-    }
-    for(u32 i=cascades; i<16; ++i) splits[i] = maxZ;
+    // Create View Matrix
+    const auto lightView = mathstl::Matrix::CreateLookAt(eye, target, upVec);
+
+    // 3. Orthographic Projection
+    // "Same view area" - we'll try to match a reasonable viewport size at a distance
+    // Since we can't match perspective with ortho, we'll make the box large enough
+    float boxSize = 25.0f; 
+    float minX = -boxSize;
+    float maxX = boxSize;
+    float minY = -boxSize;
+    float maxY = boxSize;
+    
+    // Z-Range
+    // We need to see everything from the eye to past the target
+    // Standoff is distance to target. We need to go past target by at least boxSize or similar
+    float nearPlane = 0.1f; 
+    float farPlane = standoff + 400.0f; // Sufficient depth
+
+    auto lightProj = mathstl::Matrix::CreateOrthographicOffCenter(minX, maxX, minY, maxY, nearPlane, farPlane);
+
+    // 4. Fix Upside-Down Shadows (Vulkan Clip Space Y-Flip)
+    lightProj._22 *= -1.0f;
+    //lightProj._11 *= -1.0f;
+    // Combine View * Proj
+    lightViewProjMatrices[0] = lightView * lightProj;
+
+    // Fill dummy splits for shader compatibility
+    splits.fill(farPlane); 
 
     return lightViewProjMatrices;
 }
+
+/*
+// REMOVED: ComputeFrustumCornersWS is no longer needed but kept in class for now if interface demands it, 
+// otherwise we can leave it empty or unused.
+*/
+stltype::vector<mathstl::Vector4> CSMPass::ComputeFrustumCornersWS(const mathstl::Matrix& proj,
+                                                                   const mathstl::Matrix& view)
+{
+    // Unused in Static Map mode
+    return {};
+}
+
 
 } // namespace RenderPasses

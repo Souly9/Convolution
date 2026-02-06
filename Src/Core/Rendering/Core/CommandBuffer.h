@@ -264,6 +264,20 @@ struct ImGuiDrawCmd : public CommandBase
     }
 };
 
+struct ResetQueryPoolCmd : public CommandBase
+{
+    void* queryPool; // VkQueryPool
+    u32 firstQuery;
+    u32 queryCount;
+};
+
+struct WriteTimestampCmd : public CommandBase
+{
+    void* queryPool; // VkQueryPool
+    u32 query;
+    bool isStart; // TOP_OF_PIPE for start, BOTTOM_OF_PIPE for end
+};
+
 using Command = stltype::variant<CommandBase,
                                  GenericDrawCmd,
                                  GenericIndirectDrawCmd,
@@ -284,7 +298,9 @@ using Command = stltype::variant<CommandBase,
                                  StartProfilingScopeCmd,
                                  EndProfilingScopeCmd,
                                  PushConstantCmd,
-                                 ImGuiDrawCmd>;
+                                 ImGuiDrawCmd,
+                                 ResetQueryPoolCmd,
+                                 WriteTimestampCmd>;
 
 // Generic command buffer, basically collects all commands as generic structs first so we can reason about them
 class CBuffer : public TrackedResource

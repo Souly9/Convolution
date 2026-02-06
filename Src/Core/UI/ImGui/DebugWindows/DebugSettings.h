@@ -1,5 +1,6 @@
 #pragma once
 #include "Core/Global/CommonGlobals.h"
+#include "Core/ECS/Components/Camera.h"
 #include "InfoWindow.h"
 
 class DebugSettingsWindow : public ImGuiWindow
@@ -22,6 +23,17 @@ public:
         {
             DEBUG_LOG("Hot reloading shaders...");
             g_pEventSystem->OnShaderHotReload({});
+        }
+
+        bool showClusterAABBs = g_pApplicationState->GetCurrentApplicationState().renderState.showClusterAABBs;
+        if (ImGui::Checkbox("Show Cluster AABBs", &showClusterAABBs))
+        {
+            g_pApplicationState->RegisterUpdateFunction(
+                [showClusterAABBs](auto& state) { 
+                    state.renderState.showClusterAABBs = showClusterAABBs;
+                    // Mark Camera dirty to trigger SClusterAABB system update
+                    g_pEntityManager->MarkComponentDirty(ECS::ComponentID<ECS::Components::Camera>::ID);
+                });
         }
 
         ImGui::End();

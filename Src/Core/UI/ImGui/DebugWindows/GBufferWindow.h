@@ -35,6 +35,11 @@ public:
         buffers.push_back({"Albedo", gbufferIDs[1]});
         buffers.push_back({"UVs/Mat", gbufferIDs[2]});
 
+        for (u32 i = 0; i < csmIDs.size(); ++i)
+        {
+            buffers.push_back({"CSM " + stltype::to_string(i), csmIDs[i]});
+        }
+
         // Calculate grid columns (3 columns max)
         int columns = 3;
         int rows = (static_cast<int>(buffers.size()) + columns - 1) / columns;

@@ -1,5 +1,6 @@
 #include "RenderPass.h"
 #include "Core/Global/GlobalDefines.h"
+#include "Core/Rendering/Core/GPUTimingQuery.h"
 #include "Core/Rendering/Core/RenderingIncludes.h"
 #include "Core/Rendering/Core/SharedResourceManager.h"
 #include "Core/Rendering/Vulkan/VkGlobals.h"
@@ -7,10 +8,7 @@
 
 namespace RenderPasses
 {
-ConvolutionRenderPass::ConvolutionRenderPass(const stltype::string& name)
-#if CONV_DEBUG
-    : m_passName{name}
-#endif
+ConvolutionRenderPass::ConvolutionRenderPass(const stltype::string& name) : m_passName{name}
 {
 }
 
@@ -56,6 +54,12 @@ u32 ConvolutionRenderPass::SetVertexAttributes(
 }
 void ConvolutionRenderPass::StartRenderPassProfilingScope(CommandBuffer* pCmdBuffer)
 {
+    if (m_pTimingQuery && m_pTimingQuery->IsEnabled())
+    {
+        if (m_passTimingIndex == UINT32_MAX)
+            m_passTimingIndex = m_pTimingQuery->RegisterPass(m_passName);
+        m_pTimingQuery->WriteStartTimestamp(pCmdBuffer, m_passTimingIndex);
+    }
 #if CONV_DEBUG
     pCmdBuffer->RecordCommand(StartProfilingScopeCmd{.name = m_passName.c_str(), .color = s_profilingScopeColor});
 #endif
@@ -63,9 +67,11 @@ void ConvolutionRenderPass::StartRenderPassProfilingScope(CommandBuffer* pCmdBuf
 
 void ConvolutionRenderPass::EndRenderPassProfilingScope(CommandBuffer* pCmdBuffer)
 {
+    if (m_pTimingQuery && m_pTimingQuery->IsEnabled())
+        m_pTimingQuery->WriteEndTimestamp(pCmdBuffer, m_passTimingIndex);
 #if CONV_DEBUG
     pCmdBuffer->RecordCommand(EndProfilingScopeCmd{});
-
 #endif
 }
 } // namespace RenderPasses
+

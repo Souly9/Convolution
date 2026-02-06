@@ -27,7 +27,7 @@ void ECS::System::SRenderComponent::SyncData(u32 currentFrame)
     {
         RenderPasses::EntityMeshData& data = dataMap[renderComp.entity.ID].emplace_back(
             renderComp.component.pMesh, renderComp.component.pMaterial, renderComp.component.boundingBox, false);
-        if (renderComp.component.isSelected)
+        if (renderComp.component.isSelected || renderComp.component.isWireframe)
         {
             data.SetDebugWireframeMesh();
         }
@@ -39,7 +39,7 @@ void ECS::System::SRenderComponent::SyncData(u32 currentFrame)
 
         RenderPasses::EntityMeshData& data = dataMap[renderComp.entity.ID].emplace_back(
             renderComp.component.pMesh, renderComp.component.pMaterial, renderComp.component.boundingBox, true);
-        if (renderComp.component.isSelected)
+        if (renderComp.component.isSelected || renderComp.component.isWireframe)
         {
             data.SetDebugWireframeMesh();
         }

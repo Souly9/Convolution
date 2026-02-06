@@ -19,6 +19,19 @@ protected:
     bool m_isOpen{true};
 };
 
+enum class LogLevel : u8
+{
+    Info,
+    Warning,
+    Error
+};
+
+struct LogEntry
+{
+    stltype::string message;
+    LogLevel level;
+};
+
 class InfoWindow : public ImGuiWindow
 {
 public:
@@ -26,75 +39,89 @@ public:
     {
         ImGui::Begin("Log", &m_isOpen);
 
-        // Options menu
-        if (ImGui::BeginPopup("Options"))
-        {
-            ImGui::Checkbox("Auto-scroll", &m_autoScroll);
-            ImGui::EndPopup();
-        }
+        // Consume new logs from appInfos and clear them
+        for (auto& str : appInfos.infos)
+            m_entries.push_back({std::move(str), LogLevel::Info});
+        appInfos.infos.clear();
 
-        // Main window
-        if (ImGui::Button("Options"))
-            ImGui::OpenPopup("Options");
+        for (auto& str : appInfos.warnings)
+            m_entries.push_back({std::move(str), LogLevel::Warning});
+        appInfos.warnings.clear();
+
+        for (auto& str : appInfos.errors)
+            m_entries.push_back({std::move(str), LogLevel::Error});
+        appInfos.errors.clear();
+
+        // Toolbar
+        if (ImGui::Button("Clear"))
+            Clear();
         ImGui::SameLine();
-        bool clear = ImGui::Button("Clear");
+
+        ImGui::Checkbox("Auto-scroll", &m_autoScroll);
         ImGui::SameLine();
-        m_filter.Draw("Filter", -100.0f);
+
+        ImGui::SetNextItemWidth(150.0f);
+        const char* filterNames[] = {"All", "Info", "Warning", "Error"};
+        ImGui::Combo("##Filter", &m_filterLevel, filterNames, IM_ARRAYSIZE(filterNames));
+        ImGui::SameLine();
+
+        m_textFilter.Draw("Search", -1.0f);
 
         ImGui::Separator();
 
-        for (const auto& str : appInfos.infos)
+        // Log display
+        if (ImGui::BeginChild("logScrollRegion", ImVec2(0, 0), ImGuiChildFlags_None, ImGuiWindowFlags_HorizontalScrollbar))
         {
-            AddLog(str);
-        }
-        for (const auto& str : appInfos.warnings)
-        {
-            AddLog(str);
-        }
-        for (const auto& str : appInfos.errors)
-        {
-            AddLog(str);
-        }
-        if (ImGui::BeginChild(
-                "logScrollRegion", ImVec2(0, 0), ImGuiChildFlags_None, ImGuiWindowFlags_HorizontalScrollbar))
-        {
-            if (clear)
-                Clear();
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4, 2));
 
-            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
-            const char* buf = m_buffer.begin();
-            const char* buf_end = m_buffer.end();
-            if (m_filter.IsActive())
+            for (size_t i = 0; i < m_entries.size(); ++i)
             {
-                for (int line_no = 0; line_no < m_lineOffsets.Size; line_no++)
+                const LogEntry& entry = m_entries[i];
+
+                // Filter by level
+                if (m_filterLevel > 0)
                 {
-                    const char* line_start = buf + m_lineOffsets[line_no];
-                    const char* line_end =
-                        (line_no + 1 < m_lineOffsets.Size) ? (buf + m_lineOffsets[line_no + 1] - 1) : buf_end;
-                    if (m_filter.PassFilter(line_start, line_end))
-                        ImGui::TextUnformatted(line_start, line_end);
+                    if (m_filterLevel == 1 && entry.level != LogLevel::Info)
+                        continue;
+                    if (m_filterLevel == 2 && entry.level != LogLevel::Warning)
+                        continue;
+                    if (m_filterLevel == 3 && entry.level != LogLevel::Error)
+                        continue;
                 }
-            }
-            else
-            {
-                ImGuiListClipper clipper;
-                clipper.Begin(m_lineOffsets.Size);
-                while (clipper.Step())
+
+                // Text filter
+                if (m_textFilter.IsActive() && !m_textFilter.PassFilter(entry.message.c_str()))
+                    continue;
+
+                // Color based on level
+                ImVec4 color;
+                const char* prefix;
+                switch (entry.level)
                 {
-                    for (int line_no = clipper.DisplayStart; line_no < clipper.DisplayEnd; line_no++)
-                    {
-                        const char* line_start = buf + m_lineOffsets[line_no];
-                        const char* line_end =
-                            (line_no + 1 < m_lineOffsets.Size) ? (buf + m_lineOffsets[line_no + 1] - 1) : buf_end;
-                        ImGui::TextUnformatted(line_start, line_end);
-                    }
+                case LogLevel::Error:
+                    color = ImVec4(1.0f, 0.4f, 0.4f, 1.0f);
+                    prefix = "[ERR]  ";
+                    break;
+                case LogLevel::Warning:
+                    color = ImVec4(1.0f, 0.8f, 0.3f, 1.0f);
+                    prefix = "[WARN] ";
+                    break;
+                case LogLevel::Info:
+                default:
+                    color = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
+                    prefix = "[INFO] ";
+                    break;
                 }
-                clipper.End();
+
+                ImGui::PushStyleColor(ImGuiCol_Text, color);
+                ImGui::TextUnformatted(prefix);
+                ImGui::SameLine();
+                ImGui::TextUnformatted(entry.message.c_str());
+                ImGui::PopStyleColor();
             }
+
             ImGui::PopStyleVar();
 
-            // Keep up at the bottom of the scroll region if we were already at the bottom at the beginning of the
-            // frame. Using a scrollbar or mouse-wheel will take away from the bottom edge.
             if (m_autoScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY())
                 ImGui::SetScrollHereY(1.0f);
         }
@@ -104,23 +131,12 @@ public:
 
     void Clear()
     {
-        m_buffer.clear();
-        m_lineOffsets.clear();
-        m_lineOffsets.push_back(0);
-    }
-
-    void AddLog(const stltype::string& str)
-    {
-        int old_size = m_buffer.size();
-        m_buffer.append(str.c_str());
-        for (int new_size = m_buffer.size(); old_size < new_size; old_size++)
-            if (m_buffer[old_size] == '\n')
-                m_lineOffsets.push_back(old_size + 1);
+        m_entries.clear();
     }
 
 private:
-    ImGuiTextBuffer m_buffer;
-    ImGuiTextFilter m_filter;
-    ImVector<int> m_lineOffsets; // Index to lines offset. We maintain this with AddLog() calls.
-    bool m_autoScroll{true};     // Keep scrolling if already at the bottom.
+    stltype::vector<LogEntry> m_entries;
+    ImGuiTextFilter m_textFilter;
+    bool m_autoScroll{true};
+    int m_filterLevel{0}; // 0=All, 1=Info, 2=Warning, 3=Error
 };

@@ -2,6 +2,7 @@
 #include "Systems/RenderThread/SRenderComponent.h"
 #include "Systems/RenderThread/SView.h"
 #include "Systems/SAABB.h"
+#include "Systems/SClusterAABB.h"
 #include "Systems/SDebugDisplay.h"
 #include "Systems/SLight.h"
 #include "Systems/STransform.h"
@@ -24,6 +25,7 @@ EntityManager::EntityManager()
     m_entities.reserve(1024);
     m_entityComponentMap.reserve(1024);
 
+    m_systems.emplace_back(stltype::make_unique<System::SClusterAABB>());
     m_systems.emplace_back(stltype::make_unique<System::STransform>());
     m_systems.emplace_back(stltype::make_unique<System::SView>());
     m_systems.emplace_back(stltype::make_unique<System::SRenderComponent>());

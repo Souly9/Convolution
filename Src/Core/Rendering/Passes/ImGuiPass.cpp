@@ -40,6 +40,9 @@ void RenderPasses::ImGuiPass::Init(RendererAttachmentInfo& attachmentInfo, const
 
     ImGui::CreateContext();
 
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+
     UpdateImGuiScaling();
 
     ImGui_ImplGlfw_InitForVulkan(g_pWindowManager->GetWindow(), true);

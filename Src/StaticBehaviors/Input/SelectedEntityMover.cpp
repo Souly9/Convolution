@@ -117,7 +117,8 @@ void SelectedEntityMover::OnUpdate(const UpdateEventData& data)
         // Transform local movement by camera rotation and apply
         pCamTransform->position = mathstl::Vector3::Transform(localMove, mainCamRotMat) + pCamTransform->position;
 
-        g_pEntityManager->MarkComponentDirty(data.state.mainCameraEntity, C_ID(Transform));
+        g_pEntityManager->MarkComponentDirty(C_ID(Transform));
+        //g_pEntityManager->MarkComponentDirty(ECS::ComponentID<ECS::Components::Camera>::ID);
     }
 
     // reset accumulators

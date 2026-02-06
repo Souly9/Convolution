@@ -58,15 +58,28 @@ void main()
     vec4 fragPosViewSpace = view * fragPosWorldSpace;
 
     // Debug View modes
+    
     int debugViewMode = int(lightUniforms.data.LightGlobals.w);
 
+    DirectionalLight dirLight = lightData.dirLight;
+    vec3 L = normalize(dirLight.direction.xyz);
     // 1 = CSM Debug
     if (debugViewMode == 1)
     {
-        int cascadeIdx = getCascadeIndex(fragPosViewSpace);
+        float viewDepth = abs(fragPosViewSpace.z);
+        int cascadeIdx = getCascadeIndex(viewDepth);
         vec3 cascadeColor = getCascadeDebugColor(cascadeIdx);
-        // Mix cascade color with base albedo for context
-        vec3 debugColor = mix(albedo * 0.3, cascadeColor, 0.7);
+        
+        // Calculate shadow factor for this fragment
+        float shadow = computeShadow(fragPosWorldSpace, viewDepth, fragNormal, L);
+        
+        // "Shadowed parts are colored in different colors"
+        // If shadow is 0 (shadowed), show cascadeColor.
+        // If shadow is 1 (lit), show Albedo (or similar).
+        
+        // Mix: 0.0 (shadow) -> cascadeColor, 1.0 (lit) -> albedo
+        vec3 debugColor = mix(cascadeColor, albedo, shadow);
+        
         outColor.rgb = debugColor * (1.0 - uiColor.a) + uiColor.rgb * uiColor.a;
         outColor.a = 1.0;
         return;
@@ -115,11 +128,11 @@ void main()
     // --- Point/Spot Light Loop ---
     for (uint i = 0; i < lightCount; ++i)
     {
-        uint lightIdx = lightData.clusterLightIndices[baseIndex + 1 + i];
-        Light light = lightData.lights[lightIdx];
+        Light light = lightData.lights[lightData.clusterLightIndices[baseIndex + i]];
 
         vec3 lightPos = light.position.xyz;
-        vec3 lightColor = light.color.xyz;
+        float lightIntensity = light.color.w;
+        vec3 lightColor = light.color.xyz * lightIntensity;
         // Direction and other params for spot lights would be accessed here if needed
         // For now treating as point lights or checking type
 
@@ -132,23 +145,25 @@ void main()
 
     // --- Directional Light ---
     {
-        DirectionalLight dirLight = lightData.dirLight;
         vec3 lightDir = normalize(dirLight.direction.xyz);
-        vec3 lightColor = dirLight.color.xyz;
+        float lightIntensity = dirLight.color.w;
+        vec3 lightColor = dirLight.color.xyz * lightIntensity;
 
-        float dirLightShadow = computeShadow(fragPosViewSpace, fragPosWorldSpace, fragNormal, lightDir);
 
         vec3 lightContribution = computeDirLight(lightDir, V, N, lightColor, albedo, roughness, metallic);
 
-        //directLighting += lightContribution * dirLightShadow;
+        directLighting += lightContribution;
     }
+    // Update call to computeShadow with viewDepth
+    float viewDepth = abs(fragPosViewSpace.z);
+    float dirLightShadow = computeShadow(fragPosWorldSpace, viewDepth, N, normalize(dirLight.direction.xyz));
 
     float ambientIntensity = lightUniforms.data.LightGlobals.z;
     vec3 indirectLighting = computeAmbient(albedo, ambientIntensity);
 
     // Exposure
     float exposure = lightUniforms.data.LightGlobals.x;
-    vec3 finalHDRColor = (directLighting + indirectLighting) * exposure;
+    vec3 finalHDRColor = (directLighting * dirLightShadow + indirectLighting) * exposure;
 
     // Tone Mapping
     int toneMapperType = int(lightUniforms.data.LightGlobals.y);

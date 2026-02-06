@@ -4,6 +4,7 @@
 #include "Core/Rendering/Core/Synchronization.h"
 
 class SharedResourceManager;
+class GPUTimingQueryBase;
 
 namespace VertexInputDefines
 {
@@ -50,6 +51,16 @@ public:
 
     void InitBaseData(const RendererAttachmentInfo& attachmentInfo);
 
+    const stltype::string& GetName() const
+    {
+        return m_passName;
+    }
+
+    void SetTimingQuery(GPUTimingQueryBase* pQuery)
+    {
+        m_pTimingQuery = pQuery;
+    }
+
 protected:
     // Sets all vulkan vertex input attributes and returns the size of a vertex
     u32 SetVertexAttributes(const stltype::vector<VertexInputDefines::VertexAttributes>& vertexAttributes);
@@ -67,8 +78,11 @@ protected:
 
     VkVertexInputBindingDescription m_vertexInputDescription{};
 
-#if CONV_DEBUG
     stltype::string m_passName;
+    GPUTimingQueryBase* m_pTimingQuery{nullptr};
+    u32 m_passTimingIndex{UINT32_MAX};
+
+#if CONV_DEBUG
     static inline mathstl::Vector4 s_profilingScopeColor{0.2f, 0.4f, 0.6f, 1.0f};
 #endif
 };

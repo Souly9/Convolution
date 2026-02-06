@@ -3,6 +3,9 @@
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Rendering/Passes/PassManager.h"
 #include "Core/Rendering/Vulkan/Utils/DescriptorSetLayoutConverters.h"
+#include "Core/ECS/Components/Camera.h"
+#include "Core/ECS/Components/Transform.h"
+#include "Core/ECS/Components/View.h"
 #include <algorithm>
 
 void ECS::System::SView::Init(const SystemInitData& data)
@@ -52,7 +55,7 @@ void ECS::System::SView::SyncData(u32 currentFrame)
         if (pViewComp->type == ECS::Components::ViewType::MainRenderView)
         {
             auto ubo = BuildMainViewUBO(pViewComp, pTransformComp);
-            m_pPassManager->SetMainViewData(std::move(ubo), currentFrame);
+            m_pPassManager->SetMainViewData(std::move(ubo), pViewComp->zNear, pViewComp->zFar, currentFrame);
         }
     }
 }

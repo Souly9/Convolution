@@ -22,6 +22,7 @@ struct TextureSamplerInfo
     TextureWrapMode wrapU{TextureWrapMode::REPEAT};
     TextureWrapMode wrapV{TextureWrapMode::REPEAT};
     TextureWrapMode wrapW{TextureWrapMode::REPEAT};
+    VkBorderColor borderColor{VK_BORDER_COLOR_INT_OPAQUE_BLACK};
 };
 
 struct DynamicTextureRequest

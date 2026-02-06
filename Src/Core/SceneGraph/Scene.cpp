@@ -1,4 +1,5 @@
 #include "Scene.h"
+#include <cmath>
 #include "Core/ECS/Components/Light.h"
 #include "Core/ECS/EntityManager.h"
 #include "Core/Events/EventSystem.h"
@@ -42,22 +43,31 @@ void Scene::FinishLoad(SceneNode root)
 
 void Scene::CreateTestLights(const mathstl::Vector3& centerPos, u32 gridSize, f32 spacing, ECS::Entity parent)
 {
-    constexpr f32 LIGHT_RANGE = 1000.0f;
-    constexpr f32 LIGHT_INTENSITY = 400.f;
+    constexpr f32 LIGHT_RANGE = 4.5f;
+    constexpr f32 LIGHT_INTENSITY = 0.7f;
 
-    const f32 offset = (gridSize - 1) * spacing * 0.5f;
-
-
-
+    // Use floats explicitly to avoid any integer math confusion, although u32 * f32 results in f32.
+    // This value represents half the total size of the grid side.
+    // e.g., if GridSize = 8, Spacing = 3 -> (7 * 3) / 2 = 10.5
+    const f32 fGridSize = static_cast<f32>(gridSize);
+    const f32 offset = (fGridSize - 1.0f) * spacing * 0.5f;
+ 
     for (u32 x = 0; x < gridSize; ++x)
     {
         for (u32 y = 0; y < gridSize; ++y)
         {
             for (u32 z = 0; z < gridSize; ++z)
             {
-                mathstl::Vector3 lightPos(centerPos.x + x * spacing - offset,
-                                          centerPos.y + y * spacing - offset + 2.0f,
-                                          centerPos.z + z * spacing - offset);
+                // Add some deterministic irregularity to the grid
+                // Using sine waves based on integer coordinates to create a "random" but stable offset
+                const f32 jitterAmount = spacing * 0.45f; // Slight randomness, keep mostly within grid cell
+                const f32 jitterX = std::sin(static_cast<f32>(x * 12.989 + y * 78.233 + z * 151.718)) * jitterAmount;
+                const f32 jitterY = std::sin(static_cast<f32>(x * 39.346 + y * 11.135 + z * 83.155)) * jitterAmount;
+                const f32 jitterZ = std::sin(static_cast<f32>(x * 27.171 + y * 61.562 + z * 49.373)) * jitterAmount;
+
+                mathstl::Vector3 lightPos(centerPos.x + x * spacing - offset + jitterX,
+                                          centerPos.y + y * spacing - offset + 2.0f + jitterY,
+                                          centerPos.z + z * spacing - offset + jitterZ);
 
                 auto lightEntity = g_pEntityManager->CreateEntity(lightPos);
 
