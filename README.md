@@ -2,7 +2,7 @@
 Vulkan Renderer
 
 ## Prerequisites
-1. **Vulkan SDK** (Required)
+1. **Vulkan SDK 1.4** (Required)
 2. **Visual Studio 2022** (C++ Desktop)
 3. **CMake** & **Git**
 
