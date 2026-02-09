@@ -94,6 +94,7 @@ void RenderPasses::PassManager::CreateFrameRendererContexts()
         frameContext.shadowViewUBODescriptor->WriteBufferUpdate(m_shadowViewUBO, s_shadowmapViewUBOBindingSlot);
         frameContext.mainViewUBODescriptor = m_descriptorPool.CreateDescriptorSet(m_viewUBOLayout.GetRef());
         frameContext.mainViewUBODescriptor->SetBindingSlot(s_viewBindingSlot);
+        frameContext.mainViewUBODescriptor->WriteBufferUpdate(m_viewUBO, s_viewBindingSlot);
 
         frameContext.gbufferPostProcessDescriptor =
             m_descriptorPool.CreateDescriptorSet(m_gbufferPostProcessLayout.GetRef());
@@ -824,6 +825,10 @@ void RenderPasses::PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
                                             (float)renderState.clusterCount.y,
                                             (float)renderState.clusterCount.z,
                                             0.0f); // TODO: Tile size in pixels if needed
+        data.GT7Params = mathstl::Vector4(renderState.gt7PaperWhite,
+                                          renderState.gt7ReferenceLuminance,
+                                          0.0f,
+                                          0.0f);
 
         mainPassData.mainView.viewport =
             RenderViewUtils::CreateViewportFromData(FrameGlobals::GetSwapChainExtent(), camComp->zNear, camComp->zFar);
@@ -1049,19 +1054,12 @@ void RenderPasses::PassManager::TransferPassData(const PassGeometryData& passDat
 
 void RenderPasses::PassManager::UpdateMainViewUBO(const void* data, size_t size, u32 frameIdx)
 {
-    auto pDescriptor = m_frameRendererContexts[frameIdx].mainViewUBODescriptor;
-    auto* pBuffer = &m_viewUBO;
-    auto mappedBuffer = m_mappedViewUBOBuffer;
-
-    std::memcpy(mappedBuffer, data, size);
-    pDescriptor->WriteBufferUpdate(*pBuffer);
+    std::memcpy(m_mappedViewUBOBuffer, data, size);
 }
 
 void RenderPasses::PassManager::UpdateShadowViewUBO(const UBO::ShadowmapViewUBO& data, u32 frameIdx)
 {
     std::memcpy(m_mappedShadowViewUBO, &data, sizeof(UBO::ShadowmapViewUBO));
-    m_frameRendererContexts[frameIdx].shadowViewUBODescriptor->WriteBufferUpdate(m_shadowViewUBO,
-                                                                                 s_shadowmapViewUBOBindingSlot);
 }
 
 void RenderPasses::PassManager::UpdateLightClusterSSBO(const UBO::LightClusterSSBO& data, u32 frameIdx)

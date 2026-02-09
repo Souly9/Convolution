@@ -32,17 +32,17 @@ public:
         ImGui::Separator();
 
         // Geometry Stats
-        ImGui::Text("Geometry");
-        ImGui::Text("Triangles: %u", m_lastState.triangleCount);
-        ImGui::Text("Vertices: %u", m_lastState.vertexCount);
-        ImGui::Separator();
+        // TODO: Retrieve from GPU
+        //ImGui::Text("Geometry");
+       // ImGui::Text("Triangles: %u", m_lastState.triangleCount);
+       // ImGui::Text("Vertices: %u", m_lastState.vertexCount);
+        //ImGui::Separator();
 
         // Clustered Lighting Stats
         ImGui::Text("Clustered Lighting");
         ImGui::Text("Total Clusters: %u", m_lastState.totalClusterCount);
         ImGui::Text("Cluster Grid: %dx%dx%d", m_lastState.clusterCount.x, m_lastState.clusterCount.y,
                     m_lastState.clusterCount.z);
-        ImGui::Text("Avg Lights/Cluster: %.2f", m_lastState.avgLightsPerCluster);
         ImGui::Separator();
 
         // RenderPass GPU Timings

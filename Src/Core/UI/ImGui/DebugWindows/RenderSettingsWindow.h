@@ -51,6 +51,26 @@ public:
             }
         }
 
+        if (uiToneMapper == 3) // GT7 Settings
+        {
+            if (ImGui::CollapsingHeader("GT7 Tonemapper Settings"))
+            {
+                float paperWhite = renderState.gt7PaperWhite;
+                float refLuminance = renderState.gt7ReferenceLuminance;
+
+                if (ImGui::SliderFloat("Paper White (nits)", &paperWhite, 100.0f, 1000.0f))
+                {
+                    g_pApplicationState->RegisterUpdateFunction([paperWhite](ApplicationState& state)
+                                                                { state.renderState.gt7PaperWhite = paperWhite; });
+                }
+                if (ImGui::SliderFloat("Reference Luminance (nits)", &refLuminance, 50.0f, 500.0f))
+                {
+                    g_pApplicationState->RegisterUpdateFunction([refLuminance](ApplicationState& state)
+                                                                { state.renderState.gt7ReferenceLuminance = refLuminance; });
+                }
+            }
+        }
+
         ImGui::Separator();
         ImGui::Text("Debug");
         const char* debugModes[] = {"None", "CSM Cascades", "Clusters"};

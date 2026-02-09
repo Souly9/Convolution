@@ -126,130 +126,26 @@ void EntitySelector::OnLeftMouseClick(const LeftMouseClickEventData& data)
     }
     f32 overallMinDist = FLT_MAX;
     ECS::Entity rsltEntity;
-    if (renderComps.size() < 900000)
+    const Vector3 rayDir(ray.direction);
+    const Vector3 dirInverted = ray.invOrigin;
+
+    for (size_t i = 0; i < renderComps.size(); i++)
     {
-        const Vector3 rayDir(ray.direction);
-        const Vector3 dirInverted = ray.invOrigin;
+        const auto& aabb = renderComps[i].component.boundingBox;
+        const Vector3 aabbCenter = aabb.center;
+        const Vector3 aabbExtents = aabb.extents;
+        const Vector3 aabbMin =
+            Vector3(aabbCenter.x - aabbExtents.x, aabbCenter.y - aabbExtents.y, aabbCenter.z - aabbExtents.z);
+        const Vector3 aabbMax =
+            Vector3(aabbCenter.x + aabbExtents.x, aabbCenter.y + aabbExtents.y, aabbCenter.z + aabbExtents.z);
 
-        for (size_t i = 0; i < renderComps.size(); i++)
+        f32 dist;
+        if (RayAABBIntersection(ray.worldOrigin, dirInverted, ray.distance, aabbMin, aabbMax, dist))
         {
-            const auto& aabb = renderComps[i].component.boundingBox;
-            const Vector3 aabbCenter = aabb.center;
-            const Vector3 aabbExtents = aabb.extents;
-            const Vector3 aabbMin =
-                Vector3(aabbCenter.x - aabbExtents.x, aabbCenter.y - aabbExtents.y, aabbCenter.z - aabbExtents.z);
-            const Vector3 aabbMax =
-                Vector3(aabbCenter.x + aabbExtents.x, aabbCenter.y + aabbExtents.y, aabbCenter.z + aabbExtents.z);
-
-            f32 dist;
-            if (RayAABBIntersection(ray.worldOrigin, dirInverted, ray.distance, aabbMin, aabbMax, dist))
+            if (dist < overallMinDist)
             {
-                if (dist < overallMinDist)
-                {
-                    overallMinDist = dist;
-                    rsltEntity = renderComps[i].entity;
-                }
-            }
-        }
-    }
-    else
-    {
-        using namespace DirectX;
-        XMVECTOR rayOriginX, rayOriginY, rayOriginZ;
-        XMVECTOR invRayDirectionX, invRayDirectionY, invRayDirectionZ;
-        XMVECTOR rayLength;
-        {
-            XMFLOAT3 rayWorldOrig;
-            XMStoreFloat3(&rayWorldOrig, ray.worldOrigin);
-            rayOriginX = XMVectorSet(rayWorldOrig.x, rayWorldOrig.x, rayWorldOrig.x, rayWorldOrig.x);
-            rayOriginY = XMVectorSet(rayWorldOrig.y, rayWorldOrig.y, rayWorldOrig.y, rayWorldOrig.y);
-            rayOriginZ = XMVectorSet(rayWorldOrig.z, rayWorldOrig.z, rayWorldOrig.z, rayWorldOrig.z);
-        }
-        {
-            XMFLOAT3 rayDir;
-            XMStoreFloat3(&rayDir, ray.direction);
-            invRayDirectionX = XMVectorSet(1.0f / rayDir.x, 1.0f / rayDir.x, 1.0f / rayDir.x, 1.0f / rayDir.x);
-            invRayDirectionY = XMVectorSet(1.0f / rayDir.y, 1.0f / rayDir.y, 1.0f / rayDir.y, 1.0f / rayDir.y);
-            invRayDirectionZ = XMVectorSet(1.0f / rayDir.z, 1.0f / rayDir.z, 1.0f / rayDir.z, 1.0f / rayDir.z);
-        }
-        {
-            rayLength = XMVectorSet(ray.distance, ray.distance, ray.distance, ray.distance);
-        }
-        auto FillAABBMinMaxVectors = [](DirectX::XMVECTOR& aabMinX,
-                                        DirectX::XMVECTOR& aabMinY,
-                                        DirectX::XMVECTOR& aabMinZ,
-                                        DirectX::XMVECTOR& aabMaxX,
-                                        DirectX::XMVECTOR& aabMaxY,
-                                        DirectX::XMVECTOR& aabMaxZ,
-                                        const AABB& aabb1,
-                                        const AABB& aabb2,
-                                        const AABB& aabb3,
-                                        const AABB& aabb4)
-        {
-            const XMVECTOR aabbCentersX = XMVectorSet(aabb1.center.x, aabb2.center.x, aabb3.center.x, aabb4.center.x);
-            const XMVECTOR aabbExtentsX =
-                XMVectorSet(aabb1.extents.x, aabb2.extents.x, aabb3.extents.x, aabb4.extents.x);
-            const XMVECTOR aabbCentersY = XMVectorSet(aabb1.center.y, aabb2.center.y, aabb3.center.y, aabb4.center.y);
-            const XMVECTOR aabbExtentsY =
-                XMVectorSet(aabb1.extents.y, aabb2.extents.y, aabb3.extents.y, aabb4.extents.y);
-            const XMVECTOR aabbCentersZ = XMVectorSet(aabb1.center.z, aabb2.center.z, aabb3.center.z, aabb4.center.z);
-            const XMVECTOR aabbExtentsZ =
-                XMVectorSet(aabb1.extents.z, aabb2.extents.z, aabb3.extents.z, aabb4.extents.z);
-            aabMinX = XMVectorSubtract(aabbCentersX, aabbExtentsX);
-            aabMinY = XMVectorSubtract(aabbCentersY, aabbExtentsY);
-            aabMinZ = XMVectorSubtract(aabbCentersZ, aabbExtentsZ);
-            aabMaxX = XMVectorAdd(aabbCentersX, aabbExtentsX);
-            aabMaxY = XMVectorAdd(aabbCentersY, aabbExtentsY);
-            aabMaxZ = XMVectorAdd(aabbCentersZ, aabbExtentsZ);
-        };
-
-        for (size_t i = 0; i < renderComps.size() - 3; i += 4)
-        {
-            const auto& aabb1 = renderComps[i].component.boundingBox;
-            const auto& aabb2 = renderComps[i + 1].component.boundingBox;
-            const auto& aabb3 = renderComps[i + 2].component.boundingBox;
-            const auto& aabb4 = renderComps[i + 3].component.boundingBox;
-
-            DirectX::XMVECTOR aabMinX, aabMinY, aabMinZ, aabMaxX, aabMaxY, aabMaxZ;
-            FillAABBMinMaxVectors(aabMinX, aabMinY, aabMinZ, aabMaxX, aabMaxY, aabMaxZ, aabb1, aabb2, aabb3, aabb4);
-
-            const XMVECTOR rayIntersectionResult = VectorizedRayAABBIntersection(rayOriginX,
-                                                                                 rayOriginY,
-                                                                                 rayOriginZ,
-                                                                                 invRayDirectionX,
-                                                                                 invRayDirectionY,
-                                                                                 invRayDirectionZ,
-                                                                                 rayLength,
-                                                                                 aabMinX,
-                                                                                 aabMinY,
-                                                                                 aabMinZ,
-                                                                                 aabMaxX,
-                                                                                 aabMaxY,
-                                                                                 aabMaxZ);
-            XMFLOAT4 rayDistances;
-            XMStoreFloat4(&rayDistances, rayIntersectionResult);
-            const f32 minDist = stltype::min(
-                rayDistances.x, stltype::min(rayDistances.y, stltype::min(rayDistances.z, rayDistances.w)));
-
-            if (minDist < overallMinDist)
-            {
-                overallMinDist = minDist;
-                if ((minDist - rayDistances.x) <= FLOAT_TOLERANCE)
-                {
-                    rsltEntity = renderComps[i].entity;
-                }
-                else if ((minDist - rayDistances.y) <= FLOAT_TOLERANCE)
-                {
-                    rsltEntity = renderComps[i + 1].entity;
-                }
-                else if ((minDist - rayDistances.z) <= FLOAT_TOLERANCE)
-                {
-                    rsltEntity = renderComps[i + 2].entity;
-                }
-                else if ((minDist - rayDistances.w) <= FLOAT_TOLERANCE)
-                {
-                    rsltEntity = renderComps[i + 3].entity;
-                }
+                overallMinDist = dist;
+                rsltEntity = renderComps[i].entity;
             }
         }
     }

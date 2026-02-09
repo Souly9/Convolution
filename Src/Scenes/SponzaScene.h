@@ -36,7 +36,7 @@ public:
                                         .isShadowCaster = true};
         g_pEntityManager->AddComponent(dirLightEnt, dirLight);
         auto lightsRootEnt = g_pEntityManager->CreateEntity(mathstl::Vector3(0, 0, 0), "LightsRoot");
-       // CreateTestLights(mathstl::Vector3(0.0f, 0.0f, 0.0f), 30, 0.9f, lightsRootEnt);
+       CreateTestLights(mathstl::Vector3(0.0f, 0.0f, 0.0f), 15, 0.9f, lightsRootEnt);
     }
     static stltype::string GetSceneName()
     {
