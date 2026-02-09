@@ -38,6 +38,7 @@ struct LightUniforms
     vec4 LightGlobals;  // x = exposure, y = toneMapperType, z = ambientIntensity, w = csmDebugView
     vec4 ClusterValues; // x=scale, y=bias, z=maxSlices, w=shadowsEnabled
     vec4 ClusterSize;   // x=dimX, y=dimY, z=dimZ, w=tileSizeX
+    vec4 GT7Params;     // x=PaperWhite, y=ReferenceLuminance, z=unused, w=unused
 };
 layout(std140, set = TileArraySet, binding = GlobalLightDataUBOSlot) uniform LightUBO
 {

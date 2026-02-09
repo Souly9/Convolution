@@ -15,6 +15,7 @@
 #include "../../Globals/ShadowBuffers.h"
 #include "../../Globals/Textures.h"
 #include "../../Globals/Utils/Shadows.h"
+#include "../../Tonemapping/GT7.h"
 
 layout(location = 0) in VertexOut
 {
