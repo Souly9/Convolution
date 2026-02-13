@@ -30,13 +30,13 @@ public:
             RequestType::Mesh});
 
         auto dirLightEnt = g_pEntityManager->CreateEntity(mathstl::Vector3(2, 17, 1));
-        ECS::Components::Light dirLight{.direction = mathstl::Vector3(0.0f, -4.f, 0.5f),
+        ECS::Components::Light dirLight{.direction = mathstl::Vector3(0.0f, 4.f, 0.5f),
                                         .color = mathstl::Vector4(1.0f, 1.0f, 0.9f, 1.0f),
                                         .type = ECS::Components::LightType::Directional,
                                         .isShadowCaster = true};
         g_pEntityManager->AddComponent(dirLightEnt, dirLight);
         auto lightsRootEnt = g_pEntityManager->CreateEntity(mathstl::Vector3(0, 0, 0), "LightsRoot");
-       CreateTestLights(mathstl::Vector3(0.0f, 0.0f, 0.0f), 15, 0.9f, lightsRootEnt);
+       //CreateTestLights(mathstl::Vector3(0.0f, 0.0f, 0.0f), 15, 0.9f, lightsRootEnt);
     }
     static stltype::string GetSceneName()
     {

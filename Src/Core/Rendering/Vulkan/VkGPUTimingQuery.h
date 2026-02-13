@@ -1,6 +1,8 @@
 #pragma once
 #include "Core/Rendering/Core/GPUTimingQuery.h"
+#include "Core/Rendering/Vulkan/VkQueryPool.h"
 #include <vulkan/vulkan.h>
+
 
 class VkGPUTimingQuery : public GPUTimingQueryBase
 {
@@ -15,7 +17,7 @@ protected:
     void WriteTimestampImpl(CommandBuffer* pCmdBuffer, u32 passIndex, bool isStart) override;
 
 private:
-    VkQueryPool m_queryPool{VK_NULL_HANDLE};
+    QueryPoolVulkan m_queryPool;
     f64 m_timestampPeriodNs{1.0};
     u32 m_maxPasses{0};
     u32 m_queryCount{0};

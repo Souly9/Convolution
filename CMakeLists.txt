@@ -221,6 +221,15 @@ add_custom_command(TARGET ${NAME} POST_BUILD
         $<TARGET_FILE_DIR:${NAME}>/imgui.natvis
 )
 
+add_custom_target(
+    CopyResources
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/Resources
+        $<TARGET_FILE_DIR:${NAME}>/Resources
+    COMMENT "Copying resources to build directory"
+    VERBATIM
+)
+
 set_target_properties(${NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin")
 set_target_properties(${NAME} PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/bin/")
 
@@ -240,12 +249,14 @@ SYSTEM
     ${CMAKE_SOURCE_DIR}/External/EAThread/include
     ${CMAKE_SOURCE_DIR}/External/EAAssert/include
     ${CMAKE_SOURCE_DIR}/External/Assimp/include
+    ${CMAKE_SOURCE_DIR}/External/dds
     ${CMAKE_SOURCE_DIR}/External/imgui
 )
 
 target_compile_definitions(${NAME} PRIVATE 
     $<$<CONFIG:Debug>:CONV_DEBUG=1>
     PROFILING_ENABLED=1
+    NOMINMAX
 )
 
 target_precompile_headers(${NAME} PRIVATE "Src/PCH.h")

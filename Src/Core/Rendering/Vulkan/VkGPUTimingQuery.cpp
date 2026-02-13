@@ -10,13 +10,7 @@ void VkGPUTimingQuery::Init(u32 maxPasses)
     const auto& props = VkGlobals::GetPhysicalDeviceProperties();
     m_timestampPeriodNs = static_cast<f64>(props.limits.timestampPeriod);
 
-    VkQueryPoolCreateInfo createInfo{};
-    createInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
-    createInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
-    createInfo.queryCount = m_queryCount;
-
-    VkResult result = vkCreateQueryPool(VkGlobals::GetLogicalDevice(), &createInfo, nullptr, &m_queryPool);
-    DEBUG_ASSERT(result == VK_SUCCESS);
+    m_queryPool.Init(VK_QUERY_TYPE_TIMESTAMP, m_queryCount);
 
     m_timestampResults.resize(m_queryCount, 0);
     m_results.reserve(maxPasses);
@@ -24,11 +18,7 @@ void VkGPUTimingQuery::Init(u32 maxPasses)
 
 void VkGPUTimingQuery::Destroy()
 {
-    if (m_queryPool != VK_NULL_HANDLE)
-    {
-        vkDestroyQueryPool(VkGlobals::GetLogicalDevice(), m_queryPool, nullptr);
-        m_queryPool = VK_NULL_HANDLE;
-    }
+    m_queryPool.CleanUp();
     m_timestampResults.clear();
     m_results.clear();
     m_passNameToIndex.clear();
@@ -37,13 +27,13 @@ void VkGPUTimingQuery::Destroy()
 
 void VkGPUTimingQuery::ResetQueries(CommandBuffer* pCmdBuffer, u32 frameIdx)
 {
-    if (!m_enabled || m_queryPool == VK_NULL_HANDLE)
+    if (!m_enabled || m_queryPool.GetRef() == VK_NULL_HANDLE)
         return;
 
     // Note: Don't clear run flags here - we need them for ReadResults which happens after this
 
     ResetQueryPoolCmd cmd{};
-    cmd.queryPool = m_queryPool;
+    cmd.queryPool = &m_queryPool;
     cmd.firstQuery = 0;
     cmd.queryCount = m_queryCount;
     pCmdBuffer->RecordCommand(cmd);
@@ -51,13 +41,13 @@ void VkGPUTimingQuery::ResetQueries(CommandBuffer* pCmdBuffer, u32 frameIdx)
 
 void VkGPUTimingQuery::ReadResults(u32 frameIdx)
 {
-    if (!m_enabled || m_queryPool == VK_NULL_HANDLE || m_nextPassIndex == 0)
+    if (!m_enabled || m_queryPool.GetRef() == VK_NULL_HANDLE || m_nextPassIndex == 0)
         return;
 
     u32 queryCount = m_nextPassIndex * 2;
 
     VkResult result = vkGetQueryPoolResults(VkGlobals::GetLogicalDevice(),
-                                            m_queryPool,
+                                            m_queryPool.GetRef(),
                                             0,
                                             queryCount,
                                             queryCount * sizeof(u64),
@@ -96,7 +86,7 @@ void VkGPUTimingQuery::ReadResults(u32 frameIdx)
 
 void VkGPUTimingQuery::WriteTimestampImpl(CommandBuffer* pCmdBuffer, u32 passIndex, bool isStart)
 {
-    if (!m_enabled || m_queryPool == VK_NULL_HANDLE)
+    if (!m_enabled || m_queryPool.GetRef() == VK_NULL_HANDLE)
         return;
 
     u32 queryIndex = passIndex * 2 + (isStart ? 0 : 1);
@@ -104,7 +94,7 @@ void VkGPUTimingQuery::WriteTimestampImpl(CommandBuffer* pCmdBuffer, u32 passInd
         return;
 
     WriteTimestampCmd cmd{};
-    cmd.queryPool = m_queryPool;
+    cmd.queryPool = &m_queryPool;
     cmd.query = queryIndex;
     cmd.isStart = isStart;
     pCmdBuffer->RecordCommand(cmd);

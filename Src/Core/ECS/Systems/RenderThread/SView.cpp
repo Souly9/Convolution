@@ -2,11 +2,7 @@
 #include "Core/ECS/EntityManager.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Rendering/Passes/PassManager.h"
-#include "Core/Rendering/Vulkan/Utils/DescriptorSetLayoutConverters.h"
-#include "Core/ECS/Components/Camera.h"
-#include "Core/ECS/Components/Transform.h"
-#include "Core/ECS/Components/View.h"
-#include <algorithm>
+#include "Core/Global/Utils/MathFunctions.h"
 
 void ECS::System::SView::Init(const SystemInitData& data)
 {
@@ -80,7 +76,8 @@ UBO::ViewUBO ECS::System::SView::BuildMainViewUBO(const Components::View* pView,
     using namespace mathstl;
 
     const Vector3& pRotInDegrees = pTransform->rotation;
-    const Vector3 upVector = Vector3(0.f, -1.f, 0.f);
+    // Standard Up vector for RHS is (0, 1, 0)
+    const Vector3 upVector = Vector3(0.f, 1.f, 0.f);
 
     const Vector3 rotation = Vector3(DirectX::XMConvertToRadians(pRotInDegrees.x),
                                      DirectX::XMConvertToRadians(pRotInDegrees.y),
@@ -98,25 +95,27 @@ UBO::ViewUBO ECS::System::SView::BuildMainViewUBO(const Components::View* pView,
     Matrix projMat =
         Matrix::CreatePerspectiveFieldOfView(DirectX::XMConvertToRadians(pView->fov),
                                              FrameGlobals::GetScreenAspectRatio(),
-                                             (stltype::max)(pView->zNear, 0.000001f), // Prevent division by zero
+                                             Math::Max(pView->zNear, 0.000001f), // Prevent division by zero
                                              pView->zFar);
+   //projMat._22 *= -1.0f;
+
+    Matrix viewProj = viewMat * projMat;
+
+    auto viewInv = ubo.viewInverse = viewMat.Invert();
+    auto projInv = ubo.projectionInverse = projMat.Invert();
 
     ubo.view = viewMat;
     ubo.projection = projMat;
-    Matrix viewProj = viewMat * projMat;
-
+    ubo.viewProjection = viewProj;
+    ubo.viewPos = Vector4(viewPos.x, viewPos.y, viewPos.z, 1.0f);
+    
     g_pApplicationState->RegisterUpdateFunction(
-        [projMat, viewMat, viewProj](ApplicationState& state)
+        [viewInv, projInv, viewProj](ApplicationState& state)
         {
-            state.invMainCamProjectionMatrix = projMat.Invert();
-            state.invMainCamViewMatrix = viewMat.Invert();
+            state.invMainCamProjectionMatrix = projInv;
+            state.invMainCamViewMatrix = viewInv;
             state.mainCamViewProjectionMatrix = viewProj;
         });
-
-    ubo.viewProjection = viewProj;
-    ubo.viewInverse = viewMat.Invert();
-    ubo.projectionInverse = projMat.Invert();
-    ubo.viewPos = Vector4(viewPos.x, viewPos.y, viewPos.z, 1.0f);
 
     return ubo;
 }

@@ -2,7 +2,6 @@
 #include "Core/Global/GlobalVariables.h"
 
 #include "Core/Global/State/ApplicationState.h"
-#include "Core/UI/LogData.h"
 #include "InfoWindow.h"
 
 class GBufferWindow : public ImGuiWindow
@@ -33,7 +32,7 @@ public:
         stltype::vector<stltype::pair<stltype::string, u64>> buffers;
         buffers.push_back({"Normals", gbufferIDs[0]});
         buffers.push_back({"Albedo", gbufferIDs[1]});
-        buffers.push_back({"UVs/Mat", gbufferIDs[2]});
+        buffers.push_back({"Depth", renderState.depthbufferImGuiID});
 
         for (u32 i = 0; i < csmIDs.size(); ++i)
         {

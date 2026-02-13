@@ -1,12 +1,16 @@
 #extension GL_EXT_nonuniform_qualifier : require
 #include "BindingSlots.h"
-#include "PerObjectBuffers.h"
 
 layout(set = ViewUBOSet, binding = ViewUBOBindingSlot) uniform ViewUBO
 {
     mat4 view;
     mat4 proj;
-} ubo;
+    mat4 viewProjection;
+    mat4 viewInverse;
+    mat4 projectionInverse;
+    vec4 viewPos;
+}
+ubo;
 
 mat3 AdjugateFromWorldMat(mat4 m)
 {

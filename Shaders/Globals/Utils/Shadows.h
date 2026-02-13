@@ -1,13 +1,24 @@
-// Returns cascade index based on view-space depth
+
+float getCascadeSplit(int index)
+{
+    int arrayIdx = index / 4;
+    int compIdx = index % 4;
+    return shadowmapViewUBO.cascadeSplits[arrayIdx][compIdx];
+}
+
 int getCascadeIndex(float viewDepth)
 {
-    // Compare with split planes
     int cascadeCount = shadowmapViewUBO.cascadeCount;
-    for (int i = 0; i < cascadeCount; ++i)
+    
+    for (int j = 0; j < cascadeCount; ++j)
     {
-        if (viewDepth < shadowmapViewUBO.cascadeSplits[i].x)
-            return i;
+        float splitDist = getCascadeSplit(j);
+        if (viewDepth < splitDist)
+        {
+            return j;
+        }
     }
+
     return cascadeCount - 1;
 }
 
@@ -28,8 +39,38 @@ vec2 poissonDisk[16] = vec2[](
    vec2( -0.81409955, 0.91437590 ), 
    vec2( 0.19984126, 0.78641367 ), 
    vec2( 0.14383161, -0.14100790 ) 
-);
+);  
 
+float sampleShadowCascade(int cascadeIndex, vec4 fragPosWorldSpace, vec3 normal, vec3 lightDir)
+{
+    vec4 fragPosLightSpace = shadowmapViewUBO.csmViewMatrices[cascadeIndex] * fragPosWorldSpace;
+    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
+    
+    projCoords.x = projCoords.x * 0.5 + 0.5;
+    projCoords.y = 1.0 - (projCoords.y * 0.5 + 0.5);
+
+    if (projCoords.z > 1.0 || projCoords.z < 0.0 || projCoords.x < 0.0 || projCoords.x > 1.0 || projCoords.y < 0.0 || projCoords.y > 1.0)
+    {
+        return 0.0;
+    }
+    // Bias logic
+    float cosTheta = clamp(dot(normal, lightDir), 0.0, 1.0);
+    float bias = max(0.005 * (1.0 - cosTheta), 0.0005);
+    
+    float currentDepth = (projCoords.z - bias);
+    float shadow = 0.0;
+    float diskRadius = 0.0005; 
+    int samples = 16;
+    for (int i = 0; i < samples; i++)
+    {
+        float pcfDepth = texture(GlobalBindlessArrayTextures[shadowmapUBO.directionalShadowMapIdx],
+                                 vec3(projCoords.xy + poissonDisk[i] * diskRadius, cascadeIndex)).x;
+        shadow += (currentDepth > (pcfDepth) ? 0.0 : 1.0);
+    }
+    
+    shadow /= float(samples);
+    return shadow;
+}
 
 float computeShadow(vec4 fragPosWorldSpace, float viewDepth, vec3 normal, vec3 lightDir)
 {
@@ -37,58 +78,29 @@ float computeShadow(vec4 fragPosWorldSpace, float viewDepth, vec3 normal, vec3 l
     if (lightUniforms.data.ClusterValues.w < 0.5)
         return 1.0;
 
-    // 1. Get Cascade Index
     int cascadeIndex = getCascadeIndex(viewDepth);
-    
-    // 2. Project to Light Space of that cascade
-    vec4 fragPosLightSpace = shadowmapViewUBO.csmViewMatrices[cascadeIndex] * fragPosWorldSpace;
-    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
+    int cascadeCount = shadowmapViewUBO.cascadeCount;
+    if (cascadeIndex < 0 || cascadeIndex >= cascadeCount)
+        return 0.0;
 
-    // 3. Transform to [0,1] range
-    projCoords.xy = projCoords.xy * 0.5 + 0.5;
-
-    // Early exit if out of bounds (though usually covered by cascade selection, safe to keep)
-    if (projCoords.z > 1.0 || projCoords.z < 0.0 || 
-        projCoords.x > 1.0 || projCoords.x < 0.0 || 
-        projCoords.y > 1.0 || projCoords.y < 0.0)    
-        return 1.0;
-
-    // 4. Slope-Scaled Bias
-    // dot(normal, lightDir) gives cosTheta. 
-    // note: lightDir should be direction TO light (normalized).
-    float cosTheta = clamp(dot(normal, lightDir), 0.0, 1.0);
-    // Bias increases as surface gets steeper relative to light
-    // Adjust bias for cascade level? Usually further cascades need less bias precision or just bigger bias?
-    // Let's keep it simple.
-    float bias = max(0.005 * (1.0 - cosTheta), 0.0005);
+    float shadow = sampleShadowCascade(cascadeIndex, fragPosWorldSpace, normal, lightDir);
     
-    // Scale bias with cascade index roughly? 
-    // float biasScale = 1.0 / (shadowmapViewUBO.cascadeSplits[cascadeIndex].x * 0.5); // Conceptually 
-    // simple constant bias is often enough if resolution is high.
-    
-    // 5. Poisson Disk Sampling (PCF)
-    float currentDepth = projCoords.z - bias;
-    float shadow = 0.0;
-    
-    // PCF Radius
-    // Scale radius by cascade to keep consistent softness in world space?
-    // Or constant in screen space?
-    // Constant in texture space means constant world softness if ortho size matches.
-    float diskRadius = 0.0005; 
-
-    // Use loop for PCF
-    for (int i = 0; i < 16; i++)
+    int nextCascade = cascadeIndex + 1;
+    if (nextCascade < shadowmapViewUBO.cascadeCount)
     {
-        // Sample from the shadow map array
-        float pcfDepth = texture(GlobalBindlessArrayTextures[shadowmapUBO.directionalShadowMapIdx], 
-                                 vec3(projCoords.xy + poissonDisk[i] * diskRadius, cascadeIndex)).x; 
+        float currentSplit = getCascadeSplit(cascadeIndex);
+        float nextSplit = getCascadeSplit(nextCascade);
         
-        shadow += (currentDepth > pcfDepth ? 0.0 : 1.0);
+        float transitionRange = (nextSplit - currentSplit) * 0.05;
+        float distanceToEdge = currentSplit - viewDepth;
+
+        if (distanceToEdge < transitionRange)
+        {
+            float nextShadow = sampleShadowCascade(nextCascade, fragPosWorldSpace, normal, lightDir);
+            float t = 1.0 - (distanceToEdge / transitionRange); // 0.0 at start of fade, 1.0 at edge
+            shadow = mix(shadow, nextShadow, smoothstep(0.0, 1.0, t));
+        }
     }
-    
-    shadow /= 16.0;
 
     return shadow;
 }
-// Wait, replacing the whole file content is easier to just get right first time.
-// I'll assume I update signature.

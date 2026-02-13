@@ -335,29 +335,30 @@ static inline u32 Conv(SyncStages stage)
         return vkStage;
     if ((u32)stage & (u32)SyncStages::TOP_OF_PIPE)
         vkStage = (vkStage | VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT);
-    else if ((u32)stage & (u32)SyncStages::DRAW_INDIRECT)
+    if ((u32)stage & (u32)SyncStages::DRAW_INDIRECT)
         vkStage = (vkStage | VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT);
-    else if ((u32)stage & (u32)SyncStages::EARLY_FRAGMENT_TESTS)
+    if ((u32)stage & (u32)SyncStages::EARLY_FRAGMENT_TESTS)
         vkStage = (vkStage | VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT);
-    else if ((u32)stage & (u32)SyncStages::LATE_FRAGMENT_TESTS)
+    if ((u32)stage & (u32)SyncStages::LATE_FRAGMENT_TESTS)
         vkStage = (vkStage | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT);
-    else if ((u32)stage & (u32)SyncStages::VERTEX_SHADER)
+    if ((u32)stage & (u32)SyncStages::VERTEX_SHADER)
         vkStage = (vkStage | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT);
-    else if ((u32)stage & (u32)SyncStages::FRAGMENT_SHADER)
+    if ((u32)stage & (u32)SyncStages::FRAGMENT_SHADER)
         vkStage = (vkStage | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT);
-    else if ((u32)stage & (u32)SyncStages::COMPUTE_SHADER)
+    if ((u32)stage & (u32)SyncStages::COMPUTE_SHADER)
         vkStage = (vkStage | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
-    else if ((u32)stage & (u32)SyncStages::COLOR_ATTACHMENT_OUTPUT)
+    if ((u32)stage & (u32)SyncStages::TRANSFER)
+        vkStage = (vkStage | VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+    if ((u32)stage & (u32)SyncStages::COLOR_ATTACHMENT_OUTPUT)
         vkStage = (vkStage | VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
-    else if ((u32)stage & (u32)SyncStages::BOTTOM_OF_PIPE)
+    if ((u32)stage & (u32)SyncStages::BOTTOM_OF_PIPE)
         vkStage = (vkStage | VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT);
-    else if ((u32)stage & (u32)SyncStages::ALL_COMMANDS)
+    if ((u32)stage & (u32)SyncStages::ALL_COMMANDS)
         vkStage = (vkStage | VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT);
-    else if ((u32)stage & (u32)SyncStages::DEPTH_OUTPUT)
+    if ((u32)stage & (u32)SyncStages::DEPTH_OUTPUT)
         vkStage =
             (vkStage | VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT);
-    else
-        DEBUG_ASSERT(false);
+            
     return vkStage;
 }
 

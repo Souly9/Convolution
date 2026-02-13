@@ -22,7 +22,7 @@ struct TextureSamplerInfo
     TextureWrapMode wrapU{TextureWrapMode::REPEAT};
     TextureWrapMode wrapV{TextureWrapMode::REPEAT};
     TextureWrapMode wrapW{TextureWrapMode::REPEAT};
-    VkBorderColor borderColor{VK_BORDER_COLOR_INT_OPAQUE_BLACK};
+    VkBorderColor borderColor{VK_BORDER_COLOR_INT_OPAQUE_WHITE};
 };
 
 struct DynamicTextureRequest
@@ -63,6 +63,9 @@ struct TextureFileInfo
     DirectX::XMINT2 extents;
     unsigned char* pixels;
     s32 texChannels;
+    u64 dataSize = 0;
+    u32 ddsFormat = 0;
+    bool supportsAlpha = false;
 };
 struct FileTextureRequest
 {
@@ -168,7 +171,7 @@ public:
 protected:
     VkImageViewCreateInfo GenerateImageViewInfo(VkFormat format, VkImage image, bool isArray);
 
-    static void SetNoMipMap(VkImageViewCreateInfo& createInfo);
+    static void SetNoMipMap(VkImageViewCreateInfo& createInfo, u32 layerCount = 1);
     static void SetMipMap(VkImageViewCreateInfo& createInfo);
     static void SetNoSwizzle(VkImageViewCreateInfo& createInfo);
 

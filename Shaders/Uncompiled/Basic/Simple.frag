@@ -2,6 +2,8 @@
 #extension GL_ARB_shading_language_include : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_debug_printf : enable
+
 #define ViewUBOSet           1
 #define TransformSSBOSet     2
 #define TileArraySet         3
@@ -12,10 +14,12 @@
 #include "../../Globals/GlobalBuffers.h"
 #include "../../Globals/LightData.h"
 #include "../../Globals/PBR/UnrealPBR.h"
+#include "../../Globals/PerObjectBuffers.h"
 #include "../../Globals/ShadowBuffers.h"
 #include "../../Globals/Textures.h"
 #include "../../Globals/Utils/Shadows.h"
 #include "../../Tonemapping/GT7.h"
+
 
 layout(location = 0) in VertexOut
 {
@@ -42,45 +46,56 @@ vec3 getCascadeDebugColor(int cascadeIndex)
 
 void main()
 {
-    vec2 texCoords = vec2(1.0 - IN.fragTexCoord.x, 1.0 - IN.fragTexCoord.y);
+    vec2 texCoords = IN.fragTexCoord;
+    vec4 uiColor = vec4(texture(GlobalBindlessTextures[gbufferUBO.gbufferUIIdx], texCoords));
     vec3 albedo = texture(GlobalBindlessTextures[gbufferUBO.gbufferAlbedoIdx], texCoords).xyz;
     vec4 texCoordMatData = vec4(texture(GlobalBindlessTextures[gbufferUBO.gbufferTexCoordMatIdx], texCoords));
     uint fragMatIdx = uint(texCoordMatData.z);
     Material fragMaterial = globalObjectDataSSBO.materials[fragMatIdx];
-    // vec4 fragTexSample = vec4(texture(GlobalBindlessTextures[6], fragTexCoords));
-    // vec4 texColor = vec4(fragTexSample.xyz, 1);
-    vec4 uiColor = vec4(texture(GlobalBindlessTextures[gbufferUBO.gbufferUIIdx], texCoords));
-    uiColor.a = mix(0, 0.8, uiColor.a);
-
-    vec4 fragPosWorldSpace = vec4(texture(GlobalBindlessTextures[gbufferUBO.gbufferPositionIdx], texCoords).xyz, 1);
     vec3 fragNormal = texture(GlobalBindlessTextures[gbufferUBO.gbufferNormalIdx], texCoords).xyz;
 
+    float fragmentDepth = texture(GlobalBindlessTextures[gbufferUBO.depthBufferIdx], texCoords).r;
+
+    uiColor.a = mix(0, 0.95, uiColor.a);
+
+    vec4 clipSpacePosition;
+    clipSpacePosition.x = texCoords.x * 2.0 - 1.0;
+    clipSpacePosition.y = (1.0 - texCoords.y) * 2.0 - 1.0;          // <--- THE FLIP FIX
+    clipSpacePosition.z = fragmentDepth;                    // Vulkan NDC Z is 0..1 (no conversion needed)
+    clipSpacePosition.w = 1.0;
+    clipSpacePosition = ubo.projectionInverse * clipSpacePosition;
+    clipSpacePosition = (ubo.viewInverse * clipSpacePosition);
+    
+    clipSpacePosition.xyz /= clipSpacePosition.w;
+    
+    vec4 fragPosWorldSpace = vec4(clipSpacePosition.xyz, 1);
     mat4 view = ubo.view;
     vec4 fragPosViewSpace = view * fragPosWorldSpace;
 
+    vec3 normal = fragNormal;
+    vec3 camPos = lightUniforms.data.CameraPos.xyz;
+
+    vec3 viewDir = normalize(camPos - fragPosWorldSpace.xyz);
     // Debug View modes
     
     int debugViewMode = int(lightUniforms.data.LightGlobals.w);
 
     DirectionalLight dirLight = lightData.dirLight;
-    vec3 L = normalize(dirLight.direction.xyz);
+    vec3 L = normalize(-dirLight.direction.xyz);
+    float viewDepth = abs(fragPosViewSpace.z);
+    vec3 N = normalize(normal);
+    vec3 V = viewDir;
+
+
     // 1 = CSM Debug
     if (debugViewMode == 1)
     {
-        float viewDepth = abs(fragPosViewSpace.z);
         int cascadeIdx = getCascadeIndex(viewDepth);
         vec3 cascadeColor = getCascadeDebugColor(cascadeIdx);
         
-        // Calculate shadow factor for this fragment
-        float shadow = computeShadow(fragPosWorldSpace, viewDepth, fragNormal, L);
-        
-        // "Shadowed parts are colored in different colors"
-        // If shadow is 0 (shadowed), show cascadeColor.
-        // If shadow is 1 (lit), show Albedo (or similar).
-        
-        // Mix: 0.0 (shadow) -> cascadeColor, 1.0 (lit) -> albedo
+        float shadow = computeShadow(fragPosWorldSpace, viewDepth, N, L);
         vec3 debugColor = mix(cascadeColor, albedo, shadow);
-        
+
         outColor.rgb = debugColor * (1.0 - uiColor.a) + uiColor.rgb * uiColor.a;
         outColor.a = 1.0;
         return;
@@ -102,20 +117,12 @@ void main()
         return;
     }
 
-    vec3 normal = fragNormal;
-    vec3 worldPos = fragPosWorldSpace.xyz;
-    vec3 camPos = lightUniforms.data.CameraPos.xyz;
-
     Material mat = fragMaterial;
 
     // Use material roughness or custom set roughness
     float roughness = 1;
     float metallic = 0;
 
-    vec3 viewDir = normalize(camPos - worldPos.xyz);
-
-    vec3 N = normalize(normal);
-    vec3 V = viewDir;
     // (Specular + Diffuse)
     vec3 directLighting = vec3(0.0);
 
@@ -138,7 +145,7 @@ void main()
         // For now treating as point lights or checking type
 
         vec3 lightContribution =
-            computePointLight(worldPos.xyz, lightPos, V, N, lightColor, albedo, roughness, metallic);
+            computePointLight(fragPosWorldSpace.xyz, lightPos, V, N, lightColor, albedo, roughness, metallic);
 
         // Apply shadow factor and accumulate
         directLighting += lightContribution;
@@ -146,7 +153,7 @@ void main()
 
     // --- Directional Light ---
     {
-        vec3 lightDir = normalize(dirLight.direction.xyz);
+        vec3 lightDir = normalize(-dirLight.direction.xyz);
         float lightIntensity = dirLight.color.w;
         vec3 lightColor = dirLight.color.xyz * lightIntensity;
 
@@ -156,8 +163,7 @@ void main()
         directLighting += lightContribution;
     }
     // Update call to computeShadow with viewDepth
-    float viewDepth = abs(fragPosViewSpace.z);
-    float dirLightShadow = computeShadow(fragPosWorldSpace, viewDepth, N, normalize(dirLight.direction.xyz));
+    float dirLightShadow = computeShadow(fragPosWorldSpace, viewDepth, N, L);
 
     float ambientIntensity = lightUniforms.data.LightGlobals.z;
     vec3 indirectLighting = computeAmbient(albedo, ambientIntensity);

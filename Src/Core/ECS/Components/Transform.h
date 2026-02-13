@@ -42,6 +42,7 @@ public:
     }
 
     void Scale(f32 s);
+    void Scale(const mathstl::Vector3& s);
 };
 } // namespace Components
 } // namespace ECS

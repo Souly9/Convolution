@@ -1,5 +1,6 @@
 #include "PassManager.h"
 #include "ClusteredShading/LightGridComputePass.h"
+#include "ClusteredShading/ClusterDebugPass.h"
 #include "Compositing/CompositPass.h"
 #include "Core/Rendering/Core/GPUTimingQuery.h"
 #include "Core/Rendering/Core/MaterialManager.h"
@@ -28,6 +29,7 @@ void RenderPasses::PassManager::InitResourceManagerAndCallbacks()
     AddPass(PassType::Main, stltype::make_unique<RenderPasses::StaticMainMeshPass>());
     AddPass(PassType::Shadow, stltype::make_unique<RenderPasses::CSMPass>());
     AddPass(PassType::Debug, stltype::make_unique<RenderPasses::DebugShapePass>());
+    AddPass(PassType::Debug, stltype::make_unique<RenderPasses::ClusterDebugPass>());
     AddPass(PassType::UI, stltype::make_unique<RenderPasses::ImGuiPass>());
     AddPass(PassType::Composite, stltype::make_unique<RenderPasses::CompositPass>());
 }
@@ -51,11 +53,8 @@ void RenderPasses::PassManager::CreatePassObjectsAndLayouts()
         {PipelineDescriptorLayout(UBO::BufferType::ShadowmapViewUBO)});
     
     // Cluster grid
-    PipelineDescriptorLayout clusterGridLayout{};
-    clusterGridLayout.type = DescriptorType::StorageBuffer;
-    clusterGridLayout.bindingSlot = s_clusterGridSSBOBindingSlot;
-    clusterGridLayout.shaderStagesToBind = ShaderTypeBits::Compute;
-    m_clusterGridSSBOLayout = DescriptorLaytoutUtils::CreateOneDescriptorSetForAll({clusterGridLayout});
+    m_clusterGridSSBOLayout = DescriptorLaytoutUtils::CreateOneDescriptorSetForAll(
+        {PipelineDescriptorLayout(UBO::BufferType::ClusterAABBsSSBO)});
 }
 
 void RenderPasses::PassManager::CreateUBOsAndMap()
@@ -63,7 +62,7 @@ void RenderPasses::PassManager::CreateUBOsAndMap()
     u64 viewUBOSize = sizeof(UBO::ViewUBO);
 
     m_lightClusterSSBO = StorageBuffer(UBO::LightClusterSSBOSize, true);
-    m_clusterGridSSBO = StorageBuffer(UBO::ClusterGridSSBOSize, true);
+    m_clusterGridSSBO = StorageBuffer(UBO::ClusterAABBSetSize, true);
 
     m_viewUBO = UniformBuffer(viewUBOSize);
     m_mappedViewUBOBuffer = m_viewUBO.MapMemory();
@@ -153,7 +152,8 @@ void RenderPasses::PassManager::InitPassesAndImGui()
         m_currentShadowMapState.shadowMapExtents = csmResolution;
     }
 
-    RecreateGbuffers(mathstl::Vector2(FrameGlobals::GetSwapChainExtent().x, FrameGlobals::GetSwapChainExtent().y));
+    // Moved RecreateGbuffers to after depth attachment creation
+    // RecreateGbuffers(mathstl::Vector2(FrameGlobals::GetSwapChainExtent().x, FrameGlobals::GetSwapChainExtent().y));
 
     ColorAttachmentInfo colorAttachmentInfo{};
     colorAttachmentInfo.format = VkGlobals::GetSwapChainImageFormat();
@@ -174,6 +174,12 @@ void RenderPasses::PassManager::InitPassesAndImGui()
 
     m_globalRendererAttachments.colorAttachments[ColorAttachmentType::GBufferColor].push_back(colorAttachment);
     m_globalRendererAttachments.depthAttachment = depthAttachment;
+
+    // Make depth texture bindless
+    m_depthBindlessHandle = g_pTexManager->MakeTextureBindless(depthRequest.handle);
+
+    // Recreate GBuffers and update UBO (now that depth is ready)
+    RecreateGbuffers(mathstl::Vector2(FrameGlobals::GetSwapChainExtent().x, FrameGlobals::GetSwapChainExtent().y));
 
     u32 idx = 0;
     for (auto& mainPassData : m_mainPassData)
@@ -263,6 +269,7 @@ void RenderPasses::PassManager::PrepareMainPassDataForFrame(MainPassData& mainPa
     mainPassData.mainView.descriptorSet = ctx.mainViewUBODescriptor;
     mainPassData.directionalLightShadowMap = m_globalRendererAttachments.directionalLightShadowMap;
     mainPassData.cascades = m_currentShadowMapState.cascadeCount;
+    mainPassData.csmStepSize = g_pApplicationState->GetCurrentApplicationState().renderState.csmStepSize;
 }
 
 void RenderPasses::PassManager::PerformInitialLayoutTransitions(FrameRendererContext& ctx,
@@ -356,8 +363,37 @@ bool RenderPasses::PassManager::RenderPassGroup(PassType groupType, const MainPa
     // Use timeline semaphore for synchronization
     cmdBuffer->SetTimelineWait(&ctx.frameTimeline, waitValue);
     cmdBuffer->SetTimelineSignal(&ctx.frameTimeline, signalValue);
-    cmdBuffer->SetWaitStages(SyncStages::TOP_OF_PIPE);
-    cmdBuffer->SetSignalStages(SyncStages::BOTTOM_OF_PIPE);
+
+    SyncStages waitStage = SyncStages::TOP_OF_PIPE;
+    SyncStages signalStage = SyncStages::ALL_COMMANDS;
+
+    if (groupType == PassType::Composite)
+    {
+        // Composite pass only needs to wait for previous work in the fragment shader
+        waitStage = SyncStages::COLOR_ATTACHMENT_OUTPUT;
+        signalStage = SyncStages::COLOR_ATTACHMENT_OUTPUT;
+    }
+    else if (groupType == PassType::Main)
+    {
+        // Main pass waits for PreProcess (Depth)
+        waitStage = SyncStages::DEPTH_OUTPUT;
+        signalStage = SyncStages::COLOR_ATTACHMENT_OUTPUT;
+    }
+    else if (groupType == PassType::PreProcess)
+    {
+        // PreProcess pass waits for nothing
+        waitStage = SyncStages::TOP_OF_PIPE;
+        signalStage = SyncStages::DEPTH_OUTPUT;
+    }
+    else if (groupType == PassType::Debug)
+    {
+        // Debug pass waits for Main pass (Color) output
+        waitStage = SyncStages::COLOR_ATTACHMENT_OUTPUT;
+        signalStage = SyncStages::ALL_COMMANDS;
+    }
+
+    cmdBuffer->SetWaitStages(waitStage);
+    cmdBuffer->SetSignalStages(signalStage);
 
     g_pQueueHandler->SubmitCommandBufferThisFrame({cmdBuffer, QueueType::Graphics});
     return true;
@@ -382,7 +418,8 @@ void RenderPasses::PassManager::RenderAllPassGroups(const MainPassData& mainPass
     RenderPassGroup(PassType::Debug, mainPassData, ctx);
     RenderPassGroup(PassType::Shadow, mainPassData, ctx);
 
-    // === TRANSITION: GBuffer + Shadow → Shader Read ===
+    // === TRANSITION: GBuffer + Shadow + Depth → Shader Read ===
+    // Add depth texture to GBuffer list for shader read transition
     TransitionGBuffersToShaderRead(ctx, gbufferTextures);
 
     // === UI PASS ===
@@ -427,6 +464,12 @@ void RenderPasses::PassManager::TransitionGBuffersToShaderRead(FrameRendererCont
         .oldLayout = ImageLayout::DEPTH_STENCIL,
         .newLayout = ImageLayout::SHADER_READ_OPTIMAL};
     g_pTexManager->EnqueueAsyncImageLayoutTransition(shadowTransition);
+    
+    AsyncLayoutTransitionRequest depthTransition{
+        .textures = {m_globalRendererAttachments.depthAttachment.GetTexture()},
+        .oldLayout = ImageLayout::DEPTH_STENCIL,
+        .newLayout = ImageLayout::SHADER_READ_OPTIMAL};
+    g_pTexManager->EnqueueAsyncImageLayoutTransition(depthTransition);
 
     g_pTexManager->DispatchAsyncOps("GBuffer to shader read");
 }
@@ -632,12 +675,10 @@ void RenderPasses::PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
         auto& ctx = m_frameRendererContexts[m_currentSwapChainIdx];
 
         // Also update zNear/zFar for the target frame if we are propagating
-        // We might be reusing data from m_dataToBePreProcessed if it wasn't cleared yet or if we store last frame data
-        // For now just taking it from current preprocessing data which should be valid if we are here
         ctx.zNear = m_dataToBePreProcessed.zNear;
         ctx.zFar = m_dataToBePreProcessed.zFar;
 
-        m_resourceManager.WriteInstanceSSBODescriptorUpdate(targetFrame);
+        m_resourceManager.WriteInstanceSSBODescriptorUpdate(m_currentSwapChainIdx);
 
         ctx.mainViewUBODescriptor->WriteBufferUpdate(m_viewUBO);
         ctx.tileArraySSBODescriptor->WriteSSBOUpdate(m_lightClusterSSBO);
@@ -646,7 +687,7 @@ void RenderPasses::PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
 
     if (g_pMaterialManager->IsBufferDirty())
     {
-        m_resourceManager.UpdateGlobalMaterialBuffer(g_pMaterialManager->GetMaterialBuffer(), frameIdx);
+        m_resourceManager.UpdateGlobalMaterialBuffer(g_pMaterialManager->GetMaterialBuffer(), m_currentSwapChainIdx);
         m_needsToPropagateMainDataUpdate = true;
         m_frameIdxToPropagate = frameIdx;
         g_pMaterialManager->MarkBufferUploaded();
@@ -710,7 +751,7 @@ void RenderPasses::PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
             m_currentPassGeometryState = passData;
             if (needsRebuild)
             {
-                m_resourceManager.UpdateInstanceDataSSBO(passData.staticMeshPassData, frameIdx);
+                m_resourceManager.UpdateInstanceDataSSBO(passData.staticMeshPassData, m_currentSwapChainIdx);
                 PreProcessMeshData(
                     passData.staticMeshPassData, FrameGlobals::GetPreviousFrameNumber(frameIdx), frameIdx);
             }
@@ -722,7 +763,7 @@ void RenderPasses::PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
             const auto& entityID = data.first;
             transformSSBO.insert(transformSSBO.begin() + m_entityToTransformUBOIdx[entityID], data.second);
         }
-        m_resourceManager.UpdateTransformBuffer(transformSSBO, m_dataToBePreProcessed.frameIdx);
+        m_resourceManager.UpdateTransformBuffer(transformSSBO, m_currentSwapChainIdx);
 
         if (m_dataToBePreProcessed.mainViewUBO.has_value())
         {
@@ -730,11 +771,18 @@ void RenderPasses::PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
                 &m_dataToBePreProcessed.mainViewUBO.value(), sizeof(UBO::ViewUBO), m_currentSwapChainIdx);
         }
 
-        auto& mainPassData = m_mainPassData.at(frameIdx);
+        // Set zNear/zFar for this frame's context (needed by shadow pass)
+        auto& ctx = m_frameRendererContexts[m_currentSwapChainIdx];
+        ctx.zNear = m_dataToBePreProcessed.zNear;
+        ctx.zFar = m_dataToBePreProcessed.zFar;
+
         // Set the camera view matrix for shadow cascade computation
         if (m_dataToBePreProcessed.mainViewUBO.has_value())
         {
-            mainPassData.mainCamViewMatrix = m_dataToBePreProcessed.mainViewUBO->view;
+            m_mainPassData[m_currentSwapChainIdx].mainCamViewMatrix =
+                m_dataToBePreProcessed.mainViewUBO->view;
+            m_mainPassData[m_currentSwapChainIdx].mainCamInvViewProj =
+                m_dataToBePreProcessed.mainViewUBO->viewProjection.Invert();
         }
 
         if (m_dataToBePreProcessed.lightVector.empty() == false ||
@@ -764,10 +812,10 @@ void RenderPasses::PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
             // Directional lights
             {
                 const auto& dirLights = m_dataToBePreProcessed.dirLightVector;
-                mainPassData.csmViews.clear();
+                m_mainPassData.at(m_currentSwapChainIdx).csmViews.clear();
                 for (const auto& dirLight : dirLights)
                 {
-                    auto& dirLightView = mainPassData.csmViews.emplace_back();
+                    auto& dirLightView = m_mainPassData.at(m_currentSwapChainIdx).csmViews.emplace_back();
                     dirLightView.dir =
                         mathstl::Vector3(dirLight.direction.x, dirLight.direction.y, dirLight.direction.z);
                     dirLightView.cascades = 1; // Force Single Shadow Map
@@ -777,14 +825,14 @@ void RenderPasses::PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
 
         // Clear
         m_needsToPropagateMainDataUpdate = true;
-        m_frameIdxToPropagate = frameIdx;
+        m_frameIdxToPropagate = m_currentSwapChainIdx;
         m_dataToBePreProcessed.Clear();
         g_pQueueHandler->DispatchAllRequests();
     }
 
     // Light uniforms (updated every frame for camera pos, exposure, ambient, etc.)
     {
-        auto& mainPassData = m_mainPassData.at(frameIdx);
+        auto& mainPassData = m_mainPassData.at(m_currentSwapChainIdx);
         const auto camEnt = g_pApplicationState->GetCurrentApplicationState().mainCameraEntity;
         const ECS::Components::Camera* camComp = g_pEntityManager->GetComponent<ECS::Components::Camera>(camEnt);
 
@@ -811,14 +859,9 @@ void RenderPasses::PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
         float zFar = camComp->zFar;
         u32 sliceCount = renderState.clusterCount.z;
 
-        // Linear Z slicing
-        // index = (z - zNear) / (zFar - zNear) * sliceCount
-        // index = z * scale + bias
-        // scale = sliceCount / (zFar - zNear)
-        // bias = -zNear * scale
-
-        float scale = (float)sliceCount / (zFar - zNear);
-        float bias = -zNear * scale;
+        float logRatio = std::log(zFar / zNear);
+        float scale = (float)sliceCount / logRatio;
+        float bias = -std::log(zNear) * scale;
 
         data.ClusterValues = mathstl::Vector4(scale, bias, (float)sliceCount, renderState.shadowsEnabled ? 1.0f : 0.0f);
         data.ClusterSize = mathstl::Vector4((float)renderState.clusterCount.x,
@@ -894,6 +937,9 @@ void RenderPasses::PassManager::RecreateGbuffers(const mathstl::Vector2& resolut
         g_pTexManager->MakeTextureBindless(gbufferRequestUV.handle),
         g_pTexManager->MakeTextureBindless(gbufferRequest3.handle), // TODO: Replace with actual gbuffer 4 when needed
         g_pTexManager->MakeTextureBindless(gbufferRequestUI.handle)};
+
+    // Add depth texture handle
+    gbufferHandles.push_back(m_depthBindlessHandle);
 
     // Update gbuffer descriptor set
     memcpy(m_mappedGBufferPostProcessUBO, &gbufferHandles[0], sizeof(BindlessTextureHandle) * gbufferHandles.size());
@@ -979,17 +1025,17 @@ void RenderPasses::PassManager::RecreateShadowMaps(u32 cascades, const mathstl::
         vkDeviceWaitIdle(VkGlobals::GetLogicalDevice());
         g_pTexManager->FreeTexture(csm.handle);
     }
-    csm.cascades = cascades; // FORCE 1 CASCADE
+    csm.cascades = cascades; 
     csm.format = DEPTH_BUFFER_FORMAT;
     DynamicTextureRequest shadowMapInfo{};
     shadowMapInfo.AddName("Directional Light CSM");
     csm.handle = shadowMapInfo.handle = g_pTexManager->GenerateHandle();
-    shadowMapInfo.extents = DirectX::XMUINT3(extents.x, extents.y, cascades); // 1 Layer
+    shadowMapInfo.extents = DirectX::XMUINT3(extents.x, extents.y, cascades); 
     shadowMapInfo.format = csm.format;
     shadowMapInfo.usage = Usage::ShadowMap;
-    shadowMapInfo.samplerInfo.wrapU = TextureWrapMode::CLAMP_TO_EDGE;
-    shadowMapInfo.samplerInfo.wrapV = TextureWrapMode::CLAMP_TO_EDGE;
-    shadowMapInfo.samplerInfo.wrapW = TextureWrapMode::CLAMP_TO_EDGE;
+    shadowMapInfo.samplerInfo.wrapU = TextureWrapMode::CLAMP_TO_BORDER;
+    shadowMapInfo.samplerInfo.wrapV = TextureWrapMode::CLAMP_TO_BORDER;
+    shadowMapInfo.samplerInfo.wrapW = TextureWrapMode::CLAMP_TO_BORDER;
 
     csm.pTexture = g_pTexManager->CreateTextureImmediate(shadowMapInfo);
     csm.bindlessHandle = g_pTexManager->MakeTextureBindless(shadowMapInfo.handle);
@@ -1021,8 +1067,6 @@ void RenderPasses::PassManager::RecreateShadowMaps(u32 cascades, const mathstl::
         DEBUG_ASSERT(vkCreateImageView(VkGlobals::GetLogicalDevice(), &viewInfo, nullptr, &csm.cascadeViews[i]) ==
                      VK_SUCCESS);
     }
-
-    // Note: ImGui registration is done in InitPassesAndImGui after this function is called
 
     // Update gbuffer descriptor set
     std::memcpy(m_mappedShadowMapUBO, &csm.bindlessHandle, sizeof(BindlessTextureHandle));

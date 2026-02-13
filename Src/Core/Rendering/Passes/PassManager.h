@@ -44,7 +44,7 @@ struct EntityMeshData
 
     bool IsDebugMesh() const
     {
-        return flags[s_isDebugMeshFlag];
+        return flags[s_isDebugMeshFlag] || flags[s_isDebugWireframeMesh];
     }
     bool IsInstanced() const
     {
@@ -117,6 +117,7 @@ struct MainPassData
     GBuffer* pGbuffer;
     RenderView mainView;
     mathstl::Matrix mainCamViewMatrix;
+    mathstl::Matrix mainCamInvViewProj;
     // Views we want to render with CSMs
     stltype::vector<CsmRenderView> csmViews;
     // Views we just render into normal shadowmaps whatever those will end up
@@ -126,6 +127,7 @@ struct MainPassData
     stltype::hash_map<UBO::DescriptorContentsType, DescriptorSet*> bufferDescriptors;
     CascadedShadowMap directionalLightShadowMap;
     u32 cascades;
+    f32 csmStepSize;
 };
 
 enum class PassType
@@ -338,7 +340,7 @@ private:
 
     // Pass data for each frame
     stltype::hash_map<PassType, stltype::vector<stltype::unique_ptr<ConvolutionRenderPass>>> m_passes{};
-    stltype::fixed_vector<MainPassData, FRAMES_IN_FLIGHT> m_mainPassData{FRAMES_IN_FLIGHT};
+    stltype::fixed_vector<MainPassData, SWAPCHAIN_IMAGES> m_mainPassData{SWAPCHAIN_IMAGES};
     stltype::fixed_vector<FrameRendererContext, SWAPCHAIN_IMAGES> m_frameRendererContexts{};
     stltype::fixed_vector<Semaphore, SWAPCHAIN_IMAGES> m_imageAvailableSemaphores{SWAPCHAIN_IMAGES};
     stltype::fixed_vector<Fence, SWAPCHAIN_IMAGES> m_imageAvailableFences{SWAPCHAIN_IMAGES};
@@ -434,6 +436,7 @@ private:
     u32 m_currentFrame{0};
     bool m_needsToPropagateMainDataUpdate{false};
     u32 m_frameIdxToPropagate{0};
+    BindlessTextureHandle m_depthBindlessHandle{0};
 };
 } // namespace RenderPasses
 

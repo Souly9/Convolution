@@ -11,6 +11,7 @@ static constexpr u32 s_globalGbufferPostProcessUBOSlot = GlobalGBufferPostProces
 static constexpr u32 s_globalInstanceDataSSBOSlot = GlobalInstanceDataSSBOSlot;
 static constexpr u32 s_shadowmapUBOBindingSlot = GlobalShadowMapUBOSlot;
 static constexpr u32 s_shadowmapViewUBOBindingSlot = ShadowMapDataBindingSlot;
+static constexpr u32 s_clusterAABBsBindingSlot = ClusterGridSSBOSlot;
 static constexpr u32 s_globalBindlessTextureBufferBindingSlot = GlobalBindlessTextureBufferSlot;
 static constexpr u32 s_globalBindlessArrayTextureBufferBindingSlot = GlobalBindlessArrayTextureBufferSlot;
 static constexpr u32 s_globalBindlessViewMatricesBufferBindingSlot = 300;

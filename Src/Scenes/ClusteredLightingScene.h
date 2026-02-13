@@ -13,6 +13,11 @@ public:
     {
     }
 
+    static stltype::string GetSceneName()
+    {
+        return "Clustered Lighting Scene";
+    }
+
     virtual void Load() override
     {
         // 0. Create Scene Hierarchy Roots

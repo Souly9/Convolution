@@ -508,7 +508,7 @@ bool RenderBackendImpl<Vulkan>::CreateSwapChain()
 
 void RenderBackendImpl<Vulkan>::CreateSwapChainImages()
 {
-    const auto ex = DirectX::XMUINT3(FrameGlobals::GetSwapChainExtent().x, FrameGlobals::GetSwapChainExtent().y, 0);
+    const auto ex = DirectX::XMUINT3(FrameGlobals::GetSwapChainExtent().x, FrameGlobals::GetSwapChainExtent().y, 1);
     TextureInfoBase info{};
     info.extents = ex;
     for (auto& image : m_swapChainImages)

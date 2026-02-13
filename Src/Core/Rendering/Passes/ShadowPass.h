@@ -25,15 +25,21 @@ public:
     // Sets cascade count and rebuilds pipeline if changed
     void SetCascadeCount(u32 cascades);
 
+
 protected:
-    stltype::array<mathstl::Matrix, 16> ComputeLightViewProjMatrices(u32 cascades,
-                                                                     f32 fov,
-                                                                     f32 mainCamNear,
-                                                                     f32 mainCamFar,
-                                                                     mathstl::Vector2 mainFrustumExtents,
-                                                                     const mathstl::Vector3& lightDir,
-                                                                     stltype::array<f32, 16>& splits,
-                                                                     u32 shadowMapSize);
+    stltype::array<mathstl::Matrix, 16> ComputeLightViewProjMatrices(
+        u32 cascades,
+        f32 mainCamNear,
+        f32 mainCamFar,
+        f32 lambda,
+        f32 fov,
+        f32 aspectRatio,
+        const mathstl::Matrix& view,
+        const mathstl::Matrix& invViewProj,
+        const mathstl::Vector3& lightDir,
+        stltype::array<f32, 16>& splits,
+        stltype::array<mathstl::Matrix, 16>& lightViewProjMatrices,
+        u32 shadowMapSize);
 
     // Every pass should only have one pipeline as we're working with uber shaders + bindless
     PSO m_mainPSO;

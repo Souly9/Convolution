@@ -1,4 +1,6 @@
 #include "MainMenuBar.h"
+#include "Scenes/BistroExteriorScene.h"
+#include "Scenes/ClusteredLightingScene.h"
 #include "Scenes/SampleScene.h"
 #include "Scenes/SponzaScene.h"
 #include <imgui/imgui.h>
@@ -43,7 +45,9 @@ void MainMenuBar::DrawMenuBar(f32 dt, ApplicationInfos& appInfos)
             if (ImGui::BeginMenu("Load Scene", ""))
             {
                 stltype::vector<stltype::string> sceneNames = {SampleScene::GetSceneName(),
-                                                               SponzaScene::GetSceneName()};
+                                                               SponzaScene::GetSceneName(),
+                                                               BistroExteriorScene::GetSceneName(),
+                                                               ClusteredLightingScene::GetSceneName()};
                 const auto& currentSceneName = g_pApplicationState->GetCurrentScene()->GetName();
                 for (auto& name : sceneNames)
                 {
@@ -56,6 +60,14 @@ void MainMenuBar::DrawMenuBar(f32 dt, ApplicationInfos& appInfos)
                         else if (name == SponzaScene::GetSceneName())
                         {
                             g_pApplicationState->SetCurrentScene(stltype::make_unique<SponzaScene>());
+                        }
+                        else if (name == BistroExteriorScene::GetSceneName())
+                        {
+                            g_pApplicationState->SetCurrentScene(stltype::make_unique<BistroExteriorScene>());
+                        }
+                        else if (name == ClusteredLightingScene::GetSceneName())
+                        {
+                            g_pApplicationState->SetCurrentScene(stltype::make_unique<ClusteredLightingScene>());
                         }
                         else
                         {

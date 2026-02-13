@@ -36,7 +36,7 @@ void DepthPrePass::Init(RendererAttachmentInfo& attachmentInfo, const SharedReso
         CreateDefaultDepthAttachment(LoadOp::CLEAR, attachmentInfo.depthAttachment.GetTexture());
 
     InitBaseData(attachmentInfo);
-    m_indirectCmdBuffer = IndirectDrawCommandBuffer(1000);
+    m_indirectCmdBuffer = IndirectDrawCommandBuffer(1000000);
 
     BuildPipelines();
 }

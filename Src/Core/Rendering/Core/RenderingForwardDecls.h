@@ -44,6 +44,7 @@ class StagingBuffer;             // Direct class
 class UniformBuffer;             // Direct class
 
 class VkGPUTimingQuery;
+class QueryPoolVulkan;
 
 // Type aliases - abstract API-specific types
 using GenericBuffer = GenBufferVulkan;
@@ -65,6 +66,7 @@ using DepthAttachment = DepthBufferAttachmentVulkan;
 using RawSemaphoreHandle = VkSemaphore;
 using IndexedIndirectDrawCmd = VkDrawIndexedIndirectCommand;
 using GPUTimingQuery = VkGPUTimingQuery;
+using QueryPool = QueryPoolVulkan;
 
 // Bindless texture handle type
 using BindlessTextureHandle = u32;

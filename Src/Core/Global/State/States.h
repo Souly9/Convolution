@@ -39,6 +39,8 @@ struct RendererState
     u32 vertexCount{};
     u32 directionalLightCascades{CSM_INITIAL_CASCADES};
     mathstl::Vector2 csmResolution{CSM_DEFAULT_RES};
+    f32 csmStepSize{1.0f};
+    f32 csmLambda{0.4f};
     f32 exposure{1.0f};
     s32 toneMapperType{1}; // 0 = None, 1 = ACES, 2 = Uncharted, 3 = GT7
     f32 gt7PaperWhite{150.0f};

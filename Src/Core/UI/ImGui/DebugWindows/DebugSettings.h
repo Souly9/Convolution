@@ -1,7 +1,9 @@
 #pragma once
-#include "Core/Global/CommonGlobals.h"
 #include "Core/ECS/Components/Camera.h"
+#include "Core/Global/CommonGlobals.h"
+#include "Core/Global/Utils/MathFunctions.h"
 #include "InfoWindow.h"
+
 
 class DebugSettingsWindow : public ImGuiWindow
 {
@@ -11,13 +13,6 @@ public:
         bool drawDebugMeshes = m_drawDebugMeshes;
         ImGui::Begin("Debug Settings", &m_isOpen);
         ImGui::Checkbox("Draw debug meshes", &drawDebugMeshes);
-        s32 currentCascades = g_pApplicationState->GetCurrentApplicationState().renderState.directionalLightCascades;
-
-        if (ImGui::SliderInt("Directional Light CSM Cascades: ", &currentCascades, 1, 10))
-        {
-            g_pApplicationState->RegisterUpdateFunction(
-                [currentCascades](auto& state) { state.renderState.directionalLightCascades = currentCascades; });
-        }
 
         if (ImGui::Button("Hot Reload Shaders"))
         {
@@ -31,11 +26,22 @@ public:
             g_pApplicationState->RegisterUpdateFunction(
                 [showClusterAABBs](auto& state) { 
                     state.renderState.showClusterAABBs = showClusterAABBs;
-                    // Mark Camera dirty to trigger SClusterAABB system update
-                    g_pEntityManager->MarkComponentDirty(ECS::ComponentID<ECS::Components::Camera>::ID);
                 });
         }
 
+        const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+        const char* debugModes[] = {"None", "CSM Cascades", "Clusters"};
+        int currentDebugMode = Math::Clamp(renderState.debugViewMode, 0, 2);
+        int uiDebugMode = currentDebugMode;
+
+        if (ImGui::Combo("Debug View Mode", &uiDebugMode, debugModes, IM_ARRAYSIZE(debugModes)))
+        {
+            if (uiDebugMode != currentDebugMode)
+            {
+                g_pApplicationState->RegisterUpdateFunction([uiDebugMode](ApplicationState& state)
+                                                            { state.renderState.debugViewMode = uiDebugMode; });
+            }
+        }
         ImGui::End();
 
         if (drawDebugMeshes != m_drawDebugMeshes)

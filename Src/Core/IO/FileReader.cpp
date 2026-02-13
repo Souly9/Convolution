@@ -6,7 +6,9 @@
 #include <fstream>
 #undef abs
 #define STBI_NO_SIMD
+#include <dds/dds.hpp>
 #include <stb/stb_image.h>
+
 
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Global/Profiling.h"
@@ -127,10 +129,49 @@ void FileReader::ReadImageFile(const IORequest& request)
 {
     ScopedZone("FileReader::Read Image File");
     ReadTextureInfo info{};
-    info.pixels =
-        stbi_load(request.filePath.data(), &info.extents.x, &info.extents.y, &info.texChannels, STBI_rgb_alpha);
+    info.filePath = request.filePath;
+
+    bool isDDS = false;
+    if (request.filePath.size() > 4)
+    {
+        stltype::string extension = request.filePath.substr(request.filePath.size() - 4);
+        if (extension == ".dds" || extension == ".DDS")
+        {
+            isDDS = true;
+        }
+    }
+
+    if (isDDS)
+    {
+        dds::Image img;
+        dds::readFile(request.filePath.data(), &img);
+        if (img.mipmaps.empty())
+        {
+            DEBUG_LOGF("[FileReader] Failed to load DDS or empty mipmaps: {}", request.filePath.data());
+            return;
+        }
+
+        info.extents.x = img.width;
+        info.extents.y = img.height;
+        info.dataSize = img.mipmaps[0].size_bytes();
+        info.ddsFormat = (u32)img.format;
+        info.supportsAlpha = img.supportsAlpha;
+
+        // Copy the first mipmap data as we need it to outlive this scope
+        // and be freed by FreeImageData
+        info.pixels = (unsigned char*)malloc(info.dataSize);
+        memcpy(info.pixels, img.mipmaps[0].data(), info.dataSize);
+    }
+    else
+    {
+        info.pixels =
+            stbi_load(request.filePath.data(), &info.extents.x, &info.extents.y, &info.texChannels, STBI_rgb_alpha);
+        info.dataSize = (u64)info.extents.x * info.extents.y * 4;
+        info.ddsFormat = 0; // Standard RGBA8
+        info.supportsAlpha = true;
+    }
+
     DEBUG_ASSERT(info.pixels);
-    info.filePath = std::move(request.filePath);
 
     const IOImageReadCallback* callback = stltype::get_if<IOImageReadCallback>(&request.callback);
     if (callback)
@@ -139,7 +180,8 @@ void FileReader::ReadImageFile(const IORequest& request)
 
 void FileReader::FreeImageData(unsigned char* pixels)
 {
-    stbi_image_free(pixels);
+    // stbi_image_free usually just calls free, and we use malloc for DDS
+    free(pixels);
 }
 
 void FileReader::ReadMeshFile(const IORequest& request)

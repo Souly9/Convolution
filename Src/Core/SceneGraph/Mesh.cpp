@@ -8,14 +8,20 @@ MeshManager::MeshManager()
     // Plane primitive
     {
         stltype::vector<CompleteVertex> vertexData = {
+            // Top-Left
             CompleteVertex{
-                mathstl::Vector3{-1, 1, 0.0f}, mathstl::Vector3{0.0f, 0.0f, 1.0f}, mathstl::Vector2{1.f, 0.f}},
+                mathstl::Vector3{-1, 1, 0.0f}, mathstl::Vector3{0.0f, 0.0f, 1.0f}, mathstl::Vector2{0.f, 0.f}},
+            // Top-Right
             CompleteVertex{
-                mathstl::Vector3{1, 1, 0.0f}, mathstl::Vector3{0.0f, 0.0f, 1.0f}, mathstl::Vector2{0.f, 0.f}},
+                mathstl::Vector3{1, 1, 0.0f}, mathstl::Vector3{0.0f, 0.0f, 1.0f}, mathstl::Vector2{1.f, 0.f}},
+            // Bottom-Right
             CompleteVertex{
-                mathstl::Vector3{1, -1, 0.0f}, mathstl::Vector3{0.0f, 0.0f, 1.0f}, mathstl::Vector2{0.f, 1.f}},
+                mathstl::Vector3{1, -1, 0.0f}, mathstl::Vector3{0.0f, 0.0f, 1.0f}, mathstl::Vector2{1.f, 1.f}},
+            // Bottom-Left
             CompleteVertex{
-                mathstl::Vector3{-1, -1, 0.0f}, mathstl::Vector3{0.0f, 0.0f, 1.0f}, mathstl::Vector2{1.f, 1.f}}};
+                mathstl::Vector3{-1, -1, 0.0f}, mathstl::Vector3{0.0f, 0.0f, 1.0f}, mathstl::Vector2{0.f, 1.f}}};
+        
+        // 0-1-2 (TL-TR-BR), 2-3-0 (BR-BL-TL)
         const stltype::vector<u32> indices = {0, 1, 2, 2, 3, 0};
 
         m_meshes.push_back(stltype::make_unique<Mesh>(vertexData, indices));

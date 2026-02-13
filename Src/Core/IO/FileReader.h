@@ -12,6 +12,9 @@ struct ReadTextureInfo
     DirectX::XMINT2 extents;
     unsigned char* pixels;
     s32 texChannels;
+    u64 dataSize = 0;
+    u32 ddsFormat = 0;
+    bool supportsAlpha = false;
 };
 
 struct ReadBytesInfo

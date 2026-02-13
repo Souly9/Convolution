@@ -8,6 +8,40 @@
 #include "Defines/GlobalBuffers.h"
 #include "Utils/DescriptorLayoutUtils.h"
 #include "Utils/GeometryBufferBuildUtils.h"
+#include "Core/Global/LogDefines.h"
+
+
+void SharedResourceManager::UploadDebugMesh(const Mesh& mesh)
+{
+    m_bufferUpdateMutex.lock();
+    DEBUG_LOG("Uploaded debug");
+    AsyncQueueHandler::MeshTransfer cmd{};
+    stltype::vector<CompleteVertex>& vertices = cmd.vertices;
+    vertices.reserve(mesh.vertices.size());
+    stltype::vector<u32> indices = cmd.indices;
+    indices.reserve(mesh.indices.size());
+    cmd.pBuffersToFill = &m_debugGeometryBuffers;
+
+    MeshResourceData meshData{};
+    meshData.indexBufferOffset = m_debugBufferOffsetData.indexBufferOffset;
+    meshData.vertBufferOffset = m_debugBufferOffsetData.vertBufferOffset;
+    meshData.indexCount = mesh.indices.size();
+    meshData.vertCount = mesh.vertices.size();
+
+    Utils::GenerateDrawCommandForMesh(
+        mesh, m_debugBufferOffsetData.indexBufferOffset, cmd.vertices, cmd.indices);
+    
+    cmd.vertexOffset = m_debugBufferOffsetData.vertBufferOffset * sizeof(CompleteVertex);
+    cmd.indexOffset = m_debugBufferOffsetData.indexBufferOffset * sizeof(u32);
+
+    m_debugBufferOffsetData.indexBufferOffset += mesh.indices.size();
+    m_debugBufferOffsetData.vertBufferOffset += mesh.vertices.size();
+
+    m_debugMeshHandles[&mesh] = meshData;
+
+    g_pQueueHandler->SubmitTransferCommandAsync(cmd);
+    m_bufferUpdateMutex.unlock();
+}
 
 void SharedResourceManager::Init()
 {
@@ -16,6 +50,10 @@ void SharedResourceManager::Init()
     info.enableBindlessTextureDescriptors = false;
     info.enableStorageBufferDescriptors = true;
     m_descriptorPool.Create(info);
+
+    m_debugBufferOffsetData.vertBufferOffset = 0;
+    m_debugBufferOffsetData.indexBufferOffset = 0;
+    m_debugBufferOffsetData.instanceBufferIdx = 0;
 
     u64 transBufferSize = UBO::GlobalTransformSSBOSize;
 
@@ -39,24 +77,14 @@ void SharedResourceManager::Init()
         m_frameData[i].pSceneInstanceSSBOSet = m_descriptorPool.CreateDescriptorSet(m_sceneInstanceSSBOLayout);
         m_frameData[i].pSceneInstanceSSBOSet->SetBindingSlot(
             UBO::s_UBOTypeToBindingSlot[UBO::BufferType::TransformSSBO]);
-        {
-            AsyncQueueHandler::SSBOTransfer transfer{.data = m_currentFrameInstanceData.data(),
-                                                     .size = MAX_ENTITIES * sizeof(m_currentFrameInstanceData[0]),
-                                                     .offset = 0,
-                                                     .pDescriptorSet = m_frameData[i].pSceneInstanceSSBOSet,
-                                                     .pStorageBuffer = &m_sceneInstanceBuffer,
-                                                     .dstBinding = s_globalInstanceDataSSBOSlot};
-            g_pQueueHandler->SubmitTransferCommandAsync(transfer);
-        }
-        {
-            AsyncQueueHandler::SSBOTransfer transfer{.data = (void*)materialBuffer.data(),
-                                                     .size = UBO::GlobalMaterialSSBOSize,
-                                                     .offset = 0,
-                                                     .pDescriptorSet = m_frameData[i].pSceneInstanceSSBOSet,
-                                                     .pStorageBuffer = &m_materialBuffer,
-                                                     .dstBinding = s_globalMaterialBufferSlot};
-            g_pQueueHandler->SubmitTransferCommandAsync(transfer);
-        }
+        
+        // Initialize all descriptor bindings directly
+        // Binding 1: Transform Matrix
+        m_frameData[i].pSceneInstanceSSBOSet->WriteSSBOUpdate(m_transformBuffer, s_modelSSBOBindingSlot);
+        // Binding 2: Material Data 
+        m_frameData[i].pSceneInstanceSSBOSet->WriteSSBOUpdate(m_materialBuffer, s_globalMaterialBufferSlot);
+        // Binding 3: Instance Data
+        m_frameData[i].pSceneInstanceSSBOSet->WriteSSBOUpdate(m_sceneInstanceBuffer, s_globalInstanceDataSSBOSlot);
     }
     m_bufferUpdateMutex.unlock();
 }
@@ -128,7 +156,27 @@ void SharedResourceManager::UpdateInstanceDataSSBO(stltype::vector<RenderPasses:
     for (auto& meshData : meshes)
     {
         auto& data = instanceData.emplace_back();
-        data.drawData = m_meshHandles.at(meshData.meshData.pMesh); // If this fails we have a problem either way
+        MeshHandle handle;
+
+        if (meshData.meshData.IsDebugMesh())
+        {
+            if (const auto& it = m_debugMeshHandles.find(meshData.meshData.pMesh); it != m_debugMeshHandles.end())
+            {
+                handle = it->second;
+            }
+            else
+            {
+                // Not in debug buffer yet, upload it
+                UploadDebugMesh(*meshData.meshData.pMesh);
+                handle = m_debugMeshHandles[meshData.meshData.pMesh];
+            }
+        }
+        else
+        {
+            handle = m_meshHandles.at(meshData.meshData.pMesh); // If this fails we have a problem either way
+        }
+
+        data.drawData = handle;
         data.aabbCenterTransIdx = mathstl::Vector4(meshData.meshData.aabb.center);
         data.aabbExtentsMatIdx = mathstl::Vector4(meshData.meshData.aabb.extents);
         data.SetMaterialIdx(g_pMaterialManager->GetMaterialIdx(meshData.meshData.pMaterial));
@@ -137,12 +185,11 @@ void SharedResourceManager::UpdateInstanceDataSSBO(stltype::vector<RenderPasses:
         meshData.meshData.meshResourceHandle = data.drawData;
         meshData.meshData.instanceDataIdx = (u32)instanceData.size() - 1;
     }
-    auto pDescriptor = m_frameData[thisFrameNum].pSceneInstanceSSBOSet;
     AsyncQueueHandler::SSBOTransfer transfer{.data = m_currentFrameInstanceData.data(),
                                              .size = m_currentFrameInstanceData.size() *
                                                      sizeof(m_currentFrameInstanceData[0]),
                                              .offset = 0,
-                                             .pDescriptorSet = pDescriptor,
+                                             .pDescriptorSet = nullptr, // Don't update descriptor set, buffer handle is constant
                                              .pStorageBuffer = &m_sceneInstanceBuffer,
                                              .dstBinding = s_globalInstanceDataSSBOSlot};
     g_pQueueHandler->SubmitTransferCommandAsync(transfer);

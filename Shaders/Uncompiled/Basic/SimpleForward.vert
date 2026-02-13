@@ -4,8 +4,9 @@
 #define ViewUBOSet           1
 #define TransformSSBOSet     2
 #define PassPerObjectDataSet 3
-#include "../../Globals/GlobalBuffers.h"
 #include "../../Globals/DrawBuildBuffers.h"
+#include "../../Globals/GlobalBuffers.h"
+#include "../../Globals/PerObjectBuffers.h"
 
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;

@@ -1,0 +1,87 @@
+#version 450
+#extension GL_ARB_shading_language_include : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_scalar_block_layout : enable
+
+#define ViewUBOSet     0
+#define TileArraySet   1
+#define ClusterGridSet 2
+#include "../../Globals/ClusteredShading/AABBs.h"
+#include "../../Globals/GlobalBuffers.h"
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(push_constant, scalar) uniform PushConstants
+{
+    ivec3 clusterCount;
+    uint numLights;
+    vec4 nearFar; // x=near, y=far
+}
+pc;
+
+// Unproject a UV + NDC depth to view space
+vec3 screenToView(vec2 uv, float ndcDepth)
+{
+    vec4 clip = vec4(uv * 2.0 - 1.0, ndcDepth, 1.0);
+    vec4 view = ubo.projectionInverse * clip;
+    return view.xyz / view.w; // Perspective divide
+}
+
+void main()
+{
+    uint clusterX = gl_GlobalInvocationID.x;
+    uint clusterY = gl_GlobalInvocationID.y;
+    uint clusterZ = gl_GlobalInvocationID.z;
+
+    if (clusterX >= pc.clusterCount.x || clusterY >= pc.clusterCount.y || clusterZ >= pc.clusterCount.z)
+        return;
+
+    // 1. Calculate the Cluster Tile (Screen Space)
+    // We interpret the cluster grid as 3D (X, Y, Z). X and Y map to screen tiles.
+    vec2 tileMin = vec2(clusterX, clusterY) / vec2(pc.clusterCount.xy);
+    vec2 tileMax = vec2(clusterX + 1, clusterY + 1) / vec2(pc.clusterCount.xy);
+
+    // 2. Compute View Space Rays for the Tile Corners
+    // We use the near plane (ndcDepth = 0.0) to get the direction.
+    // This gives us points on the near plane.
+    vec3 viewMin = screenToView(tileMin, 0.0); // Bottom-Left equivalent
+    vec3 viewMax = screenToView(tileMax, 0.0); // Top-Right equivalent
+
+    // 3. Compute Logarithmic Depth Slices (View Space Z)
+    // Z is negative in View Space (looking down -Z). 
+    // nearFar.x = near plane distance (positive)
+    // nearFar.y = far plane distance (positive)
+    // slice = -near * (far/near)^(k/counts)
+    float zNear = pc.nearFar.x;
+    float zFar  = pc.nearFar.y;
+    
+    float sliceStep     = float(clusterZ) / float(pc.clusterCount.z);
+    float sliceStepNext = float(clusterZ + 1) / float(pc.clusterCount.z);
+
+    float zRatio = zFar / zNear;
+    float sliceNear = -zNear * pow(zRatio, sliceStep);
+    float sliceFar  = -zNear * pow(zRatio, sliceStepNext);
+
+    // 4. Compute AABB Corners by intersecting rays with Z planes
+    // We scale the view-space points (which are on the near plane) to the slice depths.
+    // ray = viewPoint / viewPoint.z * targetZ
+    // (Assuming viewPoint.z == -zNear, but generic scaling works regardless)
+    
+    vec3 minPointNear = viewMin * (sliceNear / viewMin.z);
+    vec3 maxPointNear = viewMax * (sliceNear / viewMax.z);
+    
+    vec3 minPointFar  = viewMin * (sliceFar / viewMin.z);
+    vec3 maxPointFar  = viewMax * (sliceFar / viewMax.z);
+
+    // 5. Construct AABB
+    vec3 aabbMin = min(min(minPointNear, maxPointNear), min(minPointFar, maxPointFar));
+    vec3 aabbMax = max(max(minPointNear, maxPointNear), max(minPointFar, maxPointFar));
+
+    // Store in global buffer
+    uint idx = clusterX 
+             + clusterY * pc.clusterCount.x 
+             + clusterZ * pc.clusterCount.x * pc.clusterCount.y;
+
+    clusterGrid.clusters[idx].minBounds = vec4(aabbMin, 1.0);
+    clusterGrid.clusters[idx].maxBounds = vec4(aabbMax, 1.0);
+}

@@ -3,6 +3,7 @@
 #include "Core/Rendering/Core/ShaderManager.h"
 #include "Core/Rendering/RenderLayer.h"
 #include "Core/Rendering/Vulkan/VkGlobals.h"
+#include "Scenes/BistroExteriorScene.h"
 #include "Scenes/ClusteredLightingScene.h"
 #include "Scenes/SampleScene.h"
 #include "Scenes/SponzaScene.h"
@@ -12,6 +13,7 @@
 #include <imgui/backends/imgui_impl_glfw.h>
 #include <imgui/backends/imgui_impl_vulkan.h>
 #include <imgui/imgui.h>
+
 
 Application::Application(bool canRender, RenderLayer<RenderAPI>& layer) : m_renderThread(&m_imGuiManager)
 {

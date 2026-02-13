@@ -1,11 +1,15 @@
 #include "ShadowPass.h"
 #include "Core/Global/GlobalVariables.h"
+#include "Core/Global/LogDefines.h"
+#include "Core/Global/State/ApplicationState.h"
 #include "Core/Rendering/Core/RenderingTypeDefs.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
 #include "Core/Rendering/Vulkan/VkGlobals.h"
 #include "EASTL/algorithm.h"
 #include "SimpleMath/SimpleMath.h"
 #include "Utils/RenderPassUtils.h"
+#include "Core/Global/Utils/MathFunctions.h"
+#include <cfloat>
 
 namespace RenderPasses
 {
@@ -28,7 +32,7 @@ void CSMPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceM
     m_mainRenderingData.depthAttachment = cascadeAttachment;
 
     InitBaseData(attachmentInfo);
-    m_indirectCmdBuffer = IndirectDrawCommandBuffer(1000);
+    m_indirectCmdBuffer = IndirectDrawCommandBuffer(1000000);
 
     BuildPipelines();
 }
@@ -47,9 +51,8 @@ void CSMPass::BuildPipelines()
     info.attachmentInfos =
         CreateAttachmentInfo({m_mainRenderingData.colorAttachments}, m_mainRenderingData.depthAttachment);
     // Compute viewMask from cascade count: (1 << cascades) - 1 gives bitmask for all layers
-    u32 mask = (1 << m_cascadeCount) - 1;
-    info.viewMask = mask > 0 ? mask : 1; // Fallback to 1 if count is somehow 0
-    info.rasterizerInfo.cullmode = Cullmode::None;
+    info.viewMask = (1 << m_cascadeCount) - 1;
+    info.rasterizerInfo.cullmode = Cullmode::Back;
     m_mainPSO = PSO(
         ShaderCollection{&mainVert, &mainFrag}, PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions}, info);
 }
@@ -98,12 +101,8 @@ void RenderPasses::CSMPass::Render(const MainPassData& data, FrameRendererContex
 
     stltype::vector<ColorAttachment> colorAttachments;
     BeginRenderingCmd cmdBegin{&m_mainPSO, colorAttachments, &m_mainRenderingData.depthAttachment};
-    // Derive layer mask from current cascade count
-    // Validation requires viewMask to match pipeline masked if multiview.
-    // Pipeline uses info.viewMask = (1 << m_cascadeCount) - 1.
-    // Thus cmdBegin.depthLayerMask MUST match.
-    u32 mask = (1 << m_cascadeCount) - 1;
-    cmdBegin.depthLayerMask = mask > 0 ? mask : 1; // Fallback to 1 if count is somehow 0
+    
+    cmdBegin.depthLayerMask = (1 << m_cascadeCount) - 1;
     cmdBegin.extents = extents;
 
     GenericIndirectDrawCmd cmd{&m_mainPSO, m_indirectCmdBuffer};
@@ -127,34 +126,35 @@ void RenderPasses::CSMPass::Render(const MainPassData& data, FrameRendererContex
     BinRenderDataCmd geomBufferCmd(sceneGeometryBuffers.GetVertexBuffer(), sceneGeometryBuffers.GetIndexBuffer());
     pCmdBuffer->RecordCommand(geomBufferCmd);
 
-    const auto mainCamView = data.mainView;
-    stltype::vector<stltype::vector<mathstl::Matrix>> matrices;
-    matrices.reserve(data.csmViews.size());
-    if (data.csmViews.empty() == false)
+    const auto& csmView = data.csmViews[0];
+    stltype::array<f32, 16> splits{};
+
+    UBO::ShadowmapViewUBO uboData;
+    const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+    f32 aspectRatio = data.mainView.viewport.width / data.mainView.viewport.height;
+    ComputeLightViewProjMatrices(data.cascades,
+                                 ctx.zNear,
+                                 ctx.zFar,
+                                 renderState.csmLambda,
+                                 data.mainView.fov,
+                                 aspectRatio,
+                                 data.mainCamViewMatrix,
+                                 data.mainCamInvViewProj,
+                                 csmView.dir,
+                                 splits,
+                                 uboData.lightViewProjMatrices,
+                                 (u32)extents.x);
+
+    uboData.cascadeCount = (s32)data.cascades;
+    for (u32 i = 0; i < 4; ++i)
     {
-        const auto& csmView = data.csmViews[0];
-        stltype::array<f32, 16> splits{};
-        UBO::ShadowmapViewUBO uboData;
-        uboData.lightViewProjMatrices = ComputeLightViewProjMatrices(data.cascades,
-                                                                    mainCamView.fov,
-                                                                    ctx.zNear,
-                                                                    ctx.zFar,
-                                                                    mathstl::Vector2(extents.x, extents.y),
-                                               csmView.dir,
-                                               splits,
-                                               (u32)extents.x);
-
-        uboData.cascadeCount = (s32)data.cascades;
-        for (u32 i = 0; i < 4; ++i)
-        {
-            uboData.cascadeSplits[i] =
-                mathstl::Vector4(splits[i * 4 + 0], splits[i * 4 + 1], splits[i * 4 + 2], splits[i * 4 + 3]);
-        }
-
-        memcpy(ctx.pMappedShadowViewUBO, &uboData, sizeof(UBO::ShadowmapViewUBO));
-        ctx.shadowViewUBODescriptor->WriteBufferUpdate(*ctx.pShadowViewUBO, s_shadowmapViewUBOBindingSlot);
-        pCmdBuffer->RecordCommand(cmd);
+        uboData.cascadeSplits[i] =
+            mathstl::Vector4(splits[i * 4 + 0], splits[i * 4 + 1], splits[i * 4 + 2], splits[i * 4 + 3]);
     }
+
+    memcpy(ctx.pMappedShadowViewUBO, &uboData, sizeof(UBO::ShadowmapViewUBO));
+    ctx.shadowViewUBODescriptor->WriteBufferUpdate(*ctx.pShadowViewUBO, s_shadowmapViewUBOBindingSlot);
+    pCmdBuffer->RecordCommand(cmd);
 
     pCmdBuffer->RecordCommand(EndRenderingCmd{});
     EndRenderPassProfilingScope(pCmdBuffer);
@@ -188,80 +188,112 @@ void CSMPass::SetCascadeCount(u32 cascades)
     }
 }
 
-stltype::array<mathstl::Matrix, 16> CSMPass::ComputeLightViewProjMatrices(u32 cascades,
-                                                                          f32 fov,
-                                                                          f32 mainCamNear,
-                                                                          f32 mainCamFar,
-                                                                          mathstl::Vector2 mainFrustumExtents,
-                                                                          const mathstl::Vector3& lightDir,
-                                                                          stltype::array<f32, 16>& splits,
-                                                                          u32 shadowMapSize)
+stltype::array<mathstl::Matrix, 16> CSMPass::ComputeLightViewProjMatrices(
+    u32 cascades,
+    f32 mainCamNear,
+    f32 mainCamFar,
+    f32 lambda,
+    f32 fov,
+    f32 aspectRatio,
+    const mathstl::Matrix& view,
+    const mathstl::Matrix& invViewProj,
+    const mathstl::Vector3& lightDir,
+    stltype::array<f32, 16>& splits,
+    stltype::array<mathstl::Matrix, 16>& lightViewProjMatrices,
+     u32 shadowMapSize)
 {
-    stltype::array<mathstl::Matrix, 16> lightViewProjMatrices;
-    
-    // 1. Calculate Frustum Splits
-    float lambda = 0.95f;
-    float clipRange = mainCamFar - mainCamNear;
-    float minZ = mainCamNear;
-    float maxZ = mainCamNear + clipRange;
-    float range = maxZ - minZ;
-    float ratio = maxZ / minZ;
+    float clipRange = (mainCamFar - mainCamNear);
+    float ratio = (mainCamFar / mainCamNear);
 
-    // Calculate split distances
-    stltype::vector<float> cascadeSplits;
-    cascadeSplits.resize(cascades);
-    
+    stltype::vector<float> cascadeSplits(cascades);
     for (u32 i = 0; i < cascades; i++)
     {
         float p = (i + 1) / static_cast<float>(cascades);
-        float log = minZ * std::pow(ratio, p);
-        float uniform = minZ + range * p;
+        float log = mainCamNear * std::pow(ratio, p);
+        float uniform = mainCamNear + clipRange * p;
         float d = lambda * (log - uniform) + uniform;
-        cascadeSplits[i] = (d - mainCamNear) / clipRange;
+        cascadeSplits[i] = d;
     }
 
-    // CSM Logic
-    // Constant Light View Matrix (Centered at World Origin)
     mathstl::Vector3 lightDirection = lightDir;
     lightDirection.Normalize();
-    
-    mathstl::Vector3 eye = -lightDirection * 300.0f; 
-    mathstl::Vector3 target = mathstl::Vector3::Zero;
-    
-    mathstl::Matrix lightView = mathstl::Matrix::CreateLookAt(eye, target, mathstl::Vector3(0, 1, 0));
-    if (std::abs(lightDirection.Dot(mathstl::Vector3(0, 1, 0))) > 0.99f)
-         lightView = mathstl::Matrix::CreateLookAt(eye, target, mathstl::Vector3(0, 0, 1));
-    
-    float lastSplitDist = 0.0f;
+    lightDirection = -lightDirection;
+
+    mathstl::Vector3 up = (std::abs(lightDirection.Dot(mathstl::Vector3(0, 1, 0))) > 0.999f)
+                              ? mathstl::Vector3(0, 0, 1)
+                              : mathstl::Vector3(0, 1, 0);
+
+    // NDC frustum corners (Vulkan: Z 0..1, XY -1..1)
+    constexpr mathstl::Vector3 ndcCorners[8] = {
+        {-1, 1, 0}, { 1, 1, 0}, { 1,  -1, 0}, {-1,  -1, 0},
+        {-1, 1, 1}, { 1, 1, 1}, { 1,  -1, 1}, {-1,  -1, 1},
+    };
+
+    float lastSplitDist = mainCamNear;
     for (u32 i = 0; i < cascades; i++)
     {
-        // TODO: Tweak this better
-        float boxSize = 1.f * (i + 1); 
-        
-        float minX = -boxSize;
-        float maxX = boxSize;
-        float minY = -boxSize;
-        float maxY = boxSize;
-        float minZ = 0.1f;
-        float maxZ = 300.0f + boxSize * 2.0f; // Sufficient depth
+        float splitDist = cascadeSplits[i];
+        // Use exact Near/Far for this cascade slice
+        float sliceNear = lastSplitDist;
+        float sliceFar = splitDist;
 
-        mathstl::Matrix lightProj = mathstl::Matrix::CreateOrthographicOffCenter(minX, maxX, minY, maxY, minZ, maxZ);
-        
-        // Fix Y flip for Vulkan
-        lightProj._22 *= -1.0f;
-        
+        mathstl::Matrix projMat = mathstl::Matrix::CreatePerspectiveFieldOfView(
+            DirectX::XMConvertToRadians(fov), aspectRatio, Math::Max(sliceNear, 0.000001f), sliceFar);
+        mathstl::Matrix viewProj = view * projMat;
+        auto viewProjInv = viewProj.Invert();
+
+        mathstl::Vector3 frustumCornersWS[8];
+        for (u32 j = 0; j < 8; j++)
+        {
+            frustumCornersWS[j] = mathstl::Vector3::Transform(ndcCorners[j], viewProjInv);
+        }
+
+        mathstl::Vector3 center = mathstl::Vector3::Zero;
+        for (u32 j = 0; j < 8; j++)
+            center += frustumCornersWS[j];
+        center *= (1.0f / 8.0f);
+
+        const auto radius = (frustumCornersWS[0] - frustumCornersWS[6]).Length() * 0.5f;
+        // Create a temporary view matrix to transform center to light space
+        mathstl::Vector3 eye = -(lightDirection);
+        mathstl::Matrix lightView = mathstl::Matrix::CreateLookAt(mathstl::Vector3(0, 0, 0) , eye , up);
+
+        // Calculate world units per texel
+        // The orthographic frustum width/height is 2 * radius
+        float shadowMapSizef = static_cast<float>(shadowMapSize);
+        float worldUnitsPerTexel = (shadowMapSizef / (2.0f * radius));
+        lightView = mathstl::Matrix::CreateScale(worldUnitsPerTexel) * lightView;
+        // Transform center to light view space
+        mathstl::Vector3 centerLightSpace =
+                mathstl::Vector3::Transform(center, lightView);
+
+        // Snap to texel grid
+        centerLightSpace.x = std::floor(centerLightSpace.x);
+        centerLightSpace.y = std::floor(centerLightSpace.y);
+
+        center = mathstl::Vector3::Transform(centerLightSpace, lightView.Invert());
+
+        // Re-create view matrix with snapped center
+        eye = center - (lightDirection * radius * 2.0f);
+        lightView = mathstl::Matrix::CreateLookAt(eye, center, up);
+
+        mathstl::Matrix lightProj = mathstl::Matrix::CreateOrthographicOffCenter(
+            -radius, radius, -radius, radius, -radius * 3, radius * 3);
+
+
         lightViewProjMatrices[i] = lightView * lightProj;
-        
-        lastSplitDist = cascadeSplits[i];
+        lastSplitDist = splitDist;
     }
-    
-    // Fill splits for shader (convert back to view space depth)
-    for(u32 i=0; i<cascades; ++i)
+
+    // Fill split depths for the shader (absolute view-space distances)
+    for (u32 i = 0; i < cascades; ++i)
     {
-         float splitDist = cascadeSplits[i];
-         splits[i] = minZ + splitDist * clipRange;
+        splits[i] = cascadeSplits[i];
     }
-    for(u32 i=cascades; i<16; ++i) splits[i] = maxZ;
+    for (u32 i = cascades; i < 16; ++i)
+    {
+        splits[i] = FLT_MAX;
+    }
 
     return lightViewProjMatrices;
 }

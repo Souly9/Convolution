@@ -3,6 +3,7 @@
 #include "Core/Rendering/Vulkan/VkAttachment.h"
 #include "Core/Rendering/Vulkan/VkBuffer.h"
 #include "RenderingForwardDecls.h"
+#include "Core/Rendering/Core/Synchronization.h"
 #include <EASTL/fixed_function.h>
 
 using ExecutionFinishedCallback = stltype::fixed_function<128, void(void)>;
@@ -209,6 +210,19 @@ struct ComputeDispatchCmd : public CommandBase
     }
 };
 
+struct GlobalBarrierCmd : public CommandBase
+{
+    SyncStages srcStage;
+    SyncStages dstStage;
+    u32 srcAccessMask;
+    u32 dstAccessMask;
+
+    GlobalBarrierCmd(SyncStages sStage, SyncStages dStage, u32 sAccess, u32 dAccess)
+        : srcStage(sStage), dstStage(dStage), srcAccessMask(sAccess), dstAccessMask(dAccess)
+    {
+    }
+};
+
 struct ComputePushConstantCmd : public CommandBase
 {
     ComputePipeline* pPipeline;
@@ -266,16 +280,16 @@ struct ImGuiDrawCmd : public CommandBase
 
 struct ResetQueryPoolCmd : public CommandBase
 {
-    void* queryPool; // VkQueryPool
+    QueryPool* queryPool;
     u32 firstQuery;
     u32 queryCount;
 };
 
 struct WriteTimestampCmd : public CommandBase
 {
-    void* queryPool; // VkQueryPool
+    QueryPool* queryPool; // VkQueryPool
     u32 query;
-    bool isStart; // TOP_OF_PIPE for start, BOTTOM_OF_PIPE for end
+    bool isStart;
 };
 
 using Command = stltype::variant<CommandBase,
@@ -286,6 +300,7 @@ using Command = stltype::variant<CommandBase,
                                  DrawMeshCmd,
                                  BindComputePipelineCmd,
                                  ComputeDispatchCmd,
+                                 GlobalBarrierCmd,
                                  ComputePushConstantCmd,
                                  GenericComputeDispatchCmd,
                                  SimpleBufferCopyCmd,

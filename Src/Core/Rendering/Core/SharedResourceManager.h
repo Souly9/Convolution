@@ -56,6 +56,15 @@ public:
         return m_sceneGeometryBuffers;
     }
 
+    const BufferData& GetDebugGeometryBuffers() const
+    {
+        return m_debugGeometryBuffers;
+    }
+    BufferData& GetDebugGeometryBuffers()
+    {
+        return m_debugGeometryBuffers;
+    }
+
 protected:
     void UpdateInstanceBuffer(const Mesh& mesh);
     void UpdateSceneGeometryBuffer(const Mesh& mesh);
@@ -75,7 +84,7 @@ protected:
     {
         DescriptorSet* pSceneInstanceSSBOSet;
     };
-    stltype::fixed_vector<FrameData, FRAMES_IN_FLIGHT, false> m_frameData;
+    stltype::fixed_vector<FrameData, SWAPCHAIN_IMAGES, false> m_frameData;
 
     struct BufferStats
     {
@@ -93,4 +102,5 @@ protected:
     stltype::vector<UBO::InstanceData> m_currentFrameInstanceData;
 
     stltype::hash_map<const Mesh*, MeshHandle> m_meshHandles;
+    stltype::hash_map<const Mesh*, MeshHandle> m_debugMeshHandles;
 };

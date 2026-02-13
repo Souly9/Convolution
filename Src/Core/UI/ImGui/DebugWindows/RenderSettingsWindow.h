@@ -2,9 +2,8 @@
 #include "Core/Global/GlobalVariables.h"
 
 #include "Core/Global/State/ApplicationState.h"
-#include "Core/UI/LogData.h"
-#include "InfoWindow.h"
-#include <algorithm>
+#include "Core/Global/Utils/MathFunctions.h"
+#include "imgui.h"
 
 class RenderSettingsWindow : public ImGuiWindow
 {
@@ -39,7 +38,7 @@ public:
         // Tone Mapper
         const char* toneMappers[] = {"None", "ACES", "Uncharted", "GT7"};
         // Ensure we don't go out of bounds if state has invalid value
-        int currentToneMapper = stltype::clamp(renderState.toneMapperType, 0, 3);
+        int currentToneMapper = Math::Clamp(renderState.toneMapperType, 0, 3);
         int uiToneMapper = currentToneMapper;
 
         if (ImGui::Combo("Tone Mapper", &uiToneMapper, toneMappers, IM_ARRAYSIZE(toneMappers)))
@@ -70,11 +69,10 @@ public:
                 }
             }
         }
-
         ImGui::Separator();
         ImGui::Text("Debug");
         const char* debugModes[] = {"None", "CSM Cascades", "Clusters"};
-        int currentDebugMode = stltype::clamp(renderState.debugViewMode, 0, 2);
+        int currentDebugMode = Math::Clamp(renderState.debugViewMode, 0, 2);
         int uiDebugMode = currentDebugMode;
 
         if (ImGui::Combo("Debug View Mode", &uiDebugMode, debugModes, IM_ARRAYSIZE(debugModes)))
@@ -85,6 +83,7 @@ public:
                                                             { state.renderState.debugViewMode = uiDebugMode; });
             }
         }
+
         ImGui::Separator();
         ImGui::Text("Shadows");
         bool shadowsEnabled = renderState.shadowsEnabled;
@@ -92,6 +91,38 @@ public:
         {
             g_pApplicationState->RegisterUpdateFunction([shadowsEnabled](ApplicationState& state)
                                                         { state.renderState.shadowsEnabled = shadowsEnabled; });
+        }
+        // CSM Resolution selector
+        const char* resolutionOptions[] = {"512", "1024", "2048", "4096", "8192", "16384"};
+        const int resolutionValues[] = {512, 1024, 2048, 4096, 8192, 16384};
+        int currentRes = static_cast<int>(renderState.csmResolution.x);
+        int currentIdx = 1; // Default to 1024
+        for (int i = 0; i < 6; ++i)
+        {
+            if (resolutionValues[i] == currentRes)
+            {
+                currentIdx = i;
+                break;
+            }
+        }
+        if (ImGui::Combo("Shadowmap Resolution", &currentIdx, resolutionOptions, IM_ARRAYSIZE(resolutionOptions)))
+        {
+            f32 newRes = static_cast<f32>(resolutionValues[currentIdx]);
+            g_pApplicationState->RegisterUpdateFunction(
+                [newRes](auto& state) { state.renderState.csmResolution = mathstl::Vector2(newRes, newRes); });
+        }
+        s32 currentCascades = renderState.directionalLightCascades;
+        if (ImGui::SliderInt("Cascades", &currentCascades, 1, 4))
+        {
+            g_pApplicationState->RegisterUpdateFunction([currentCascades](ApplicationState& state)
+                                                        { state.renderState.directionalLightCascades = currentCascades; });
+        }
+
+        f32 csmLambda = renderState.csmLambda;
+        if (ImGui::SliderFloat("CSM Lambda", &csmLambda, 0.001f, 1.0f))
+        {
+            g_pApplicationState->RegisterUpdateFunction([csmLambda](ApplicationState& state)
+                                                        { state.renderState.csmLambda = csmLambda; });
         }
 
         ImGui::Separator();

@@ -8,6 +8,7 @@
 #include "VkGlobals.h"
 #include <backends/imgui_impl_vulkan.h>
 #include <imgui.h>
+#include "Core/Rendering/Vulkan/VkQueryPool.h"
 
 namespace CommandHelpers
 {
@@ -40,16 +41,14 @@ static void RecordCommand(EndProfilingScopeCmd& cmd, CBufferVulkan& buffer)
 
 static void RecordCommand(ResetQueryPoolCmd& cmd, CBufferVulkan& buffer)
 {
-    VkQueryPool pool = static_cast<VkQueryPool>(cmd.queryPool);
-    vkCmdResetQueryPool(buffer.GetRef(), pool, cmd.firstQuery, cmd.queryCount);
+    vkCmdResetQueryPool(buffer.GetRef(), cmd.queryPool->GetRef(), cmd.firstQuery, cmd.queryCount);
 }
 
 static void RecordCommand(WriteTimestampCmd& cmd, CBufferVulkan& buffer)
 {
-    VkQueryPool pool = static_cast<VkQueryPool>(cmd.queryPool);
     VkPipelineStageFlagBits stage =
         cmd.isStart ? VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT : VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-    vkCmdWriteTimestamp(buffer.GetRef(), stage, pool, cmd.query);
+    vkCmdWriteTimestamp(buffer.GetRef(), stage, cmd.queryPool->GetRef(), cmd.query);
 }
 
 static void RecordCommand(BeginRenderingCmd& cmd, CBufferVulkan& buffer)
@@ -282,6 +281,23 @@ static void RecordCommand(GenericComputeDispatchCmd& cmd, CBufferVulkan& buffer)
 
     vkCmdDispatch(buffer.GetRef(), cmd.groupCountX, cmd.groupCountY, cmd.groupCountZ);
 }
+
+static void RecordCommand(GlobalBarrierCmd& cmd, CBufferVulkan& buffer)
+{
+    VkMemoryBarrier2 barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+    barrier.srcStageMask = Conv(cmd.srcStage);
+    barrier.dstStageMask = Conv(cmd.dstStage);
+    barrier.srcAccessMask = cmd.srcAccessMask;
+    barrier.dstAccessMask = cmd.dstAccessMask;
+
+    VkDependencyInfo dependencyInfo{};
+    dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    dependencyInfo.memoryBarrierCount = 1;
+    dependencyInfo.pMemoryBarriers = &barrier;
+
+    vkCmdPipelineBarrier2(buffer.GetRef(), &dependencyInfo);
+}
 } // namespace CommandHelpers
 
 CBufferVulkan::CBufferVulkan(VkCommandBuffer commandBuffer)
@@ -385,9 +401,9 @@ void CBufferVulkan::BeginRendering(BeginRenderingCmd& cmd)
     {
         VkViewport viewport{};
         viewport.x = 0.0f;
-        viewport.y = 0.0f;
+        viewport.y = static_cast<float>(renderExtent.height);
         viewport.width = static_cast<float>(renderExtent.width);
-        viewport.height = static_cast<float>(renderExtent.height);
+        viewport.height = -static_cast<float>(renderExtent.height);
         viewport.minDepth = 0.0f;
         viewport.maxDepth = 1.0f;
         vkCmdSetViewport(GetRef(), 0, 1, &viewport);
@@ -433,7 +449,7 @@ void CBufferVulkan::BeginRendering(BeginRenderingBaseCmd& cmd)
         depthAttachment.storeOp = pDepthAttachment->GetDesc().storeOp;
         depthAttachment.clearValue.depthStencil = {1.0f, 0};
         depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-
+        
         renderingInfo.viewMask = cmd.depthLayerMask;
         renderingInfo.pDepthAttachment = &depthAttachment;
     }

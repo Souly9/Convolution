@@ -30,9 +30,10 @@ public:
     AABB CalcAABB(const mathstl::Vector3& min, const mathstl::Vector3& max, const Mesh* pMesh = nullptr)
     {
         AABB aabb{};
-        aabb.extents = (max - min) * 0.5f;
-        const auto center = min + aabb.extents;
-        aabb.extents += center;
+        const auto extents = (max - min) * 0.5f;
+        aabb.extents = mathstl::Vector4(extents.x, extents.y, extents.z, 0.0f);
+        const auto center = min + extents;
+        aabb.center = mathstl::Vector4(center.x, center.y, center.z, 0.0f);
         if (pMesh)
             m_meshAABBs.emplace(pMesh, aabb);
         return aabb;

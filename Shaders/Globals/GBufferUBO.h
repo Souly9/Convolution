@@ -7,6 +7,7 @@ layout(set = GBufferUBOSet, binding = GlobalGBufferPostProcessUBOSlot) uniform G
     uint gbufferTexCoordMatIdx;
     uint gbufferPositionIdx;
     uint gbufferUIIdx;
+    uint depthBufferIdx;
 } gbufferUBO;
 
 layout(set = GBufferUBOSet, binding = GlobalShadowMapUBOSlot) uniform ShadowMapUBO
