@@ -1,17 +1,16 @@
 #include "VkTextureManager.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/IO/FileReader.h"
-#include "Core/Rendering/Core/StaticFunctions.h"
-#include "Core/Rendering/Vulkan/VkAttachment.h"
+#include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
 #include "Utils/DescriptorSetLayoutConverters.h"
 #include "Utils/VkEnumHelpers.h"
 #include "VkBuffer.h"
 #include "VkGlobals.h"
-#include "VkPipeline.h"
 #include "VkTextureManager.h"
 
+#include <vulkan/vulkan.h>
+#include <dds/dds.hpp>
 #include "Core/Rendering/Core/Utils/DeleteQueue.h"
-#include "Core/Rendering/Vulkan/VkAttachment.h"
 
 static constexpr u32 MIPMAP_NUM = 4;
 static constexpr u32 MAX_BINDLESS_UPLOADS = 1;
@@ -169,7 +168,7 @@ void VkTextureManager::CreateTexture(const FileTextureRequest& req)
     const auto& readInfo = req.ioInfo;
     ASSERT(readInfo.pixels);
 
-    u64 imageSize = readInfo.extents.x * readInfo.extents.y * 4;
+    u64 imageSize = readInfo.dataSize > 0 ? readInfo.dataSize : (u64)readInfo.extents.x * readInfo.extents.y * 4;
 
     m_sharedDataMutex.lock();
     StagingBuffer& pStgBuffer = m_stagingBufferInUse.emplace_back(imageSize);
@@ -182,7 +181,8 @@ void VkTextureManager::CreateTexture(const FileTextureRequest& req)
     info.extents.x = readInfo.extents.x;
     info.extents.y = readInfo.extents.y;
     info.extents.z = 1;
-    info.format = VK_FORMAT_R8G8B8A8_SRGB;
+    info.format = readInfo.ddsFormat != 0 ? dds::getVulkanFormat((DXGI_FORMAT)readInfo.ddsFormat, readInfo.supportsAlpha)
+                                          : VK_FORMAT_R8G8B8A8_SRGB;
     info.tiling = Tiling::OPTIMAL;
     info.usage = Usage::Sampled;
     info.handle = req.handle;
@@ -242,10 +242,25 @@ TextureHandle VkTextureManager::SubmitAsyncTextureCreation(const TexCreateInfo& 
 
     // Process filepath and see if we are already loading it
     stltype::string filePath = createInfo.filePath;
-    stltype::string textureString = "Resources\\Models\\textures";
-    if (auto texturesPos = filePath.find(textureString); texturesPos != stltype::string::npos)
+
+    // Handle relative paths starting with ./ or .\ (convert to ../)
+    if (filePath.size() >= 2 && filePath[0] == '.' && (filePath[1] == '/' || filePath[1] == '\\'))
     {
-        filePath.replace(texturesPos, textureString.length() + 1, "Resources\\Textures\\");
+        filePath.replace(0, 1, "..");
+    }
+
+    // Handle Resources/Models/textures relocation
+    static const stltype::string searchTargets[] = {
+        "Resources\\Models\\textures", "Resources\\Models\\Textures", "Resources/Models/textures",
+        "Resources/Models/Textures"};
+
+    for (const auto& target : searchTargets)
+    {
+        if (auto pos = filePath.find(target); pos != stltype::string::npos)
+        {
+            filePath.replace(pos, target.length() + 1, "Resources\\Textures\\");
+            break;
+        }
     }
     if (filePath.find('.') == stltype::string::npos)
     {
@@ -272,6 +287,9 @@ TextureHandle VkTextureManager::SubmitAsyncTextureCreation(const TexCreateInfo& 
         texReq.ioInfo.pixels = result.pixels;
         texReq.ioInfo.extents = result.extents;
         texReq.ioInfo.texChannels = result.texChannels;
+        texReq.ioInfo.dataSize = result.dataSize;
+        texReq.ioInfo.ddsFormat = result.ddsFormat;
+        texReq.ioInfo.supportsAlpha = result.supportsAlpha;
 
         texReq.handle = handle;
         texReq.makeBindless = makeBindless;
@@ -340,7 +358,7 @@ void VkTextureManager::CreateImageViewForTexture(TextureVulkan* pTex, bool useMi
 {
     auto createInfo = GenerateImageViewInfo(pTex->GetInfo().format, pTex->GetImage(), (pTex->GetInfo().extents.z > 1));
     if (useMipMaps == false)
-        SetNoMipMap(createInfo);
+        SetNoMipMap(createInfo, pTex->GetInfo().extents.z);
     else
         DEBUG_ASSERT(false);
 
@@ -422,7 +440,7 @@ void VkTextureManager::DispatchAsyncOps(stltype::string cbufferName)
     pBuffer->AddExecutionFinishedCallback(
         [this, pBuffer]()
         {
-            if (m_keepRunning == false || this == nullptr)
+            if (m_keepRunning == false)
                 return;
             g_pDeleteQueue->RegisterDeleteForNextFrame(
                 [pBuffer, this]()
@@ -562,12 +580,12 @@ VkImageViewCreateInfo VkTextureManager::GenerateImageViewInfo(VkFormat format, V
     return createInfo;
 }
 
-void VkTextureManager::SetNoMipMap(VkImageViewCreateInfo& createInfo)
+void VkTextureManager::SetNoMipMap(VkImageViewCreateInfo& createInfo, u32 layerCount)
 {
     createInfo.subresourceRange.baseMipLevel = 0;
     createInfo.subresourceRange.levelCount = 1;
     createInfo.subresourceRange.baseArrayLayer = 0;
-    createInfo.subresourceRange.layerCount = 1;
+    createInfo.subresourceRange.layerCount = layerCount;
 }
 
 void VkTextureManager::SetMipMap(VkImageViewCreateInfo& createInfo)

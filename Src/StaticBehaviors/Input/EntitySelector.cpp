@@ -132,8 +132,8 @@ void EntitySelector::OnLeftMouseClick(const LeftMouseClickEventData& data)
     for (size_t i = 0; i < renderComps.size(); i++)
     {
         const auto& aabb = renderComps[i].component.boundingBox;
-        const Vector3 aabbCenter = aabb.center;
-        const Vector3 aabbExtents = aabb.extents;
+        const Vector4 aabbCenter = aabb.center;
+        const Vector4 aabbExtents = aabb.extents;
         const Vector3 aabbMin =
             Vector3(aabbCenter.x - aabbExtents.x, aabbCenter.y - aabbExtents.y, aabbCenter.z - aabbExtents.z);
         const Vector3 aabbMax =

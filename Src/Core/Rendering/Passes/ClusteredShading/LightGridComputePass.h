@@ -2,6 +2,7 @@
 #include "../RenderPass.h"
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Rendering/Core/RenderingForwardDecls.h"
+#include "Core/Rendering/Vulkan/VkPipeline.h"
 
 namespace RenderPasses
 {
@@ -38,7 +39,8 @@ public:
     }
 
 protected:
-    ComputePipeline* m_pComputePipeline{nullptr};
+    ComputePipeline m_lightCullingComputePipeline;
+    ComputePipeline m_clusterComputePipeline;
     ClusterPushConstants m_pushConstants;
 };
 } // namespace RenderPasses

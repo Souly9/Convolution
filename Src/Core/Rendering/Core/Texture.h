@@ -1,5 +1,5 @@
 #pragma once
-#include "Core/Global/EnumHelpers.h"
+#include "Core/Global/Utils/EnumHelpers.h"
 #include "Core/Rendering/LayerDefines.h"
 #include "Resource.h"
 

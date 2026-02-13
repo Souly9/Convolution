@@ -48,8 +48,8 @@ static constexpr u64 GlobalTransformSSBOSize = sizeof(GlobalTransformSSBO::model
 // Cluster bounds for intersection testing
 struct ClusterAABB
 {
-    mathstl::Vector4 minBounds; // xyz=min, w=unused
-    mathstl::Vector4 maxBounds; // xyz=max, w=unused
+    mathstl::Vector3 minBounds; // xyz=min
+    mathstl::Vector3 maxBounds; // xyz=max
 };
 
 // All scene lights SSBO
@@ -66,7 +66,7 @@ struct LightClusterSSBO
 };
 
 // Cluster grid bounds (generated from frustum)
-struct ClusterGridSSBO
+struct ClusterAABBSet
 {
     stltype::array<ClusterAABB, MAX_CLUSTERS> clusters;
 };
@@ -79,7 +79,7 @@ struct ClusterLightIndexSSBO
 };
 
 static constexpr u64 LightClusterSSBOSize = sizeof(LightClusterSSBO);
-static constexpr u64 ClusterGridSSBOSize = sizeof(ClusterGridSSBO);
+static constexpr u64 ClusterAABBSetSize = sizeof(ClusterAABBSet);
 static constexpr u64 ClusterLightIndexSSBOSize = sizeof(ClusterLightIndexSSBO);
 
 // SSBO containing the indices for objects rendered by a specific pass to access the global transforms, materials etc.
@@ -111,8 +111,7 @@ struct GBufferPostProcessUBO
     BindlessTextureHandle gbuffer3;
     BindlessTextureHandle gbuffer4;
     BindlessTextureHandle gbufferUI;
-    // Not valid
-    // BindlessTextureHandle depthTexture;
+    BindlessTextureHandle depthBufferIdx;
 };
 
 struct ShadowMapUBO
@@ -125,6 +124,5 @@ struct ShadowmapViewUBO
     stltype::array<mathstl::Matrix, 16> lightViewProjMatrices{};
     stltype::array<mathstl::Vector4, 4> cascadeSplits{};
     s32 cascadeCount;
-    f32 _pad[3];
 };
 } // namespace UBO

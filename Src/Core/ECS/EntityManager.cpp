@@ -2,7 +2,6 @@
 #include "Systems/RenderThread/SRenderComponent.h"
 #include "Systems/RenderThread/SView.h"
 #include "Systems/SAABB.h"
-#include "Systems/SClusterAABB.h"
 #include "Systems/SDebugDisplay.h"
 #include "Systems/SLight.h"
 #include "Systems/STransform.h"
@@ -25,7 +24,6 @@ EntityManager::EntityManager()
     m_entities.reserve(1024);
     m_entityComponentMap.reserve(1024);
 
-    m_systems.emplace_back(stltype::make_unique<System::SClusterAABB>());
     m_systems.emplace_back(stltype::make_unique<System::STransform>());
     m_systems.emplace_back(stltype::make_unique<System::SView>());
     m_systems.emplace_back(stltype::make_unique<System::SRenderComponent>());
@@ -67,6 +65,7 @@ Entity EntityManager::CreateEntity(const mathstl::Vector3& position, const stlty
 void EntityManager::DestroyEntity(Entity entity)
 {
     m_entities.erase(std::remove(m_entities.begin(), m_entities.end(), entity), m_entities.end());
+
     m_entityComponentMap.erase(entity);
 }
 
@@ -96,8 +95,8 @@ void EntityManager::MarkComponentDirty(C_ID componentID)
         auto it = stltype::find(dirtyCompVec.begin(), dirtyCompVec.end(), componentID);
         if (it == dirtyCompVec.end())
             dirtyCompVec.emplace_back(componentID);
+        }
     }
-}
 
 void EntityManager::MarkComponentsDirty(stltype::vector<C_ID> componentID)
 {

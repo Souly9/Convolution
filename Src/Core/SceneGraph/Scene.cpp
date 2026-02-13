@@ -44,7 +44,7 @@ void Scene::FinishLoad(SceneNode root)
 void Scene::CreateTestLights(const mathstl::Vector3& centerPos, u32 gridSize, f32 spacing, ECS::Entity parent)
 {
     constexpr f32 LIGHT_RANGE = 4.5f;
-    constexpr f32 LIGHT_INTENSITY = 0.7f;
+    constexpr f32 LIGHT_INTENSITY = 0.1f;
 
     // Use floats explicitly to avoid any integer math confusion, although u32 * f32 results in f32.
     // This value represents half the total size of the grid side.

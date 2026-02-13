@@ -4,8 +4,9 @@
 #define ViewUBOSet 1
 #define TransformSSBOSet 2
 #define PassPerObjectDataSet 3
-#include "../../Globals/GlobalBuffers.h"
 #include "../../Globals/GBufferOutput.h"
+#include "../../Globals/GlobalBuffers.h"
+#include "../../Globals/PerObjectBuffers.h"
 #include "../../Globals/Textures.h"
 
 layout(location = 0) in VertexOut
@@ -24,5 +25,4 @@ void main() {
 
 	StoreAlbedoInGBuffer(vec4(fragTexSample.xyz, 1));
   StoreNormalAndMaterialInGBuffer(IN.normal, IN.matIdx);
-  StoreWorldPosInGBuffer(IN.worldPos);
 }

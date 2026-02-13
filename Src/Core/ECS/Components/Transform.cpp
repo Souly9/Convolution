@@ -9,3 +9,8 @@ void ECS::Components::Transform::Scale(f32 s)
     scale *= s;
     g_pEntityManager->MarkComponentDirty(C_ID(Transform));
 }
+void ECS::Components::Transform::Scale(const mathstl::Vector3& s)
+{
+    scale *= s;
+    g_pEntityManager->MarkComponentDirty(C_ID(Transform));
+}

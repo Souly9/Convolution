@@ -141,6 +141,37 @@ StagingBuffer::StagingBuffer(u64 size)
     Create(info);
 }
 
+void StagingBuffer::CreatePersistentlyMapped(u64 size)
+{
+    BufferCreateInfo info{};
+    info.size = size;
+    info.usage = BufferUsage::Staging;
+    Create(info);
+    m_persistentMapping = MapMemory();
+}
+
+void StagingBuffer::CopyToMapped(const void* data, u64 size, u64 offset)
+{
+    DEBUG_ASSERT(m_persistentMapping != nullptr);
+    memcpy((char*)m_persistentMapping + offset, data, (size_t)size);
+}
+
+void StagingBuffer::EnsureCapacity(u64 size)
+{
+    if (m_info.size >= size)
+        return;
+
+    if (m_persistentMapping)
+    {
+        UnmapMemory();
+        m_persistentMapping = nullptr;
+    }
+    if (m_buffer != VK_NULL_HANDLE)
+        CleanUp();
+
+    CreatePersistentlyMapped(size);
+}
+
 IndexBufferVulkan::IndexBufferVulkan(u64 size)
 {
     BufferCreateInfo info{};

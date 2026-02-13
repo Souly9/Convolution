@@ -89,8 +89,10 @@ public:
     // Helper function to submit a mesh transfer command easily
     void SubmitTransferCommandAsync(const Mesh* pMesh, RenderingData& renderDataToFill);
     void BuildTransferCommandBuffer(const stltype::vector<TransferCommand>& transferCommands);
+    void InitStagingBufferPool(u32 initialCount, u64 initialSize);
 
     void WaitForFences();
+    void ReclaimCompletedResources();
 
 protected:
     template <typename T>
@@ -102,11 +104,8 @@ protected:
     void BuildTransferCommand(const SSBOTransfer& request, CommandBuffer* pCmdBuffer);
     void BuildTransferCommand(const SSBODeviceBufferTransfer& request, CommandBuffer* pCmdBuffer);
 
-    void BuildTransferCommandBuffer(void* pVertData,
-                                    u64 vertDataSize,
-                                    const stltype::vector<u32>& indices,
-                                    TransferDestinationData& transferData,
-                                    CommandBuffer* pCmdBuffer);
+    StagingBuffer& AcquireStagingBuffer(u64 requiredSize);
+    void ReleaseStagingBuffers(const stltype::vector<u32>& indices);
 
     void SubmitCommandBuffersIndividualSubmit(stltype::vector<CommandBufferRequest>& commandBuffers)
     {
@@ -122,6 +121,7 @@ protected:
     struct InFlightRequest
     {
         stltype::vector<CommandBufferRequest> requests;
+        stltype::vector<u32> stagingBufferIndices;
         Fence fence;
     };
     stltype::vector<InFlightRequest> m_fencesToWaitOn;
@@ -138,6 +138,12 @@ protected:
     // Wll be submitted to the swapchain for presentation after all command buffers have been dispatched this frame
     stltype::vector<PresentRequest> m_swapchainPresentRequestsThisFrame{};
     stltype::vector<TransferCommand> m_transferCommands{};
+
+    u32 m_maxTransferCommandsPerFrame{8};
+
+    stltype::deque<StagingBuffer> m_stagingBufferPool;
+    stltype::vector<u32> m_freeStagingBufferIndices;
+    stltype::vector<u32> m_currentBatchStagingIndices;
 };
 
 extern stltype::unique_ptr<AsyncQueueHandler> g_pQueueHandler;

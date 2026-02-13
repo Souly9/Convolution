@@ -7,7 +7,7 @@ void ECS::System::STransform::Init(const SystemInitData& data)
 {
     m_pPassManager = data.pPassManager;
 
-    m_cachedDataMap.reserve(256);
+    m_cachedDataMap.reserve(2048);
 }
 
 /**
@@ -58,41 +58,34 @@ void ECS::System::STransform::Process()
     stltype::vector<ComponentHolder<Components::Transform>>& transComps =
         g_pEntityManager->GetComponentVector<Components::Transform>();
 
-    // 1. Clear the cache for the new frame
     m_cachedDataMap.clear();
 
     // -----------------------------------------------------------------
-    // NEW: Step 2 - Build the Scene Hierarchy (for UI, etc.)
+    // Build the Scene Hierarchy 
     // -----------------------------------------------------------------
     {
         ScopedZone("Build Scene Hierarchy");
 
-        // 2a. Clear all stale children lists from the previous frame
+        // Clear all stale children lists from the previous frame
         for (auto& transformHolder : transComps)
         {
             transformHolder.component.children.clear();
         }
 
-        // 2b. Populate children lists.
-        // We iterate through all transforms and add *ourselves* to our *parent's*
-        // list.
+        // Populate children lists.
         for (auto& transformHolder : transComps)
         {
             ECS::Components::Transform& transform = transformHolder.component;
             if (transform.HasParent())
             {
                 // Find the parent's component
-                // This assumes the parent entity is valid and has a transform.
                 ECS::Components::Transform* pParentTransform =
                     g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(transform.parent);
 
-                // Add this entity to its parent's list of children
                 if (pParentTransform)
                 {
                     pParentTransform->children.push_back(transformHolder.entity);
                 }
-                // else: This is an orphan, or the parent ID is invalid.
-                // You may want to log an error here.
             }
         }
     }
@@ -100,13 +93,9 @@ void ECS::System::STransform::Process()
     // End Hierarchy Building
     // -----------------------------------------------------------------
 
-    // 3. Compute and decompose all world matrices
-    // This uses the efficient O(N) memoized recursive function
+    // Compute and decompose all world matrices
     for (auto& transformHolder : transComps)
     {
-        // 3a. Get the world matrix.
-        // This function will either return a cached value or recursively
-        // compute, cache, and return the new value.
         mathstl::Matrix worldModel = ComputeModelMatrixRecursive(transformHolder.entity);
 
         // 3b. Decompose the final matrix back into the component
@@ -115,9 +104,6 @@ void ECS::System::STransform::Process()
                              transformHolder.component.worldPosition);
     }
 }
-
-// NO CHANGES NEEDED BELOW THIS LINE
-// These functions were already correct or not part of the bug.
 
 void ECS::System::STransform::SyncData(u32 currentFrame)
 {
@@ -136,7 +122,6 @@ mathstl::Matrix ECS::System::STransform::ComputeModelMatrix(const ECS::Component
 {
     using namespace mathstl;
     Vector3 scale(pTransform->scale);
-    // Degrees to radians
     Vector3 rotation(pTransform->rotation);
     rotation *= XM_PI / 180.f;
 

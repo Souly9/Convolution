@@ -96,9 +96,18 @@ public:
 class StagingBuffer : public GenBufferVulkan
 {
 public:
+    StagingBuffer() {}
     StagingBuffer(u64 size);
 
+    void CreatePersistentlyMapped(u64 size);
+    void CopyToMapped(const void* data, u64 size, u64 offset = 0);
+    GPUMappedMemoryHandle GetPersistentMapping() const { return m_persistentMapping; }
+
+    // Recreate if current capacity is too small, reuse otherwise
+    void EnsureCapacity(u64 size);
+
 private:
+    GPUMappedMemoryHandle m_persistentMapping{nullptr};
 };
 
 class StorageBuffer : public GenBufferVulkan

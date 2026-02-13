@@ -39,7 +39,7 @@ void RenderPasses::StaticMainMeshPass::Init(RendererAttachmentInfo& attachmentIn
     m_mainRenderingData.colorAttachments = {gbufferPosition, gbufferNormal, gbuffer3, gbufferPos};
 
     InitBaseData(attachmentInfo);
-    m_indirectCmdBuffer = IndirectDrawCommandBuffer(250000);
+    m_indirectCmdBuffer = IndirectDrawCommandBuffer(1000000);
 
     BuildPipelines();
 }

@@ -5,6 +5,7 @@
 #define TransformSSBOSet 2
 #define PassPerObjectDataSet 3
 #include "../../Globals/GlobalBuffers.h"
+#include "../../Globals/PerObjectBuffers.h"
 #include "../../Globals/DrawBuildBuffers.h"
 
 layout(location = 0) in vec3 inPosition;

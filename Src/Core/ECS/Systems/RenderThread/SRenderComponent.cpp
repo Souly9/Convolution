@@ -1,6 +1,7 @@
 #include "SRenderComponent.h"
 #include "Core/ECS/EntityManager.h"
 #include "Core/Rendering/Passes/PassManager.h"
+#include "Core/Global/LogDefines.h"
 
 void ECS::System::SRenderComponent::Init(const SystemInitData& data)
 {
@@ -50,6 +51,8 @@ void ECS::System::SRenderComponent::SyncData(u32 currentFrame)
 
 bool ECS::System::SRenderComponent::AccessesAnyComponents(const stltype::vector<C_ID>& components)
 {
-    return stltype::find(components.begin(), components.end(), ComponentID<Components::RenderComponent>::ID) !=
-           components.end();
+    return (stltype::find(components.begin(), components.end(), ComponentID<Components::RenderComponent>::ID) !=
+            components.end()) ||
+           (stltype::find(components.begin(), components.end(), ComponentID<Components::DebugRenderComponent>::ID) !=
+            components.end());
 }

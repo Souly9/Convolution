@@ -22,6 +22,7 @@ enum class BufferType : u32
     TransformSSBO,
     PerPassObjectSSBO,
     TileArraySSBO,
+    ClusterAABBsSSBO,
     InstanceDataSSBO,
     Custom // Just indicate the class itself will specify all binding slots and so on
 };
@@ -45,6 +46,7 @@ static inline stltype::hash_map<BufferType, u32> s_UBOTypeToBindingSlot = {
     {BufferType::View, s_viewBindingSlot},
     {BufferType::GlobalObjectDataSSBOs, s_globalMaterialBufferSlot},
     {BufferType::TileArraySSBO, s_tileArrayBindingSlot},
+    {BufferType::ClusterAABBsSSBO, s_clusterAABBsBindingSlot},
     {BufferType::PerPassObjectSSBO, s_perPassObjectDataBindingSlot},
     {BufferType::InstanceDataSSBO, s_globalInstanceDataSSBOSlot},
     {BufferType::TransformSSBO, s_modelSSBOBindingSlot},
@@ -60,6 +62,7 @@ static inline stltype::hash_map<BufferType, ShaderTypeBits> s_UBOTypeToShaderSta
     {BufferType::RenderPass, ShaderTypeBits::Vertex},
     {BufferType::GlobalObjectDataSSBOs, ShaderTypeBits::All},
     {BufferType::TileArraySSBO, ShaderTypeBits::All},
+    {BufferType::ClusterAABBsSSBO, ShaderTypeBits::All},
     {BufferType::PerPassObjectSSBO, ShaderTypeBits::All},
     {BufferType::InstanceDataSSBO, ShaderTypeBits::All},
     {BufferType::TransformSSBO, ShaderTypeBits::All},

@@ -1,6 +1,7 @@
 #include "SAABB.h"
 #include "Core/ECS/EntityManager.h"
 #include "Core/SceneGraph/Mesh.h"
+#include "SimpleMath/SimpleMath.h"
 
 void ECS::System::SAABB::Init(const SystemInitData& data)
 {
@@ -27,7 +28,7 @@ void ECS::System::SAABB::Process()
                 g_pEntityManager->GetComponentUnsafe<Components::DebugRenderComponent>(transform.entity));
         else
             continue;
-        pRenderComp->boundingBox.center = transformComp.worldPosition;
+        pRenderComp->boundingBox.center = mathstl::Vector4(transformComp.worldPosition.x, transformComp.worldPosition.y, transformComp.worldPosition.z, 0.0f);
         const auto& meshAABB = meshAABBs.find(pRenderComp->pMesh)->second;
         pRenderComp->boundingBox.extents = meshAABB.extents * transformComp.worldScale;
     }

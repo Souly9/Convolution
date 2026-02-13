@@ -1,5 +1,5 @@
 #pragma once
-#include "Core/Global/EnumHelpers.h"
+#include "Core/Global/Utils/EnumHelpers.h"
 #include "Core/Global/GlobalDefines.h"
 
 // Class defining memory barrier enums to synchronize resource access
@@ -83,6 +83,6 @@ struct ImageMemoryBarrier
     }
 
     template <>
-    static ImageMemoryBarrier FromTemplate<MemoryBarrierTemplate::ColorAttachmentReadWrite>(
+    ImageMemoryBarrier FromTemplate<MemoryBarrierTemplate::ColorAttachmentReadWrite>(
         MemoryBarrierTemplate barrierTemplate);
 };

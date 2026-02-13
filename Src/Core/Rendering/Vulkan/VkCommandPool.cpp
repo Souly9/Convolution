@@ -56,6 +56,7 @@ void CommandPoolVulkan::CleanUp(){
 
 CBufferVulkan* CommandPoolVulkan::CreateCommandBuffer(const CommandBufferCreateInfo& createInfo)
 {
+    ScopedZone("CommandPoolVulkan::CreateCommandBuffer");
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     allocInfo.commandPool = m_commandPool;

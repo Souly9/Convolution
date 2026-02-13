@@ -15,6 +15,4 @@
 #define GlobalGBufferPostProcessUBOSlot 1
 #define GlobalShadowMapUBOSlot          2
 
-#define MAX_MATERIALS     2048
-#define MAX_ENTITIES      65536 * 10
-#define MAX_CASCADE_COUNT 16
+#include "Constants.h"

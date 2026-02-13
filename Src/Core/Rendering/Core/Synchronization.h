@@ -13,6 +13,7 @@ enum class SyncStages
     VERTEX_SHADER = 1 << 4,
     FRAGMENT_SHADER = 1 << 5,
     COMPUTE_SHADER = 1 << 6,
+    TRANSFER = 1 << 7,
     COLOR_ATTACHMENT_OUTPUT = 1 << 8,
     BOTTOM_OF_PIPE = 1 << 9,
     ALL_COMMANDS = 1 << 10,

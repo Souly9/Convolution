@@ -129,7 +129,7 @@ void RenderPasses::DebugShapePass::Render(const MainPassData& data,
     const auto ex = ctx.pCurrentSwapchainTexture->GetInfo().extents;
     const DirectX::XMINT2 extents(ex.x, ex.y);
 
-    auto& sceneGeometryBuffers = data.pResourceManager->GetSceneGeometryBuffers();
+    auto& sceneGeometryBuffers = data.pResourceManager->GetDebugGeometryBuffers();
     if (sceneGeometryBuffers.GetVertexBuffer().GetRef() == VK_NULL_HANDLE ||
         sceneGeometryBuffers.GetIndexBuffer().GetRef() == VK_NULL_HANDLE)
     {

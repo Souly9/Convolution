@@ -2,8 +2,8 @@
 
 struct AABB
 {
-    mathstl::Vector3 extents{0.5f, 0.5f, 0.5f};
-    mathstl::Vector3 center{};
+    mathstl::Vector4 extents{0.5f, 0.5f, 0.5f, 0.0f};
+    mathstl::Vector4 center{};
 
     bool IsValid()
     {

@@ -2,9 +2,12 @@
 #extension GL_ARB_shading_language_include : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_EXT_scalar_block_layout : enable
-#extension GL_EXT_shader_atomic_int_add : enable
 
-#define TileArraySet 1
+#define ViewUBOSet           0
+#define TileArraySet         1
+#define ClusterGridSet       2
+#include "../../Globals/ClusteredShading/AABBs.h"
+#include "../../Globals/GlobalBuffers.h"
 #include "../../Globals/LightData.h"
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
@@ -17,32 +20,6 @@ layout(push_constant) uniform PushConstants
     vec4 nearFar; // x=near, y=far
 }
 pc;
-
-#define MAX_LIGHTS_PER_CLUSTER 64
-// Match C++ Define
-#define MAX_SCENE_LIGHTS  1024
-#define MAX_CLUSTERS      (16 * 32 * 64)
-#define MAX_LIGHT_INDICES (MAX_CLUSTERS * 128)
-
-// Bindings
-// ViewUBO (Set 0, Binding 300)
-layout(set = 0, binding = 300) uniform ViewUBO
-{
-    mat4 view;
-    mat4 projection;
-    mat4 viewProjection;
-    mat4 viewInverse;
-    mat4 projectionInverse;
-    vec4 viewPos;
-}
-viewData;
-
-// ClusterGrid (Set 0, Binding 1) - Pass local
-layout(std430, set = 2, binding = 1) readonly buffer ClusterGrid
-{
-    vec4 clusters[]; // minBounds, maxBounds pairs
-}
-clusterGrid;
 
 // Shared memory for local light accumulation (64 threads * 64 lights * 4 bytes = 16KB)
 shared uint sharedLightIndices[64][MAX_LIGHTS_PER_CLUSTER];
@@ -69,9 +46,8 @@ void main()
     uint localIdx = gl_LocalInvocationIndex; // Flat index within workgroup (0..63)
 
     // Get cluster AABB from buffer
-    // clusterGrid.clusters stores min and max as vec4s. Index = clusterIdx * 2.
-    vec3 aabbMin = clusterGrid.clusters[clusterIdx * 2].xyz;
-    vec3 aabbMax = clusterGrid.clusters[clusterIdx * 2 + 1].xyz;
+    vec3 aabbMin = clusterGrid.clusters[clusterIdx].minBounds.xyz;
+    vec3 aabbMax = clusterGrid.clusters[clusterIdx].maxBounds.xyz;
 
     // Local counter for lights in this cluster
     uint visibleCount = 0;
@@ -96,7 +72,7 @@ void main()
         // Renderer usually uploads World Space lights.
         // So we need to transform light to View Space.
 
-        vec3 lightPos = (viewData.view * vec4(light.position.xyz, 1.0)).xyz;
+        vec3 lightPos = (ubo.view * vec4(light.position.xyz, 1.0)).xyz;
         float lightRange = light.direction.w;
 
         if (sphereIntersectsAABB(lightPos, lightRange, aabbMin, aabbMax))
