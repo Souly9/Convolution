@@ -48,3 +48,14 @@ Shaders/Compiled/
 External/*
 !External/additional_libs/
 !External/additional_libs/**
+.vs/ProjectSettings.json
+.vs/slnx.sqlite
+.vs/VSWorkspaceState.json
+.vs/Convolution/FileContentIndex/read.lock
+.vs/Convolution/v17/.suo
+.vs/Convolution/v17/Browse.VC.db
+.vscode/tasks.json
+External/additional_libs/glsl/glslangd.lib
+External/additional_libs/glsl/SPIRV-Tools-opt.lib
+External/additional_libs/glsl/SPIRV-Tools-optd.lib
+External/additional_libs/glsl/SPIRV-Toolsd.lib

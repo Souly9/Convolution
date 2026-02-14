@@ -10,7 +10,10 @@
 
 namespace stltype = eastl;
 namespace threadstl = EA::Thread;
-namespace mathstl = DirectX::SimpleMath;
+namespace mathstl
+{
+    using namespace DirectX::SimpleMath;
+}
 
 using u8 = uint8_t;
 using u32 = uint32_t;

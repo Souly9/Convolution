@@ -13,6 +13,12 @@ class Scene;
         set(indexName, val);                                                                                           \
     }
 
+enum class DebugFlags : u32
+{
+    None = 0,
+    CullFrustum = 1 << 0,
+};
+
 struct GUIState : public stltype::bitset<32>
 {
 public:
@@ -47,6 +53,7 @@ struct RendererState
     f32 gt7ReferenceLuminance{150.0f};
     f32 ambientIntensity{0.03f};
     s32 debugViewMode{0}; // 0 = None, 1 = CSM, 2 = Cluster Debug
+    u32 debugFlags{0};
     bool shadowsEnabled{true};
 
     // Clustered lighting settings

@@ -1,15 +1,17 @@
 #include "ShadowPass.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Global/LogDefines.h"
+#include "Core/Global/Profiling.h"
 #include "Core/Global/State/ApplicationState.h"
+#include "Core/Global/Utils/MathFunctions.h"
 #include "Core/Rendering/Core/RenderingTypeDefs.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
 #include "Core/Rendering/Vulkan/VkGlobals.h"
 #include "EASTL/algorithm.h"
 #include "SimpleMath/SimpleMath.h"
 #include "Utils/RenderPassUtils.h"
-#include "Core/Global/Utils/MathFunctions.h"
 #include <cfloat>
+
 
 namespace RenderPasses
 {
@@ -101,7 +103,7 @@ void RenderPasses::CSMPass::Render(const MainPassData& data, FrameRendererContex
 
     stltype::vector<ColorAttachment> colorAttachments;
     BeginRenderingCmd cmdBegin{&m_mainPSO, colorAttachments, &m_mainRenderingData.depthAttachment};
-    
+
     cmdBegin.depthLayerMask = (1 << m_cascadeCount) - 1;
     cmdBegin.extents = extents;
 
@@ -122,41 +124,44 @@ void RenderPasses::CSMPass::Render(const MainPassData& data, FrameRendererContex
     }
     cmdBegin.drawCmdBuffer = &m_indirectCmdBuffer;
     StartRenderPassProfilingScope(pCmdBuffer);
-    pCmdBuffer->RecordCommand(cmdBegin);
-    BinRenderDataCmd geomBufferCmd(sceneGeometryBuffers.GetVertexBuffer(), sceneGeometryBuffers.GetIndexBuffer());
-    pCmdBuffer->RecordCommand(geomBufferCmd);
-
-    const auto& csmView = data.csmViews[0];
-    stltype::array<f32, 16> splits{};
-
-    UBO::ShadowmapViewUBO uboData;
-    const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
-    f32 aspectRatio = data.mainView.viewport.width / data.mainView.viewport.height;
-    ComputeLightViewProjMatrices(data.cascades,
-                                 ctx.zNear,
-                                 ctx.zFar,
-                                 renderState.csmLambda,
-                                 data.mainView.fov,
-                                 aspectRatio,
-                                 data.mainCamViewMatrix,
-                                 data.mainCamInvViewProj,
-                                 csmView.dir,
-                                 splits,
-                                 uboData.lightViewProjMatrices,
-                                 (u32)extents.x);
-
-    uboData.cascadeCount = (s32)data.cascades;
-    for (u32 i = 0; i < 4; ++i)
+    if (data.csmViews.empty() == false)
     {
-        uboData.cascadeSplits[i] =
-            mathstl::Vector4(splits[i * 4 + 0], splits[i * 4 + 1], splits[i * 4 + 2], splits[i * 4 + 3]);
+        pCmdBuffer->RecordCommand(cmdBegin);
+        BinRenderDataCmd geomBufferCmd(sceneGeometryBuffers.GetVertexBuffer(), sceneGeometryBuffers.GetIndexBuffer());
+        pCmdBuffer->RecordCommand(geomBufferCmd);
+
+        const auto& csmView = data.csmViews[0];
+        stltype::array<f32, 16> splits{};
+
+        UBO::ShadowmapViewUBO uboData;
+        const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+        f32 aspectRatio = data.mainView.viewport.width / data.mainView.viewport.height;
+        ComputeLightViewProjMatrices(data.cascades,
+                                     ctx.zNear,
+                                     ctx.zFar,
+                                     renderState.csmLambda,
+                                     data.mainView.fov,
+                                     aspectRatio,
+                                     data.mainCamViewMatrix,
+                                     data.mainCamInvViewProj,
+                                     csmView.dir,
+                                     splits,
+                                     uboData.lightViewProjMatrices,
+                                     (u32)extents.x);
+
+        uboData.cascadeCount = (s32)data.cascades;
+        for (u32 i = 0; i < 4; ++i)
+        {
+            uboData.cascadeSplits[i] =
+                mathstl::Vector4(splits[i * 4 + 0], splits[i * 4 + 1], splits[i * 4 + 2], splits[i * 4 + 3]);
+        }
+
+        memcpy(ctx.pMappedShadowViewUBO, &uboData, sizeof(UBO::ShadowmapViewUBO));
+        ctx.shadowViewUBODescriptor->WriteBufferUpdate(*ctx.pShadowViewUBO, s_shadowmapViewUBOBindingSlot);
+        pCmdBuffer->RecordCommand(cmd);
+
+        pCmdBuffer->RecordCommand(EndRenderingCmd{});
     }
-
-    memcpy(ctx.pMappedShadowViewUBO, &uboData, sizeof(UBO::ShadowmapViewUBO));
-    ctx.shadowViewUBODescriptor->WriteBufferUpdate(*ctx.pShadowViewUBO, s_shadowmapViewUBOBindingSlot);
-    pCmdBuffer->RecordCommand(cmd);
-
-    pCmdBuffer->RecordCommand(EndRenderingCmd{});
     EndRenderPassProfilingScope(pCmdBuffer);
 }
 
@@ -200,8 +205,9 @@ stltype::array<mathstl::Matrix, 16> CSMPass::ComputeLightViewProjMatrices(
     const mathstl::Vector3& lightDir,
     stltype::array<f32, 16>& splits,
     stltype::array<mathstl::Matrix, 16>& lightViewProjMatrices,
-     u32 shadowMapSize)
+    u32 shadowMapSize)
 {
+    ScopedZone("ShadowPass::Construct LightViewProjMatrices");
     float clipRange = (mainCamFar - mainCamNear);
     float ratio = (mainCamFar / mainCamNear);
 
@@ -209,7 +215,7 @@ stltype::array<mathstl::Matrix, 16> CSMPass::ComputeLightViewProjMatrices(
     for (u32 i = 0; i < cascades; i++)
     {
         float p = (i + 1) / static_cast<float>(cascades);
-        float log = mainCamNear * std::pow(ratio, p);
+        float log = mainCamNear * mathstl::pow(ratio, p);
         float uniform = mainCamNear + clipRange * p;
         float d = lambda * (log - uniform) + uniform;
         cascadeSplits[i] = d;
@@ -225,8 +231,14 @@ stltype::array<mathstl::Matrix, 16> CSMPass::ComputeLightViewProjMatrices(
 
     // NDC frustum corners (Vulkan: Z 0..1, XY -1..1)
     constexpr mathstl::Vector3 ndcCorners[8] = {
-        {-1, 1, 0}, { 1, 1, 0}, { 1,  -1, 0}, {-1,  -1, 0},
-        {-1, 1, 1}, { 1, 1, 1}, { 1,  -1, 1}, {-1,  -1, 1},
+        {-1, 1, 0},
+        {1, 1, 0},
+        {1, -1, 0},
+        {-1, -1, 0},
+        {-1, 1, 1},
+        {1, 1, 1},
+        {1, -1, 1},
+        {-1, -1, 1},
     };
 
     float lastSplitDist = mainCamNear;
@@ -238,7 +250,7 @@ stltype::array<mathstl::Matrix, 16> CSMPass::ComputeLightViewProjMatrices(
         float sliceFar = splitDist;
 
         mathstl::Matrix projMat = mathstl::Matrix::CreatePerspectiveFieldOfView(
-            DirectX::XMConvertToRadians(fov), aspectRatio, Math::Max(sliceNear, 0.000001f), sliceFar);
+            DirectX::XMConvertToRadians(fov), aspectRatio, mathstl::max(sliceNear, 0.000001f), sliceFar);
         mathstl::Matrix viewProj = view * projMat;
         auto viewProjInv = viewProj.Invert();
 
@@ -256,16 +268,13 @@ stltype::array<mathstl::Matrix, 16> CSMPass::ComputeLightViewProjMatrices(
         const auto radius = (frustumCornersWS[0] - frustumCornersWS[6]).Length() * 0.5f;
         // Create a temporary view matrix to transform center to light space
         mathstl::Vector3 eye = -(lightDirection);
-        mathstl::Matrix lightView = mathstl::Matrix::CreateLookAt(mathstl::Vector3(0, 0, 0) , eye , up);
+        mathstl::Matrix lightView = mathstl::Matrix::CreateLookAt(mathstl::Vector3(0, 0, 0), eye, up);
 
-        // Calculate world units per texel
-        // The orthographic frustum width/height is 2 * radius
         float shadowMapSizef = static_cast<float>(shadowMapSize);
         float worldUnitsPerTexel = (shadowMapSizef / (2.0f * radius));
         lightView = mathstl::Matrix::CreateScale(worldUnitsPerTexel) * lightView;
         // Transform center to light view space
-        mathstl::Vector3 centerLightSpace =
-                mathstl::Vector3::Transform(center, lightView);
+        mathstl::Vector3 centerLightSpace = mathstl::Vector3::Transform(center, lightView);
 
         // Snap to texel grid
         centerLightSpace.x = std::floor(centerLightSpace.x);
@@ -277,9 +286,8 @@ stltype::array<mathstl::Matrix, 16> CSMPass::ComputeLightViewProjMatrices(
         eye = center - (lightDirection * radius * 2.0f);
         lightView = mathstl::Matrix::CreateLookAt(eye, center, up);
 
-        mathstl::Matrix lightProj = mathstl::Matrix::CreateOrthographicOffCenter(
-            -radius, radius, -radius, radius, -radius * 3, radius * 3);
-
+        mathstl::Matrix lightProj =
+            mathstl::Matrix::CreateOrthographicOffCenter(-radius, radius, -radius, radius, -radius * 3, radius * 3);
 
         lightViewProjMatrices[i] = lightView * lightProj;
         lastSplitDist = splitDist;
