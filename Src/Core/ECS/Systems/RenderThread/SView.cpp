@@ -95,7 +95,7 @@ UBO::ViewUBO ECS::System::SView::BuildMainViewUBO(const Components::View* pView,
     Matrix projMat =
         Matrix::CreatePerspectiveFieldOfView(DirectX::XMConvertToRadians(pView->fov),
                                              FrameGlobals::GetScreenAspectRatio(),
-                                             Math::Max(pView->zNear, 0.000001f), // Prevent division by zero
+                                             mathstl::max(pView->zNear, 0.000001f), // Prevent division by zero
                                              pView->zFar);
    //projMat._22 *= -1.0f;
 

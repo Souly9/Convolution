@@ -38,7 +38,7 @@ public:
         // Tone Mapper
         const char* toneMappers[] = {"None", "ACES", "Uncharted", "GT7"};
         // Ensure we don't go out of bounds if state has invalid value
-        int currentToneMapper = Math::Clamp(renderState.toneMapperType, 0, 3);
+        int currentToneMapper = mathstl::clamp(renderState.toneMapperType, 0, 3);
         int uiToneMapper = currentToneMapper;
 
         if (ImGui::Combo("Tone Mapper", &uiToneMapper, toneMappers, IM_ARRAYSIZE(toneMappers)))
@@ -72,7 +72,7 @@ public:
         ImGui::Separator();
         ImGui::Text("Debug");
         const char* debugModes[] = {"None", "CSM Cascades", "Clusters"};
-        int currentDebugMode = Math::Clamp(renderState.debugViewMode, 0, 2);
+        int currentDebugMode = mathstl::clamp(renderState.debugViewMode, 0, 2);
         int uiDebugMode = currentDebugMode;
 
         if (ImGui::Combo("Debug View Mode", &uiDebugMode, debugModes, IM_ARRAYSIZE(debugModes)))
@@ -82,6 +82,13 @@ public:
                 g_pApplicationState->RegisterUpdateFunction([uiDebugMode](ApplicationState& state)
                                                             { state.renderState.debugViewMode = uiDebugMode; });
             }
+        }
+
+        bool debugCulling = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::CullFrustum);
+        if (ImGui::Checkbox("Debug Culling", &debugCulling))
+        {
+            g_pApplicationState->RegisterUpdateFunction([debugCulling](ApplicationState& state)
+                                                        { mathstl::setFlag(state.renderState.debugFlags, (u32)DebugFlags::CullFrustum, debugCulling); });
         }
 
         ImGui::Separator();

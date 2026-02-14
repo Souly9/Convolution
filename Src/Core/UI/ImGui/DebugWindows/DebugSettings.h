@@ -31,7 +31,7 @@ public:
 
         const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
         const char* debugModes[] = {"None", "CSM Cascades", "Clusters"};
-        int currentDebugMode = Math::Clamp(renderState.debugViewMode, 0, 2);
+        int currentDebugMode = mathstl::clamp(renderState.debugViewMode, 0, 2);
         int uiDebugMode = currentDebugMode;
 
         if (ImGui::Combo("Debug View Mode", &uiDebugMode, debugModes, IM_ARRAYSIZE(debugModes)))

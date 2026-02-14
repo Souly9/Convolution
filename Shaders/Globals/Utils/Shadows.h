@@ -85,6 +85,7 @@ float computeShadow(vec4 fragPosWorldSpace, float viewDepth, vec3 normal, vec3 l
 
     float shadow = sampleShadowCascade(cascadeIndex, fragPosWorldSpace, normal, lightDir);
     
+    // Fade between cascades
     int nextCascade = cascadeIndex + 1;
     if (nextCascade < shadowmapViewUBO.cascadeCount)
     {
@@ -97,7 +98,7 @@ float computeShadow(vec4 fragPosWorldSpace, float viewDepth, vec3 normal, vec3 l
         if (distanceToEdge < transitionRange)
         {
             float nextShadow = sampleShadowCascade(nextCascade, fragPosWorldSpace, normal, lightDir);
-            float t = 1.0 - (distanceToEdge / transitionRange); // 0.0 at start of fade, 1.0 at edge
+            float t = 1.0 - (distanceToEdge / transitionRange);
             shadow = mix(shadow, nextShadow, smoothstep(0.0, 1.0, t));
         }
     }
