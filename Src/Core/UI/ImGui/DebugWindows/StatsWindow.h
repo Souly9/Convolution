@@ -32,41 +32,51 @@ public:
         ImGui::Separator();
 
         // Geometry Stats
-        // TODO: Retrieve from GPU
-        //ImGui::Text("Geometry");
-       // ImGui::Text("Triangles: %u", m_lastState.triangleCount);
-       // ImGui::Text("Vertices: %u", m_lastState.vertexCount);
-        //ImGui::Separator();
-
-        // Clustered Lighting Stats
-        ImGui::Text("Clustered Lighting");
-        ImGui::Text("Total Clusters: %u", m_lastState.totalClusterCount);
-        ImGui::Text("Cluster Grid: %dx%dx%d", m_lastState.clusterCount.x, m_lastState.clusterCount.y,
-                    m_lastState.clusterCount.z);
+        // Pipeline Statistics
+        if (ImGui::CollapsingHeader("Pipeline Statistics"))
+        {
+            ImGui::Text("Indirect Draw Calls (DrawIndirects issued): %u", m_lastState.stats.numDrawIndirectCalls);
+            ImGui::Text("Direct Draw Calls (Estimated): %u", m_lastState.stats.numDrawCalls);
+            ImGui::Text("Compute Dispatches: %u", m_lastState.stats.numComputeDispatches);
+            ImGui::Text("Descriptor Binds: %u", m_lastState.stats.numDescriptorBinds);
+            ImGui::Text("Pipeline Binds: %u", m_lastState.stats.numPipelineBinds);
+            ImGui::Text("Vertices: %llu", m_lastState.stats.numVertices);
+            ImGui::Text("Primitives: %llu", m_lastState.stats.numPrimitives);
+        }
         ImGui::Separator();
 
+        // Clustered Lighting Stats
+        if (ImGui::CollapsingHeader("Clustered Lighting"))
+        {
+            ImGui::Text("Total Clusters: %u", m_lastState.totalClusterCount);
+            ImGui::Text("Cluster Grid: %dx%dx%d",
+                        m_lastState.clusterCount.x,
+                        m_lastState.clusterCount.y,
+                        m_lastState.clusterCount.z);
+            ImGui::Separator();
+        }
         // RenderPass GPU Timings
         if (ImGui::CollapsingHeader("RenderPass Timings", ImGuiTreeNodeFlags_DefaultOpen))
         {
             ImGui::Text("Total GPU Time: %.3f ms", m_avgTotalGPUTime);
             ImGui::Separator();
 
-            for (const auto& [passName, avgData] : m_avgPassTimings)
-            {
-                if (avgData.wasRunLastFrame)
-                    ImGui::Text("  %s: %.3f ms", passName.c_str(), avgData.avgTimeMs);
-                else
-                    ImGui::TextDisabled("  %s: (not run)", passName.c_str());
+                for (const auto& [passName, avgData] : m_avgPassTimings)
+                {
+                    if (avgData.wasRunLastFrame)
+                        ImGui::Text("  %s: %.3f ms", passName.c_str(), avgData.avgTimeMs);
+                    else
+                        ImGui::TextDisabled("  %s: (not run)", passName.c_str());
+                }
             }
+            ImGui::Separator();
+
+            // Renderer State
+            ImGui::Text("Renderer State");
+            ImGui::Text("Device: %s", device.c_str());
+
+            ImGui::End();
         }
-        ImGui::Separator();
-
-        // Renderer State
-        ImGui::Text("Renderer State");
-        ImGui::Text("Device: %s", device.c_str());
-
-        ImGui::End();
-    }
 
     void OnUpdate(const UpdateEventData& d)
     {

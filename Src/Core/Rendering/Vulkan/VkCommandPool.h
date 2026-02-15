@@ -28,6 +28,11 @@ public:
         return m_commandPool != VK_NULL_HANDLE;
     }
 
+    u32 GetQueueFamilyIndex() const
+    {
+        return m_queueFamilyIndex;
+    }
+
     void ReturnCommandBuffer(const CommandBuffer* commandBuffer);
     void ClearAll()
     {
@@ -42,6 +47,7 @@ protected:
 
     VkCommandPool m_commandPool{VK_NULL_HANDLE};
     stltype::deque<CBufferVulkan> m_commandBuffers{};
+    u32 m_queueFamilyIndex{~0u};
 };
 
 class TransferCommandPoolVulkan : public CommandPoolVulkan

@@ -5,8 +5,7 @@
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
 #include "Core/Rendering/Vulkan/VkGlobals.h"
 
-namespace RenderPasses
-{
+using namespace RenderPasses;
 DepthPrePass::DepthPrePass() : GenericGeometryPass("DepthPrePass")
 {
     SetVertexInputDescriptions(VertexInputDefines::VertexAttributeTemplates::Complete);
@@ -131,4 +130,4 @@ bool DepthPrePass::WantsToRender() const
 {
     return NeedToRender(m_indirectCmdBuffer);
 }
-} // namespace RenderPasses
+

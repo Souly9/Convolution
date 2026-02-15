@@ -4,10 +4,7 @@
 #include "Core/Rendering/Core/CommandBuffer.h"
 #include "Core/Rendering/Core/Defines/BindingSlots.h"
 #include "Core/Rendering/Core/Utils/DescriptorLayoutUtils.h"
-
-// TODO: Define descriptor sets
-#define ViewSet 0
-#define ObjectSet 1 
+#include "Core/Global/Profiling.h"
 
 using namespace RenderPasses;
 
@@ -18,16 +15,15 @@ FrustumCullingComputePass::FrustumCullingComputePass() : ConvolutionRenderPass("
 
 FrustumCullingComputePass::~FrustumCullingComputePass() = default;
 
-void FrustumCullingComputePass::Init(RendererAttachmentInfo& attachmentInfo, 
+void FrustumCullingComputePass::Init(RendererAttachmentInfo& attachmentInfo,
                                      const SharedResourceManager& resourceManager)
 {
-    // Initialize pipelines
+    ScopedZone("FrustumCullingComputePass::Init");
     BuildPipelines();
 }
 
 void FrustumCullingComputePass::BuildPipelines()
 {
-    // TODO: Change shader path
     auto computeShader = Shader("Shaders/FrustumCulling.comp.spv", "main");
 
     ShaderCollection shaders{};
@@ -47,43 +43,53 @@ void FrustumCullingComputePass::BuildPipelines()
 
 void FrustumCullingComputePass::BuildBuffers()
 {
-    // Build any necessary buffers here
 }
 
 void FrustumCullingComputePass::CreateSharedDescriptorLayout()
 {
-    // TODO: Define shared descriptors
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::View, ViewSet));
-    // m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::StorageBuffer, ObjectSet));
+    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::View, 0));
+
+    // Scene Object Data Set
+    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::TransformSSBO, 1));
+    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::GlobalObjectDataSSBOs, 1));
+    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::InstanceDataSSBO, 1));
+    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::SceneAABBsSSBO, 2));
 }
 
 void FrustumCullingComputePass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
                                                     FrameRendererContext& previousFrameCtx,
                                                     u32 thisFrameNum)
 {
-    // Rebuild data if needed
 }
 
-void FrustumCullingComputePass::Render(const MainPassData& data, 
-                                       FrameRendererContext& ctx, 
+void FrustumCullingComputePass::Render(const MainPassData& data,
+                                       FrameRendererContext& ctx,
                                        CommandBuffer* pCmdBuffer)
 {
+    ScopedZone("FrustumCullingComputePass::Render");
     StartRenderPassProfilingScope(pCmdBuffer);
 
-    // Update push constants
-    m_pushConstants.objectCount = 0; // TODO: Set meaningful values
+    // Get object count from shared resource manager
+    u32 objectCount = (u32)ctx.pResourceManager->GetBufferOffsetData().instanceCount;
+    if (objectCount == 0)
+    {
+        EndRenderPassProfilingScope(pCmdBuffer);
+        return;
+    }
 
-    // Dispatch compute shader
-    // TODO: Calculate group counts
-    u32 groupCountX = 1;
+    m_pushConstants.objectCount = objectCount;
+    
+    // Calculate dispatch groups (assuming local_size_x = 64)
+    u32 groupCountX = (objectCount + 63) / 64;
     u32 groupCountY = 1;
     u32 groupCountZ = 1;
 
     {
         GenericComputeDispatchCmd cmd(&m_cullingPipeline, groupCountX, groupCountY, groupCountZ);
-        // cmd.descriptorSets = {ctx.mainViewUBODescriptor, ...};
+        cmd.descriptorSets = {ctx.mainViewUBODescriptor, ctx.pResourceManager->GetInstanceSSBODescriptorSet(ctx.imageIdx),
+                              ctx.pResourceManager->GetSceneAABBSSBODescriptorSet(ctx.imageIdx)};
         cmd.SetPushConstants(0, m_pushConstants);
-        pCmdBuffer->RecordCommand(cmd);
+        //pCmdBuffer->RecordCommand(cmd);
     }
 
     EndRenderPassProfilingScope(pCmdBuffer);

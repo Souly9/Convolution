@@ -40,11 +40,17 @@ public:
     void WriteInstanceSSBODescriptorUpdate(u32 targetFrame);
 
     void UpdateTransformBuffer(const stltype::vector<DirectX::XMFLOAT4X4>& transformBuffer, u32 thisFrame);
+    void UpdateSceneAABBBuffer(const stltype::vector<AABB>& aabbBuffer, u32 thisFrame);
     void UpdateGlobalMaterialBuffer(const UBO::MaterialBuffer& materialBuffer, u32 thisFrame);
 
     DescriptorSet* GetInstanceSSBODescriptorSet(u32 frameIdx)
     {
         return m_frameData[frameIdx].pSceneInstanceSSBOSet;
+    }
+
+    DescriptorSet* GetSceneAABBSSBODescriptorSet(u32 frameIdx)
+    {
+        return m_frameData[frameIdx].pSceneAABBSet;
     }
 
     const BufferData& GetSceneGeometryBuffers() const
@@ -65,27 +71,6 @@ public:
         return m_debugGeometryBuffers;
     }
 
-protected:
-    void UpdateInstanceBuffer(const Mesh& mesh);
-    void UpdateSceneGeometryBuffer(const Mesh& mesh);
-
-    ProfiledLockable(CustomMutex, m_bufferUpdateMutex);
-    BufferData m_sceneGeometryBuffers;
-    // Seperating the debug stuff to update it easier and so on, not sure about it
-    // though...
-    BufferData m_debugGeometryBuffers;
-    StorageBuffer m_transformBuffer;
-    StorageBuffer m_sceneInstanceBuffer;
-    StorageBuffer m_materialBuffer;
-
-    DescriptorSetLayoutVulkan m_sceneInstanceSSBOLayout;
-    DescriptorPool m_descriptorPool;
-    struct FrameData
-    {
-        DescriptorSet* pSceneInstanceSSBOSet;
-    };
-    stltype::fixed_vector<FrameData, SWAPCHAIN_IMAGES, false> m_frameData;
-
     struct BufferStats
     {
         u64 vertBufferOffset{0};
@@ -95,6 +80,38 @@ protected:
         u64 indexCount{0};
         u64 instanceCount{0};
     };
+
+    const BufferStats& GetBufferOffsetData() const
+    {
+        return m_bufferOffsetData;
+    }
+
+private:
+    void UpdateInstanceBuffer(const Mesh& mesh);
+    void UpdateSceneGeometryBuffer(const Mesh& mesh);
+
+    ProfiledLockable(CustomMutex, m_bufferUpdateMutex);
+
+    BufferData m_sceneGeometryBuffers;
+    // Seperating the debug stuff to update it easier and so on, not sure about it
+    // though...
+    BufferData m_debugGeometryBuffers;
+    StorageBuffer m_transformBuffer;
+    StorageBuffer m_sceneInstanceBuffer;
+    StorageBuffer m_sceneAABBBuffer;
+    StorageBuffer m_materialBuffer;
+
+    DescriptorSetLayoutVulkan m_sceneInstanceSSBOLayout;
+    DescriptorSetLayoutVulkan m_sceneAABBLayout;
+    DescriptorPool m_descriptorPool;
+    struct FrameData
+    {
+        DescriptorSet* pSceneInstanceSSBOSet;
+        DescriptorSet* pSceneAABBSet;
+    };
+    stltype::fixed_vector<FrameData, SWAPCHAIN_IMAGES, false> m_frameData;
+
+    
     BufferStats m_bufferOffsetData;
     BufferStats m_debugBufferOffsetData;
 

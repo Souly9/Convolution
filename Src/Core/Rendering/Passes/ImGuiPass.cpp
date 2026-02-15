@@ -14,15 +14,15 @@
 #include <imgui/imstb_textedit.h>
 #include <imgui/imstb_truetype.h>
 
-namespace RenderPasses
-{
+using namespace RenderPasses;
+
 
 ImGuiPass::ImGuiPass() : ConvolutionRenderPass("ImGuiPass")
 {
     g_pEventSystem->AddWindowResizeEventCallback([this](const auto&) { UpdateImGuiScaling(); });
 }
 
-void RenderPasses::ImGuiPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager)
+void ImGuiPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager)
 {
     ScopedZone("ImGuiPass::Init");
 
@@ -71,7 +71,7 @@ void RenderPasses::ImGuiPass::Init(RendererAttachmentInfo& attachmentInfo, const
     ImGui_ImplVulkan_Init(&info);
 }
 
-void RenderPasses::ImGuiPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
+void ImGuiPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
 {
     ScopedZone("ImGuiPass::Render");
 
@@ -111,4 +111,4 @@ bool ImGuiPass::WantsToRender() const
 {
     return true;
 }
-} // namespace RenderPasses
+

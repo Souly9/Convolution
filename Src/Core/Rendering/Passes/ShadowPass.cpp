@@ -13,8 +13,8 @@
 #include <cfloat>
 
 
-namespace RenderPasses
-{
+using namespace RenderPasses;
+
 void CSMPass::BuildBuffers()
 {
 }
@@ -88,7 +88,7 @@ void CSMPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
     // m_needsBufferSync = true;
 }
 
-void RenderPasses::CSMPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
+void CSMPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
 {
     ScopedZone("ShadowPass::Render");
 
@@ -287,7 +287,7 @@ stltype::array<mathstl::Matrix, 16> CSMPass::ComputeLightViewProjMatrices(
         lightView = mathstl::Matrix::CreateLookAt(eye, center, up);
 
         mathstl::Matrix lightProj =
-            mathstl::Matrix::CreateOrthographicOffCenter(-radius, radius, -radius, radius, -radius * 3, radius * 3);
+            mathstl::Matrix::CreateOrthographicOffCenter(-radius, radius, -radius, radius, -radius * 3, radius * 6);
 
         lightViewProjMatrices[i] = lightView * lightProj;
         lastSplitDist = splitDist;
@@ -306,4 +306,4 @@ stltype::array<mathstl::Matrix, 16> CSMPass::ComputeLightViewProjMatrices(
     return lightViewProjMatrices;
 }
 
-} // namespace RenderPasses
+

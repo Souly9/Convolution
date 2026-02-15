@@ -1,12 +1,14 @@
 #include "CompositPass.h"
 
-RenderPasses::CompositPass::CompositPass() : GenericGeometryPass("CompositPass")
+using namespace RenderPasses;
+
+CompositPass::CompositPass() : GenericGeometryPass("CompositPass")
 {
     SetVertexInputDescriptions(VertexInputDefines::VertexAttributeTemplates::Complete);
     CreateSharedDescriptorLayout();
 }
 
-void RenderPasses::CompositPass::Init(RendererAttachmentInfo& attachmentInfo,
+void CompositPass::Init(RendererAttachmentInfo& attachmentInfo,
                                       const SharedResourceManager& resourceManager)
 {
     ScopedZone("CompositPass::Init");
@@ -24,7 +26,7 @@ void RenderPasses::CompositPass::Init(RendererAttachmentInfo& attachmentInfo,
     BuildPipelines();
 }
 
-void RenderPasses::CompositPass::BuildPipelines()
+void CompositPass::BuildPipelines()
 {
     ScopedZone("CompositPass::BuildPipelines");
     auto mainVert = Shader("Shaders/Simple.vert.spv", "main");
@@ -38,7 +40,7 @@ void RenderPasses::CompositPass::BuildPipelines()
         ShaderCollection{&mainVert, &mainFrag}, PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions}, info);
 }
 
-void RenderPasses::CompositPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
+void CompositPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
                                                      FrameRendererContext& previousFrameCtx,
                                                      u32 thisFrameNum)
 {
@@ -51,7 +53,7 @@ void RenderPasses::CompositPass::RebuildInternalData(const stltype::vector<PassM
     m_indirectCmdBuffer.FillCmds();
 }
 
-void RenderPasses::CompositPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
+void CompositPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
 {
     const auto currentFrame = ctx.currentFrame;
     UpdateContextForFrame(currentFrame);
@@ -101,7 +103,7 @@ void RenderPasses::CompositPass::Render(const MainPassData& data, FrameRendererC
     EndRenderPassProfilingScope(pCmdBuffer);
 }
 
-void RenderPasses::CompositPass::CreateSharedDescriptorLayout()
+void CompositPass::CreateSharedDescriptorLayout()
 {
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalTextures, 0));
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalArrayTextures, 0));
@@ -117,7 +119,7 @@ void RenderPasses::CompositPass::CreateSharedDescriptorLayout()
     // m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::PerPassObjectSSBO, 4));
 }
 
-bool RenderPasses::CompositPass::WantsToRender() const
+bool CompositPass::WantsToRender() const
 {
     return true;
 }

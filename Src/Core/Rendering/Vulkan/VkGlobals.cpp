@@ -3,6 +3,7 @@
 #include "VkTextureManager.h"
 
 VkDevice VkGlobals::s_logicalDevice = nullptr;
+VkProfiler* VkGlobals::s_pProfiler = nullptr;
 VkFormat VkGlobals::s_swapChainImageFormat{};
 VkSwapchainKHR VkGlobals::s_mainSwapChain{};
 VkQueue VkGlobals::s_presentQueue{};
@@ -12,7 +13,7 @@ QueueFamilyIndices VkGlobals::s_indices{};
 Queues VkGlobals::s_queues{};
 VkPhysicalDevice VkGlobals::s_physicalDevice = VK_NULL_HANDLE;
 VkPhysicalDeviceProperties VkGlobals::s_physicalDeviceProperties{};
-extern stltype::unique_ptr<GPUMemManager<Vulkan>> g_pGPUMemoryManager = stltype::make_unique<GPUMemManager<Vulkan>>();
+stltype::unique_ptr<GPUMemManager<Vulkan>> g_pGPUMemoryManager = stltype::make_unique<GPUMemManager<Vulkan>>();
 Texture* VkGlobals::s_pDepthStencilBuffer = nullptr;
 VulkanContext VkGlobals::s_context{};
 
@@ -20,6 +21,12 @@ VkDevice VkGlobals::GetLogicalDevice()
 {
     DEBUG_ASSERT(s_logicalDevice != nullptr);
     return s_logicalDevice;
+}
+
+VkProfiler* VkGlobals::GetProfiler()
+{
+    //DEBUG_ASSERT(s_pProfiler != nullptr);
+    return s_pProfiler;
 }
 
 VkFormat VkGlobals::GetSwapChainImageFormat()
@@ -76,6 +83,11 @@ Texture* VkGlobals::GetDepthStencilBuffer()
 void VkGlobals::SetContext(const VulkanContext& context)
 {
     s_context = context;
+}
+
+void VkGlobals::SetProfiler(VkProfiler* pProfiler)
+{
+    s_pProfiler = pProfiler;
 }
 
 void VkGlobals::SetPhysicalDeviceProperties(const VkPhysicalDeviceProperties& physDeviceProps)

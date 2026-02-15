@@ -9,6 +9,8 @@
 #include <backends/imgui_impl_vulkan.h>
 #include <imgui.h>
 #include "Core/Rendering/Vulkan/VkQueryPool.h"
+#include "Core/Rendering/Vulkan/VkProfiler.h"
+#include "Core/Global/State/ApplicationState.h"
 
 namespace CommandHelpers
 {
@@ -102,6 +104,7 @@ static void RecordCommand(GenericIndirectDrawCmd& cmd, CBufferVulkan& buffer)
                                 sets.data(),
                                 0,
                                 nullptr);
+        buffer.GetStats().descriptorBinds += cmd.descriptorSets.size();
     }
     // vkCmdDrawIndexed(buffer.GetRef(), 4, 1, 0, 0, 0);
 
@@ -111,6 +114,8 @@ static void RecordCommand(GenericIndirectDrawCmd& cmd, CBufferVulkan& buffer)
                              cmd.bufferOffst,
                              cmd.drawCount,
                              sizeof(VkDrawIndexedIndirectCommand));
+    buffer.GetStats().drawCalls += cmd.drawCount; // Just estimating the amount of draw calls here
+    ++buffer.GetStats().drawIndirectCalls;
 }
 static void RecordCommand(GenericInstancedDrawCmd& cmd, CBufferVulkan& buffer)
 {
@@ -128,10 +133,13 @@ static void RecordCommand(GenericInstancedDrawCmd& cmd, CBufferVulkan& buffer)
                                 sets.data(),
                                 0,
                                 nullptr);
+
+        buffer.GetStats().descriptorBinds += cmd.descriptorSets.size();
     }
 
     vkCmdDrawIndexed(
         buffer.GetRef(), cmd.vertCount, cmd.instanceCount, cmd.indexOffset, cmd.firstVert, cmd.firstInstance);
+    buffer.GetStats().drawCalls++;
 }
 static void RecordCommand(SimpleBufferCopyCmd& cmd, CBufferVulkan& buffer)
 {
@@ -223,20 +231,19 @@ static void RecordCommand(ImageLayoutTransitionCmd& cmd, CBufferVulkan& buffer)
 
 static void RecordCommand(ImGuiDrawCmd& cmd, CBufferVulkan& buffer)
 {
-    // Ensure we are in a valid state to render ImGui
-    // This assumes ImGui_ImplVulkan_RenderDrawData handles all necessary state setup or that it's compatible with
-    // current state
     ImGui_ImplVulkan_RenderDrawData(cmd.drawData, buffer.GetRef());
 }
 
 static void RecordCommand(BindComputePipelineCmd& cmd, CBufferVulkan& buffer)
 {
     vkCmdBindPipeline(buffer.GetRef(), VK_PIPELINE_BIND_POINT_COMPUTE, cmd.pPipeline->GetRef());
+    buffer.GetStats().pipelineBinds++;
 }
 
 static void RecordCommand(ComputeDispatchCmd& cmd, CBufferVulkan& buffer)
 {
     vkCmdDispatch(buffer.GetRef(), cmd.groupCountX, cmd.groupCountY, cmd.groupCountZ);
+    buffer.GetStats().computeDispatches++;
 }
 
 static void RecordCommand(ComputePushConstantCmd& cmd, CBufferVulkan& buffer)
@@ -267,6 +274,8 @@ static void RecordCommand(GenericComputeDispatchCmd& cmd, CBufferVulkan& buffer)
                                 sets.data(),
                                 0,
                                 nullptr);
+        
+        buffer.GetStats().descriptorBinds += sets.size();
     }
 
     if (cmd.pushConstantSize > 0)
@@ -280,6 +289,7 @@ static void RecordCommand(GenericComputeDispatchCmd& cmd, CBufferVulkan& buffer)
     }
 
     vkCmdDispatch(buffer.GetRef(), cmd.groupCountX, cmd.groupCountY, cmd.groupCountZ);
+    buffer.GetStats().computeDispatches++;
 }
 
 static void RecordCommand(GlobalBarrierCmd& cmd, CBufferVulkan& buffer)
@@ -320,14 +330,63 @@ void CBufferVulkan::Bake()
 {
     BeginBufferForSingleSubmit();
 
+    // Enforce stat collection for all buffers, but only if supported by the queue family
+    bool bSupportsProfiling = false;
+    if (m_pool)
+    {
+        u32 queueFamilyIdx = m_pool->GetQueueFamilyIndex();
+        const auto& indices = VkGlobals::GetQueueFamilyIndices();
+        if ((indices.graphicsFamily.has_value() && indices.graphicsFamily.value() == queueFamilyIdx) ||
+            (indices.computeFamily.has_value() && indices.computeFamily.value() == queueFamilyIdx))
+        {
+            bSupportsProfiling = true;
+        }
+    }
+
+    u32 queryIdx = ~0u;
+    VkQueryPool queryPool = VkGlobals::GetProfiler()->GetPool()->GetRef();
+
+    if (bSupportsProfiling)
+    {
+        queryIdx = VkGlobals::GetProfiler()->AllocateQuery();
+        if (queryIdx != ~0u)
+        {
+            vkCmdResetQueryPool(GetRef(), queryPool, queryIdx, 1);
+            vkCmdBeginQuery(GetRef(), queryPool, queryIdx, 0);
+        }
+    }
+
     // vkCmdSetCheckpoint(GetRef(), (const void*)m_debugName.data());
     for (auto& cmd : m_commands)
     {
         stltype::visit([&](auto& c) { CommandHelpers::RecordCommand(c, *this); }, cmd);
     }
+
+    if (queryIdx != ~0u)
+    {
+        vkCmdEndQuery(GetRef(), queryPool, queryIdx);
+    }
+
     EndBuffer();
 
+    // Register callback to update stats
+    CommandBufferStats capturedStats = m_stats; 
+    AddExecutionFinishedCallback([=]() {
+        RendererState::SceneRenderStats ctx;
+        ctx.numDescriptorBinds = capturedStats.descriptorBinds;
+        ctx.numPipelineBinds = capturedStats.pipelineBinds;
+        ctx.numDrawCalls = capturedStats.drawCalls;
+        ctx.numDrawIndirectCalls = capturedStats.drawIndirectCalls;
+        ctx.numComputeDispatches = capturedStats.computeDispatches;
+        
+        
+        VkGlobals::GetProfiler()->AddCPUStats(ctx, queryIdx);
+
+        VkGlobals::GetProfiler()->AddQuery(queryIdx);
+    });
+
     m_commands.clear();
+    m_stats = {}; // Reset stats for next use
 }
 
 void CBufferVulkan::AddWaitSemaphore(Semaphore* pSemaphore)
@@ -396,6 +455,7 @@ void CBufferVulkan::BeginRendering(BeginRenderingCmd& cmd)
     BeginRendering(static_cast<BeginRenderingBaseCmd&>(cmd));
 
     vkCmdBindPipeline(GetRef(), VK_PIPELINE_BIND_POINT_GRAPHICS, cmd.pso->GetRef());
+    m_stats.pipelineBinds++;
 
     if (cmd.pso->HasDynamicViewScissorState())
     {

@@ -6,12 +6,9 @@
 
 namespace RenderPasses
 {
-// TODO: Define push constants for frustum culling
 struct FrustumCullingPushConstants
 {
-    // Fill in with necessary data (e.g., view matrix, object count, etc.)
     u32 objectCount;
-    // ...
 };
 
 // Compute pass for frustum culling

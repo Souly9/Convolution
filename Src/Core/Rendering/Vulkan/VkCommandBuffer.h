@@ -12,6 +12,11 @@ public:
     ~CBufferVulkan();
 
     void Bake();
+    
+    CommandBufferStats& GetStats()
+    {
+        return m_stats;
+    }
 
     const VkCommandBuffer& GetRef() const
     {
