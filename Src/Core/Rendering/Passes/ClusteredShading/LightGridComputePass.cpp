@@ -12,21 +12,23 @@
 
 using namespace RenderPasses;
 
-RenderPasses::LightGridComputePass::LightGridComputePass() : ConvolutionRenderPass("LightGridComputePass")
+
+
+LightGridComputePass::LightGridComputePass() : ConvolutionRenderPass("LightGridComputePass")
 {
     CreateSharedDescriptorLayout();
 }
 
-RenderPasses::LightGridComputePass::~LightGridComputePass() = default;
+LightGridComputePass::~LightGridComputePass() = default;
 
-void RenderPasses::LightGridComputePass::Init(RendererAttachmentInfo& attachmentInfo,
+void LightGridComputePass::Init(RendererAttachmentInfo& attachmentInfo,
                                               const SharedResourceManager& resourceManager)
 {
     ScopedZone("LightGridComputePass::Init");
     BuildPipelines();
 }
 
-void RenderPasses::LightGridComputePass::BuildPipelines()
+void LightGridComputePass::BuildPipelines()
 {
     ScopedZone("LightGridComputePass::BuildPipelines");
 
@@ -51,7 +53,7 @@ void RenderPasses::LightGridComputePass::BuildPipelines()
     m_clusterComputePipeline = ComputePipeline(shaders, pipeInfo);
 }
 
-void RenderPasses::LightGridComputePass::CreateSharedDescriptorLayout()
+void LightGridComputePass::CreateSharedDescriptorLayout()
 {
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::View, ViewSet));
 
@@ -62,7 +64,7 @@ void RenderPasses::LightGridComputePass::CreateSharedDescriptorLayout()
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::ClusterAABBsSSBO, ClusterGridSet));
 }
 
-void RenderPasses::LightGridComputePass::Render(const MainPassData& data,
+void LightGridComputePass::Render(const MainPassData& data,
                                                 FrameRendererContext& ctx,
                                                 CommandBuffer* pCmdBuffer)
 {

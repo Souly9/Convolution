@@ -13,6 +13,11 @@ struct GlobalTransformSSBO
     stltype::fixed_vector<mathstl::Matrix, MAX_ENTITIES, false> modelMatrices{};
 };
 
+struct GlobalAABBSSBO
+{
+    stltype::fixed_vector<AABB, MAX_ENTITIES, false> aabbs{};
+};
+
 // Can probably pack each float into half an uint or so but enough for now
 struct InstanceData
 {
@@ -44,6 +49,7 @@ struct GlobalMaterialSSBO
 static constexpr u64 GlobalPerObjectDataSSBOSize = sizeof(GlobalInstanceSSBO);
 static constexpr u64 GlobalMaterialSSBOSize = sizeof(GlobalMaterialSSBO);
 static constexpr u64 GlobalTransformSSBOSize = sizeof(GlobalTransformSSBO::modelMatrices);
+static constexpr u64 GlobalAABBSSBOSize = sizeof(GlobalAABBSSBO::aabbs);
 
 // Cluster bounds for intersection testing
 struct ClusterAABB

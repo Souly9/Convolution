@@ -1,17 +1,19 @@
 #include "DebugShapePass.h"
 #include "Utils/RenderPassUtils.h"
 
-RenderPasses::DebugShapePass::DebugShapePass() : GenericGeometryPass("DebugShapePass")
+using namespace RenderPasses;
+
+DebugShapePass::DebugShapePass() : GenericGeometryPass("DebugShapePass")
 {
     SetVertexInputDescriptions(VertexInputDefines::VertexAttributeTemplates::Complete);
     CreateSharedDescriptorLayout();
 }
 
-void RenderPasses::DebugShapePass::BuildBuffers()
+void DebugShapePass::BuildBuffers()
 {
 }
 
-void RenderPasses::DebugShapePass::Init(RendererAttachmentInfo& attachmentInfo,
+void DebugShapePass::Init(RendererAttachmentInfo& attachmentInfo,
                                         const SharedResourceManager& resourceManager)
 {
     ScopedZone("DebugShapePass::Init");
@@ -33,7 +35,7 @@ void RenderPasses::DebugShapePass::Init(RendererAttachmentInfo& attachmentInfo,
     BuildPipelines();
 }
 
-void RenderPasses::DebugShapePass::BuildPipelines()
+void DebugShapePass::BuildPipelines()
 {
     ScopedZone("DebugShapePass::BuildPipelines");
 
@@ -54,7 +56,7 @@ void RenderPasses::DebugShapePass::BuildPipelines()
                                      wireFrameInfo);
 }
 
-void RenderPasses::DebugShapePass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
+void DebugShapePass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
                                                        FrameRendererContext& previousFrameCtx,
                                                        u32 thisFrameNum)
 {
@@ -113,7 +115,7 @@ void RenderPasses::DebugShapePass::RebuildInternalData(const stltype::vector<Pas
     m_indirectCmdBufferWireFrame.FillCmds();
 }
 
-void RenderPasses::DebugShapePass::Render(const MainPassData& data,
+void DebugShapePass::Render(const MainPassData& data,
                                           FrameRendererContext& ctx,
                                           CommandBuffer* pCmdBuffer)
 {
@@ -174,7 +176,7 @@ void RenderPasses::DebugShapePass::Render(const MainPassData& data,
     }
 }
 
-void RenderPasses::DebugShapePass::CreateSharedDescriptorLayout()
+void DebugShapePass::CreateSharedDescriptorLayout()
 {
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::View, 0));
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::TransformSSBO, 1));
@@ -183,7 +185,7 @@ void RenderPasses::DebugShapePass::CreateSharedDescriptorLayout()
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::PerPassObjectSSBO, 2));
 }
 
-bool RenderPasses::DebugShapePass::WantsToRender() const
+bool DebugShapePass::WantsToRender() const
 {
     return NeedToRender(m_indirectCmdBufferOpaque) || NeedToRender(m_indirectCmdBufferWireFrame);
 }

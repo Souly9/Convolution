@@ -16,3 +16,4 @@ static constexpr u32 s_globalBindlessTextureBufferBindingSlot = GlobalBindlessTe
 static constexpr u32 s_globalBindlessArrayTextureBufferBindingSlot = GlobalBindlessArrayTextureBufferSlot;
 static constexpr u32 s_globalBindlessViewMatricesBufferBindingSlot = 300;
 static constexpr u32 s_clusterGridSSBOBindingSlot = ClusterGridSSBOSlot;
+static constexpr u32 s_sceneAABBsSSBOBindingSlot = SceneAABBsSSBOSlot;

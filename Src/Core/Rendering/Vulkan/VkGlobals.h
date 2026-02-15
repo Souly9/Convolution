@@ -3,6 +3,8 @@
 #include "VkGPUMemoryManager.h"
 #include "VkTextureManager.h"
 
+
+class VkProfiler;
 extern stltype::unique_ptr<GPUMemManager<Vulkan>> g_pGPUMemoryManager;
 
 struct Queues
@@ -26,6 +28,7 @@ class VkGlobals
 {
 public:
     static VkDevice GetLogicalDevice();
+    static VkProfiler* GetProfiler();
     static VkFormat GetSwapChainImageFormat();
     static VkSwapchainKHR GetMainSwapChain();
     static VkQueue GetPresentQueue();
@@ -37,6 +40,7 @@ public:
     static const VkPhysicalDeviceProperties& GetPhysicalDeviceProperties();
     static Texture* GetDepthStencilBuffer();
     static void SetContext(const VulkanContext& context);
+    static void SetProfiler(VkProfiler* pProfiler);
 
     static void SetPhysicalDeviceProperties(const VkPhysicalDeviceProperties& physDeviceProps);
     static void SetLogicalDevice(VkDevice physDevice);
@@ -54,6 +58,7 @@ public:
 
 private:
     static stltype::vector<Texture*> s_swapChainImages;
+    static VkProfiler* s_pProfiler;
     static Texture* s_pDepthStencilBuffer;
     static QueueFamilyIndices s_indices;
     static VkDevice s_logicalDevice;

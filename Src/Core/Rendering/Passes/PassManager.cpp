@@ -15,8 +15,10 @@
 #include <cstring>
 #include <imgui/backends/imgui_impl_vulkan.h>
 
+using namespace RenderPasses;
+
 // Helper implementations to break up large functions
-void RenderPasses::PassManager::InitResourceManagerAndCallbacks()
+void PassManager::InitResourceManagerAndCallbacks()
 {
     m_resourceManager.Init();
     g_pEventSystem->AddSceneLoadedEventCallback(
@@ -34,7 +36,7 @@ void RenderPasses::PassManager::InitResourceManagerAndCallbacks()
     AddPass(PassType::Composite, stltype::make_unique<RenderPasses::CompositPass>());
 }
 
-void RenderPasses::PassManager::CreatePassObjectsAndLayouts()
+void PassManager::CreatePassObjectsAndLayouts()
 {
     DescriptorPoolCreateInfo info{};
     info.enableBindlessTextureDescriptors = false;
@@ -57,7 +59,7 @@ void RenderPasses::PassManager::CreatePassObjectsAndLayouts()
         {PipelineDescriptorLayout(UBO::BufferType::ClusterAABBsSSBO)});
 }
 
-void RenderPasses::PassManager::CreateUBOsAndMap()
+void PassManager::CreateUBOsAndMap()
 {
     u64 viewUBOSize = sizeof(UBO::ViewUBO);
 
@@ -77,7 +79,7 @@ void RenderPasses::PassManager::CreateUBOsAndMap()
     m_mappedShadowViewUBO = m_shadowViewUBO.MapMemory();
 }
 
-void RenderPasses::PassManager::CreateFrameRendererContexts()
+void PassManager::CreateFrameRendererContexts()
 {
     m_frameRendererContexts.resize(SWAPCHAIN_IMAGES);
     for (size_t i = 0; i < SWAPCHAIN_IMAGES; i++)
@@ -139,7 +141,7 @@ void RenderPasses::PassManager::CreateFrameRendererContexts()
     }
 }
 
-void RenderPasses::PassManager::InitPassesAndImGui()
+void PassManager::InitPassesAndImGui()
 {
     const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
 
@@ -243,7 +245,7 @@ void RenderPasses::PassManager::InitPassesAndImGui()
     g_pQueueHandler->WaitForFences();
 }
 
-bool RenderPasses::PassManager::AnyPassWantsToRender() const
+bool PassManager::AnyPassWantsToRender() const
 {
     for (const auto& passes : m_passes)
     {
@@ -260,7 +262,7 @@ bool RenderPasses::PassManager::AnyPassWantsToRender() const
 
 // Timeline semaphore is used for pass group synchronization - no rebuild needed
 
-void RenderPasses::PassManager::PrepareMainPassDataForFrame(MainPassData& mainPassData,
+void PassManager::PrepareMainPassDataForFrame(MainPassData& mainPassData,
                                                             FrameRendererContext& ctx,
                                                             u32 frameIdx)
 {
@@ -272,7 +274,7 @@ void RenderPasses::PassManager::PrepareMainPassDataForFrame(MainPassData& mainPa
     mainPassData.csmStepSize = g_pApplicationState->GetCurrentApplicationState().renderState.csmStepSize;
 }
 
-void RenderPasses::PassManager::PerformInitialLayoutTransitions(FrameRendererContext& ctx,
+void PassManager::PerformInitialLayoutTransitions(FrameRendererContext& ctx,
                                                                 const stltype::vector<const Texture*>& gbufferTextures,
                                                                 Texture* pSwapChainTexture,
                                                                 Semaphore& imageAvailableSemaphore)
@@ -301,7 +303,7 @@ void RenderPasses::PassManager::PerformInitialLayoutTransitions(FrameRendererCon
     g_pTexManager->DispatchAsyncOps("Initial layout transition");
 }
 
-void RenderPasses::PassManager::InitPassGroupContexts()
+void PassManager::InitPassGroupContexts()
 {
     for (auto groupType : GROUP_EXECUTION_ORDER)
     {
@@ -317,7 +319,7 @@ void RenderPasses::PassManager::InitPassGroupContexts()
     }
 }
 
-bool RenderPasses::PassManager::RenderPassGroup(PassType groupType, const MainPassData& data, FrameRendererContext& ctx)
+bool PassManager::RenderPassGroup(PassType groupType, const MainPassData& data, FrameRendererContext& ctx)
 {
     if (m_passes.find(groupType) == m_passes.end())
     {
@@ -399,7 +401,7 @@ bool RenderPasses::PassManager::RenderPassGroup(PassType groupType, const MainPa
     return true;
 }
 
-void RenderPasses::PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
+void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
                                                     FrameRendererContext& ctx,
                                                     Semaphore& imageAvailableSemaphore)
 {
@@ -436,13 +438,13 @@ void RenderPasses::PassManager::RenderAllPassGroups(const MainPassData& mainPass
     TransitionSwapchainToPresent(ctx);
 }
 
-Semaphore* RenderPasses::PassManager::GetLastActiveGroupSemaphore(FrameRendererContext& ctx)
+Semaphore* PassManager::GetLastActiveGroupSemaphore(FrameRendererContext& ctx)
 {
     // Unused with updated timeline logic, but kept for signature compatibility if needed or return nullptr
     return nullptr;
 }
 
-void RenderPasses::PassManager::TransitionGBuffersToShaderRead(FrameRendererContext& ctx,
+void PassManager::TransitionGBuffersToShaderRead(FrameRendererContext& ctx,
                                                                const stltype::vector<const Texture*>& gbufferTextures)
 {
     // Wait for the last timeline value signaled by any render pass, then signal next
@@ -474,7 +476,7 @@ void RenderPasses::PassManager::TransitionGBuffersToShaderRead(FrameRendererCont
     g_pTexManager->DispatchAsyncOps("GBuffer to shader read");
 }
 
-void RenderPasses::PassManager::TransitionUIToShaderRead(FrameRendererContext& ctx, const Texture* pUITexture)
+void PassManager::TransitionUIToShaderRead(FrameRendererContext& ctx, const Texture* pUITexture)
 {
     u64 waitValue = ctx.nextTimelineValue - 1;
     u64 signalValue = ctx.nextTimelineValue++;
@@ -490,7 +492,7 @@ void RenderPasses::PassManager::TransitionUIToShaderRead(FrameRendererContext& c
     g_pTexManager->DispatchAsyncOps("UI to shader read");
 }
 
-void RenderPasses::PassManager::TransitionSwapchainToColorAttachment(FrameRendererContext& ctx)
+void PassManager::TransitionSwapchainToColorAttachment(FrameRendererContext& ctx)
 {
     u64 waitValue = ctx.nextTimelineValue - 1;
     u64 signalValue = ctx.nextTimelineValue++;
@@ -506,7 +508,7 @@ void RenderPasses::PassManager::TransitionSwapchainToColorAttachment(FrameRender
     g_pTexManager->DispatchAsyncOps("Swapchain to color attachment");
 }
 
-void RenderPasses::PassManager::TransitionSwapchainToPresent(FrameRendererContext& ctx)
+void PassManager::TransitionSwapchainToPresent(FrameRendererContext& ctx)
 {
     // Wait on the timeline to ensure all passes completed before transitioning
     u64 waitValue = ctx.nextTimelineValue - 1;
@@ -523,7 +525,7 @@ void RenderPasses::PassManager::TransitionSwapchainToPresent(FrameRendererContex
     g_pTexManager->DispatchAsyncOps("Swapchain to present");
 }
 
-void RenderPasses::PassManager::Init()
+void PassManager::Init()
 {
     InitResourceManagerAndCallbacks();
     CreatePassObjectsAndLayouts();
@@ -543,7 +545,7 @@ void RenderPasses::PassManager::Init()
     }
 }
 
-void RenderPasses::PassManager::ExecutePasses(u32 frameIdx)
+void PassManager::ExecutePasses(u32 frameIdx)
 {
     auto& mainPassData = m_mainPassData.at(frameIdx);
 
@@ -583,17 +585,17 @@ void RenderPasses::PassManager::ExecutePasses(u32 frameIdx)
         const auto& results = m_gpuTimingQuery.GetResults();
         f32 totalTime = m_gpuTimingQuery.GetTotalGPUTimeMs();
 
-        g_pApplicationState->RegisterUpdateFunction(
-            [results, totalTime](ApplicationState& state)
-            {
-                state.renderState.passTimings.clear();
-                state.renderState.passTimings.reserve(results.size());
-                for (const auto& r : results)
-                {
-                    state.renderState.passTimings.push_back({r.passName, r.gpuTimeMs, r.wasRun});
-                }
-                state.renderState.totalGPUTimeMs = totalTime;
-            });
+        stltype::vector<PassTimingStat> passTimings;
+        passTimings.reserve(results.size());
+        for (const auto& r : results)
+        {
+            passTimings.push_back({r.passName, r.gpuTimeMs, r.wasRun});
+        }
+        g_pApplicationState->RegisterUpdateFunction([passTimings, totalTime](ApplicationState& state)
+                                                    { state.renderState.passTimings.clear(); 
+                                                      state.renderState.passTimings = passTimings;
+                                                      state.renderState.totalGPUTimeMs = totalTime;
+                                                    });
 
         // Clear run flags after reading so next frame starts fresh
         m_gpuTimingQuery.ClearRunFlags();
@@ -601,18 +603,18 @@ void RenderPasses::PassManager::ExecutePasses(u32 frameIdx)
 }
 
 // Ensure destructor symbol exists
-RenderPasses::PassManager::~PassManager()
+PassManager::~PassManager()
 {
     m_gpuTimingQuery.Destroy();
 }
 
 // Restore functions removed during refactor
-void RenderPasses::PassManager::AddPass(PassType type, stltype::unique_ptr<ConvolutionRenderPass>&& pass)
+void PassManager::AddPass(PassType type, stltype::unique_ptr<ConvolutionRenderPass>&& pass)
 {
     m_passes[type].push_back(std::move(pass));
 }
 
-void RenderPasses::PassManager::SetEntityMeshDataForFrame(EntityMeshDataMap&& data, u32 frameIdx)
+void PassManager::SetEntityMeshDataForFrame(EntityMeshDataMap&& data, u32 frameIdx)
 {
     // DEBUG_ASSERT(frameIdx == FrameGlobals::GetFrameNumber());
     m_passDataMutex.lock();
@@ -621,7 +623,7 @@ void RenderPasses::PassManager::SetEntityMeshDataForFrame(EntityMeshDataMap&& da
     m_passDataMutex.unlock();
 }
 
-void RenderPasses::PassManager::SetEntityTransformDataForFrame(TransformSystemData&& data, u32 frameIdx)
+void PassManager::SetEntityTransformDataForFrame(TransformSystemData&& data, u32 frameIdx)
 {
     // DEBUG_ASSERT(frameIdx == FrameGlobals::GetFrameNumber());
     m_passDataMutex.lock();
@@ -630,7 +632,7 @@ void RenderPasses::PassManager::SetEntityTransformDataForFrame(TransformSystemDa
     m_passDataMutex.unlock();
 }
 
-void RenderPasses::PassManager::SetLightDataForFrame(PointLightVector&& data, DirLightVector&& dirLights, u32 frameIdx)
+void PassManager::SetLightDataForFrame(PointLightVector&& data, DirLightVector&& dirLights, u32 frameIdx)
 {
     // DEBUG_ASSERT(frameIdx == FrameGlobals::GetFrameNumber());
     m_passDataMutex.lock();
@@ -640,7 +642,7 @@ void RenderPasses::PassManager::SetLightDataForFrame(PointLightVector&& data, Di
     m_passDataMutex.unlock();
 }
 
-void RenderPasses::PassManager::SetMainViewData(UBO::ViewUBO&& viewUBO, f32 zNear, f32 zFar, u32 frameIdx)
+void PassManager::SetMainViewData(UBO::ViewUBO&& viewUBO, f32 zNear, f32 zFar, u32 frameIdx)
 {
     m_passDataMutex.lock();
     m_dataToBePreProcessed.mainViewUBO = std::move(viewUBO);
@@ -650,7 +652,7 @@ void RenderPasses::PassManager::SetMainViewData(UBO::ViewUBO&& viewUBO, f32 zNea
     m_passDataMutex.unlock();
 }
 
-void RenderPasses::PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
+void PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
 {
     const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
     // Recreate shadow maps
@@ -700,6 +702,8 @@ void RenderPasses::PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
 
         stltype::vector<DirectX::XMFLOAT4X4> transformSSBO;
         transformSSBO.reserve(MAX_ENTITIES);
+        stltype::vector<AABB> sceneAABBs;
+        sceneAABBs.reserve(MAX_ENTITIES);
 
         if (m_dataToBePreProcessed.entityMeshData.empty() == false)
         {
@@ -762,8 +766,20 @@ void RenderPasses::PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
         {
             const auto& entityID = data.first;
             transformSSBO.insert(transformSSBO.begin() + m_entityToTransformUBOIdx[entityID], data.second);
+            // Also populate AABBs
+            AABB aabb{};
+            if (m_dataToBePreProcessed.entityMeshData.find(entityID) != m_dataToBePreProcessed.entityMeshData.end())
+            {
+                const auto& meshDataVec = m_dataToBePreProcessed.entityMeshData.at(entityID);
+                if (!meshDataVec.empty())
+                {
+                    aabb = meshDataVec[0].aabb;
+                }
+            }
+            sceneAABBs.insert(sceneAABBs.begin() + m_entityToTransformUBOIdx[entityID], aabb);
         }
         m_resourceManager.UpdateTransformBuffer(transformSSBO, m_currentSwapChainIdx);
+        m_resourceManager.UpdateSceneAABBBuffer(sceneAABBs, m_currentSwapChainIdx);
 
         if (m_dataToBePreProcessed.mainViewUBO.has_value())
         {

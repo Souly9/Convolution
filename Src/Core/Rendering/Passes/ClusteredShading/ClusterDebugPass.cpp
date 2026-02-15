@@ -7,8 +7,7 @@
 #include "Core/Rendering/Vulkan/VkShader.h"
 #include "Core/Rendering/Passes/PassManager.h" // For MainPassData definition
 
-namespace RenderPasses
-{
+using namespace RenderPasses;
 ClusterDebugPass::ClusterDebugPass() : ConvolutionRenderPass("ClusterDebugPass")
 {
     CreateSharedDescriptorLayout();
@@ -159,4 +158,4 @@ bool ClusterDebugPass::WantsToRender() const
 {
     return g_pApplicationState->GetCurrentApplicationState().renderState.showClusterAABBs;
 }
-} // namespace RenderPasses
+

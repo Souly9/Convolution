@@ -1,7 +1,9 @@
 #include "GenericGeometryPass.h"
 #include "Core/Rendering/Vulkan/Utils/DescriptorSetLayoutConverters.h"
 
-RenderPasses::GenericGeometryPass::GenericGeometryPass(const stltype::string& name) : ConvolutionRenderPass(name)
+using namespace RenderPasses;
+
+GenericGeometryPass::GenericGeometryPass(const stltype::string& name) : ConvolutionRenderPass(name)
 
 {
     DescriptorPoolCreateInfo info{};
@@ -21,7 +23,7 @@ RenderPasses::GenericGeometryPass::GenericGeometryPass(const stltype::string& na
     }
 }
 
-void RenderPasses::GenericGeometryPass::RebuildPerObjectBuffer(const stltype::vector<u32>& data)
+void GenericGeometryPass::RebuildPerObjectBuffer(const stltype::vector<u32>& data)
 {
     m_dirtyFrames.clear();
     memcpy(m_mappedPerObjectSSBO, data.data(), sizeof(data[0]) * data.size());
@@ -32,7 +34,7 @@ void RenderPasses::GenericGeometryPass::RebuildPerObjectBuffer(const stltype::ve
     }
 }
 
-void RenderPasses::GenericGeometryPass::UpdateContextForFrame(u32 frameIdx)
+void GenericGeometryPass::UpdateContextForFrame(u32 frameIdx)
 {
     auto it = stltype::find(m_dirtyFrames.begin(), m_dirtyFrames.end(), frameIdx);
     if (it != m_dirtyFrames.end())
@@ -43,7 +45,7 @@ void RenderPasses::GenericGeometryPass::UpdateContextForFrame(u32 frameIdx)
     }
 }
 
-void RenderPasses::GenericGeometryPass::NameResources(const stltype::string& name)
+void GenericGeometryPass::NameResources(const stltype::string& name)
 {
     m_perObjectLayout.SetName(name + "_PerObjectSSBO");
 }

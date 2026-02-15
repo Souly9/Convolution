@@ -318,6 +318,15 @@ using Command = stltype::variant<CommandBase,
                                  WriteTimestampCmd>;
 
 // Generic command buffer, basically collects all commands as generic structs first so we can reason about them
+struct CommandBufferStats
+{
+    u32 drawCalls{0};
+    u32 computeDispatches{0};
+    u32 descriptorBinds{0};
+    u32 pipelineBinds{0};
+    u32 drawIndirectCalls{0};
+};
+
 class CBuffer : public TrackedResource
 {
 public:
@@ -347,6 +356,7 @@ public:
 
 protected:
     stltype::vector<Command> m_commands;
+    CommandBufferStats m_stats{};
     // Gets called when buffer gets destroyed or reset indirectly guaranteeing execution has finished
     stltype::vector<ExecutionFinishedCallback> m_executionFinishedCallbacks;
 };

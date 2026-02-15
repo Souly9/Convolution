@@ -6,8 +6,8 @@
 #include "Core/Rendering/Vulkan/VkGlobals.h"
 #include "Core/Rendering/Vulkan/VkSynchronization.h"
 
-namespace RenderPasses
-{
+using namespace RenderPasses;
+
 ConvolutionRenderPass::ConvolutionRenderPass(const stltype::string& name) : m_passName{name}
 {
 }
@@ -73,5 +73,5 @@ void ConvolutionRenderPass::EndRenderPassProfilingScope(CommandBuffer* pCmdBuffe
     pCmdBuffer->RecordCommand(EndProfilingScopeCmd{});
 #endif
 }
-} // namespace RenderPasses
+
 

@@ -36,6 +36,7 @@ CommandPoolVulkan::CommandPoolVulkan(u32 graphicsFamilyIdx, VkCommandPoolCreateF
     poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     poolInfo.flags = flags;
     poolInfo.queueFamilyIndex = graphicsFamilyIdx;
+    m_queueFamilyIndex = graphicsFamilyIdx;
 
     DEBUG_ASSERT(vkCreateCommandPool(VkGlobals::GetLogicalDevice(), &poolInfo, VulkanAllocator(), &m_commandPool) ==
                  VK_SUCCESS);

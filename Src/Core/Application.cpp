@@ -11,17 +11,25 @@
 #include "TimeData.h"
 #include <GLFW/glfw3.h>
 #include <imgui/backends/imgui_impl_glfw.h>
+#include <imgui/backends/imgui_impl_glfw.h>
+#include <imgui/backends/imgui_impl_glfw.h>
 #include <imgui/backends/imgui_impl_vulkan.h>
 #include <imgui/imgui.h>
+#include "Core/Rendering/Vulkan/VkProfiler.h"
+#include "vulkan/vulkan_core.h"
 
 
 Application::Application(bool canRender, RenderLayer<RenderAPI>& layer) : m_renderThread(&m_imGuiManager)
 {
+    m_pProfiler = stltype::make_unique<VkProfiler>();
+    VkGlobals::SetProfiler(m_pProfiler.get());
     g_pApplicationState = &m_applicationState;
+    
     bool bCanRender = layer.InitRenderLayer(
         g_pWindowManager->GetScreenWidth(), g_pWindowManager->GetScreenHeight(), g_pWindowManager->GetTitle());
 
     g_pGPUMemoryManager->Init();
+    m_pProfiler->Init();
     g_pQueueHandler->Init();
     g_pTexManager->Init();
     g_pGlobalTimeData->Reset();
@@ -37,17 +45,7 @@ Application::Application(bool canRender, RenderLayer<RenderAPI>& layer) : m_rend
     auto pRenderer = m_renderThread.Start();
     g_pEventSystem->OnAppInit({pRenderer});
     StaticBehaviorCollection::RegisterAllBehaviors();
-    //
-    //
-    //	g_pFileReader->SubmitIORequest(IORequest{ "Resources/Models/bunny.obj",
-    //[&](const ReadMeshInfo& info)
-    //{
-    //			auto ent = info.rootNode.root;
-    //			g_pApplicationState->RegisterUpdateFunction([ent](ApplicationState&
-    // state) { state.selectedEntities.clear();
-    // state.selectedEntities.push_back(ent); });
-    //}, RequestType::Mesh });
-    //
+    
     m_applicationState.ProcessStateUpdates();
     g_pQueueHandler->WaitForFences();
     Update(0);
@@ -60,11 +58,13 @@ void Application::CreateMainPSO()
 
 Application::~Application()
 {
+    m_pProfiler->Destroy();
+    VkGlobals::SetProfiler(nullptr);
     g_mainRenderThreadSyncSemaphore.Post();
     g_frameTimerSemaphore2.Post();
     g_imguiSemaphore.Post();
-    m_renderThread.ShutdownThread();
     vkDeviceWaitIdle(VkGlobals::GetLogicalDevice());
+    m_renderThread.ShutdownThread();
 
     m_imGuiManager.CleanUp();
 }
@@ -75,6 +75,7 @@ void Application::Run()
     u32 lastFrame = 1;
     while (!glfwWindowShouldClose(g_pWindowManager->GetWindow()))
     {
+        m_pProfiler->BeginFrame(currentFrame);
         WaitForRendererToFinish();
 
         {
@@ -102,6 +103,7 @@ void Application::Run()
 
         glfwPollEvents();
     }
+    vkDeviceWaitIdle(VkGlobals::GetLogicalDevice());
 }
 
 void Application::Update(u32 currentFrame)

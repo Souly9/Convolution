@@ -25,8 +25,11 @@ public:
         return m_count;
     }
 
+    void GetPipelineStatistics(u32 index, u32 count, stltype::vector<u64>& results);
+
 private:
     VkQueryPool m_pool{VK_NULL_HANDLE};
     VkQueryType m_type{VK_QUERY_TYPE_MAX_ENUM};
     u32 m_count{0};
+    VkQueryPipelineStatisticFlags m_statsFlags{0};
 };

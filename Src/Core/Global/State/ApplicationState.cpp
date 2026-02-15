@@ -8,6 +8,7 @@ void ApplicationStateManager::ProcessStateUpdates()
     currentState = ++currentState % MAX_STATES;
     // Don't change actual index before processing update functions
     auto newState = m_appStates[currentState];
+    newState.renderState.stats = {};
     for (auto& updateFunction : m_updateFunctions)
     {
         updateFunction(newState);

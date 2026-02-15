@@ -5,8 +5,8 @@
 #include "Core/Rendering/Vulkan/VkGlobals.h"
 #include "Utils/RenderPassUtils.h"
 
-namespace RenderPasses
-{
+using namespace RenderPasses;
+
 void StaticMainMeshPass::BuildBuffers()
 {
 }
@@ -17,7 +17,7 @@ StaticMainMeshPass::StaticMainMeshPass() : GenericGeometryPass("StaticMainMeshPa
     CreateSharedDescriptorLayout();
 }
 
-void RenderPasses::StaticMainMeshPass::Init(RendererAttachmentInfo& attachmentInfo,
+void StaticMainMeshPass::Init(RendererAttachmentInfo& attachmentInfo,
                                             const SharedResourceManager& resourceManager)
 {
     ScopedZone("StaticMeshPass::Init");
@@ -89,7 +89,7 @@ void StaticMainMeshPass::RebuildInternalData(const stltype::vector<PassMeshData>
     // m_needsBufferSync = true;
 }
 
-void RenderPasses::StaticMainMeshPass::Render(const MainPassData& data,
+void StaticMainMeshPass::Render(const MainPassData& data,
                                               FrameRendererContext& ctx,
                                               CommandBuffer* pCmdBuffer)
 {
@@ -161,4 +161,4 @@ bool StaticMainMeshPass::WantsToRender() const
 {
     return NeedToRender(m_indirectCmdBuffer);
 }
-} // namespace RenderPasses
+

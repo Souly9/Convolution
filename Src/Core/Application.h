@@ -6,6 +6,7 @@
 #include "RenderThread.h"
 #include "Rendering/RenderLayer.h"
 #include "TimeData.h"
+#include "Core/Rendering/Vulkan/VkProfiler.h"
 
 class UI;
 class TimeData;
@@ -36,4 +37,6 @@ private:
     RenderThread m_renderThread;
 
     ApplicationStateManager m_applicationState{};
+
+    stltype::unique_ptr<VkProfiler> m_pProfiler;
 };

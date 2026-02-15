@@ -67,6 +67,19 @@ struct RendererState
 
     // GPU timing stats (updated by PassManager)
     stltype::vector<PassTimingStat> passTimings{};
+    struct SceneRenderStats
+    {
+        u32 numDrawCalls{0};
+        u32 numDrawIndirectCalls{0};
+        u32 numComputeDispatches{0};
+        u32 numDescriptorBinds{0};
+        u32 numPipelineBinds{0};
+        u64 numVertices{0};
+        u64 numPrimitives{0};
+        u64 numShadersInvocations{0};
+        f32 gpuTimeMs{0.f};
+    } stats;
+
     f32 totalGPUTimeMs{0.f};
 };
 
