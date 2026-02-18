@@ -1,4 +1,8 @@
 #include "VkCommandBuffer.h"
+#include "VkCommandBuffer.h"
+#include "Core/Rendering/Core/RenderDefinitions.h"
+#include "Core/Rendering/Vulkan/VulkanTraits.h"
+#include "Core/Rendering/Vulkan/VkBuffer.h"
 #include "Core/Rendering/Core/TextureManager.h"
 #include "Core/Rendering/Vulkan/VkAttachment.h"
 #include "Core/Rendering/Vulkan/VkPipeline.h"
@@ -205,7 +209,7 @@ static void RecordCommand(ImageLayoutTransitionCmd& cmd, CBufferVulkan& buffer)
         memoryBarrier.dstAccessMask = cmd.dstAccessMask;
 
         memoryBarrier.subresourceRange.aspectMask =
-            (cmd.newLayout == ImageLayout::DEPTH_STENCIL || cmd.oldLayout == ImageLayout::DEPTH_STENCIL)
+            (cmd.newLayout == ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL || cmd.oldLayout == ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
                 ? VK_IMAGE_ASPECT_DEPTH_BIT
                 : VK_IMAGE_ASPECT_COLOR_BIT;
         memoryBarrier.subresourceRange.baseArrayLayer = cmd.baseArrayLayer;
@@ -480,15 +484,23 @@ void CBufferVulkan::BeginRendering(BeginRenderingBaseCmd& cmd)
     const auto renderExtent = VkExtent2D(cmd.extents.x, cmd.extents.y);
 
     stltype::vector<VkRenderingAttachmentInfo> colorAttachments;
-    for (const ColorAttachment& attachment : cmd.colorAttachments)
+    for (const RenderAttachmentInfo& attachment : cmd.colorAttachments)
     {
+        DEBUG_ASSERT(attachment.pTexture != nullptr);
         VkRenderingAttachmentInfo& colorAttachment = colorAttachments.emplace_back();
         colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        colorAttachment.imageView = attachment.GetTexture()->GetImageView();
-        colorAttachment.imageLayout = attachment.GetRenderingLayout();
-        colorAttachment.loadOp = attachment.GetDesc().loadOp;
-        colorAttachment.storeOp = attachment.GetDesc().storeOp;
-        colorAttachment.clearValue.color = attachment.GetClearValue().color;
+        
+        colorAttachment.imageView = attachment.pTexture->GetImageView();
+        colorAttachment.imageLayout = Conv(attachment.renderingLayout);
+        colorAttachment.loadOp = Conv(attachment.loadOp);
+        colorAttachment.storeOp = Conv(attachment.storeOp);
+        
+        // Clear value conversion
+        colorAttachment.clearValue.color.float32[0] = attachment.clearValue.color.float32[0];
+        colorAttachment.clearValue.color.float32[1] = attachment.clearValue.color.float32[1];
+        colorAttachment.clearValue.color.float32[2] = attachment.clearValue.color.float32[2];
+        colorAttachment.clearValue.color.float32[3] = attachment.clearValue.color.float32[3];
+        
         colorAttachment.resolveMode = VK_RESOLVE_MODE_NONE;
     }
 
@@ -500,21 +512,24 @@ void CBufferVulkan::BeginRendering(BeginRenderingBaseCmd& cmd)
     renderingInfo.pColorAttachments = colorAttachments.data();
 
     VkRenderingAttachmentInfo depthAttachment{};
-    if (cmd.pDepthAttachment)
+    if (cmd.hasDepthAttachment)
     {
-        const auto pDepthAttachment = cmd.pDepthAttachment;
-        depthAttachment.imageView = pDepthAttachment->GetTexture()->GetImageView();
-        depthAttachment.imageLayout = pDepthAttachment->GetRenderingLayout();
-        depthAttachment.loadOp = pDepthAttachment->GetDesc().loadOp;
-        depthAttachment.storeOp = pDepthAttachment->GetDesc().storeOp;
-        depthAttachment.clearValue.depthStencil = {1.0f, 0};
+        const auto& att = cmd.depthAttachment;
+        DEBUG_ASSERT(att.pTexture != nullptr);
+        auto pVkTex = static_cast<TextureVulkan*>(att.pTexture);
+        
+        depthAttachment.imageView = pVkTex->GetImageView();
+        depthAttachment.imageLayout = Conv(att.renderingLayout);
+        depthAttachment.loadOp = Conv(att.loadOp);
+        depthAttachment.storeOp = Conv(att.storeOp);
+        depthAttachment.clearValue.depthStencil = {att.clearValue.depthStencil.depth, att.clearValue.depthStencil.stencil};
         depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
         
         renderingInfo.viewMask = cmd.depthLayerMask;
         renderingInfo.pDepthAttachment = &depthAttachment;
     }
 
-    if (cmd.pDepthAttachment)
+    if (cmd.hasDepthAttachment)
     {
         DEBUG_ASSERT(renderingInfo.pDepthAttachment != nullptr);
     }

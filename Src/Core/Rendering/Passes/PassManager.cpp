@@ -29,8 +29,8 @@ void PassManager::InitResourceManagerAndCallbacks()
     AddPass(PassType::PreProcess, stltype::make_unique<RenderPasses::LightGridComputePass>());
     AddPass(PassType::PreProcess, stltype::make_unique<RenderPasses::DepthPrePass>());
     AddPass(PassType::Main, stltype::make_unique<RenderPasses::StaticMainMeshPass>());
+    AddPass(PassType::Main, stltype::make_unique<RenderPasses::DebugShapePass>());
     AddPass(PassType::Shadow, stltype::make_unique<RenderPasses::CSMPass>());
-    AddPass(PassType::Debug, stltype::make_unique<RenderPasses::DebugShapePass>());
     AddPass(PassType::Debug, stltype::make_unique<RenderPasses::ClusterDebugPass>());
     AddPass(PassType::UI, stltype::make_unique<RenderPasses::ImGuiPass>());
     AddPass(PassType::Composite, stltype::make_unique<RenderPasses::CompositPass>());
@@ -158,8 +158,8 @@ void PassManager::InitPassesAndImGui()
     // RecreateGbuffers(mathstl::Vector2(FrameGlobals::GetSwapChainExtent().x, FrameGlobals::GetSwapChainExtent().y));
 
     ColorAttachmentInfo colorAttachmentInfo{};
-    colorAttachmentInfo.format = VkGlobals::GetSwapChainImageFormat();
-    colorAttachmentInfo.finalLayout = ImageLayout::COLOR_ATTACHMENT;
+    colorAttachmentInfo.format = SWAPCHAIN_FORMAT;
+    colorAttachmentInfo.finalLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
     auto colorAttachment = ColorAttachment::Create(colorAttachmentInfo);
 
     DepthBufferAttachmentInfo depthAttachmentInfo{};
@@ -170,9 +170,9 @@ void PassManager::InitPassesAndImGui()
     depthRequest.extents =
         DirectX::XMUINT3(FrameGlobals::GetSwapChainExtent().x, FrameGlobals::GetSwapChainExtent().y, 1);
     depthRequest.format = DEPTH_BUFFER_FORMAT;
-    depthRequest.usage = Usage::StencilAttachment;
+    depthRequest.usage = Usage::Sampled | Usage::DepthAttachment | Usage::TransferDst;
     auto* pDepthTex = g_pTexManager->CreateTextureImmediate(depthRequest);
-    auto depthAttachment = DepthBufferAttachmentVulkan::Create(depthAttachmentInfo, pDepthTex);
+    auto depthAttachment = DepthBufferAttachmentVulkan::Create(depthAttachmentInfo, static_cast<Texture*>(pDepthTex));
 
     m_globalRendererAttachments.colorAttachments[ColorAttachmentType::GBufferColor].push_back(colorAttachment);
     m_globalRendererAttachments.depthAttachment = depthAttachment;
@@ -194,6 +194,8 @@ void PassManager::InitPassesAndImGui()
             m_frameRendererContexts[idx].gbufferPostProcessDescriptor;
         mainPassData.bufferDescriptors[UBO::DescriptorContentsType::BindlessTextureArray] =
             g_pTexManager->GetBindlessDescriptorSet();
+        mainPassData.bufferDescriptors[UBO::DescriptorContentsType::ClusterGrid] =
+            m_frameRendererContexts[idx].clusterGridDescriptor;
         ++idx;
     }
     for (auto& [type, passes] : m_passes)
@@ -218,28 +220,28 @@ void PassManager::InitPassesAndImGui()
         cascadeImGuiIDs.push_back(reinterpret_cast<u64>(cascadeDescriptor));
     }
 
-    VkDescriptorSet id1 = ImGui_ImplVulkan_AddTexture(m_gbuffer.Get(GBufferTextureType::GBufferNormal)->GetSampler(),
-                                                      m_gbuffer.Get(GBufferTextureType::GBufferNormal)->GetImageView(),
-                                                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    VkDescriptorSet id2 = ImGui_ImplVulkan_AddTexture(m_gbuffer.Get(GBufferTextureType::GBufferAlbedo)->GetSampler(),
-                                                      m_gbuffer.Get(GBufferTextureType::GBufferAlbedo)->GetImageView(),
-                                                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    VkDescriptorSet id3 = ImGui_ImplVulkan_AddTexture(m_gbuffer.Get(GBufferTextureType::Position)->GetSampler(),
-                                                      m_gbuffer.Get(GBufferTextureType::Position)->GetImageView(),
-                                                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    VkDescriptorSet id4 = ImGui_ImplVulkan_AddTexture(m_gbuffer.Get(GBufferTextureType::GBufferUI)->GetSampler(),
-                                                      m_gbuffer.Get(GBufferTextureType::GBufferUI)->GetImageView(),
-                                                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    VkDescriptorSet idNormal = ImGui_ImplVulkan_AddTexture(m_gbuffer.Get(GBufferTextureType::GBufferNormal)->GetSampler(),
+                                                       m_gbuffer.Get(GBufferTextureType::GBufferNormal)->GetImageView(),
+                                                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    VkDescriptorSet idAlbedo = ImGui_ImplVulkan_AddTexture(m_gbuffer.Get(GBufferTextureType::GBufferAlbedo)->GetSampler(),
+                                                       m_gbuffer.Get(GBufferTextureType::GBufferAlbedo)->GetImageView(),
+                                                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    VkDescriptorSet idUI = ImGui_ImplVulkan_AddTexture(m_gbuffer.Get(GBufferTextureType::GBufferUI)->GetSampler(),
+                                                       m_gbuffer.Get(GBufferTextureType::GBufferUI)->GetImageView(),
+                                                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    VkDescriptorSet idDebug = ImGui_ImplVulkan_AddTexture(m_gbuffer.Get(GBufferTextureType::GBufferDebug)->GetSampler(),
+                                                          m_gbuffer.Get(GBufferTextureType::GBufferDebug)->GetImageView(),
+                                                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     g_pApplicationState->RegisterUpdateFunction(
-        [depthId, cascadeImGuiIDs, id1, id2, id3, id4](auto& state)
+        [depthId, cascadeImGuiIDs, idNormal, idAlbedo, idUI, idDebug](auto& state)
         {
             state.renderState.csmCascadeImGuiIDs = cascadeImGuiIDs;
             state.renderState.depthbufferImGuiID = reinterpret_cast<u64>(depthId);
             state.renderState.gbufferImGuiIDs.clear();
-            state.renderState.gbufferImGuiIDs.push_back(reinterpret_cast<u64>(id1));
-            state.renderState.gbufferImGuiIDs.push_back(reinterpret_cast<u64>(id2));
-            state.renderState.gbufferImGuiIDs.push_back(reinterpret_cast<u64>(id3));
-            state.renderState.gbufferImGuiIDs.push_back(reinterpret_cast<u64>(id4));
+            state.renderState.gbufferImGuiIDs.push_back(reinterpret_cast<u64>(idNormal));
+            state.renderState.gbufferImGuiIDs.push_back(reinterpret_cast<u64>(idAlbedo));
+            state.renderState.gbufferImGuiIDs.push_back(reinterpret_cast<u64>(idUI));
+            state.renderState.gbufferImGuiIDs.push_back(reinterpret_cast<u64>(idDebug));
         });
 
     g_pQueueHandler->WaitForFences();
@@ -285,7 +287,7 @@ void PassManager::PerformInitialLayoutTransitions(FrameRendererContext& ctx,
     AsyncLayoutTransitionRequest transitionRequest{
         .textures = gbufferTextures,
         .oldLayout = ImageLayout::UNDEFINED,
-        .newLayout = ImageLayout::COLOR_ATTACHMENT,
+        .newLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
         .pWaitSemaphore = &imageAvailableSemaphore,
         // Signal timeline instead of loose binary semaphore to close the sync chain
         .pTimelineSignalSemaphore = &ctx.frameTimeline,
@@ -297,7 +299,7 @@ void PassManager::PerformInitialLayoutTransitions(FrameRendererContext& ctx,
             .textures = {m_globalRendererAttachments.depthAttachment.GetTexture(),
                          m_globalRendererAttachments.directionalLightShadowMap.pTexture},
             .oldLayout = ImageLayout::UNDEFINED,
-            .newLayout = ImageLayout::DEPTH_STENCIL};
+            .newLayout = ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
         g_pTexManager->EnqueueAsyncImageLayoutTransition(transitionRequest);
     }
     g_pTexManager->DispatchAsyncOps("Initial layout transition");
@@ -311,9 +313,16 @@ void PassManager::InitPassGroupContexts()
         if (!groupCtx.initialized)
         {
             groupCtx.cmdPool = CommandPool::Create(VkGlobals::GetQueueFamilyIndices().graphicsFamily.value());
-            auto buffers = groupCtx.cmdPool.CreateCommandBuffers(CommandBufferCreateInfo{}, SWAPCHAIN_IMAGES);
+            
+            u32 passCount = (u32)m_passes[groupType].size();
             for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
-                groupCtx.cmdBuffers[i] = buffers[i];
+            {
+                if (passCount > 0)
+                {
+                    auto buffers = groupCtx.cmdPool.CreateCommandBuffers(CommandBufferCreateInfo{}, passCount);
+                    groupCtx.cmdBuffers[i] = std::move(buffers);
+                }
+            }
             groupCtx.initialized = true;
         }
     }
@@ -321,83 +330,87 @@ void PassManager::InitPassGroupContexts()
 
 bool PassManager::RenderPassGroup(PassType groupType, const MainPassData& data, FrameRendererContext& ctx)
 {
-    if (m_passes.find(groupType) == m_passes.end())
-    {
+    auto it = m_passes.find(groupType);
+    if (it == m_passes.end() || it->second.empty())
         return false;
-    }
 
-    bool hasActivePasses = false;
-    for (auto& pass : m_passes[groupType])
+    auto& passes = it->second;
+    bool anyWantsToRender = false;
+    for (auto& pass : passes)
     {
         if (pass->WantsToRender())
         {
-            hasActivePasses = true;
+            anyWantsToRender = true;
             break;
         }
     }
 
-    if (!hasActivePasses)
-    {
+    if (!anyWantsToRender)
         return false;
-    }
 
     // Timeline semaphore: wait on previous value, signal next value
-    u64 waitValue = ctx.nextTimelineValue - 1;
-    u64 signalValue = ctx.nextTimelineValue++;
+    u64 initialWaitValue = ctx.nextTimelineValue - 1;
+    u64 lastSignalValue = initialWaitValue;
 
     auto& groupCtx = m_passGroupContexts[groupType];
-    CommandBuffer* cmdBuffer = groupCtx.cmdBuffers[ctx.imageIdx];
-    static_cast<CBufferVulkan*>(cmdBuffer)->ResetBuffer();
+    u32 activePassIdx = 0;
 
-    // Reset timing queries at the start of the first pass group
-    if (groupType == PassType::PreProcess && m_gpuTimingQuery.IsEnabled())
-        m_gpuTimingQuery.ResetQueries(cmdBuffer, ctx.currentFrame);
-
-    for (auto& pass : m_passes[groupType])
+    for (u32 i = 0; i < passes.size(); ++i)
     {
-        if (pass->WantsToRender())
-            pass->Render(data, ctx, cmdBuffer);
+        auto& pass = passes[i];
+        if (!pass->WantsToRender())
+            continue;
+
+        CommandBuffer* cmdBuffer = groupCtx.cmdBuffers[ctx.imageIdx][activePassIdx++];
+        static_cast<CBufferVulkan*>(cmdBuffer)->ResetBuffer();
+
+        // Reset timing queries at the start of the first active pass in PreProcess
+        if (groupType == PassType::PreProcess && activePassIdx == 1 && m_gpuTimingQuery.IsEnabled())
+            m_gpuTimingQuery.ResetQueries(cmdBuffer, ctx.currentFrame);
+
+        pass->Render(data, ctx, cmdBuffer);
+        cmdBuffer->Bake();
+
+        u64 currentSignalValue = ctx.nextTimelineValue++;
+
+        // Parallel execution for Main group: all passes wait on the same initial value
+        // Sequential execution for others: each pass waits for the previous one in the group
+        u64 waitValue = (groupType == PassType::Main) ? initialWaitValue : lastSignalValue;
+        
+        cmdBuffer->SetTimelineWait(&ctx.frameTimeline, waitValue);
+        cmdBuffer->SetTimelineSignal(&ctx.frameTimeline, currentSignalValue);
+
+        SyncStages waitStage = SyncStages::TOP_OF_PIPE;
+        SyncStages signalStage = SyncStages::ALL_COMMANDS;
+
+        if (groupType == PassType::Composite)
+        {
+            waitStage = SyncStages::COLOR_ATTACHMENT_OUTPUT;
+            signalStage = SyncStages::COLOR_ATTACHMENT_OUTPUT;
+        }
+        else if (groupType == PassType::Main)
+        {
+            waitStage = SyncStages::DEPTH_OUTPUT;
+            signalStage = SyncStages::COLOR_ATTACHMENT_OUTPUT;
+        }
+        else if (groupType == PassType::PreProcess)
+        {
+            waitStage = SyncStages::TOP_OF_PIPE;
+            signalStage = SyncStages::DEPTH_OUTPUT;
+        }
+        else if (groupType == PassType::Debug)
+        {
+            waitStage = SyncStages::COLOR_ATTACHMENT_OUTPUT;
+            signalStage = SyncStages::ALL_COMMANDS;
+        }
+
+        cmdBuffer->SetWaitStages(waitStage);
+        cmdBuffer->SetSignalStages(signalStage);
+
+        g_pQueueHandler->SubmitCommandBufferThisFrame({cmdBuffer, QueueType::Graphics});
+        lastSignalValue = currentSignalValue;
     }
 
-    // Bake the command buffer - this actually records the commands to Vulkan API
-    cmdBuffer->Bake();
-
-    // Use timeline semaphore for synchronization
-    cmdBuffer->SetTimelineWait(&ctx.frameTimeline, waitValue);
-    cmdBuffer->SetTimelineSignal(&ctx.frameTimeline, signalValue);
-
-    SyncStages waitStage = SyncStages::TOP_OF_PIPE;
-    SyncStages signalStage = SyncStages::ALL_COMMANDS;
-
-    if (groupType == PassType::Composite)
-    {
-        // Composite pass only needs to wait for previous work in the fragment shader
-        waitStage = SyncStages::COLOR_ATTACHMENT_OUTPUT;
-        signalStage = SyncStages::COLOR_ATTACHMENT_OUTPUT;
-    }
-    else if (groupType == PassType::Main)
-    {
-        // Main pass waits for PreProcess (Depth)
-        waitStage = SyncStages::DEPTH_OUTPUT;
-        signalStage = SyncStages::COLOR_ATTACHMENT_OUTPUT;
-    }
-    else if (groupType == PassType::PreProcess)
-    {
-        // PreProcess pass waits for nothing
-        waitStage = SyncStages::TOP_OF_PIPE;
-        signalStage = SyncStages::DEPTH_OUTPUT;
-    }
-    else if (groupType == PassType::Debug)
-    {
-        // Debug pass waits for Main pass (Color) output
-        waitStage = SyncStages::COLOR_ATTACHMENT_OUTPUT;
-        signalStage = SyncStages::ALL_COMMANDS;
-    }
-
-    cmdBuffer->SetWaitStages(waitStage);
-    cmdBuffer->SetSignalStages(signalStage);
-
-    g_pQueueHandler->SubmitCommandBufferThisFrame({cmdBuffer, QueueType::Graphics});
     return true;
 }
 
@@ -452,8 +465,8 @@ void PassManager::TransitionGBuffersToShaderRead(FrameRendererContext& ctx,
     u64 signalValue = ctx.nextTimelineValue++;
 
     AsyncLayoutTransitionRequest gbufferTransition{.textures = gbufferTextures,
-                                                   .oldLayout = ImageLayout::COLOR_ATTACHMENT,
-                                                   .newLayout = ImageLayout::SHADER_READ_OPTIMAL,
+                                                   .oldLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                                                   .newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                                                    .pTimelineWaitSemaphore = &ctx.frameTimeline,
                                                    .timelineWaitValue = waitValue,
                                                    .pTimelineSignalSemaphore = &ctx.frameTimeline,
@@ -463,14 +476,14 @@ void PassManager::TransitionGBuffersToShaderRead(FrameRendererContext& ctx,
     // Shadow transition is batched into same command buffer, no separate sync needed
     AsyncLayoutTransitionRequest shadowTransition{
         .textures = {m_globalRendererAttachments.directionalLightShadowMap.pTexture},
-        .oldLayout = ImageLayout::DEPTH_STENCIL,
-        .newLayout = ImageLayout::SHADER_READ_OPTIMAL};
+        .oldLayout = ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        .newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL};
     g_pTexManager->EnqueueAsyncImageLayoutTransition(shadowTransition);
     
     AsyncLayoutTransitionRequest depthTransition{
         .textures = {m_globalRendererAttachments.depthAttachment.GetTexture()},
-        .oldLayout = ImageLayout::DEPTH_STENCIL,
-        .newLayout = ImageLayout::SHADER_READ_OPTIMAL};
+        .oldLayout = ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        .newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL};
     g_pTexManager->EnqueueAsyncImageLayoutTransition(depthTransition);
 
     g_pTexManager->DispatchAsyncOps("GBuffer to shader read");
@@ -482,8 +495,8 @@ void PassManager::TransitionUIToShaderRead(FrameRendererContext& ctx, const Text
     u64 signalValue = ctx.nextTimelineValue++;
 
     AsyncLayoutTransitionRequest transitionRequest{.textures = {pUITexture},
-                                                   .oldLayout = ImageLayout::COLOR_ATTACHMENT,
-                                                   .newLayout = ImageLayout::SHADER_READ_OPTIMAL,
+                                                   .oldLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                                                   .newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                                                    .pTimelineWaitSemaphore = &ctx.frameTimeline,
                                                    .timelineWaitValue = waitValue,
                                                    .pTimelineSignalSemaphore = &ctx.frameTimeline,
@@ -499,7 +512,7 @@ void PassManager::TransitionSwapchainToColorAttachment(FrameRendererContext& ctx
 
     AsyncLayoutTransitionRequest transitionRequest{.textures = {ctx.pCurrentSwapchainTexture},
                                                    .oldLayout = ImageLayout::UNDEFINED,
-                                                   .newLayout = ImageLayout::COLOR_ATTACHMENT,
+                                                   .newLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
                                                    .pTimelineWaitSemaphore = &ctx.frameTimeline,
                                                    .timelineWaitValue = waitValue,
                                                    .pTimelineSignalSemaphore = &ctx.frameTimeline,
@@ -514,8 +527,8 @@ void PassManager::TransitionSwapchainToPresent(FrameRendererContext& ctx)
     u64 waitValue = ctx.nextTimelineValue - 1;
 
     AsyncLayoutTransitionRequest transitionRequest{.textures = {ctx.pCurrentSwapchainTexture},
-                                                   .oldLayout = ImageLayout::COLOR_ATTACHMENT,
-                                                   .newLayout = ImageLayout::PRESENT,
+                                                   .oldLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                                                   .newLayout = ImageLayout::PRESENT_SRC_KHR,
                                                    // Signal the binary semaphore for presentation to wait on
                                                    .pSignalSemaphore = &ctx.pPresentLayoutTransitionSignalSemaphore,
                                                    // Wait on timeline semaphore to ensure all rendering is done
@@ -535,7 +548,7 @@ void PassManager::Init()
     InitPassesAndImGui();
 
     // Initialize GPU timing query
-    m_gpuTimingQuery.Init(32); // Support up to 32 passes
+    m_gpuTimingQuery.Init(128); // Support up to 128 passes
 
     // Wire timing query to all passes
     for (auto& [type, passes] : m_passes)
@@ -575,31 +588,31 @@ void PassManager::ExecutePasses(u32 frameIdx)
 
     g_pQueueHandler->SubmitSwapchainPresentRequestForThisFrame(presentRequest);
     g_pQueueHandler->DispatchAllRequests();
+}
 
-    // Read previous frame GPU timing results after dispatch commit and push to application state
-    if (m_gpuTimingQuery.IsEnabled())
+void PassManager::ReadAndPublishTimingResults(u32 frameIdx)
+{
+    if (!m_gpuTimingQuery.IsEnabled())
+        return;
+
+    m_gpuTimingQuery.ReadResults(frameIdx);
+
+    const auto& results = m_gpuTimingQuery.GetResults();
+    f32 totalTime = m_gpuTimingQuery.GetTotalGPUTimeMs();
+
+    stltype::vector<PassTimingStat> passTimings;
+    passTimings.reserve(results.size());
+    for (const auto& r : results)
     {
-        m_gpuTimingQuery.ReadResults(frameIdx);
-
-        // Push timing data to ApplicationState
-        const auto& results = m_gpuTimingQuery.GetResults();
-        f32 totalTime = m_gpuTimingQuery.GetTotalGPUTimeMs();
-
-        stltype::vector<PassTimingStat> passTimings;
-        passTimings.reserve(results.size());
-        for (const auto& r : results)
-        {
-            passTimings.push_back({r.passName, r.gpuTimeMs, r.wasRun});
-        }
-        g_pApplicationState->RegisterUpdateFunction([passTimings, totalTime](ApplicationState& state)
-                                                    { state.renderState.passTimings.clear(); 
-                                                      state.renderState.passTimings = passTimings;
-                                                      state.renderState.totalGPUTimeMs = totalTime;
-                                                    });
-
-        // Clear run flags after reading so next frame starts fresh
-        m_gpuTimingQuery.ClearRunFlags();
+        passTimings.push_back({r.passName, r.gpuTimeMs, r.startMs, r.endMs, r.queueFamilyIndex, r.wasRun});
     }
+    g_pApplicationState->RegisterUpdateFunction([passTimings, totalTime](ApplicationState& state)
+                                                { state.renderState.passTimings.clear(); 
+                                                  state.renderState.passTimings = passTimings;
+                                                  state.renderState.totalGPUTimeMs = totalTime;
+                                                });
+
+    m_gpuTimingQuery.ClearRunFlags();
 }
 
 // Ensure destructor symbol exists
@@ -700,10 +713,8 @@ void PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
         DEBUG_ASSERT(m_dataToBePreProcessed.IsValid());
         PassGeometryData passData{};
 
-        stltype::vector<DirectX::XMFLOAT4X4> transformSSBO;
-        transformSSBO.reserve(MAX_ENTITIES);
-        stltype::vector<AABB> sceneAABBs;
-        sceneAABBs.reserve(MAX_ENTITIES);
+        stltype::vector<DirectX::XMFLOAT4X4> transformSSBO(MAX_ENTITIES);
+        stltype::vector<AABB> sceneAABBs(MAX_ENTITIES);
 
         if (m_dataToBePreProcessed.entityMeshData.empty() == false)
         {
@@ -765,7 +776,7 @@ void PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
         for (const auto& data : m_dataToBePreProcessed.entityTransformData)
         {
             const auto& entityID = data.first;
-            transformSSBO.insert(transformSSBO.begin() + m_entityToTransformUBOIdx[entityID], data.second);
+            transformSSBO[m_entityToTransformUBOIdx[entityID]] = data.second;
             // Also populate AABBs
             AABB aabb{};
             if (m_dataToBePreProcessed.entityMeshData.find(entityID) != m_dataToBePreProcessed.entityMeshData.end())
@@ -776,7 +787,7 @@ void PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
                     aabb = meshDataVec[0].aabb;
                 }
             }
-            sceneAABBs.insert(sceneAABBs.begin() + m_entityToTransformUBOIdx[entityID], aabb);
+            sceneAABBs[m_entityToTransformUBOIdx[entityID]] = aabb;
         }
         m_resourceManager.UpdateTransformBuffer(transformSSBO, m_currentSwapChainIdx);
         m_resourceManager.UpdateSceneAABBBuffer(sceneAABBs, m_currentSwapChainIdx);
@@ -919,40 +930,39 @@ void RenderPasses::PassManager::RecreateGbuffers(const mathstl::Vector2& resolut
     gbufferRequestPosition.format = gbuffer.GetFormat(GBufferTextureType::GBufferAlbedo);
     gbufferRequestPosition.handle = g_pTexManager->GenerateHandle();
     gbufferRequestPosition.AddName("GBuffer Position");
-    gbuffer.Set(GBufferTextureType::GBufferAlbedo, g_pTexManager->CreateTextureImmediate(gbufferRequestPosition));
+    gbuffer.Set(GBufferTextureType::GBufferAlbedo, static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(gbufferRequestPosition)));
 
     DynamicTextureRequest gbufferRequestNormal = gbufferRequestBase;
     gbufferRequestNormal.format = gbuffer.GetFormat(GBufferTextureType::GBufferNormal);
     gbufferRequestNormal.handle = g_pTexManager->GenerateHandle();
     gbufferRequestNormal.AddName("GBuffer Normal");
-    gbuffer.Set(GBufferTextureType::GBufferNormal, g_pTexManager->CreateTextureImmediate(gbufferRequestNormal));
+    gbuffer.Set(GBufferTextureType::GBufferNormal, static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(gbufferRequestNormal)));
 
     DynamicTextureRequest gbufferRequestUV = gbufferRequestBase;
     gbufferRequestUV.format = gbuffer.GetFormat(GBufferTextureType::TexCoordMatData);
     gbufferRequestUV.handle = g_pTexManager->GenerateHandle();
     gbufferRequestUV.AddName("GBuffer UV Material Data");
-    gbuffer.Set(GBufferTextureType::TexCoordMatData, g_pTexManager->CreateTextureImmediate(gbufferRequestUV));
+    gbuffer.Set(GBufferTextureType::TexCoordMatData, static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(gbufferRequestUV)));
     g_pTexManager->MakeTextureBindless(gbufferRequestUV.handle);
-
-    DynamicTextureRequest gbufferRequest3 = gbufferRequestBase;
-    gbufferRequest3.format = gbuffer.GetFormat(GBufferTextureType::Position);
-    gbufferRequest3.handle = g_pTexManager->GenerateHandle();
-    gbufferRequest3.AddName("GBuffer Position");
-    gbuffer.Set(GBufferTextureType::Position, g_pTexManager->CreateTextureImmediate(gbufferRequest3));
-    g_pTexManager->MakeTextureBindless(gbufferRequest3.handle);
 
     DynamicTextureRequest gbufferRequestUI = gbufferRequestBase;
     gbufferRequestUI.format = gbuffer.GetFormat(GBufferTextureType::GBufferUI);
     gbufferRequestUI.handle = g_pTexManager->GenerateHandle();
     gbufferRequestUI.AddName("GBuffer UI");
-    gbuffer.Set(GBufferTextureType::GBufferUI, g_pTexManager->CreateTextureImmediate(gbufferRequestUI));
+    gbuffer.Set(GBufferTextureType::GBufferUI, static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(gbufferRequestUI)));
+
+    DynamicTextureRequest gbufferRequestDebug = gbufferRequestBase;
+    gbufferRequestDebug.format = gbuffer.GetFormat(GBufferTextureType::GBufferDebug);
+    gbufferRequestDebug.handle = g_pTexManager->GenerateHandle();
+    gbufferRequestDebug.AddName("GBuffer Debug");
+    gbuffer.Set(GBufferTextureType::GBufferDebug, static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(gbufferRequestDebug)));
 
     stltype::vector<BindlessTextureHandle> gbufferHandles = {
         g_pTexManager->MakeTextureBindless(gbufferRequestPosition.handle),
         g_pTexManager->MakeTextureBindless(gbufferRequestNormal.handle),
         g_pTexManager->MakeTextureBindless(gbufferRequestUV.handle),
-        g_pTexManager->MakeTextureBindless(gbufferRequest3.handle), // TODO: Replace with actual gbuffer 4 when needed
-        g_pTexManager->MakeTextureBindless(gbufferRequestUI.handle)};
+        g_pTexManager->MakeTextureBindless(gbufferRequestUI.handle),
+        g_pTexManager->MakeTextureBindless(gbufferRequestDebug.handle)};
 
     // Add depth texture handle
     gbufferHandles.push_back(m_depthBindlessHandle);
@@ -1053,7 +1063,7 @@ void RenderPasses::PassManager::RecreateShadowMaps(u32 cascades, const mathstl::
     shadowMapInfo.samplerInfo.wrapV = TextureWrapMode::CLAMP_TO_BORDER;
     shadowMapInfo.samplerInfo.wrapW = TextureWrapMode::CLAMP_TO_BORDER;
 
-    csm.pTexture = g_pTexManager->CreateTextureImmediate(shadowMapInfo);
+    csm.pTexture = static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(shadowMapInfo));
     csm.bindlessHandle = g_pTexManager->MakeTextureBindless(shadowMapInfo.handle);
 
     // Create per-cascade 2D image views for ImGui debug display
@@ -1073,7 +1083,7 @@ void RenderPasses::PassManager::RecreateShadowMaps(u32 cascades, const mathstl::
         viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
         viewInfo.image = csm.pTexture->GetImage();
         viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        viewInfo.format = csm.format;
+        viewInfo.format = Conv(csm.format);
         viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
         viewInfo.subresourceRange.baseMipLevel = 0;
         viewInfo.subresourceRange.levelCount = 1;

@@ -18,19 +18,18 @@ void DebugShapePass::Init(RendererAttachmentInfo& attachmentInfo,
 {
     ScopedZone("DebugShapePass::Init");
 
-    const auto gbufferPosition = CreateDefaultColorAttachment(
-        attachmentInfo.gbuffer.GetFormat(GBufferTextureType::GBufferAlbedo), LoadOp::LOAD, nullptr);
-    // const auto gbufferNormal = CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBufferNormal),
-    // LoadOp::CLEAR, nullptr); const auto gbuffer3 =
-    // CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBuffer3), LoadOp::CLEAR, nullptr);
+    const auto& gbufferInfo = attachmentInfo.gbuffer;
+
+    const auto debugAttachment =
+        CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBufferDebug), LoadOp::CLEAR, nullptr);
+    
     m_mainRenderingData.depthAttachment =
         CreateDefaultDepthAttachment(LoadOp::LOAD, attachmentInfo.depthAttachment.GetTexture());
-    ;
-    m_mainRenderingData.colorAttachments = {gbufferPosition};
+    m_mainRenderingData.colorAttachments = {debugAttachment};
 
     InitBaseData(attachmentInfo);
-    m_indirectCmdBufferWireFrame = IndirectDrawCommandBuffer(250000);
-    m_indirectCmdBufferOpaque = IndirectDrawCommandBuffer(250000);
+    m_indirectCmdBufferWireFrame = IndirectDrawCmdBuf(250000);
+    m_indirectCmdBufferOpaque = IndirectDrawCmdBuf(250000);
 
     BuildPipelines();
 }
@@ -45,7 +44,7 @@ void DebugShapePass::BuildPipelines()
     // info.descriptorSetLayout.pipelineSpecificDescriptors.emplace_back();
     info.descriptorSetLayout.sharedDescriptors = m_sharedDescriptors;
     info.attachmentInfos =
-        CreateAttachmentInfo({m_mainRenderingData.colorAttachments}, m_mainRenderingData.depthAttachment);
+        CreateAttachmentInfo(m_mainRenderingData.colorAttachments, m_mainRenderingData.depthAttachment);
     m_solidDebugObjectsPSO = PSO(
         ShaderCollection{&mainVert, &mainFrag}, PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions}, info);
 
@@ -76,7 +75,7 @@ void DebugShapePass::RebuildInternalData(const stltype::vector<PassMeshData>& me
     }
     if (areAnyDebug == false)
     {
-        m_mainRenderingData.ClearBuffers();
+        // m_mainRenderingData.ClearBuffers();
         return;
     }
 
@@ -102,10 +101,10 @@ void DebugShapePass::RebuildInternalData(const stltype::vector<PassMeshData>& me
         else
         {
             m_indirectCmdBufferOpaque.AddIndexedDrawCmd(meshHandle.indexCount,
-                                                        1, // TODO: instanced rendering
-                                                        meshHandle.indexBufferOffset,
-                                                        meshHandle.vertBufferOffset,
-                                                        instanceOffset);
+                                                         1, // TODO: instanced rendering
+                                                         meshHandle.indexBufferOffset,
+                                                         meshHandle.vertBufferOffset,
+                                                         instanceOffset);
         }
         instanceDataIndices.emplace_back(mesh.meshData.instanceDataIdx);
         ++instanceOffset;
@@ -124,10 +123,10 @@ void DebugShapePass::Render(const MainPassData& data,
     UpdateContextForFrame(currentFrame);
     const auto& passCtx = m_perObjectFrameContexts[currentFrame];
 
-    ColorAttachment swapChainColorAttachment = m_mainRenderingData.colorAttachments[0];
-    swapChainColorAttachment.SetTexture(data.pGbuffer->Get(GBufferTextureType::GBufferAlbedo));
-    stltype::vector<ColorAttachment> colorAttachments;
-    colorAttachments.push_back(swapChainColorAttachment);
+    ColorAttachment debugAttachment = m_mainRenderingData.colorAttachments[0];
+    debugAttachment.SetTexture(data.pGbuffer->Get(GBufferTextureType::GBufferDebug));
+
+    stltype::vector<ColorAttachment> colorAttachments = {debugAttachment};
     const auto ex = ctx.pCurrentSwapchainTexture->GetInfo().extents;
     const DirectX::XMINT2 extents(ex.x, ex.y);
 
@@ -142,14 +141,15 @@ void DebugShapePass::Render(const MainPassData& data,
     if (data.bufferDescriptors.empty() == false)
     {
         const auto transformSSBOSet = data.bufferDescriptors.at(UBO::DescriptorContentsType::GlobalInstanceData);
+        const auto texArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessTextureArray);
 
         if (m_indirectCmdBufferOpaque.GetDrawCmdNum() > 0)
         {
             GenericIndirectDrawCmd cmd{&m_solidDebugObjectsPSO, m_indirectCmdBufferOpaque};
-            cmd.descriptorSets = {data.mainView.descriptorSet, transformSSBOSet, passCtx.m_perObjectDescriptor};
+            cmd.descriptorSets = {texArraySet, data.mainView.descriptorSet, transformSSBOSet, passCtx.m_perObjectDescriptor};
             cmd.drawCount = m_indirectCmdBufferOpaque.GetDrawCmdNum();
 
-            BeginRenderingCmd cmdBegin{&m_solidDebugObjectsPSO, colorAttachments, &m_mainRenderingData.depthAttachment};
+            BeginRenderingCmd cmdBegin{&m_solidDebugObjectsPSO, ToRenderAttachmentInfos(colorAttachments), ToRenderAttachmentInfo(m_mainRenderingData.depthAttachment)};
             cmdBegin.extents = extents;
             cmdBegin.viewport = data.mainView.viewport;
             pCmdBuffer->RecordCommand(cmdBegin);
@@ -160,11 +160,11 @@ void DebugShapePass::Render(const MainPassData& data,
         if (m_indirectCmdBufferWireFrame.GetDrawCmdNum() > 0)
         {
             GenericIndirectDrawCmd cmd{&m_wireframeDebugObjectsPSO, m_indirectCmdBufferWireFrame};
-            cmd.descriptorSets = {data.mainView.descriptorSet, transformSSBOSet, passCtx.m_perObjectDescriptor};
+            cmd.descriptorSets = {texArraySet, data.mainView.descriptorSet, transformSSBOSet, passCtx.m_perObjectDescriptor};
             cmd.drawCount = m_indirectCmdBufferWireFrame.GetDrawCmdNum();
 
             BeginRenderingCmd cmdBegin{
-                &m_wireframeDebugObjectsPSO, colorAttachments, &m_mainRenderingData.depthAttachment};
+                &m_wireframeDebugObjectsPSO, ToRenderAttachmentInfos(colorAttachments), ToRenderAttachmentInfo(m_mainRenderingData.depthAttachment)};
             cmdBegin.extents = extents;
             cmdBegin.viewport = data.mainView.viewport;
 
@@ -178,11 +178,13 @@ void DebugShapePass::Render(const MainPassData& data,
 
 void DebugShapePass::CreateSharedDescriptorLayout()
 {
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::View, 0));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::TransformSSBO, 1));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::GlobalObjectDataSSBOs, 1));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::InstanceDataSSBO, 1));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::PerPassObjectSSBO, 2));
+    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalTextures, 0));
+    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalArrayTextures, 0));
+    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::View, 1));
+    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::TransformSSBO, 2));
+    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::GlobalObjectDataSSBOs, 2));
+    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::InstanceDataSSBO, 2));
+    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::PerPassObjectSSBO, 3));
 }
 
 bool DebugShapePass::WantsToRender() const

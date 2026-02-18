@@ -1,9 +1,9 @@
 #version 450 core
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_ARB_shading_language_include : enable
-#define ViewUBOSet 0
-#define TransformSSBOSet 1
-#define PassPerObjectDataSet 2
+#define ViewUBOSet 1
+#define TransformSSBOSet 2
+#define PassPerObjectDataSet 3
 #include "../../Globals/DrawBuildBuffers.h"
 #include "../../Globals/GlobalBuffers.h"
 #include "../../Globals/PerObjectBuffers.h"
@@ -14,9 +14,15 @@ layout(location = 2) in vec2 inTexCoord0;
 
 layout(location = 0) out vec3 fragColor;
 layout(location = 1) out vec2 fragTexCoord;
+layout(location = 2) out flat uint outTransformIdx;
 
 void main() {
-    uint transformIdx = perObjectDataSSBO.transformDataIdx[gl_InstanceIndex];
+    uint instanceIdx = perObjectDataSSBO.transformDataIdx[gl_InstanceIndex];
+    InstanceData instance = globalInstanceDataSSBO.instances[instanceIdx];
+    uint transformIdx = GetTransformIdx(instance);
+
     gl_Position = ubo.proj * ubo.view * globalTransformSSBO.modelMatrices[transformIdx] * vec4(inPosition, 1.0);
-    fragColor = vec3(1,1,0);//globalObjectDataSSBO.data[perObjectDataIdx].baseColor.xyz;
+    fragColor = vec3(1,1,0); 
+    fragTexCoord = inTexCoord0;
+    outTransformIdx = instanceIdx;
 }

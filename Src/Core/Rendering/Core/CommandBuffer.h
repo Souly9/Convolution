@@ -1,12 +1,22 @@
 #pragma once
 #include "Core/Rendering/Core/Texture.h"
-#include "Core/Rendering/Vulkan/VkAttachment.h"
-#include "Core/Rendering/Vulkan/VkBuffer.h"
 #include "RenderingForwardDecls.h"
 #include "Core/Rendering/Core/Synchronization.h"
+#include "Core/Rendering/Core/RenderDefinitions.h"
+#include "Core/Rendering/Core/Buffer.h"
 #include <EASTL/fixed_function.h>
+#include <EASTL/variant.h>
 
 using ExecutionFinishedCallback = stltype::fixed_function<128, void(void)>;
+
+struct RenderAttachmentInfo
+{
+    Texture* pTexture{nullptr};
+    ImageLayout renderingLayout{ImageLayout::COLOR_ATTACHMENT_OPTIMAL};
+    LoadOp loadOp{LoadOp::CLEAR};
+    StoreOp storeOp{StoreOp::STORE};
+    ClearValue clearValue{};
+};
 
 struct CommandBase
 {
@@ -16,17 +26,30 @@ struct BeginRenderingBaseCmd : public CommandBase
 {
     DirectX::XMINT2 offset = {0, 0};
     DirectX::XMINT2 extents = {0, 0};
-    stltype::vector<ColorAttachment> colorAttachments;
-    DepthAttachment* pDepthAttachment;
+    
+    // Use agnostic info struct instead of API-specific class
+    stltype::vector<RenderAttachmentInfo> colorAttachments;
+    RenderAttachmentInfo depthAttachment;
+    bool hasDepthAttachment{false};
+    
     u32 depthLayerMask = 0x0;
 
     mathstl::Viewport viewport;
 
-    BeginRenderingBaseCmd(stltype::vector<ColorAttachment>& cs, DepthAttachment* pDepth)
-        : colorAttachments(cs), pDepthAttachment(pDepth)
+    BeginRenderingBaseCmd(const stltype::vector<RenderAttachmentInfo>& cs, const RenderAttachmentInfo& depth, bool hasDepth)
+        : colorAttachments(cs), depthAttachment(depth), hasDepthAttachment(hasDepth)
+    {
+    }
+    
+    BeginRenderingBaseCmd(const stltype::vector<RenderAttachmentInfo>& cs)
+        : colorAttachments(cs), hasDepthAttachment(false)
     {
     }
 };
+
+// Forward declaration
+template<typename API>
+class IndirectDrawCommandBufferCommon;
 
 struct BeginRenderingCmd : public BeginRenderingBaseCmd
 {
@@ -34,10 +57,16 @@ struct BeginRenderingCmd : public BeginRenderingBaseCmd
 
     IndexBuffer* pIndexBuffer{nullptr};
     VertexBuffer* pVertexBuffer{nullptr};
-    IndirectDrawCommandBuffer* drawCmdBuffer{nullptr};
+    
+    IndirectDrawCommandBufferCommon<CurrentAPI>* drawCmdBuffer{nullptr};
 
-    BeginRenderingCmd(PSO* p, stltype::vector<ColorAttachment>& cs, DepthAttachment* pDepth)
-        : BeginRenderingBaseCmd(cs, pDepth), pso(p)
+    BeginRenderingCmd(PSO* p, const stltype::vector<RenderAttachmentInfo>& cs, const RenderAttachmentInfo& depth)
+        : BeginRenderingBaseCmd(cs, depth, true), pso(p)
+    {
+    }
+    
+    BeginRenderingCmd(PSO* p, const stltype::vector<RenderAttachmentInfo>& cs)
+        : BeginRenderingBaseCmd(cs), pso(p)
     {
     }
 };
@@ -79,11 +108,11 @@ struct GenericDrawCmd : public CommandBase
 
 struct GenericIndirectDrawCmd : public GenericDrawCmd
 {
-    const IndirectDrawCommandBuffer* drawCmdBuffer;
+    const IndirectDrawCmdBuf* drawCmdBuffer;
     u32 drawCount = 5;
     u32 bufferOffst = 0;
 
-    GenericIndirectDrawCmd(PSO* ps, const IndirectDrawCommandBuffer& dB) : GenericDrawCmd(ps), drawCmdBuffer(&dB)
+    GenericIndirectDrawCmd(PSO* ps, const IndirectDrawCmdBuf& dB) : GenericDrawCmd(ps), drawCmdBuffer(&dB)
     {
     }
 };
@@ -113,9 +142,9 @@ struct CopyBaseCmd : public CommandBase
 {
     u64 srcOffset{0};
     ExecutionFinishedCallback optionalCallback;
-    GenericBuffer* srcBuffer;
+    APITraits<CurrentAPI>::BufferType* srcBuffer;
 
-    CopyBaseCmd(GenericBuffer& src) : srcBuffer(&src)
+    CopyBaseCmd(APITraits<CurrentAPI>::BufferType& src) : srcBuffer(&src)
     {
         src.Grab();
     }
@@ -134,9 +163,9 @@ struct SimpleBufferCopyCmd : public CopyBaseCmd
 {
     u64 dstOffset{0};
     u64 size{0};
-    const GenericBuffer* dstBuffer;
+    const APITraits<CurrentAPI>::BufferType* dstBuffer;
 
-    SimpleBufferCopyCmd(GenericBuffer& src, const GenericBuffer* dst) : CopyBaseCmd(src), dstBuffer(dst)
+    SimpleBufferCopyCmd(APITraits<CurrentAPI>::BufferType& src, const APITraits<CurrentAPI>::BufferType* dst) : CopyBaseCmd(src), dstBuffer(dst)
     {
     }
 };
@@ -155,7 +184,7 @@ struct ImageBuffyCopyCmd : public CopyBaseCmd
     u32 baseArrayLayer{0};
     u32 layerCount{1};
 
-    ImageBuffyCopyCmd(GenericBuffer& src, const Texture* dst) : CopyBaseCmd(src), dstImage(dst)
+    ImageBuffyCopyCmd(APITraits<CurrentAPI>::BufferType& src, const Texture* dst) : CopyBaseCmd(src), dstImage(dst)
     {
     }
 };
@@ -327,10 +356,10 @@ struct CommandBufferStats
     u32 drawIndirectCalls{0};
 };
 
-class CBuffer : public TrackedResource
+class CommandBufferBase : public TrackedResource
 {
 public:
-    virtual ~CBuffer()
+    virtual ~CommandBufferBase()
     {
         CallCallbacks();
     }
@@ -359,4 +388,24 @@ protected:
     CommandBufferStats m_stats{};
     // Gets called when buffer gets destroyed or reset indirectly guaranteeing execution has finished
     stltype::vector<ExecutionFinishedCallback> m_executionFinishedCallbacks;
+};
+
+#include "APITraits.h"
+#ifdef USE_VULKAN
+#include "Core/Rendering/Vulkan/VulkanTraits.h"
+#include "Core/Rendering/Vulkan/VkCommandBuffer.h"
+#endif
+
+template <typename API>
+class IndirectDrawCommandBufferCommon : public APITraits<API>::IndirectDrawCommandBufferType
+{
+public:
+    using APITraits<API>::IndirectDrawCommandBufferType::IndirectDrawCommandBufferType;
+};
+
+template <typename API>
+class CommandBufferT : public APITraits<API>::CommandBufferType
+{
+public:
+    using APITraits<API>::CommandBufferType::CommandBufferType;
 };

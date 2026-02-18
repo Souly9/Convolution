@@ -39,19 +39,17 @@ void FileReader::FinishAllRequests()
 
 void FileReader::CancelAllRequests()
 {
-    m_requestSubmitMutex.Lock();
+    SimpleScopedGuard<CustomMutex> lock(m_requestSubmitMutex);
     for (int i = 0; i < m_requests.size(); ++i)
     {
         m_requests.pop();
     }
-    m_requestSubmitMutex.Unlock();
 }
 
 void FileReader::SubmitIORequest(const IORequest& request)
 {
-    m_requestSubmitMutex.Lock();
+    SimpleScopedGuard<CustomMutex> lock(m_requestSubmitMutex);
     m_requests.push(request);
-    m_requestSubmitMutex.Unlock();
 }
 
 void FileReader::CheckIORequests()
@@ -66,10 +64,12 @@ void FileReader::CheckIORequests()
 
         // Copy and pop request while holding lock, then release before processing
         // This avoids deadlock when mesh loading triggers texture IO requests
-        m_requestSubmitMutex.Lock();
-        const IORequest request = m_requests.front();
-        m_requests.pop();
-        m_requestSubmitMutex.Unlock();
+        IORequest request;
+        {
+            SimpleScopedGuard<CustomMutex> lock(m_requestSubmitMutex);
+            request = m_requests.front();
+            m_requests.pop();
+        }
 
         switch (request.requestType)
         {

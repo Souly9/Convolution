@@ -33,7 +33,8 @@ enum class DescriptorContentsType
     LightData,
     GlobalInstanceData,
     GBuffer,
-    BindlessTextureArray
+    BindlessTextureArray,
+    ClusterGrid
 };
 
 static inline DescriptorType GetDescriptorType(BufferType type)

@@ -1,5 +1,6 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
+#include "Core/Global/Utils/EnumHelpers.h"
 #include "Core/Rendering/Core/Resource.h"
 #include "Core/Rendering/Vulkan/BackendDefines.h"
 
@@ -19,6 +20,7 @@ enum class SyncStages
     ALL_COMMANDS = 1 << 10,
     DEPTH_OUTPUT = 1 << 11,
 };
+MAKE_FLAG_ENUM(SyncStages)
 
 class GPUSyncer : public TrackedResource
 {

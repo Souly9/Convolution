@@ -379,18 +379,20 @@ void AsyncQueueHandler::BuildTransferCommand(const MeshTransfer& request, Comman
 
     // Create and transfer ownership to pBuffersToFill first so the VkBuffer handles
     // stay alive when Bake() reads them from the recorded copy commands
-    request.pBuffersToFill->SetVertexBuffer(VertexBuffer(vertDataSize));
-    request.pBuffersToFill->SetIndexBuffer(IndexBuffer(idxDataSize));
+        request.pBuffersToFill->SetVertexBuffer(VertexBuffer(vertDataSize));
+        request.pBuffersToFill->SetIndexBuffer(IndexBuffer(idxDataSize));
 
     StagingBuffer& vertStaging = AcquireStagingBuffer(vertDataSize);
     vertStaging.CopyToMapped(vertexData.data(), vertDataSize);
     SimpleBufferCopyCmd vertCopy{vertStaging, &request.pBuffersToFill->GetVertexBuffer()};
+    vertCopy.dstOffset = request.vertexOffset;
     vertCopy.size = vertDataSize;
     pCmdBuffer->RecordCommand(vertCopy);
 
     StagingBuffer& idxStaging = AcquireStagingBuffer(idxDataSize);
     idxStaging.CopyToMapped(indices.data(), idxDataSize);
     SimpleBufferCopyCmd idxCopy{idxStaging, &request.pBuffersToFill->GetIndexBuffer()};
+    idxCopy.dstOffset = request.indexOffset;
     idxCopy.size = idxDataSize;
     pCmdBuffer->RecordCommand(idxCopy);
 }

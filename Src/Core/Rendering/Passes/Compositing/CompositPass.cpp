@@ -14,11 +14,12 @@ void CompositPass::Init(RendererAttachmentInfo& attachmentInfo,
     ScopedZone("CompositPass::Init");
     const auto& gbufferInfo = attachmentInfo.gbuffer;
 
-    const auto swapChainAttachment = CreateDefaultColorAttachment(SWAPCHAINFORMAT, LoadOp::CLEAR, nullptr);
+    const auto swapChainAttachment =
+        CreateDefaultColorAttachment(SWAPCHAIN_FORMAT, LoadOp::CLEAR, nullptr);
     m_mainRenderingData.colorAttachments = {swapChainAttachment};
 
     InitBaseData(attachmentInfo);
-    m_indirectCmdBuffer = IndirectDrawCommandBuffer(10);
+    m_indirectCmdBuffer = IndirectDrawCmdBuf(10);
     AsyncQueueHandler::MeshTransfer cmd{};
     cmd.name = "CompositPass_MeshTransfer";
     cmd.pBuffersToFill = &m_mainRenderingData;
@@ -67,7 +68,7 @@ void CompositPass::Render(const MainPassData& data, FrameRendererContext& ctx, C
     const auto ex = ctx.pCurrentSwapchainTexture->GetInfo().extents;
     const DirectX::XMINT2 extents(ex.x, ex.y);
 
-    BeginRenderingCmd cmdBegin{&m_mainPSO, colorAttachments, nullptr};
+    BeginRenderingCmd cmdBegin{&m_mainPSO, ToRenderAttachmentInfos(colorAttachments)};
     cmdBegin.extents = extents;
     cmdBegin.viewport = data.mainView.viewport;
 

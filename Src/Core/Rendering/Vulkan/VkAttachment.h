@@ -10,6 +10,11 @@ public:
     {
     }
 
+    TexFormat GetFormat() const
+    {
+        return m_format;
+    }
+
     const VkAttachmentDescription& GetDesc() const;
     VkAttachmentDescription& GetDescMutable()
     {
@@ -44,9 +49,11 @@ public:
 protected:
     AttachmentBaseVulkan(const VkAttachmentDescription& attachmentDesc,
                          Texture* pTexture,
-                         VkImageLayout renderingLayout);
+                         VkImageLayout renderingLayout,
+                         TexFormat format);
 
     VkAttachmentDescription m_attachmentDesc{};
+    TexFormat m_format{TexFormat::UNDEFINED};
     // This is the texture that this attachment is attached to, if any
     Texture* m_pTexture{nullptr};
     // Layout used for rendering, not pretty but needed for dynamic rendering and it's good enough
@@ -62,7 +69,8 @@ public:
 protected:
     ColorAttachmentVulkan(const VkAttachmentDescription& attachmentDesc,
                           Texture* pTexture,
-                          VkImageLayout renderingLayout);
+                          VkImageLayout renderingLayout,
+                          TexFormat format);
 };
 
 class DepthBufferAttachmentVulkan : public AttachmentBaseVulkan
@@ -77,5 +85,6 @@ public:
 protected:
     DepthBufferAttachmentVulkan(const VkAttachmentDescription& attachmentDesc,
                                 Texture* pTexture,
-                                VkImageLayout renderingLayout);
+                                VkImageLayout renderingLayout,
+                                TexFormat format);
 };

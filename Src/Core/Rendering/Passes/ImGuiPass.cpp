@@ -26,12 +26,14 @@ void ImGuiPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourc
 {
     ScopedZone("ImGuiPass::Init");
 
-    const auto gbufferUI = CreateDefaultColorAttachment(
-        attachmentInfo.gbuffer.GetFormat(GBufferTextureType::GBufferUI), LoadOp::CLEAR, nullptr);
+    const auto& gbufferInfo = attachmentInfo.gbuffer;
+
+    const auto gbufferUI =
+        CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBufferUI), LoadOp::CLEAR, nullptr);
     m_mainRenderingData.depthAttachment =
         CreateDefaultDepthAttachment(LoadOp::LOAD, attachmentInfo.depthAttachment.GetTexture());
-    ;
     m_mainRenderingData.colorAttachments = {gbufferUI};
+
     InitBaseData(attachmentInfo);
 
     const auto vkContext = VkGlobals::GetContext();
@@ -80,16 +82,21 @@ void ImGuiPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comm
     ImGui::UpdatePlatformWindows();
     ImGui::RenderPlatformWindowsDefault();
     ColorAttachment swapChainColorAttachment = m_mainRenderingData.colorAttachments[0];
-    swapChainColorAttachment.SetTexture(data.pGbuffer->Get(GBufferTextureType::GBufferUI));
+    swapChainColorAttachment.SetTexture(const_cast<Texture*>(data.pGbuffer->Get(GBufferTextureType::GBufferUI)));
 
     stltype::vector<ColorAttachment> colorAttachments;
     colorAttachments.push_back(swapChainColorAttachment);
     const auto ex = ctx.pCurrentSwapchainTexture->GetInfo().extents;
     const DirectX::XMINT2 extents(ex.x, ex.y);
-    BeginRenderingBaseCmd cmdBegin{colorAttachments, &m_mainRenderingData.depthAttachment};
-    cmdBegin.extents = extents;
+    
+    BeginRenderingBaseCmd cmdBegin(
+        ToRenderAttachmentInfos(colorAttachments),
+        ToRenderAttachmentInfo(m_mainRenderingData.depthAttachment),
+        true
+    );
     cmdBegin.viewport = data.mainView.viewport;
-
+    cmdBegin.extents = extents;
+    
     StartRenderPassProfilingScope(pCmdBuffer);
     pCmdBuffer->RecordCommand(cmdBegin);
     pCmdBuffer->RecordCommand(ImGuiDrawCmd(ImGui::GetDrawData()));

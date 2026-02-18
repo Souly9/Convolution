@@ -45,8 +45,7 @@ bool ShaderManager::ReadAllSourceShaders()
             stltype::string filename = entry.path().filename().string().c_str();
 
             path = path.replace(path.find("\\"), 1, "/");
-            DEBUG_LOGF("Discovered shader file {}", path.c_str());
-
+            
             ShaderTypeBits shaderType;
             if (extension == ".vert")
             {

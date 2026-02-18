@@ -2,6 +2,7 @@
 #include "Core/Rendering/Core/Defines/DescriptorLayoutDefines.h"
 #include "Core/Rendering/Core/RenderingForwardDecls.h"
 #include "Core/Rendering/Core/Synchronization.h"
+#include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
 
 class SharedResourceManager;
 class GPUTimingQueryBase;
@@ -48,6 +49,11 @@ public:
     }
 
     virtual bool WantsToRender() const = 0;
+
+    virtual QueueType GetQueueType() const
+    {
+        return QueueType::Graphics;
+    }
 
     void InitBaseData(const RendererAttachmentInfo& attachmentInfo);
 

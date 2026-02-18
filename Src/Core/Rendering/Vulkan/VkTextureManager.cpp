@@ -30,6 +30,7 @@ static TextureInfo RequestToTexInfo(const DynamicTextureRequest& info)
 VkTextureManager::VkTextureManager()
 {
     m_textures.reserve(MAX_TEXTURES);
+    m_swapChainTextures.reserve(SWAPCHAIN_IMAGES); 
     m_availableCommandBuffers.reserve(MAX_CACHE_BUFFERS);
 }
 
@@ -152,7 +153,7 @@ void VkTextureManager::CreateSwapchainTextures(const TextureCreationInfoVulkanIm
                                                const TextureInfoBase& infoBase)
 {
     TextureInfo genericInfo{};
-    genericInfo.format = info.format;
+    genericInfo.format = Conv((VkFormat)info.format);
     genericInfo.extents = infoBase.extents;
 
     auto& tex = m_swapChainTextures.emplace_back(genericInfo);
@@ -181,19 +182,21 @@ void VkTextureManager::CreateTexture(const FileTextureRequest& req)
     info.extents.x = readInfo.extents.x;
     info.extents.y = readInfo.extents.y;
     info.extents.z = 1;
-    info.format = readInfo.ddsFormat != 0 ? dds::getVulkanFormat((DXGI_FORMAT)readInfo.ddsFormat, readInfo.supportsAlpha)
-                                          : VK_FORMAT_R8G8B8A8_SRGB;
+    info.format = readInfo.ddsFormat != 0
+                      ? Conv(dds::getVulkanFormat((DXGI_FORMAT)readInfo.ddsFormat, readInfo.supportsAlpha))
+                      : TexFormat::R8G8B8A8_SRGB;
+
     info.tiling = Tiling::OPTIMAL;
-    info.usage = Usage::Sampled;
+    info.usage = Usage::Sampled | Usage::TransferDst;
     info.handle = req.handle;
 
-    TextureVulkan* pTex = CreateTextureImmediate(info);
+    Texture* pTex = CreateTextureImmediate(info);
 
     pTex->SetName(readInfo.filePath);
 
-    EnqueueAsyncImageLayoutTransition(pTex, ImageLayout::UNDEFINED, ImageLayout::TRANSFER_DST_OPTIMAL);
-    EnqueueAsyncTextureTransfer(&pStgBuffer, pTex, VK_IMAGE_ASPECT_COLOR_BIT);
-    EnqueueAsyncImageLayoutTransition(pTex, ImageLayout::TRANSFER_DST_OPTIMAL, ImageLayout::SHADER_READ_OPTIMAL);
+    EnqueueAsyncImageLayoutTransition(static_cast<Texture*>(pTex), ImageLayout::UNDEFINED, ImageLayout::TRANSFER_DST_OPTIMAL);
+    EnqueueAsyncTextureTransfer(&pStgBuffer, static_cast<Texture*>(pTex), VK_IMAGE_ASPECT_COLOR_BIT);
+    EnqueueAsyncImageLayoutTransition(static_cast<Texture*>(pTex), ImageLayout::TRANSFER_DST_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
     // Note: ImageView and Sampler are already created by CreateTextureImmediate
 
@@ -201,12 +204,12 @@ void VkTextureManager::CreateTexture(const FileTextureRequest& req)
         MakeTextureBindless(req.handle);
 }
 
-TextureVulkan* VkTextureManager::CreateDynamicTexture(const DynamicTextureRequest& req)
+Texture* VkTextureManager::CreateDynamicTexture(const DynamicTextureRequest& req)
 {
     return CreateTextureImmediate(req);
 }
 
-TextureVulkan* VkTextureManager::CreateTextureImmediate(const DynamicTextureRequest& req)
+Texture* VkTextureManager::CreateTextureImmediate(const DynamicTextureRequest& req)
 {
     ScopedZone("VkTextureManager::Create Texture Immediate");
 
@@ -215,9 +218,10 @@ TextureVulkan* VkTextureManager::CreateTextureImmediate(const DynamicTextureRequ
     TextureInfo genericInfo = RequestToTexInfo(req);
 
     m_sharedDataMutex.lock();
-    TextureVulkan* pTex =
-        &m_textures.emplace(req.handle, TextureVulkan(vulkanTexCreateInfo, genericInfo)).first->second;
+    auto& mapEntry = m_textures.emplace(req.handle, Texture(vulkanTexCreateInfo, genericInfo)).first->second;
+    Texture* pTex = &mapEntry;
     m_sharedDataMutex.unlock();
+    
     pTex->SetName(req.GetName());
 
     CreateImageViewForTexture(pTex, req.hasMipMaps);
@@ -356,13 +360,18 @@ void VkTextureManager::CreateImageViewForTexture(TextureHandle handle, bool useM
 
 void VkTextureManager::CreateImageViewForTexture(TextureVulkan* pTex, bool useMipMaps)
 {
-    auto createInfo = GenerateImageViewInfo(pTex->GetInfo().format, pTex->GetImage(), (pTex->GetInfo().extents.z > 1));
+    auto createInfo = GenerateImageViewInfo(Conv(pTex->GetInfo().format), pTex->GetImage(), (pTex->GetInfo().extents.z > 1));
     if (useMipMaps == false)
         SetNoMipMap(createInfo, pTex->GetInfo().extents.z);
     else
         DEBUG_ASSERT(false);
 
     SetNoSwizzle(createInfo);
+
+    // Verify image handle validity with the driver
+    VkMemoryRequirements memReqs;
+    vkGetImageMemoryRequirements(VK_LOGICAL_DEVICE, createInfo.image, &memReqs);
+
     VkImageView imageView;
     DEBUG_ASSERT(vkCreateImageView(VK_LOGICAL_DEVICE, &createInfo, VulkanAllocator(), &imageView) == VK_SUCCESS);
     pTex->SetImageView(imageView);
@@ -372,7 +381,7 @@ void VkTextureManager::EnqueueAsyncImageLayoutTransition(const TextureHandle han
                                                          const ImageLayout oldLayout,
                                                          const ImageLayout newLayout)
 {
-    EnqueueAsyncImageLayoutTransition(GetTexture(handle), oldLayout, newLayout);
+    EnqueueAsyncImageLayoutTransition(static_cast<Texture*>(GetTexture(handle)), oldLayout, newLayout);
 }
 
 void VkTextureManager::EnqueueAsyncImageLayoutTransition(Texture* pTex,
@@ -528,7 +537,6 @@ void VkTextureManager::EnqueueAsyncTextureTransfer(StagingBuffer* pStagingBuffer
     {
         ScopedZone("VkTextureManager::Async Transfer Callback");
         m_sharedDataMutex.lock();
-        // DEBUG_LOGF("Texture transfer finished for staging buffer: {}", pStagingBuffer->GetDebugName().c_str());
         pStagingBuffer->CleanUp();
         auto it = stltype::find_if(m_stagingBufferInUse.begin(),
                                    m_stagingBufferInUse.end(),
@@ -550,7 +558,7 @@ void VkTextureManager::EnqueueAsyncTextureTransfer(StagingBuffer* pStagingBuffer
                                                    const TextureHandle handle,
                                                    const VkImageAspectFlagBits flagBit)
 {
-    EnqueueAsyncTextureTransfer(pStagingBuffer, GetTexture(handle), flagBit);
+    EnqueueAsyncTextureTransfer(pStagingBuffer, static_cast<Texture*>(GetTexture(handle)), flagBit);
 }
 
 void VkTextureManager::FreeTexture(TextureHandle handle)
@@ -573,10 +581,10 @@ VkImageViewCreateInfo VkTextureManager::GenerateImageViewInfo(VkFormat format, V
     VkImageViewCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     createInfo.image = image;
-    createInfo.viewType = isArray ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
+     createInfo.viewType = isArray ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
     createInfo.format = format;
     createInfo.subresourceRange.aspectMask =
-        format == DEPTH_BUFFER_FORMAT ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+        format == Conv(DEPTH_BUFFER_FORMAT) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
     return createInfo;
 }
 
@@ -600,6 +608,41 @@ void VkTextureManager::SetNoSwizzle(VkImageViewCreateInfo& createInfo)
     createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
 }
 
+static VkImageTiling Conv(Tiling tiling)
+{
+    switch (tiling)
+    {
+    case Tiling::OPTIMAL:
+        return VK_IMAGE_TILING_OPTIMAL;
+    case Tiling::LINEAR:
+        return VK_IMAGE_TILING_LINEAR;
+    default:
+        return VK_IMAGE_TILING_OPTIMAL;
+    }
+}
+
+static VkImageUsageFlags Conv(Usage usage)
+{
+    VkImageUsageFlags flags = 0;
+    if ((usage & Usage::TransferSrc) != Usage::None) flags |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    if ((usage & Usage::TransferDst) != Usage::None) flags |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    if ((usage & Usage::Sampled) != Usage::None) flags |= VK_IMAGE_USAGE_SAMPLED_BIT;
+    if ((usage & Usage::Storage) != Usage::None) flags |= VK_IMAGE_USAGE_STORAGE_BIT;
+    if ((usage & Usage::ColorAttachment) != Usage::None) flags |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    if ((usage & Usage::DepthAttachment) != Usage::None) flags |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    if ((usage & Usage::StencilAttachment) != Usage::None) flags |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    if ((usage & Usage::TransientAttachment) != Usage::None) flags |= VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
+    if ((usage & Usage::InputAttachment) != Usage::None) flags |= VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
+    
+    // Composite usages
+    if ((usage & Usage::GBuffer) != Usage::None) flags |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    if ((usage & Usage::ShadowMap) != Usage::None) flags |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    if ((usage & Usage::AttachmentReadWrite) != Usage::None) flags |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+
+    if (flags == 0) DEBUG_ASSERT(false);
+    return flags;
+}
+
 void VkTextureManager::SetLayoutBarrierMasks(ImageLayoutTransitionCmd& transitionCmd,
                                              const ImageLayout oldLayout,
                                              const ImageLayout newLayout)
@@ -612,7 +655,7 @@ void VkTextureManager::SetLayoutBarrierMasks(ImageLayoutTransitionCmd& transitio
         transitionCmd.srcStage = VK_PIPELINE_STAGE_2_NONE;
         transitionCmd.dstStage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
     }
-    else if (oldLayout == ImageLayout::TRANSFER_DST_OPTIMAL && newLayout == ImageLayout::SHADER_READ_OPTIMAL)
+    else if (oldLayout == ImageLayout::TRANSFER_DST_OPTIMAL && newLayout == ImageLayout::SHADER_READ_ONLY_OPTIMAL)
     {
         transitionCmd.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
         transitionCmd.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
@@ -620,28 +663,28 @@ void VkTextureManager::SetLayoutBarrierMasks(ImageLayoutTransitionCmd& transitio
         transitionCmd.srcStage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
         transitionCmd.dstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
     }
-    else if (oldLayout == ImageLayout::UNDEFINED && newLayout == ImageLayout::COLOR_ATTACHMENT)
+    else if (oldLayout == ImageLayout::UNDEFINED && newLayout == ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
     {
         transitionCmd.srcAccessMask = 0;
         transitionCmd.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
         transitionCmd.srcStage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
         transitionCmd.dstStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
     }
-    else if (oldLayout == ImageLayout::COLOR_ATTACHMENT && newLayout == ImageLayout::PRESENT)
+    else if (oldLayout == ImageLayout::COLOR_ATTACHMENT_OPTIMAL && newLayout == ImageLayout::PRESENT_SRC_KHR)
     {
         transitionCmd.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
         transitionCmd.dstAccessMask = 0;
         transitionCmd.srcStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
         transitionCmd.dstStage = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
     }
-    else if (oldLayout == ImageLayout::COLOR_ATTACHMENT && newLayout == ImageLayout::COLOR_ATTACHMENT)
+    else if (oldLayout == ImageLayout::COLOR_ATTACHMENT_OPTIMAL && newLayout == ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
     {
         transitionCmd.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT;
         transitionCmd.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT;
         transitionCmd.srcStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
         transitionCmd.dstStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
     }
-    else if (oldLayout == ImageLayout::COLOR_ATTACHMENT && newLayout == ImageLayout::SHADER_READ_OPTIMAL)
+    else if (oldLayout == ImageLayout::COLOR_ATTACHMENT_OPTIMAL && newLayout == ImageLayout::SHADER_READ_ONLY_OPTIMAL)
     {
         transitionCmd.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
         transitionCmd.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
@@ -649,7 +692,7 @@ void VkTextureManager::SetLayoutBarrierMasks(ImageLayoutTransitionCmd& transitio
         transitionCmd.srcStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
         transitionCmd.dstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
     }
-    else if (oldLayout == ImageLayout::DEPTH_STENCIL && newLayout == ImageLayout::SHADER_READ_OPTIMAL)
+    else if (oldLayout == ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL && newLayout == ImageLayout::SHADER_READ_ONLY_OPTIMAL)
     {
         transitionCmd.srcAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
         transitionCmd.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
@@ -657,7 +700,7 @@ void VkTextureManager::SetLayoutBarrierMasks(ImageLayoutTransitionCmd& transitio
         transitionCmd.srcStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
         transitionCmd.dstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
     }
-    else if (oldLayout == ImageLayout::UNDEFINED && newLayout == ImageLayout::DEPTH_STENCIL)
+    else if (oldLayout == ImageLayout::UNDEFINED && newLayout == ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
     {
         transitionCmd.srcAccessMask = 0;
         transitionCmd.dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
@@ -686,16 +729,30 @@ VkImageCreateInfo VkTextureManager::FillImageCreateInfoFlat2D(const DynamicTextu
     imageInfo.extent.depth = 1;
     imageInfo.mipLevels = info.hasMipMaps ? MIPMAP_NUM : 1;
     imageInfo.arrayLayers = info.extents.z;
-    imageInfo.format = info.format;
+    imageInfo.format = Conv(info.format);
     imageInfo.tiling = Conv(info.tiling);
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     imageInfo.usage = Conv(info.usage);
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-    imageInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
-    imageInfo.queueFamilyIndexCount = 2;
-    static u32 queueFamilyIndices[] = {VkGlobals::GetQueueFamilyIndices().graphicsFamily.value(),
-                                       VkGlobals::GetQueueFamilyIndices().transferFamily.value()};
-    imageInfo.pQueueFamilyIndices = queueFamilyIndices;
+    
+    const auto& indices = VkGlobals::GetQueueFamilyIndices();
+    if (indices.graphicsFamily.has_value() && indices.transferFamily.has_value() && 
+        indices.graphicsFamily.value() != indices.transferFamily.value())
+    {
+        imageInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
+        imageInfo.queueFamilyIndexCount = 2;
+        static u32 queueFamilyIndices[2];
+        queueFamilyIndices[0] = indices.graphicsFamily.value();
+        queueFamilyIndices[1] = indices.transferFamily.value();
+        imageInfo.pQueueFamilyIndices = queueFamilyIndices;
+    }
+    else
+    {
+        imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        imageInfo.queueFamilyIndexCount = 0;
+        imageInfo.pQueueFamilyIndices = nullptr;
+    }
+    
     return imageInfo;
 }
 

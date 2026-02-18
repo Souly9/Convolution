@@ -1,5 +1,7 @@
 #pragma once
 #include "Core/Rendering/Core/RenderingForwardDecls.h"
+#include "Core/Rendering/Core/RenderDefinitions.h"
+#include "Core/Rendering/Core/Resource.h"
 #include "Defines/DescriptorLayoutDefines.h"
 
 enum class Topology
@@ -16,20 +18,6 @@ enum class PolygonMode
     Fill,
     Line,
     Point
-};
-
-enum class Cullmode
-{
-    None,
-    Front,
-    Back,
-    Both
-};
-
-enum class FrontFace
-{
-    Clockwise,
-    CounterClockwise
 };
 
 struct MultisampleInfo
@@ -49,8 +37,8 @@ struct RasterizerInfo
 {
     PolygonMode polyMode = PolygonMode::Fill; // GPU Feature required except for fill
     f32 lineWidth = 1.0;
-    Cullmode cullmode = Cullmode::None;
-    FrontFace frontMode = FrontFace::Clockwise;
+    CullMode cullmode = CullMode::NONE;
+    FrontFace frontMode = FrontFace::CLOCKWISE;
     f32 depthBiasConstantFactor = 0.0;
     f32 depthBiasClamp = 0.0;
     f32 depthBiasSlopeFactor = 0.0;
@@ -67,8 +55,8 @@ struct DescriptorSetLayoutInfo
 
 struct PipelineAttachmentInfo
 {
-    stltype::vector<VkFormat> colorAttachments;
-    VkFormat depthAttachmentFormat;
+    stltype::vector<TexFormat> colorAttachments;
+    TexFormat depthAttachmentFormat;
 };
 
 struct PushConstant
@@ -103,3 +91,30 @@ PipelineAttachmentInfo CreateAttachmentInfo(const stltype::vector<Texture>& colo
 PipelineAttachmentInfo CreateAttachmentInfo(const stltype::vector<ColorAttachment>& colorAttachments);
 PipelineAttachmentInfo CreateAttachmentInfo(const stltype::vector<ColorAttachment>& colorAttachments,
                                             const DepthAttachment& depthAttachment);
+
+class PipelineBase : public TrackedResource
+{
+public:
+    PipelineBase() = default;
+    virtual ~PipelineBase() = default;
+};
+
+#include "Core/Rendering/Core/APITraits.h"
+#ifdef USE_VULKAN
+#include "Core/Rendering/Vulkan/VulkanTraits.h"
+#include "Core/Rendering/Vulkan/VkPipeline.h"
+#endif
+
+template <typename API>
+class ComputePipelineT : public APITraits<API>::ComputePipelineType
+{
+public:
+    using APITraits<API>::ComputePipelineType::ComputePipelineType;
+};
+
+template <typename API>
+class GraphicsPipelineT : public APITraits<API>::GraphicsPipelineType
+{
+public:
+    using APITraits<API>::GraphicsPipelineType::GraphicsPipelineType;
+};

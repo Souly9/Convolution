@@ -50,6 +50,7 @@ void RenderThread::RenderLoop()
 
         {
             g_pQueueHandler->WaitForFences();
+            m_passManager->ReadAndPublishTimingResults(lastFrame);
             m_passManager->ExecutePasses(lastFrame);
         }
 

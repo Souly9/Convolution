@@ -1,8 +1,7 @@
 #pragma once
 #include "Core/Rendering/Core/RenderingForwardDecls.h"
 
-// Use VkFormat for now - TexFormat was just an alias
-using TexFormat = VkFormat;
+#include "Core/Rendering/Core/RenderDefinitions.h"
 
 // Handle for texture resource
 using TextureHandle = u32;

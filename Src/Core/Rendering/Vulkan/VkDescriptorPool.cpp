@@ -117,18 +117,18 @@ VkDescriptorSet DescriptorSetVulkan::GetRef() const
     return m_descriptorSet;
 }
 
-void DescriptorSetVulkan::WriteBufferUpdate(const GenericBuffer& buffer, u32 bindingSlot)
+void DescriptorSetVulkan::WriteBufferUpdate(const GenBufferVulkan& buffer, u32 bindingSlot)
 {
     WriteBufferUpdate(buffer, true, buffer.GetInfo().size, bindingSlot, 0);
 }
 
-void DescriptorSetVulkan::WriteSSBOUpdate(const GenericBuffer& buffer, u32 bindingSlot)
+void DescriptorSetVulkan::WriteSSBOUpdate(const GenBufferVulkan& buffer, u32 bindingSlot)
 {
     WriteBufferUpdate(buffer, false, buffer.GetInfo().size, bindingSlot, 0);
 }
 
 void DescriptorSetVulkan::WriteBufferUpdate(
-    const GenericBuffer& buffer, bool isUBO, u32 size, u32 bindingSlot, u32 offset)
+    const GenBufferVulkan& buffer, bool isUBO, u32 size, u32 bindingSlot, u32 offset)
 {
     if (bindingSlot == 0)
         bindingSlot = m_bindingSlot;

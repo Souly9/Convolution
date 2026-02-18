@@ -32,6 +32,7 @@ public:
         stltype::vector<stltype::pair<stltype::string, u64>> buffers;
         buffers.push_back({"Normals", gbufferIDs[0]});
         buffers.push_back({"Albedo", gbufferIDs[1]});
+        buffers.push_back({"Debug", gbufferIDs[3]});
         buffers.push_back({"Depth", renderState.depthbufferImGuiID});
 
         for (u32 i = 0; i < csmIDs.size(); ++i)

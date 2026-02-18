@@ -66,9 +66,16 @@ void PipelineVulkanBase::PrepareGraphicsBase(const ShaderCollection& shaders,
 
     outPipelineRenderingCreateInfo = {};
     outPipelineRenderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
-    outPipelineRenderingCreateInfo.colorAttachmentCount = pipeInfo.attachmentInfos.colorAttachments.size();
-    outPipelineRenderingCreateInfo.pColorAttachmentFormats = pipeInfo.attachmentInfos.colorAttachments.data();
-    outPipelineRenderingCreateInfo.depthAttachmentFormat = pipeInfo.attachmentInfos.depthAttachmentFormat;
+    
+    // Convert agnostic formats to Vulkan formats locally
+    m_colorAttachmentFormats.clear();
+    m_colorAttachmentFormats.reserve(pipeInfo.attachmentInfos.colorAttachments.size());
+    for (auto fmt : pipeInfo.attachmentInfos.colorAttachments)
+        m_colorAttachmentFormats.push_back(Conv(fmt));
+
+    outPipelineRenderingCreateInfo.pColorAttachmentFormats = m_colorAttachmentFormats.empty() ? nullptr : m_colorAttachmentFormats.data();
+    outPipelineRenderingCreateInfo.colorAttachmentCount = m_colorAttachmentFormats.size();
+    outPipelineRenderingCreateInfo.depthAttachmentFormat = Conv(pipeInfo.attachmentInfos.depthAttachmentFormat);
     outPipelineRenderingCreateInfo.viewMask = pipeInfo.viewMask;
 }
 

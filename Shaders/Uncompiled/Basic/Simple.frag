@@ -20,7 +20,6 @@
 #include "../../Globals/Utils/Shadows.h"
 #include "../../Tonemapping/GT7.h"
 
-
 layout(location = 0) in VertexOut
 {
     vec2 fragTexCoord;
@@ -60,14 +59,14 @@ void main()
 
     vec4 clipSpacePosition;
     clipSpacePosition.x = texCoords.x * 2.0 - 1.0;
-    clipSpacePosition.y = (1.0 - texCoords.y) * 2.0 - 1.0;          // <--- THE FLIP FIX
-    clipSpacePosition.z = fragmentDepth;                    // Vulkan NDC Z is 0..1 (no conversion needed)
+    clipSpacePosition.y = (1.0 - texCoords.y) * 2.0 - 1.0; // <--- THE FLIP FIX
+    clipSpacePosition.z = fragmentDepth;                   // Vulkan NDC Z is 0..1 (no conversion needed)
     clipSpacePosition.w = 1.0;
     clipSpacePosition = ubo.projectionInverse * clipSpacePosition;
     clipSpacePosition = (ubo.viewInverse * clipSpacePosition);
-    
+
     clipSpacePosition.xyz /= clipSpacePosition.w;
-    
+
     vec4 fragPosWorldSpace = vec4(clipSpacePosition.xyz, 1);
     mat4 view = ubo.view;
     vec4 fragPosViewSpace = view * fragPosWorldSpace;
@@ -77,7 +76,7 @@ void main()
 
     vec3 viewDir = normalize(camPos - fragPosWorldSpace.xyz);
     // Debug View modes
-    
+
     int debugViewMode = int(lightUniforms.data.LightGlobals.w);
 
     DirectionalLight dirLight = lightData.dirLight;
@@ -86,13 +85,12 @@ void main()
     vec3 N = normalize(normal);
     vec3 V = viewDir;
 
-
     // 1 = CSM Debug
     if (debugViewMode == 1)
     {
         int cascadeIdx = getCascadeIndex(viewDepth);
         vec3 cascadeColor = getCascadeDebugColor(cascadeIdx);
-        
+
         float shadow = computeShadow(fragPosWorldSpace, viewDepth, N, L);
         vec3 debugColor = mix(cascadeColor, albedo, shadow);
 
@@ -157,7 +155,6 @@ void main()
         float lightIntensity = dirLight.color.w;
         vec3 lightColor = dirLight.color.xyz * lightIntensity;
 
-
         vec3 lightContribution = computeDirLight(lightDir, V, N, lightColor, albedo, roughness, metallic);
 
         directLighting += lightContribution;
@@ -192,6 +189,11 @@ void main()
     // but we use float swapchain so it allows HDR output.
 
     // Apply UI Color overlay / Final output assignment
-    outColor.rgb = finalLDRColor * (1.0 - uiColor.a) + uiColor.rgb * uiColor.a;
+    vec4 debugColor = texture(GlobalBindlessTextures[gbufferUBO.gbufferDebugIdx], texCoords);
+
+    vec3 finalSceneColor = finalLDRColor;
+    finalSceneColor += debugColor.rgb;
+
+    outColor.rgb = finalSceneColor * (1.0 - uiColor.a) + uiColor.rgb * uiColor.a;
     outColor.a = 1.0;
 }

@@ -90,6 +90,10 @@ void MainMenuBar::DrawMenuBar(f32 dt, ApplicationInfos& appInfos)
             {
                 m_statsWindow.SetOpen(true);
             }
+            if (ImGui::MenuItem("GPU Timing", ""))
+            {
+                m_gpuTimingWindow.SetOpen(true);
+            }
             if (ImGui::MenuItem("Debug Settings", ""))
             {
                 m_debugSettingsWindow.SetOpen(true);
@@ -115,6 +119,10 @@ void MainMenuBar::DrawMenuBar(f32 dt, ApplicationInfos& appInfos)
     if (m_statsWindow.IsOpen())
     {
         m_statsWindow.DrawWindow(dt);
+    }
+    if (m_gpuTimingWindow.IsOpen())
+    {
+        m_gpuTimingWindow.DrawWindow(dt);
     }
     if (m_selectedEntitiesWindow.IsOpen())
     {

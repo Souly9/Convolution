@@ -35,7 +35,7 @@ void DepthPrePass::Init(RendererAttachmentInfo& attachmentInfo, const SharedReso
         CreateDefaultDepthAttachment(LoadOp::CLEAR, attachmentInfo.depthAttachment.GetTexture());
 
     InitBaseData(attachmentInfo);
-    m_indirectCmdBuffer = IndirectDrawCommandBuffer(1000000);
+    m_indirectCmdBuffer = IndirectDrawCmdBuf(1000000);
 
     BuildPipelines();
 }
@@ -84,7 +84,7 @@ void DepthPrePass::Render(const MainPassData& data, FrameRendererContext& ctx, C
     const DirectX::XMINT2 extents(ex.x, ex.y);
 
     stltype::vector<ColorAttachment> colorAttachments;
-    BeginRenderingCmd cmdBegin{&m_mainPSO, colorAttachments, &m_mainRenderingData.depthAttachment};
+    BeginRenderingCmd cmdBegin{&m_mainPSO, ToRenderAttachmentInfos(colorAttachments), ToRenderAttachmentInfo(m_mainRenderingData.depthAttachment)};
     cmdBegin.extents = extents;
     cmdBegin.viewport = data.mainView.viewport;
 

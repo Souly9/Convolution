@@ -56,20 +56,9 @@ public:
             ImGui::Separator();
         }
         // RenderPass GPU Timings
-        if (ImGui::CollapsingHeader("RenderPass Timings", ImGuiTreeNodeFlags_DefaultOpen))
-        {
-            ImGui::Text("Total GPU Time: %.3f ms", m_avgTotalGPUTime);
-            ImGui::Separator();
-
-                for (const auto& [passName, avgData] : m_avgPassTimings)
-                {
-                    if (avgData.wasRunLastFrame)
-                        ImGui::Text("  %s: %.3f ms", passName.c_str(), avgData.avgTimeMs);
-                    else
-                        ImGui::TextDisabled("  %s: (not run)", passName.c_str());
-                }
-            }
-            ImGui::Separator();
+        ImGui::Text("Total GPU Time: %.3f ms", m_avgTotalGPUTime);
+        ImGui::TextDisabled("(See GPU Timing Window for details)");
+        ImGui::Separator();
 
             // Renderer State
             ImGui::Text("Renderer State");

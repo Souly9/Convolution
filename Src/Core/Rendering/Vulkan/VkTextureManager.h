@@ -5,12 +5,14 @@
 #include "Core/Global/ThreadBase.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
 #include "Core/Rendering/Core/RenderingForwardDecls.h"
+#include "Core/Rendering/Core/RenderDefinitions.h"
 #include "Core/Rendering/Vulkan/Utils/TextureEnums.h"
 #include "Core/Rendering/Vulkan/VkCommandBuffer.h"
 #include "Core/Rendering/Vulkan/VkCommandPool.h"
 #include "Core/Rendering/Vulkan/VkDescriptorPool.h"
 #include "Core/Rendering/Vulkan/VkDescriptorSetLayout.h"
 #include "Core/Rendering/Vulkan/VkSynchronization.h"
+#include "Core/Rendering/Vulkan/VkBuffer.h"
 #include "VkTexture.h"
 #include <EASTL/deque.h>
 #include <EASTL/queue.h>
@@ -125,8 +127,8 @@ public:
     TextureHandle SubmitAsyncDynamicTextureCreation(const DynamicTextureRequest& info);
 
     void CreateTexture(const FileTextureRequest& fileReq);
-    TextureVulkan* CreateDynamicTexture(const DynamicTextureRequest& req);
-    TextureVulkan* CreateTextureImmediate(const DynamicTextureRequest& req);
+    Texture* CreateDynamicTexture(const DynamicTextureRequest& req);
+    Texture* CreateTextureImmediate(const DynamicTextureRequest& req);
 
     TextureHandle GenerateHandle();
 
@@ -159,7 +161,7 @@ public:
 
     void FreeTexture(TextureHandle handle);
 
-    stltype::vector<TextureVulkan>& GetSwapChainTextures()
+    stltype::vector<Texture>& GetSwapChainTextures()
     {
         return m_swapChainTextures;
     }

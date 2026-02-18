@@ -17,7 +17,7 @@ public:
     void RegisterDeleteForNextFrame(DeleteFunction&& func);
 
 protected:
-    threadstl::Mutex m_sharedDataMutex;
+    CustomMutex m_sharedDataMutex;
     stltype::queue<DeleteFunction> m_deleteQueue;
     struct DelayedDelete
     {

@@ -196,7 +196,7 @@ StorageBuffer::StorageBuffer(u64 size, bool isDevice)
     Create(info);
 }
 
-IndirectDrawCommandBuffer::IndirectDrawCommandBuffer(u64 numOfCommands)
+IndirectDrawCommandBufferVulkan::IndirectDrawCommandBufferVulkan(u64 numOfCommands)
 {
     BufferCreateInfo info{};
     info.size = sizeof(IndexedIndirectDrawCmd) * numOfCommands;
@@ -215,7 +215,7 @@ IndirectDrawCountBuffer::IndirectDrawCountBuffer(u64 numOfCounts)
     Create(info);
 }
 
-void IndirectDrawCommandBuffer::AddIndexedDrawCmd(
+void IndirectDrawCommandBufferVulkan::AddIndexedDrawCmd(
     u32 indexCount, u32 instanceCount, u32 firstIndex, u32 vertexOffset, u32 firstInstance)
 {
     if (m_indexedIndirectCmds.capacity() == m_indexedIndirectCmds.size())
@@ -226,14 +226,14 @@ void IndirectDrawCommandBuffer::AddIndexedDrawCmd(
     m_indexedIndirectCmds.emplace_back(indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
 }
 
-void IndirectDrawCommandBuffer::FillCmds()
+void IndirectDrawCommandBufferVulkan::FillCmds()
 {
     memcpy((char*)m_mappedMemoryHandle,
            (void*)m_indexedIndirectCmds.data(),
            m_indexedIndirectCmds.size() * sizeof(IndexedIndirectDrawCmd));
 }
 
-void IndirectDrawCommandBuffer::EmptyCmds()
+void IndirectDrawCommandBufferVulkan::EmptyCmds()
 {
     m_indexedIndirectCmds.clear();
     // memcpy((char*)m_mappedMemoryHandle, (void*)0, m_info.size);

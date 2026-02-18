@@ -75,7 +75,6 @@ public:
                     absolutePath = entry.path().string().c_str();
                 }
                 stltype::string fileName = entry.path().filename().string().c_str();
-                DEBUG_LOGF("Discovered include file {}", absolutePath.c_str());
 
                 IORequest req{.filePath = absolutePath,
                               .callback =
@@ -110,7 +109,6 @@ GlslangIncluder s_includer;
 static SpirVBinary CompileShader(EShLanguage type, const stltype::vector<char>& shaderSource, const char* fileName)
 {
     ScopedZone("ShaderCompiler::CompileShader");
-    DEBUG_LOGF("Compiling shader {}", fileName);
 
     glslang::TShader shader(type);
     int lengths[] = {(int)shaderSource.size()};
@@ -129,7 +127,6 @@ static SpirVBinary CompileShader(EShLanguage type, const stltype::vector<char>& 
         DEBUG_LOGF("Shader compilation failed: {}", pLog);
         return {};
     }
-    DEBUG_LOGF("Shader compilation succeeded!");
 
     glslang::TProgram program;
     program.addShader(&shader);
@@ -141,7 +138,6 @@ static SpirVBinary CompileShader(EShLanguage type, const stltype::vector<char>& 
         DEBUG_LOGF("Shader linking debug log: {}", program.getInfoDebugLog());
         return {};
     }
-    DEBUG_LOGF("Shader linking succeeded!");
     const auto inter = shader.getIntermediate();
 
     std::vector<u32> tmp;

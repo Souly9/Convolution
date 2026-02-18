@@ -6,6 +6,9 @@ struct PassTimingResult
 {
     stltype::string passName;
     f32 gpuTimeMs{0.f};
+    f32 startMs{0.f};
+    f32 endMs{0.f};
+    u32 queueFamilyIndex{0};
     bool wasRun{false};
 };
 

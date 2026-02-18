@@ -79,7 +79,7 @@ void GPUMemManager<Vulkan>::InitializeVMA()
 
 GPUMemManager<Vulkan>::~GPUMemManager()
 {
-    m_allocatinggMutex.Lock();
+    SimpleScopedGuard<CustomMutex> lock(m_allocatinggMutex);
     for (auto& handle : s_memoryHandles)
     {
         if (m_allocatorMode != Allocator::VMA)
@@ -101,7 +101,6 @@ GPUMemManager<Vulkan>::~GPUMemManager()
     }
     s_memoryHandles.clear();
     FreeVMA();
-    m_allocatinggMutex.Unlock();
 }
 
 GPUMemoryHandle GPUMemManager<Vulkan>::AllocateMemory(size_t size,
@@ -136,20 +135,18 @@ GPUMemoryHandle GPUMemManager<Vulkan>::AllocateBuffer(BufferUsage usage,
     {
         DEBUG_ASSERT(false);
     }
-    m_allocatinggMutex.Lock();
+    SimpleScopedGuard<CustomMutex> lock(m_allocatinggMutex);
     VmaAllocationCreateInfo allocInfo = {};
     allocInfo.usage = Conv2VmaMemFlags(usage);
     allocInfo.flags = NeedsMappableHandle(usage) ? VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT : 0;
 
     DetailedAllocationData allocation;
-    DEBUG_ASSERT(
-        vmaCreateBuffer(
-            s_vmaAllocator, &bufferInfo, &allocInfo, &allocation.bufferHandle, &allocation.vmaAllocation, nullptr) ==
-        VK_SUCCESS);
+    VkResult result = vmaCreateBuffer(
+            s_vmaAllocator, &bufferInfo, &allocInfo, &allocation.bufferHandle, &allocation.vmaAllocation, nullptr);
+    DEBUG_ASSERT(result == VK_SUCCESS);
     bufferToCreate = allocation.bufferHandle;
     allocation.memoryHandle = allocation.vmaAllocation; // Store the allocation handle
     s_memoryHandles.push_back(allocation);
-    m_allocatinggMutex.Unlock();
     return allocation.vmaAllocation;
 }
 
@@ -159,19 +156,23 @@ GPUMemoryHandle GPUMemManager<Vulkan>::AllocateImage(VkImageCreateInfo imageInfo
     {
         DEBUG_ASSERT(false);
     }
-    m_allocatinggMutex.Lock();
+    SimpleScopedGuard<CustomMutex> lock(m_allocatinggMutex);
     VmaAllocationCreateInfo allocInfo = {};
     allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
 
     DetailedAllocationData allocation;
-    DEBUG_ASSERT(
-        vmaCreateImage(
-            s_vmaAllocator, &imageInfo, &allocInfo, &allocation.imageHandle, &allocation.vmaAllocation, nullptr) ==
-        VK_SUCCESS);
+    
+    if (s_vmaAllocator == VK_NULL_HANDLE) {
+        DEBUG_LOGF("[GPUMemManager] CRITICAL: s_vmaAllocator is NULL!");
+    }
+
+    VkResult result = vmaCreateImage(
+            s_vmaAllocator, &imageInfo, &allocInfo, &allocation.imageHandle, &allocation.vmaAllocation, nullptr);
+            
+    DEBUG_ASSERT(result == VK_SUCCESS);
     imageToCreate = allocation.imageHandle;
     allocation.memoryHandle = allocation.vmaAllocation; // Store the allocation handle
     s_memoryHandles.push_back(allocation);
-    m_allocatinggMutex.Unlock();
     return allocation.vmaAllocation;
 }
 
@@ -194,24 +195,22 @@ u32 GPUMemManager<Vulkan>::GetMemoryTypeIndex(VkMemoryPropertyFlags properties, 
 
 GPUMappedMemoryHandle GPUMemManager<Vulkan>::MapMemory(GPUMemoryHandle memory, size_t size)
 {
-    m_allocatinggMutex.Lock();
-    m_mappingMutex.Lock();
+    SimpleScopedGuard<CustomMutex> allocGuard(m_allocatinggMutex);
+    SimpleScopedGuard<CustomMutex> mapGuard(m_mappingMutex);
     const auto it = std::find_if(s_memoryHandles.begin(),
                                  s_memoryHandles.end(),
                                  [&memory](const auto& elem) { return elem.memoryHandle == memory; });
     DEBUG_ASSERT(it != s_memoryHandles.end());
     GPUMappedMemoryHandle data;
-    DEBUG_ASSERT(vmaMapMemory(s_vmaAllocator, it->vmaAllocation, &data) == VK_SUCCESS);
+    VkResult result = vmaMapMemory(s_vmaAllocator, it->vmaAllocation, &data);
+    DEBUG_ASSERT(result == VK_SUCCESS);
     m_mappedMemoryHandles.push_back(memory);
-
-    m_mappingMutex.Unlock();
-    m_allocatinggMutex.Unlock();
     return data;
 }
 
 void GPUMemManager<Vulkan>::UnmapMemory(GPUMemoryHandle memory)
 {
-    m_mappingMutex.Lock();
+    SimpleScopedGuard<CustomMutex> lock(m_mappingMutex);
     auto mapped_it = std::find(m_mappedMemoryHandles.begin(), m_mappedMemoryHandles.end(), memory);
 
     if (mapped_it != m_mappedMemoryHandles.end())
@@ -220,29 +219,26 @@ void GPUMemManager<Vulkan>::UnmapMemory(GPUMemoryHandle memory)
         vmaUnmapMemory(s_vmaAllocator, *mapped_it);
         m_mappedMemoryHandles.erase(mapped_it);
     }
-    m_mappingMutex.Unlock();
 }
 
 void GPUMemManager<Vulkan>::TryFreeMemory(GPUMemoryHandle memory)
 {
-    m_allocatinggMutex.Lock();
+    SimpleScopedGuard<CustomMutex> lock(m_allocatinggMutex);
     if (memory != VK_NULL_HANDLE)
     {
         UnmapMemory(memory);
         // vkFreeMemory(VK_LOGICAL_DEVICE, memoryHandle, VulkanAllocator());
         FreeMemory(memory);
     }
-    m_allocatinggMutex.Unlock();
 }
 
 void GPUMemManager<Vulkan>::BindImageMemory(GPUMemoryHandle handle)
 {
-    m_allocatinggMutex.Lock();
+    SimpleScopedGuard<CustomMutex> lock(m_allocatinggMutex);
     const auto it = std::find_if(s_memoryHandles.begin(),
                                  s_memoryHandles.end(),
                                  [&handle](const auto& elem) { return elem.memoryHandle == handle; });
     DEBUG_ASSERT(vmaBindImageMemory(s_vmaAllocator, it->vmaAllocation, it->imageHandle) == VK_SUCCESS);
-    m_allocatinggMutex.Unlock();
 }
 
 void GPUMemManager<Vulkan>::FreeVMA()

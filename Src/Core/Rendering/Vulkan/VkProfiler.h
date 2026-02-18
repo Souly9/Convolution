@@ -5,6 +5,7 @@
 #include "Core/Rendering/Core/Profiler.h"
 #include "Core/Rendering/Vulkan/VkQueryPool.h"
 #include "Core/Global/State/ApplicationState.h"
+#include "Core/Global/ThreadBase.h"
 
 // Simple ring-buffer style profiler for query management
 class VkProfiler : public Profiler
@@ -36,7 +37,7 @@ public:
     // Called at start of frame to reset
     void BeginFrame(u32 frameIdx) override
     {
-        SimpleLockGuard<threadstl::Mutex> lock(m_statsMutex);
+        SimpleScopedGuard<CustomMutex> lock(m_statsMutex);
         RendererState::SceneRenderStats gpuStats = m_accumulatedStats[frameIdx];
         g_pApplicationState->RegisterUpdateFunction([gpuStats, this](ApplicationState& appState) {
             appState.renderState.stats.numVertices = gpuStats.numVertices;
@@ -63,6 +64,8 @@ public:
     // Returns a query index to use for a command buffer
     u32 AllocateQuery()
     {
+        if (m_maxQueryIdx == 0) return ~0u;
+
         u32 idx = m_currentQueryIdx++;
         if (idx >= m_maxQueryIdx)
         {
@@ -105,7 +108,7 @@ public:
 
         if (frameIdx < FRAMES_IN_FLIGHT)
         {
-            SimpleLockGuard<threadstl::Mutex> lock(m_statsMutex);
+            SimpleScopedGuard<CustomMutex> lock(m_statsMutex);
             m_accumulatedStats[frameIdx].numDrawCalls += stats.numDrawCalls;
             m_accumulatedStats[frameIdx].numDrawIndirectCalls += stats.numDrawIndirectCalls;
             m_accumulatedStats[frameIdx].numComputeDispatches += stats.numComputeDispatches;
@@ -121,7 +124,7 @@ private:
     u32 m_baseQueryIdx{0};
     u32 m_maxQueryIdx{0};
     
-    threadstl::Mutex m_statsMutex;
+    CustomMutex m_statsMutex;
     RendererState::SceneRenderStats m_accumulatedStats[FRAMES_IN_FLIGHT];
 
     u32 GetFrameIdxFromQueryIdx(u32 queryIdx) const

@@ -166,6 +166,7 @@ target_include_directories(ImGui PUBLIC
 )
 
 add_compile_definitions(CONV_DEBUG)
+add_compile_definitions(USE_VULKAN)
 if(${CMAKE_BUILD_TYPE} MATCHES "Debug" OR ${CMAKE_BUILD_TYPE} MATCHES "RelWithDebInfo")
     if (MSVC)
         # Use /Z7 (debug info in .obj) instead of /Zi (PDB) for better LLDB compatibility

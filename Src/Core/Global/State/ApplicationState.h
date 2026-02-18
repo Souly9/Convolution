@@ -1,5 +1,6 @@
 #pragma once
 #include "../GlobalDefines.h"
+#include "Core/Global/ThreadBase.h"
 #include "Core/SceneGraph/Scene.h"
 #include "EASTL/unique_ptr.h"
 #include "States.h"
@@ -39,7 +40,7 @@ private:
     void SwitchSceneInternal();
 
     static inline constexpr u32 MAX_STATES = 2;
-    threadstl::Mutex m_updateStateFutex;
+    CustomMutex m_updateStateFutex;
     // Double buffered application state to make multi threaded access easier
     stltype::fixed_vector<ApplicationState, MAX_STATES, false> m_appStates{MAX_STATES};
     stltype::fixed_vector<ApplicationStateUpdateFunction, 32> m_updateFunctions;

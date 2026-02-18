@@ -1,5 +1,6 @@
 #pragma once
 #include "GenericGeometryPass.h"
+#include "Core/Rendering/Core/CommandBuffer.h"
 
 namespace RenderPasses
 {
@@ -25,7 +26,7 @@ public:
 protected:
     // Every pass should only have one pipeline as we're working with uber shaders + bindless
     PSO m_mainPSO;
-    IndirectDrawCommandBuffer m_indirectCmdBuffer;
+    IndirectDrawCmdBuf m_indirectCmdBuffer;
     IndirectDrawCountBuffer m_indirectCountBuffer;
 };
 } // namespace RenderPasses

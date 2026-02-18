@@ -21,7 +21,7 @@ struct ShaderCollection
 };
 
 // Base class that holds shared members and helpers for Vulkan pipelines
-class PipelineVulkanBase : public TrackedResource
+class PipelineVulkanBase : public PipelineBase
 {
 protected:
     VkPipelineLayout CreatePipelineLayout(const DescriptorSetLayoutInfo& layoutInfo,
@@ -67,6 +67,7 @@ protected:
 
     stltype::vector<DescriptorSetLayout> m_sharedDescriptorSetLayouts;
     DescriptorSetLayout m_descriptorSetLayout;
+    stltype::vector<VkFormat> m_colorAttachmentFormats;
 
     PipelineInfo m_info;
     PipeVertInfo m_vertexInfo;

@@ -39,14 +39,20 @@ const static inline stltype::string ENGINE_NAME = "Convolution";
 constexpr static inline u32 FRAMES_IN_FLIGHT = 2u;
 constexpr static inline u32 SWAPCHAIN_IMAGES = 2u;
 constexpr static inline u32 CSM_INITIAL_CASCADES = 2u;
-constexpr static inline mathstl::Vector2 CSM_DEFAULT_RES = mathstl::Vector2(16384.0f, 16384.0f);
+constexpr static inline mathstl::Vector2 CSM_DEFAULT_RES = mathstl::Vector2(4096.0f, 4096.0f);
 constexpr static inline u32 MAX_BINDLESS_TEXTURES = 16536;
 constexpr static inline u32 MAX_MESHES = 4096;
+
+#define SWAPCHAIN_FORMAT    FrameGlobals::GetSwapChainFormat()
+#define SWAPCHAINFORMAT     SWAPCHAIN_FORMAT
+#define DEPTH_BUFFER_FORMAT TexFormat::D32_SFLOAT
 
 // Definitions
 #define USE_VULKAN
 
 #ifdef USE_VULKAN
+#include "Core/Rendering/Core/APITraits.h"
+using CurrentAPI = API_Vulkan;
 #define SEPERATE_TRANSFERQUEUE true
 #define GLFW_INCLUDE_VULKAN
 #define CONV_MIN_VULKAN_VERSION     VK_API_VERSION_1_4
@@ -64,15 +70,4 @@ constexpr static inline u32 MAX_MESHES = 4096;
 static inline constexpr f32 FLOAT_TOLERANCE = 0.00001f;
 static inline constexpr f32 AMBIENT_STRENGTH = 0.1f;
 
-// Simple RAII wrapper for mutexes with Lock()/Unlock() interface
-template<typename MutexType>
-struct SimpleLockGuard
-{
-    SimpleLockGuard(MutexType& mutex) : m_mutex(mutex) { m_mutex.Lock(); }
-    ~SimpleLockGuard() { m_mutex.Unlock(); }
-    
-    SimpleLockGuard(const SimpleLockGuard&) = delete;
-    SimpleLockGuard& operator=(const SimpleLockGuard&) = delete;
-    
-    MutexType& m_mutex;
-};
+

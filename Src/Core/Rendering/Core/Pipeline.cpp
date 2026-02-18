@@ -10,7 +10,7 @@ PipelineAttachmentInfo CreateAttachmentInfo(const stltype::vector<Texture>& colo
     info.colorAttachments.reserve(colorAttachments.size());
     for (const auto& colorTex : colorAttachments)
     {
-        info.colorAttachments.push_back(colorTex.GetInfo().format);
+        info.colorAttachments.push_back(static_cast<TexFormat>(colorTex.GetInfo().format));
     }
     info.depthAttachmentFormat = depthAttachment.GetInfo().format;
     return info;
@@ -22,7 +22,7 @@ PipelineAttachmentInfo CreateAttachmentInfo(const stltype::vector<ColorAttachmen
     info.colorAttachments.reserve(colorAttachments.size());
     for (const auto& colorAttachment : colorAttachments)
     {
-        info.colorAttachments.push_back(colorAttachment.GetDesc().format);
+        info.colorAttachments.push_back(colorAttachment.GetFormat());
     }
     return info;
 }
@@ -31,6 +31,6 @@ PipelineAttachmentInfo CreateAttachmentInfo(const stltype::vector<ColorAttachmen
                                             const DepthAttachment& depthAttachment)
 {
     PipelineAttachmentInfo info = CreateAttachmentInfo(colorAttachments);
-    info.depthAttachmentFormat = depthAttachment.GetDesc().format;
+    info.depthAttachmentFormat = depthAttachment.GetFormat();
     return info;
 }

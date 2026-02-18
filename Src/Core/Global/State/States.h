@@ -1,5 +1,6 @@
 #pragma once
 #include "Core/ECS/Entity.h"
+#include "Core/Global/Utils/EnumHelpers.h"
 
 class Scene;
 
@@ -18,6 +19,7 @@ enum class DebugFlags : u32
     None = 0,
     CullFrustum = 1 << 0,
 };
+MAKE_FLAG_ENUM(DebugFlags)
 
 struct GUIState : public stltype::bitset<32>
 {
@@ -32,6 +34,9 @@ struct PassTimingStat
 {
     stltype::string passName;
     f32 gpuTimeMs{0.f};
+    f32 startMs{0.f};
+    f32 endMs{0.f};
+    u32 queueFamilyIndex{0};
     bool wasRun{false};
 };
 
@@ -96,7 +101,7 @@ struct ApplicationState
     Scene* pCurrentScene;
 
     ECS::Entity mainCameraEntity{};
-    bool renderDebugMeshes{false};
+    bool renderDebugMeshes{true};
 
     bool ShouldDisplayDebugObjects() const
     {

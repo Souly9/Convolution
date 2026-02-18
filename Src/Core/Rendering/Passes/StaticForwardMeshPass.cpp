@@ -120,7 +120,7 @@
 //		const auto ex = ctx.pCurrentSwapchainTexture->GetInfo().extents;
 //		const DirectX::XMINT2 extents(ex.x, ex.y);
 //
-//		BeginRenderingCmd cmdBegin{ m_mainPSO, colorAttachments, &m_mainRenderingData.depthAttachment };
+//		BeginRenderingCmd cmdBegin{ m_mainPSO, ToRenderAttachmentInfos(colorAttachments), ToRenderAttachmentInfo(m_mainRenderingData.depthAttachment) };
 //		cmdBegin.extents = extents;
 //
 //		GenericIndirectDrawCmd cmd{ m_mainPSO, m_indirectCmdBuffer };

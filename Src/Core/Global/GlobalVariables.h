@@ -1,5 +1,6 @@
 #pragma once
 #include "GlobalDefines.h"
+#include "FrameGlobals.h"
 #include <EAThread/eathread_condition.h>
 
 extern threadstl::Semaphore g_mainRenderThreadSyncSemaphore;
@@ -59,36 +60,4 @@ extern stltype::unique_ptr<GPUMemManager<Vulkan>> g_pGPUMemoryManager;
 // Define for other APIs if needed
 #endif
 
-// Holds the frame number of the current frame (aka whether it's the first,
-// second etc. frame of the swapchain)
-extern u32 g_currentFrameNumber;
-extern mathstl::Vector2 g_swapChainExtent;
 
-namespace FrameGlobals
-{
-static inline u32 GetFrameNumber()
-{
-    return g_currentFrameNumber;
-}
-static inline void SetFrameNumber(u32 frameNumber)
-{
-    g_currentFrameNumber = frameNumber;
-}
-static inline u32 GetPreviousFrameNumber(u32 frameNumber)
-{
-    return --frameNumber % FRAMES_IN_FLIGHT;
-}
-
-static inline const mathstl::Vector2& GetSwapChainExtent()
-{
-    return g_swapChainExtent;
-}
-static inline f32 GetScreenAspectRatio()
-{
-    return static_cast<f32>(g_swapChainExtent.x) / static_cast<f32>(g_swapChainExtent.y);
-}
-static inline void SetSwapChainExtent(const mathstl::Vector2& swapChainExtent)
-{
-    g_swapChainExtent = swapChainExtent;
-}
-} // namespace FrameGlobals
