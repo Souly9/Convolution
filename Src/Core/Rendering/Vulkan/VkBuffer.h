@@ -12,7 +12,10 @@ struct BufferInfo
 class VertexBufferVulkan;
 class StagingBuffer;
 
-class GenBufferVulkan : public GenBuffer
+// Forward declare CommandBuffer because we can't include it circularly
+class CBufferVulkan;
+
+class GenBufferVulkan : public BufferBase
 {
 public:
     GenBufferVulkan(BufferCreateInfo& info);
@@ -27,7 +30,7 @@ public:
 
     // Fill buffer using staging buffer
     void FillAndTransfer(StagingBuffer& stgBuffer,
-                         CommandBuffer* transferBuffer,
+                         CBufferVulkan* transferBuffer,
                          const void* data,
                          bool freeStagingBuffer = false,
                          u64 offset = 0);
@@ -120,11 +123,11 @@ public:
 };
 
 // Also has some utility data and functions to unify the management of command array and buffer
-class IndirectDrawCommandBuffer : public GenBufferVulkan
+class IndirectDrawCommandBufferVulkan : public GenBufferVulkan
 {
 public:
-    IndirectDrawCommandBuffer(u64 numOfCommands);
-    IndirectDrawCommandBuffer()
+    IndirectDrawCommandBufferVulkan(u64 numOfCommands);
+    IndirectDrawCommandBufferVulkan()
     {
     }
 

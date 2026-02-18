@@ -1,6 +1,7 @@
 #pragma once
 #include "Core/Rendering/Core/RenderingData.h"
 #include "Core/Rendering/Passes/RenderPass.h"
+#include "Core/Rendering/Core/CommandBuffer.h"
 #include "Core/Rendering/Vulkan/VkPipeline.h"
 
 namespace RenderPasses
@@ -19,13 +20,13 @@ public:
 
 private:
     void BuildPipelines() override;
-    void CreateSharedDescriptorLayout();
+    void CreateSharedDescriptorLayout() override;
     void BuildBuffers() override;
 
     PSO m_pipeline;
-    IndirectDrawCommandBuffer m_indirectCmdBuffer;
-    IndexBufferVulkan m_indexBuffer; // Used to supply indices 0..23 for the cube lines
-    VertexBufferVulkan m_dummyVertexBuffer; // Dummy VB for binding requirement
+    IndirectDrawCmdBuf m_indirectCmdBuffer;
+    IndexBuffer m_indexBuffer; // Used to supply indices 0..23 for the cube lines
+    VertexBuffer m_dummyVertexBuffer; // Dummy VB for binding requirement
     RenderingData m_mainRenderingData;
 };
 } // namespace RenderPasses

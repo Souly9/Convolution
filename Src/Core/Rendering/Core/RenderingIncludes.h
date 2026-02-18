@@ -5,6 +5,7 @@
 #include "RenderingForwardDecls.h"
 
 #ifdef USE_VULKAN
+#include "Core/Rendering/Vulkan/VulkanTraits.h"
 #include "Core/Rendering/Vulkan/VkAttachment.h"
 #include "Core/Rendering/Vulkan/VkBuffer.h"
 #include "Core/Rendering/Vulkan/VkCommandBuffer.h"

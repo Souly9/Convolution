@@ -5,8 +5,8 @@ layout(set = GBufferUBOSet, binding = GlobalGBufferPostProcessUBOSlot) uniform G
     uint gbufferAlbedoIdx;
     uint gbufferNormalIdx;
     uint gbufferTexCoordMatIdx;
-    uint gbufferPositionIdx;
     uint gbufferUIIdx;
+    uint gbufferDebugIdx;
     uint depthBufferIdx;
 } gbufferUBO;
 

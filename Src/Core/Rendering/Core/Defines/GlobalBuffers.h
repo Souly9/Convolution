@@ -112,11 +112,11 @@ struct RenderPassUBO
 
 struct GBufferPostProcessUBO
 {
-    BindlessTextureHandle gbufferPosition;
+    BindlessTextureHandle gbufferAlbedo;
     BindlessTextureHandle gbufferNormal;
-    BindlessTextureHandle gbuffer3;
-    BindlessTextureHandle gbuffer4;
+    BindlessTextureHandle gbufferTexCoordMat;
     BindlessTextureHandle gbufferUI;
+    BindlessTextureHandle gbufferDebug;
     BindlessTextureHandle depthBufferIdx;
 };
 

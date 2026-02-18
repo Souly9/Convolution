@@ -1,10 +1,13 @@
 #pragma once
 #include "BackendDefines.h"
 #include "Core/Global/GlobalDefines.h"
+#include "Core/Rendering/Vulkan/VulkanTraits.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
 #include "Core/Rendering/Core/Synchronization.h"
 
-class CBufferVulkan : public CBuffer
+// Note: CBufferVulkan now inherits from CommandBufferBase (via refactoring)
+// But we should use the new name "CommandBufferBase"
+class CBufferVulkan : public CommandBufferBase
 {
 public:
     CBufferVulkan() = default;

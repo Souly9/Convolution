@@ -3,7 +3,10 @@
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Rendering/Core/Texture.h"
 
-class TextureVulkan : public Tex
+class TextureMan;
+class VkTextureManager;
+
+class TextureVulkan : public TextureBase
 {
 public:
     friend class TextureMan;
@@ -14,6 +17,7 @@ public:
     TextureVulkan(const TextureInfo&);
 
     ~TextureVulkan();
+
     virtual void CleanUp() override;
 
     void SetImageView(VkImageView view);

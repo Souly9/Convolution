@@ -43,5 +43,5 @@ void main() {
 	//}
 	//
 	////outColor = vec4(texture(GlobalBindlessTextures[mat.diffuseTexture], IN.fragTexCoord).rgb, 1);
-	outColor = vec4(texture(GlobalBindlessTextures[gbufferUBO.gbufferPositionIdx], IN.fragTexCoord).xyz, 1);
+	outColor = vec4(texture(GlobalBindlessTextures[gbufferUBO.gbufferAlbedoIdx], IN.fragTexCoord).xyz, 1);
 }

@@ -38,7 +38,6 @@ class ShaderVulkan;
 class DescriptorSetVulkan;
 class DescriptorPoolVulkan;
 class DescriptorSetLayoutVulkan;
-class IndirectDrawCommandBuffer; // Direct class, not an alias
 class StorageBuffer;             // Direct class
 class StagingBuffer;             // Direct class
 class UniformBuffer;             // Direct class
@@ -47,14 +46,34 @@ class VkGPUTimingQuery;
 class QueryPoolVulkan;
 
 // Type aliases - abstract API-specific types
-using GenericBuffer = GenBufferVulkan;
+// ...
+// Initial forward decl
+template<typename API>
+class GenBufferT;
+
+// ...
+using GenericBuffer = GenBufferT<CurrentAPI>;
 using VertexBuffer = VertexBufferVulkan;
 using IndexBuffer = IndexBufferVulkan;
 using CommandBuffer = CBufferVulkan;
 using CommandPool = CommandPoolVulkan;
-using Texture = TextureVulkan;
-using PSO = GraphicsPipelineVulkan;
-using ComputePipeline = ComputePipelineVulkan;
+
+template<typename API>
+class IndirectDrawCommandBufferCommon;
+using IndirectDrawCmdBuf = IndirectDrawCommandBufferCommon<CurrentAPI>;
+
+template<typename API>
+class TextureT;
+
+// ...
+using Texture = TextureT<CurrentAPI>;
+template<typename API>
+class ComputePipelineT;
+template<typename API>
+class GraphicsPipelineT;
+
+using PSO = GraphicsPipelineT<CurrentAPI>;
+using ComputePipeline = ComputePipelineT<CurrentAPI>;
 using Shader = ShaderVulkan;
 using GPUMemoryHandle = VmaAllocation;
 using GPUMappedMemoryHandle = void*;

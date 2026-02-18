@@ -38,6 +38,11 @@ public:
         return true;
     }
 
+    QueueType GetQueueType() const override
+    {
+        return QueueType::Compute;
+    }
+
 protected:
     ComputePipeline m_lightCullingComputePipeline;
     ComputePipeline m_clusterComputePipeline;

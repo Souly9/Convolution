@@ -3,18 +3,21 @@
 
 void ApplicationStateManager::ProcessStateUpdates()
 {
-    m_updateStateFutex.Lock();
-    u32 currentState = m_currentState;
-    currentState = ++currentState % MAX_STATES;
-    // Don't change actual index before processing update functions
-    auto newState = m_appStates[currentState];
-    newState.renderState.stats = {};
-    for (auto& updateFunction : m_updateFunctions)
+    u32 currentState = 0;
+    ApplicationState newState;
     {
-        updateFunction(newState);
+        SimpleScopedGuard<CustomMutex> lock(m_updateStateFutex);
+        currentState = m_currentState;
+        currentState = ++currentState % MAX_STATES;
+        // Don't change actual index before processing update functions
+        newState = m_appStates[currentState];
+        newState.renderState.stats = {};
+        for (auto& updateFunction : m_updateFunctions)
+        {
+            updateFunction(newState);
+        }
+        m_updateFunctions.clear();
     }
-    m_updateFunctions.clear();
-    m_updateStateFutex.Unlock();
     if (m_pNextScene != nullptr)
     {
         SwitchSceneInternal();
@@ -37,9 +40,8 @@ void ApplicationStateManager::SwitchSceneInternal()
 }
 void ApplicationStateManager::RegisterUpdateFunction(ApplicationStateUpdateFunction&& updateFunction)
 {
-    m_updateStateFutex.Lock();
+    SimpleScopedGuard<CustomMutex> lock(m_updateStateFutex);
     m_updateFunctions.push_back(std::move(updateFunction));
-    m_updateStateFutex.Unlock();
 }
 
 void ApplicationStateManager::SetCurrentScene(stltype::unique_ptr<Scene>&& scene)

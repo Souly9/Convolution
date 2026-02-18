@@ -17,6 +17,7 @@ enum class StageFlags
     AllGraphics = VertexShader | FragmentShader,
     AllCompute = ComputeShader
 };
+MAKE_FLAG_ENUM(StageFlags)
 
 enum class AccessFlags : u32
 {

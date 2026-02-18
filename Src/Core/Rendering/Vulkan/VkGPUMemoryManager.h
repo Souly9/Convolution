@@ -2,6 +2,7 @@
 #include "BackendDefines.h"
 #include "Core/Rendering/Core/Buffer.h"
 #include "Core/Rendering/Core/GPUMemoryManager.h"
+#include "Core/Global/ThreadBase.h"
 
 template <>
 class GPUMemManager<Vulkan>
@@ -31,7 +32,7 @@ protected:
 
 private:
     Allocator m_allocatorMode;
-    threadstl::Mutex m_mappingMutex;
-    threadstl::Mutex m_allocatinggMutex;
+    CustomMutex m_mappingMutex;
+    CustomMutex m_allocatinggMutex;
     stltype::vector<GPUMemoryHandle> m_mappedMemoryHandles{}; // Mostly just for debugging
 };

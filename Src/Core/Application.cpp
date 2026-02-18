@@ -35,7 +35,7 @@ Application::Application(bool canRender, RenderLayer<RenderAPI>& layer) : m_rend
     g_pGlobalTimeData->Reset();
 
     FrameGlobals::SetFrameNumber(0);
-    m_applicationState.SetCurrentScene(stltype::make_unique<SponzaScene>());
+    m_applicationState.SetCurrentScene(stltype::make_unique<SampleScene>());
     g_pShaderManager->ReadAllSourceShaders();
 
     g_pEventSystem->OnBaseInit({});

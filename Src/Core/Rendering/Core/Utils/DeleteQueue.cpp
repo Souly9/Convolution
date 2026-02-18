@@ -7,7 +7,7 @@ DeleteQueue::DeleteQueue()
 
 void DeleteQueue::ProcessDeleteQueue()
 {
-    m_sharedDataMutex.Lock();
+    SimpleScopedGuard<CustomMutex> lock(m_sharedDataMutex);
     while (m_deleteQueue.size() > 0)
     {
         const auto func = m_deleteQueue.front();
@@ -28,12 +28,11 @@ void DeleteQueue::ProcessDeleteQueue()
         }
         m_delayedDeleteQueue.pop();
     }
-    m_sharedDataMutex.Unlock();
 }
 
 void DeleteQueue::ForceEmptyQueue()
 {
-    m_sharedDataMutex.Lock();
+    SimpleScopedGuard<CustomMutex> lock(m_sharedDataMutex);
     while (m_deleteQueue.size() > 0)
     {
         const auto& func = m_deleteQueue.front();
@@ -46,19 +45,16 @@ void DeleteQueue::ForceEmptyQueue()
         func();
         m_delayedDeleteQueue.pop();
     }
-    m_sharedDataMutex.Unlock();
 }
 
 void DeleteQueue::RegisterDelete(DeleteFunction&& func)
 {
-    m_sharedDataMutex.Lock();
+    SimpleScopedGuard<CustomMutex> lock(m_sharedDataMutex);
     m_deleteQueue.emplace(std::move(func));
-    m_sharedDataMutex.Unlock();
 }
 
 void DeleteQueue::RegisterDeleteForNextFrame(DeleteFunction&& func)
 {
-    m_sharedDataMutex.Lock();
+    SimpleScopedGuard<CustomMutex> lock(m_sharedDataMutex);
     m_delayedDeleteQueue.emplace(std::move(func), FrameGlobals::GetFrameNumber());
-    m_sharedDataMutex.Unlock();
 }

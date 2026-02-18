@@ -6,6 +6,7 @@
 #include "DebugWindows/InfoWindow.h"
 #include "DebugWindows/RenderSettingsWindow.h"
 #include "DebugWindows/StatsWindow.h"
+#include "DebugWindows/GPUTimingWindow.h"
 #include "UIElement.h"
 #include <imgui/imgui.h>
 
@@ -30,4 +31,5 @@ private:
     GBufferWindow m_gbufferWindow;
     SceneGraphWindow m_sceneGraphWindow;
     RenderSettingsWindow m_renderSettingsWindow;
+    GPUTimingWindow m_gpuTimingWindow;
 };

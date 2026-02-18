@@ -12,7 +12,6 @@ static inline constexpr u64 MAX_TEXTURES = 4096;
         freeFunc;                                                                                                      \
         res = VK_NULL_HANDLE;                                                                                          \
     }
-#define DEPTH_BUFFER_FORMAT VK_FORMAT_D32_SFLOAT
 #define VK_API_LEVEL_MIN    VK_MAKE_API_VERSION(0, 1, 4, 3)
 
 static inline constexpr VkClearValue g_BlackCLearColor = {{{0.0f, 0.0f, 0.0f, 0.0f}}};
@@ -45,7 +44,6 @@ static inline const stltype::vector<const char*> g_deviceExtensions = {"VK_KHR_s
 static inline const stltype::vector<VkDynamicState> g_dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT,
                                                                        VK_DYNAMIC_STATE_SCISSOR};
 
-#define SWAPCHAINFORMAT      VK_FORMAT_R16G16B16A16_SFLOAT
 #define SWAPCHAINCOLORSPACE  VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT
 #define SWAPCHAINPRESENTMODE VK_PRESENT_MODE_FIFO_KHR
 

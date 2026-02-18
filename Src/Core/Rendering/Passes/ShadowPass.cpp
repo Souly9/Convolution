@@ -29,12 +29,19 @@ void CSMPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceM
 {
     ScopedZone("ShadowPass::Init");
 
-    const auto csmFormat = attachmentInfo.directionalLightShadowMap.format;
-    const auto cascadeAttachment = CreateDefaultDepthAttachment(csmFormat, LoadOp::CLEAR, nullptr);
+    const auto csmFormat = DEPTH_BUFFER_FORMAT;
+    DepthBufferAttachmentInfo depthInfo{};
+    depthInfo.format = csmFormat;
+    depthInfo.loadOp = LoadOp::CLEAR;
+    depthInfo.storeOp = StoreOp::STORE;
+    depthInfo.initialLayout = ImageLayout::UNDEFINED;
+    depthInfo.finalLayout = ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    depthInfo.renderingLayout = ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    const auto cascadeAttachment = DepthAttachment::Create(depthInfo, nullptr);
     m_mainRenderingData.depthAttachment = cascadeAttachment;
 
     InitBaseData(attachmentInfo);
-    m_indirectCmdBuffer = IndirectDrawCommandBuffer(1000000);
+    m_indirectCmdBuffer = IndirectDrawCmdBuf(1000000);
 
     BuildPipelines();
 }
@@ -54,7 +61,7 @@ void CSMPass::BuildPipelines()
         CreateAttachmentInfo({m_mainRenderingData.colorAttachments}, m_mainRenderingData.depthAttachment);
     // Compute viewMask from cascade count: (1 << cascades) - 1 gives bitmask for all layers
     info.viewMask = (1 << m_cascadeCount) - 1;
-    info.rasterizerInfo.cullmode = Cullmode::Back;
+    info.rasterizerInfo.cullmode = CullMode::BACK;
     m_mainPSO = PSO(
         ShaderCollection{&mainVert, &mainFrag}, PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions}, info);
 }
@@ -102,7 +109,7 @@ void CSMPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comman
     m_mainRenderingData.depthAttachment.SetTexture(data.directionalLightShadowMap.pTexture);
 
     stltype::vector<ColorAttachment> colorAttachments;
-    BeginRenderingCmd cmdBegin{&m_mainPSO, colorAttachments, &m_mainRenderingData.depthAttachment};
+    BeginRenderingCmd cmdBegin{&m_mainPSO, ToRenderAttachmentInfos(colorAttachments), ToRenderAttachmentInfo(m_mainRenderingData.depthAttachment)};
 
     cmdBegin.depthLayerMask = (1 << m_cascadeCount) - 1;
     cmdBegin.extents = extents;

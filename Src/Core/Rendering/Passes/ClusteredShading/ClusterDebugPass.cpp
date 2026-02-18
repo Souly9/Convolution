@@ -18,16 +18,11 @@ void ClusterDebugPass::Init(RendererAttachmentInfo& attachmentInfo, const Shared
     ScopedZone("ClusterDebugPass::Init");
     
     const auto& gbufferInfo = attachmentInfo.gbuffer;
-     const auto gbufferPositionTex = 
-        CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBufferAlbedo), LoadOp::LOAD, nullptr);
-    const auto gbufferNormal =
-        CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBufferNormal), LoadOp::LOAD, nullptr);
-    const auto gbuffer3 = CreateDefaultColorAttachment(
-        gbufferInfo.GetFormat(GBufferTextureType::TexCoordMatData), LoadOp::LOAD, nullptr);
-    const auto gbufferPos =
-        CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::Position), LoadOp::LOAD, nullptr);
-        
-    m_mainRenderingData.colorAttachments = {gbufferPositionTex, gbufferNormal, gbuffer3, gbufferPos};
+    const auto gbufferDebug =
+        CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBufferDebug), LoadOp::LOAD, nullptr);
+
+    m_mainRenderingData.colorAttachments.clear();
+    m_mainRenderingData.colorAttachments.push_back(std::move(gbufferDebug));
     m_mainRenderingData.depthAttachment =
         CreateDefaultDepthAttachment(LoadOp::LOAD, attachmentInfo.depthAttachment.GetTexture());
     
@@ -59,7 +54,7 @@ void ClusterDebugPass::BuildBuffers()
     
     // Create indirect command buffer
     // Start with 1 command capacity
-    m_indirectCmdBuffer = IndirectDrawCommandBuffer(1);
+    m_indirectCmdBuffer = IndirectDrawCmdBuf(1);
 }
 
 void ClusterDebugPass::BuildPipelines()
@@ -79,7 +74,7 @@ void ClusterDebugPass::BuildPipelines()
     // Topology: Line List
     info.topology = Topology::Lines;
     info.rasterizerInfo.polyMode = PolygonMode::Line;
-    info.rasterizerInfo.cullmode = Cullmode::None;
+    info.rasterizerInfo.cullmode = CullMode::NONE;
     
     // Depth test
     info.hasDepth = true;
@@ -89,10 +84,10 @@ void ClusterDebugPass::BuildPipelines()
 
 void ClusterDebugPass::CreateSharedDescriptorLayout()
 {
-    // Set 0: ViewUBO
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::View, 0));
-    // Set 1: ClusterGrid
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::ClusterAABBsSSBO, 1));
+    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalTextures, 0));
+    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalArrayTextures, 0));
+    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::View, 1));
+    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::ClusterAABBsSSBO, 2));
 }
 
 void ClusterDebugPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
@@ -123,24 +118,26 @@ void ClusterDebugPass::Render(const MainPassData& data, FrameRendererContext& ct
     const auto ex = ctx.pCurrentSwapchainTexture->GetInfo().extents;
     const DirectX::XMINT2 extents(ex.x, ex.y);
     
-    ColorAttachment gbufferPosition = m_mainRenderingData.colorAttachments[0];
-    ColorAttachment gbufferNormal = m_mainRenderingData.colorAttachments[1];
-    ColorAttachment gbuffer3 = m_mainRenderingData.colorAttachments[2];
-    ColorAttachment gbufferPos = m_mainRenderingData.colorAttachments[3];
-    gbufferPosition.SetTexture(data.pGbuffer->Get(GBufferTextureType::GBufferAlbedo));
-    gbufferNormal.SetTexture(data.pGbuffer->Get(GBufferTextureType::GBufferNormal));
-    gbuffer3.SetTexture(data.pGbuffer->Get(GBufferTextureType::TexCoordMatData));
-    gbufferPos.SetTexture(data.pGbuffer->Get(GBufferTextureType::Position));
+    ColorAttachment gbufferDebug = m_mainRenderingData.colorAttachments[0];
+    gbufferDebug.SetTexture(data.pGbuffer->Get(GBufferTextureType::GBufferDebug));
     
-    stltype::vector<ColorAttachment> colorAttachments = {gbufferPosition, gbufferNormal, gbuffer3, gbufferPos};
+    stltype::vector<ColorAttachment> colorAttachments = {gbufferDebug};
     
-    BeginRenderingCmd cmdBegin{&m_pipeline, colorAttachments, &m_mainRenderingData.depthAttachment};
+    BeginRenderingCmd cmdBegin{&m_pipeline, ToRenderAttachmentInfos(colorAttachments), ToRenderAttachmentInfo(m_mainRenderingData.depthAttachment)};
     cmdBegin.extents = extents;
     cmdBegin.viewport = data.mainView.viewport;
     
     GenericIndirectDrawCmd cmd{&m_pipeline, m_indirectCmdBuffer};
     cmd.drawCount = 1;
-    cmd.descriptorSets = {ctx.mainViewUBODescriptor, ctx.clusterGridDescriptor};
+    
+    if (data.bufferDescriptors.empty())
+        cmd.descriptorSets = {g_pTexManager->GetBindlessDescriptorSet(), data.mainView.descriptorSet, ctx.clusterGridDescriptor};
+    else
+    {
+        const auto texArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessTextureArray);
+        const auto clusterGridSet = data.bufferDescriptors.at(UBO::DescriptorContentsType::ClusterGrid);
+        cmd.descriptorSets = {texArraySet, data.mainView.descriptorSet, clusterGridSet};
+    }
     
     StartRenderPassProfilingScope(pCmdBuffer);
     pCmdBuffer->RecordCommand(cmdBegin);

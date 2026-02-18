@@ -17,5 +17,4 @@ struct QueueFamilyIndices
 
 #ifdef USE_VULKAN
 #include <vulkan/vulkan.h>
-using TexFormat = VkFormat;
 #endif

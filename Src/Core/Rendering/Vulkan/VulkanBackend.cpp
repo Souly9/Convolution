@@ -11,6 +11,7 @@
 #include "Core/Rendering/Vulkan/BackendDefines.h"
 #include "VkGlobals.h"
 #include "VkTextureManager.h"
+#include "Utils/VkEnumHelpers.h"
 #include <EASTL/set.h>
 #include <GLFW/glfw3.h>
 
@@ -224,6 +225,7 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
     features13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
     features13.dynamicRendering = VK_TRUE;
     features13.synchronization2 = VK_TRUE;
+    features13.shaderDemoteToHelperInvocation = VK_TRUE;
     features13.pNext = nullptr;
 
     // VK 1.2 features (timeline semaphore and bindless support)
@@ -234,6 +236,7 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
     features12.descriptorBindingPartiallyBound = VK_TRUE;
     features12.runtimeDescriptorArray = VK_TRUE;
     features12.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
+    features12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
     features12.descriptorBindingVariableDescriptorCount = VK_TRUE;
     features12.descriptorBindingUniformBufferUpdateAfterBind = VK_TRUE;
     features12.pNext = &features13;
@@ -397,7 +400,7 @@ VkSurfaceFormatKHR RenderBackendImpl<Vulkan>::ChooseSwapSurfaceFormat(
 {
     for (const auto& availableFormat : availableFormats)
     {
-        if (availableFormat.format == SWAPCHAINFORMAT && availableFormat.colorSpace == SWAPCHAINCOLORSPACE)
+        if (availableFormat.format == Conv(SWAPCHAIN_FORMAT) && availableFormat.colorSpace == SWAPCHAINCOLORSPACE)
         {
             return availableFormat;
         }

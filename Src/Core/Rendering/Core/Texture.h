@@ -1,51 +1,9 @@
 #pragma once
+
 #include "Core/Global/Utils/EnumHelpers.h"
 #include "Core/Rendering/LayerDefines.h"
+#include "RenderDefinitions.h"
 #include "Resource.h"
-
-enum class ImageLayout
-{
-    UNDEFINED,
-    TRANSFER_SRC_OPTIMAL,
-    TRANSFER_DST_OPTIMAL,
-    SHADER_READ_OPTIMAL,
-    COLOR_ATTACHMENT,
-    DEPTH_STENCIL,
-    PRESENT,
-};
-
-enum class LoadOp
-{
-    CLEAR,
-    LOAD,
-    IDC
-};
-
-enum class StoreOp
-{
-    STORE,
-    IDC
-};
-
-enum class Tiling
-{
-    OPTIMAL,
-    LINEAR
-};
-
-enum class Usage
-{
-    GBuffer,
-    ColorAttachment,
-    DepthAttachment,
-    TransferSrc,
-    TransferDst,
-    Sampled,
-    AttachmentReadWrite,
-    StencilAttachment,
-    ShadowMap
-};
-MAKE_FLAG_ENUM(Usage)
 
 struct TextureInfoBase
 {
@@ -60,11 +18,12 @@ struct TextureInfo : TextureInfoBase
     TexFormat format;
 };
 
-class Tex : public TrackedResource
+// Base class for agnostic data and interfaces
+class TextureBase : public TrackedResource
 {
 public:
-    Tex() = default;
-    Tex(const TextureInfo& info) : m_info{info}
+    TextureBase() = default;
+    TextureBase(const TextureInfo& info) : m_info{info}
     {
     }
 
@@ -82,4 +41,20 @@ public:
 
 protected:
     TextureInfo m_info;
+};
+
+// Template wrapper that inherits from the specific API implementation
+// The Implementation class (e.g. Vk// Template wrapper that inherits from the specific API implementation
+#include "APITraits.h"
+#ifdef USE_VULKAN
+#include "Core/Rendering/Vulkan/VulkanTraits.h"
+#include "Core/Rendering/Vulkan/VkTexture.h"
+#endif
+
+template <typename API>
+class TextureT : public APITraits<API>::TextureType
+{
+public:
+    // Inherit constructors
+    using APITraits<API>::TextureType::TextureType;
 };

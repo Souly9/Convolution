@@ -12,7 +12,7 @@ public:
 
 protected:
     PSO m_mainPSO;
-    IndirectDrawCommandBuffer m_indirectCmdBuffer;
+    IndirectDrawCmdBuf m_indirectCmdBuffer;
     IndirectDrawCountBuffer m_indirectCountBuffer;
 
     // Inherited via GenericGeometryPass

@@ -1,4 +1,6 @@
 #include "VkTexture.h"
+#include <utility>
+#include <type_traits>
 #include "Utils/VkEnumHelpers.h"
 #include "VkGPUMemoryManager.h"
 #include "VkGlobals.h"
@@ -7,17 +9,12 @@ TextureVulkan::TextureVulkan()
 {
 }
 
-TextureVulkan::TextureVulkan(const VkImageCreateInfo& createInfo, const TextureInfo& info) : Tex(info)
+TextureVulkan::TextureVulkan(const VkImageCreateInfo& createInfo, const TextureInfo& info) : TextureBase(info)
 {
     const auto device = VK_LOGICAL_DEVICE;
-    m_imageMemory = g_pGPUMemoryManager->AllocateImage(createInfo, m_image);
-    // VkMemoryRequirements memRequirements;
-    // vkGetImageMemoryRequirements(device, m_image, &memRequirements);
-    // m_imageMemory = g_pGPUMemoryManager->AllocateMemory(memRequirements.size, Conv2MemFlags(BufferUsage::Texture),
-    // memRequirements);
-}
+    m_imageMemory = g_pGPUMemoryManager->AllocateImage(createInfo, m_image);}
 
-TextureVulkan::TextureVulkan(const TextureInfo& info) : Tex(info)
+TextureVulkan::TextureVulkan(const TextureInfo& info) : TextureBase(info)
 {
 }
 
@@ -28,6 +25,7 @@ TextureVulkan::~TextureVulkan()
 
 void TextureVulkan::CleanUp()
 {
+    DEBUG_LOGF("[TextureVulkan] CleanUp: m_image={}, m_imageMemory={}", (unsigned long long)m_image, (unsigned long long)m_imageMemory);
     VK_FREE_IF(m_imageMemory, g_pGPUMemoryManager->TryFreeMemory(m_imageMemory));
     VK_FREE_IF(m_imageView, vkDestroyImageView(VK_LOGICAL_DEVICE, m_imageView, VulkanAllocator()));
     VK_FREE_IF(m_sampler, vkDestroySampler(VK_LOGICAL_DEVICE, m_sampler, VulkanAllocator()));
@@ -55,3 +53,4 @@ void TextureVulkan::NamingCallBack(const stltype::string& name)
 
     vkSetDebugUtilsObjectName(VK_LOGICAL_DEVICE, &nameInfo);
 }
+

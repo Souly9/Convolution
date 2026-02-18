@@ -7,6 +7,158 @@
 #include <vk_mem_alloc.h>
 
 #include "TextureEnums.h"
+#include "Core/Rendering/Core/RenderDefinitions.h"
+
+inline VkFormat Conv(const TexFormat& m)
+{
+    switch (m)
+    {
+        case TexFormat::UNDEFINED: return VK_FORMAT_UNDEFINED;
+        case TexFormat::R8_UNORM: return VK_FORMAT_R8_UNORM;
+        case TexFormat::R8_SNORM: return VK_FORMAT_R8_SNORM;
+        case TexFormat::R8_UINT: return VK_FORMAT_R8_UINT;
+        case TexFormat::R8_SINT: return VK_FORMAT_R8_SINT;
+        case TexFormat::R8G8_UNORM: return VK_FORMAT_R8G8_UNORM;
+        case TexFormat::R8G8_SNORM: return VK_FORMAT_R8G8_SNORM;
+        case TexFormat::R8G8_UINT: return VK_FORMAT_R8G8_UINT;
+        case TexFormat::R8G8_SINT: return VK_FORMAT_R8G8_SINT;
+        case TexFormat::R8G8B8_UNORM: return VK_FORMAT_R8G8B8_UNORM;
+        case TexFormat::R8G8B8_SNORM: return VK_FORMAT_R8G8B8_SNORM;
+        case TexFormat::R8G8B8_UINT: return VK_FORMAT_R8G8B8_UINT;
+        case TexFormat::R8G8B8_SINT: return VK_FORMAT_R8G8B8_SINT;
+        case TexFormat::B8G8R8_UNORM: return VK_FORMAT_B8G8R8_UNORM;
+        case TexFormat::B8G8R8_SNORM: return VK_FORMAT_B8G8R8_SNORM;
+        case TexFormat::B8G8R8_UINT: return VK_FORMAT_B8G8R8_UINT;
+        case TexFormat::B8G8R8_SINT: return VK_FORMAT_B8G8R8_SINT;
+        case TexFormat::R8G8B8A8_UNORM: return VK_FORMAT_R8G8B8A8_UNORM;
+        case TexFormat::R8G8B8A8_SNORM: return VK_FORMAT_R8G8B8A8_SNORM;
+        case TexFormat::R8G8B8A8_UINT: return VK_FORMAT_R8G8B8A8_UINT;
+        case TexFormat::R8G8B8A8_SINT: return VK_FORMAT_R8G8B8A8_SINT;
+        case TexFormat::B8G8R8A8_UNORM: return VK_FORMAT_B8G8R8A8_UNORM;
+        case TexFormat::B8G8R8A8_SNORM: return VK_FORMAT_B8G8R8A8_SNORM;
+        case TexFormat::B8G8R8A8_UINT: return VK_FORMAT_B8G8R8A8_UINT;
+        case TexFormat::B8G8R8A8_SINT: return VK_FORMAT_B8G8R8A8_SINT;
+        case TexFormat::R8G8B8A8_SRGB: return VK_FORMAT_R8G8B8A8_SRGB;
+        case TexFormat::B8G8R8A8_SRGB: return VK_FORMAT_B8G8R8A8_SRGB;
+        case TexFormat::R16_UNORM: return VK_FORMAT_R16_UNORM;
+        case TexFormat::R16_SNORM: return VK_FORMAT_R16_SNORM;
+        case TexFormat::R16_UINT: return VK_FORMAT_R16_UINT;
+        case TexFormat::R16_SINT: return VK_FORMAT_R16_SINT;
+        case TexFormat::R16_FLOAT: return VK_FORMAT_R16_SFLOAT;
+        case TexFormat::R16G16_UNORM: return VK_FORMAT_R16G16_UNORM;
+        case TexFormat::R16G16_SNORM: return VK_FORMAT_R16G16_SNORM;
+        case TexFormat::R16G16_UINT: return VK_FORMAT_R16G16_UINT;
+        case TexFormat::R16G16_SINT: return VK_FORMAT_R16G16_SINT;
+        case TexFormat::R16G16_FLOAT: return VK_FORMAT_R16G16_SFLOAT;
+        case TexFormat::R16G16B16_UNORM: return VK_FORMAT_R16G16B16_UNORM;
+        case TexFormat::R16G16B16_SNORM: return VK_FORMAT_R16G16B16_SNORM;
+        case TexFormat::R16G16B16_UINT: return VK_FORMAT_R16G16B16_UINT;
+        case TexFormat::R16G16B16_SINT: return VK_FORMAT_R16G16B16_SINT;
+        case TexFormat::R16G16B16_FLOAT: return VK_FORMAT_R16G16B16_SFLOAT;
+        case TexFormat::R16G16B16A16_UNORM: return VK_FORMAT_R16G16B16A16_UNORM;
+        case TexFormat::R16G16B16A16_SNORM: return VK_FORMAT_R16G16B16A16_SNORM;
+        case TexFormat::R16G16B16A16_UINT: return VK_FORMAT_R16G16B16A16_UINT;
+        case TexFormat::R16G16B16A16_SINT: return VK_FORMAT_R16G16B16A16_SINT;
+        case TexFormat::R16G16B16A16_FLOAT: return VK_FORMAT_R16G16B16A16_SFLOAT;
+        case TexFormat::R32_UINT: return VK_FORMAT_R32_UINT;
+        case TexFormat::R32_SINT: return VK_FORMAT_R32_SINT;
+        case TexFormat::R32_FLOAT: return VK_FORMAT_R32_SFLOAT;
+        case TexFormat::R32G32_UINT: return VK_FORMAT_R32G32_UINT;
+        case TexFormat::R32G32_SINT: return VK_FORMAT_R32G32_SINT;
+        case TexFormat::R32G32_FLOAT: return VK_FORMAT_R32G32_SFLOAT;
+        case TexFormat::R32G32B32_UINT: return VK_FORMAT_R32G32B32_UINT;
+        case TexFormat::R32G32B32_SINT: return VK_FORMAT_R32G32B32_SINT;
+        case TexFormat::R32G32B32_FLOAT: return VK_FORMAT_R32G32B32_SFLOAT;
+        case TexFormat::R32G32B32A32_UINT: return VK_FORMAT_R32G32B32A32_UINT;
+        case TexFormat::R32G32B32A32_SINT: return VK_FORMAT_R32G32B32A32_SINT;
+        case TexFormat::R32G32B32A32_FLOAT: return VK_FORMAT_R32G32B32A32_SFLOAT;
+        case TexFormat::D16_UNORM: return VK_FORMAT_D16_UNORM;
+        case TexFormat::X8_D24_UNORM_PACK32: return VK_FORMAT_X8_D24_UNORM_PACK32;
+        case TexFormat::D32_SFLOAT: return VK_FORMAT_D32_SFLOAT;
+        case TexFormat::S8_UINT: return VK_FORMAT_S8_UINT;
+        case TexFormat::D16_UNORM_S8_UINT: return VK_FORMAT_D16_UNORM_S8_UINT;
+        case TexFormat::D24_UNORM_S8_UINT: return VK_FORMAT_D24_UNORM_S8_UINT;
+        case TexFormat::D32_SFLOAT_S8_UINT: return VK_FORMAT_D32_SFLOAT_S8_UINT;
+        default: DEBUG_ASSERT(false); return VK_FORMAT_UNDEFINED;
+    }
+}
+
+inline TexFormat Conv(VkFormat fmt)
+{
+    switch (fmt)
+    {
+        case VK_FORMAT_UNDEFINED: return TexFormat::UNDEFINED;
+        case VK_FORMAT_R8_UNORM: return TexFormat::R8_UNORM;
+        case VK_FORMAT_R8_SNORM: return TexFormat::R8_SNORM;
+        case VK_FORMAT_R8_UINT: return TexFormat::R8_UINT;
+        case VK_FORMAT_R8_SINT: return TexFormat::R8_SINT;
+        case VK_FORMAT_R8G8_UNORM: return TexFormat::R8G8_UNORM;
+        case VK_FORMAT_R8G8_SNORM: return TexFormat::R8G8_SNORM;
+        case VK_FORMAT_R8G8_UINT: return TexFormat::R8G8_UINT;
+        case VK_FORMAT_R8G8_SINT: return TexFormat::R8G8_SINT;
+        case VK_FORMAT_R8G8B8_UNORM: return TexFormat::R8G8B8_UNORM;
+        case VK_FORMAT_R8G8B8_SNORM: return TexFormat::R8G8B8_SNORM;
+        case VK_FORMAT_R8G8B8_UINT: return TexFormat::R8G8B8_UINT;
+        case VK_FORMAT_R8G8B8_SINT: return TexFormat::R8G8B8_SINT;
+        case VK_FORMAT_B8G8R8_UNORM: return TexFormat::B8G8R8_UNORM;
+        case VK_FORMAT_B8G8R8_SNORM: return TexFormat::B8G8R8_SNORM;
+        case VK_FORMAT_B8G8R8_UINT: return TexFormat::B8G8R8_UINT;
+        case VK_FORMAT_B8G8R8_SINT: return TexFormat::B8G8R8_SINT;
+        case VK_FORMAT_R8G8B8A8_UNORM: return TexFormat::R8G8B8A8_UNORM;
+        case VK_FORMAT_R8G8B8A8_SNORM: return TexFormat::R8G8B8A8_SNORM;
+        case VK_FORMAT_R8G8B8A8_UINT: return TexFormat::R8G8B8A8_UINT;
+        case VK_FORMAT_R8G8B8A8_SINT: return TexFormat::R8G8B8A8_SINT;
+        case VK_FORMAT_B8G8R8A8_UNORM: return TexFormat::B8G8R8A8_UNORM;
+        case VK_FORMAT_B8G8R8A8_SNORM: return TexFormat::B8G8R8A8_SNORM;
+        case VK_FORMAT_B8G8R8A8_UINT: return TexFormat::B8G8R8A8_UINT;
+        case VK_FORMAT_B8G8R8A8_SINT: return TexFormat::B8G8R8A8_SINT;
+        case VK_FORMAT_R8G8B8A8_SRGB: return TexFormat::R8G8B8A8_SRGB;
+        case VK_FORMAT_B8G8R8A8_SRGB: return TexFormat::B8G8R8A8_SRGB;
+        case VK_FORMAT_R16_UNORM: return TexFormat::R16_UNORM;
+        case VK_FORMAT_R16_SNORM: return TexFormat::R16_SNORM;
+        case VK_FORMAT_R16_UINT: return TexFormat::R16_UINT;
+        case VK_FORMAT_R16_SINT: return TexFormat::R16_SINT;
+        case VK_FORMAT_R16_SFLOAT: return TexFormat::R16_FLOAT;
+        case VK_FORMAT_R16G16_UNORM: return TexFormat::R16G16_UNORM;
+        case VK_FORMAT_R16G16_SNORM: return TexFormat::R16G16_SNORM;
+        case VK_FORMAT_R16G16_UINT: return TexFormat::R16G16_UINT;
+        case VK_FORMAT_R16G16_SINT: return TexFormat::R16G16_SINT;
+        case VK_FORMAT_R16G16_SFLOAT: return TexFormat::R16G16_FLOAT;
+        case VK_FORMAT_R16G16B16_UNORM: return TexFormat::R16G16B16_UNORM;
+        case VK_FORMAT_R16G16B16_SNORM: return TexFormat::R16G16B16_SNORM;
+        case VK_FORMAT_R16G16B16_UINT: return TexFormat::R16G16B16_UINT;
+        case VK_FORMAT_R16G16B16_SINT: return TexFormat::R16G16B16_SINT;
+        case VK_FORMAT_R16G16B16_SFLOAT: return TexFormat::R16G16B16_FLOAT;
+        case VK_FORMAT_R16G16B16A16_UNORM: return TexFormat::R16G16B16A16_UNORM;
+        case VK_FORMAT_R16G16B16A16_SNORM: return TexFormat::R16G16B16A16_SNORM;
+        case VK_FORMAT_R16G16B16A16_UINT: return TexFormat::R16G16B16A16_UINT;
+        case VK_FORMAT_R16G16B16A16_SINT: return TexFormat::R16G16B16A16_SINT;
+        case VK_FORMAT_R16G16B16A16_SFLOAT: return TexFormat::R16G16B16A16_FLOAT;
+        case VK_FORMAT_R32_UINT: return TexFormat::R32_UINT;
+        case VK_FORMAT_R32_SINT: return TexFormat::R32_SINT;
+        case VK_FORMAT_R32_SFLOAT: return TexFormat::R32_FLOAT;
+        case VK_FORMAT_R32G32_UINT: return TexFormat::R32G32_UINT;
+        case VK_FORMAT_R32G32_SINT: return TexFormat::R32G32_SINT;
+        case VK_FORMAT_R32G32_SFLOAT: return TexFormat::R32G32_FLOAT;
+        case VK_FORMAT_R32G32B32_UINT: return TexFormat::R32G32B32_UINT;
+        case VK_FORMAT_R32G32B32_SINT: return TexFormat::R32G32B32_SINT;
+        case VK_FORMAT_R32G32B32_SFLOAT: return TexFormat::R32G32B32_FLOAT;
+        case VK_FORMAT_R32G32B32A32_UINT: return TexFormat::R32G32B32A32_UINT;
+        case VK_FORMAT_R32G32B32A32_SINT: return TexFormat::R32G32B32A32_SINT;
+        case VK_FORMAT_R32G32B32A32_SFLOAT: return TexFormat::R32G32B32A32_FLOAT;
+        case VK_FORMAT_D16_UNORM: return TexFormat::D16_UNORM;
+        case VK_FORMAT_X8_D24_UNORM_PACK32: return TexFormat::X8_D24_UNORM_PACK32;
+        case VK_FORMAT_D32_SFLOAT: return TexFormat::D32_SFLOAT;
+        case VK_FORMAT_S8_UINT: return TexFormat::S8_UINT;
+        case VK_FORMAT_D16_UNORM_S8_UINT: return TexFormat::D16_UNORM_S8_UINT;
+        case VK_FORMAT_D24_UNORM_S8_UINT: return TexFormat::D24_UNORM_S8_UINT;
+        case VK_FORMAT_D32_SFLOAT_S8_UINT: return TexFormat::D32_SFLOAT_S8_UINT;
+        default: 
+            DEBUG_ASSERT(false);
+            break;
+    }
+    return TexFormat::UNDEFINED;
+}
 
 inline VkPolygonMode Conv(const PolygonMode& m)
 {
@@ -57,20 +209,20 @@ inline VkPrimitiveTopology Conv(const Topology& m)
     return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 }
 
-inline VkCullModeFlagBits Conv(const Cullmode& m)
+inline VkCullModeFlagBits Conv(const CullMode& m)
 {
     switch (m)
     {
-        case Cullmode::None:
+        case CullMode::NONE:
             return VK_CULL_MODE_NONE;
             break;
-        case Cullmode::Front:
+        case CullMode::FRONT:
             return VK_CULL_MODE_FRONT_BIT;
             break;
-        case Cullmode::Back:
+        case CullMode::BACK:
             return VK_CULL_MODE_BACK_BIT;
             break;
-        case Cullmode::Both:
+        case CullMode::FRONT_AND_BACK:
             return VK_CULL_MODE_FRONT_AND_BACK;
             break;
     }
@@ -82,10 +234,10 @@ inline VkFrontFace Conv(const FrontFace& m)
 {
     switch (m)
     {
-        case FrontFace::CounterClockwise:
+        case FrontFace::COUNTER_CLOCKWISE:
             return VK_FRONT_FACE_COUNTER_CLOCKWISE;
             break;
-        case FrontFace::Clockwise:
+        case FrontFace::CLOCKWISE:
             return VK_FRONT_FACE_CLOCKWISE;
             break;
     }
@@ -103,7 +255,7 @@ inline VkAttachmentLoadOp Conv(const LoadOp& m)
         case LoadOp::CLEAR:
             return VK_ATTACHMENT_LOAD_OP_CLEAR;
             break;
-        case LoadOp::IDC:
+        case LoadOp::DONT_CARE:
             return VK_ATTACHMENT_LOAD_OP_DONT_CARE;
             break;
     }
@@ -118,7 +270,7 @@ inline VkAttachmentStoreOp Conv(const StoreOp& m)
         case StoreOp::STORE:
             return VK_ATTACHMENT_STORE_OP_STORE;
             break;
-        case StoreOp::IDC:
+        case StoreOp::DONT_CARE:
             return VK_ATTACHMENT_STORE_OP_DONT_CARE;
             break;
     }
@@ -139,17 +291,26 @@ inline VkImageLayout Conv(const ImageLayout& m)
         case ImageLayout::TRANSFER_DST_OPTIMAL:
             return VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
             break;
-        case ImageLayout::SHADER_READ_OPTIMAL:
+        case ImageLayout::SHADER_READ_ONLY_OPTIMAL:
             return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             break;
-        case ImageLayout::PRESENT:
+        case ImageLayout::PRESENT_SRC_KHR:
             return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
             break;
-        case ImageLayout::COLOR_ATTACHMENT:
+        case ImageLayout::COLOR_ATTACHMENT_OPTIMAL:
             return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             break;
-        case ImageLayout::DEPTH_STENCIL:
+        case ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
             return VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+            break;
+        case ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL:
+            return VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+            break;    
+        case ImageLayout::GENERAL:
+            return VK_IMAGE_LAYOUT_GENERAL;
+            break;
+        case ImageLayout::PREINITIALIZED:
+            return VK_IMAGE_LAYOUT_PREINITIALIZED;
             break;
     }
     DEBUG_ASSERT(false);
@@ -280,52 +441,6 @@ inline VkShaderStageFlagBits Conv(const ShaderTypeBits& m)
         vkBits = VK_SHADER_STAGE_ALL;
 
     return (VkShaderStageFlagBits)vkBits;
-}
-
-inline VkImageUsageFlags Conv(const Usage& m)
-{
-    switch (m)
-    {
-        case Usage::GBuffer:
-            return VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-        case Usage::ColorAttachment:
-            return VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-        case Usage::DepthAttachment:
-            return VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-        case Usage::TransferSrc:
-            return VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-        case Usage::TransferDst:
-            return VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-        case Usage::Sampled:
-            return VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-        case Usage::AttachmentReadWrite:
-            return VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                   VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-        case Usage::StencilAttachment:
-            return VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-        case Usage::ShadowMap:
-            return VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
-                   VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-            break;
-        default:
-            DEBUG_ASSERT(false);
-            return 0;
-    }
-}
-
-inline VkImageTiling Conv(const Tiling& m)
-{
-    switch (m)
-    {
-        case Tiling::OPTIMAL:
-            return VK_IMAGE_TILING_OPTIMAL;
-            break;
-        case Tiling::LINEAR:
-            return VK_IMAGE_TILING_LINEAR;
-            break;
-    }
-    DEBUG_ASSERT(false);
-    return VK_IMAGE_TILING_OPTIMAL;
 }
 
 static inline u32 Conv(SyncStages stage)

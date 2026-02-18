@@ -10,6 +10,7 @@
 
 #define ScopedZone(name)             ZoneScopedN(name)
 #define ProfiledLockable(type, name) TracyLockable(type, name)
+#define ProfiledLockableType(type)   LockableBase(type)
 #else
 #define ScopedZone(name)
 #define ProfiledLockable(type, name) type name

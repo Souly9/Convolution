@@ -3,9 +3,10 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_EXT_scalar_block_layout : enable
 
-#define ViewUBOSet     0
-#define ClusterGridSet 1
+#define ViewUBOSet     1
+#define ClusterGridSet 2
 
+#include "../../Globals/BindingSlots.h"
 #include "../../Globals/ClusteredShading/AABBs.h"
 #include "../../Globals/GlobalBuffers.h"
 

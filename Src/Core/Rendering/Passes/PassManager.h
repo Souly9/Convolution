@@ -177,9 +177,23 @@ inline const char* GetPassTypeName(PassType type)
 struct PassGroupContext
 {
     CommandPool cmdPool;
-    stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> cmdBuffers{SWAPCHAIN_IMAGES};
+    CommandPool computeCmdPool;
+    // Outer vector: swapchain images, Inner vector: command buffers for passes in this group
+    stltype::fixed_vector<stltype::vector<CommandBuffer*>, SWAPCHAIN_IMAGES> cmdBuffers{SWAPCHAIN_IMAGES};
+    stltype::fixed_vector<stltype::vector<CommandBuffer*>, SWAPCHAIN_IMAGES> computeCmdBuffers{SWAPCHAIN_IMAGES};
+    // Per-pass queue type (indexed by pass order, skipping non-rendering passes)
+    stltype::vector<QueueType> passQueueTypes{};
     bool initialized{false};
+
+    void Reset(u32 imageIdx)
+    {
+        for (auto* cmdBuffer : cmdBuffers[imageIdx])
+            static_cast<CBufferVulkan*>(cmdBuffer)->ResetBuffer();
+        for (auto* cmdBuffer : computeCmdBuffers[imageIdx])
+            static_cast<CBufferVulkan*>(cmdBuffer)->ResetBuffer();
+    }
 };
+
 
 struct FrameRendererContext
 {
@@ -261,6 +275,7 @@ public:
     void TransferPassData(const PassGeometryData& passData, u32 frameIdx);
 
     void ExecutePasses(u32 frameIdx);
+    void ReadAndPublishTimingResults(u32 frameIdx);
 
     // Can be called from many different threads
     void SetEntityMeshDataForFrame(EntityMeshDataMap&& data, u32 frameIdx);

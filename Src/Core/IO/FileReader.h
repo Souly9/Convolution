@@ -2,6 +2,7 @@
 struct ReadTextureInfo;
 struct SceneNode;
 #include "Core/Global/GlobalDefines.h"
+#include "Core/Global/ThreadBase.h"
 #include "Core/SceneGraph/Scene.h"
 #include <EASTL/fixed_function.h>
 #include <EASTL/queue.h>
@@ -73,7 +74,7 @@ protected:
     void ReadMeshFile(const IORequest& request);
 
     threadstl::Thread m_ioThread;
-    threadstl::Mutex m_requestSubmitMutex{};
+    CustomMutex m_requestSubmitMutex{};
     stltype::queue<IORequest> m_requests{}; // Pending requests, read by iothread
     bool m_keepRunning{true};
 };

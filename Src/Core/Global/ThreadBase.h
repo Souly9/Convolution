@@ -2,6 +2,20 @@
 #include "GlobalDefines.h"
 #include "Profiling.h"
 
+
+// Simple RAII wrapper for mutexes with Lock()/Unlock() interface
+template<typename MutexType>
+struct SimpleScopedGuard
+{
+    SimpleScopedGuard(MutexType& mutex) : m_mutex(mutex) { m_mutex.Lock(); }
+    ~SimpleScopedGuard() { m_mutex.Unlock(); }
+    
+    SimpleScopedGuard(const SimpleScopedGuard&) = delete;
+    SimpleScopedGuard& operator=(const SimpleScopedGuard&) = delete;
+    
+    MutexType& m_mutex;
+};
+
 // Simple mutex wrapper for eastl mutex to make the methods lowercase for Tracy profiling
 class CustomMutex
 {
@@ -13,6 +27,14 @@ public:
     void lock()
     {
         m_mutex.Lock();
+    }
+    void Unlock()
+    {
+        unlock();
+    }
+    void Lock()
+    {
+        lock();
     }
 
 private:
