@@ -439,32 +439,14 @@ void AsyncQueueHandler::SubmitCommandBuffers(stltype::vector<CommandBufferReques
     if (commandBuffers.empty())
         return;
 
-    // TODO: Not the fastest, should rewrite this
     stltype::hash_map<QueueType, stltype::vector<CommandBuffer*>> buffersByQueue;
     stltype::hash_map<QueueType, stltype::vector<CommandBufferRequest>> requestsByQueue;
 
-    // Group the command buffer requests by their intended queue type
     for (const auto& cmdBufferRequest : commandBuffers)
     {
         requestsByQueue[cmdBufferRequest.queueType].push_back(cmdBufferRequest);
-
         buffersByQueue[cmdBufferRequest.queueType].push_back(cmdBufferRequest.pBuffer);
     }
-
-    auto SubmitAndRecord = [this](const stltype::vector<CommandBuffer*>& buffers,
-                                  const stltype::vector<CommandBufferRequest>& requests,
-                                  QueueType queueType)
-    {
-        if (buffers.empty())
-            return;
-
-        Fence submissionFence;
-        submissionFence.Create(false);
-
-        SRF::SubmitCommandBufferToQueue(buffers, submissionFence, queueType);
-
-        m_fencesToWaitOn.push_back({requests, {}, submissionFence});
-    };
 
     for (const auto& pair : buffersByQueue)
     {
@@ -472,16 +454,20 @@ void AsyncQueueHandler::SubmitCommandBuffers(stltype::vector<CommandBufferReques
         const stltype::vector<CommandBuffer*>& buffers = pair.second;
         const stltype::vector<CommandBufferRequest>& requests = requestsByQueue.at(queueType);
 
-        SubmitAndRecord(buffers, requests, queueType);
+        if (buffers.empty())
+            continue;
+
+        Fence submissionFence;
+        submissionFence.Create(false);
+
+        SRF::SubmitCommandBufferToQueue(buffers, submissionFence, queueType);
+        m_fencesToWaitOn.push_back({requests, {}, submissionFence});
     }
 
     for (auto& cmdBufferRequest : commandBuffers)
     {
-        auto pBuffer = cmdBufferRequest.pBuffer;
-        if (pBuffer != nullptr)
-        {
-            pBuffer->ClearSemaphores();
-        }
+        if (cmdBufferRequest.pBuffer != nullptr)
+            cmdBufferRequest.pBuffer->ClearSemaphores();
     }
 }
 

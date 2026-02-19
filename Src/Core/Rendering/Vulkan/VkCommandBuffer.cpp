@@ -334,14 +334,13 @@ void CBufferVulkan::Bake()
 {
     BeginBufferForSingleSubmit();
 
-    // Enforce stat collection for all buffers, but only if supported by the queue family
+    // Pipeline statistics queries are only valid on graphics queues
     bool bSupportsProfiling = false;
     if (m_pool)
     {
         u32 queueFamilyIdx = m_pool->GetQueueFamilyIndex();
         const auto& indices = VkGlobals::GetQueueFamilyIndices();
-        if ((indices.graphicsFamily.has_value() && indices.graphicsFamily.value() == queueFamilyIdx) ||
-            (indices.computeFamily.has_value() && indices.computeFamily.value() == queueFamilyIdx))
+        if (indices.graphicsFamily.has_value() && indices.graphicsFamily.value() == queueFamilyIdx)
         {
             bSupportsProfiling = true;
         }

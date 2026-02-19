@@ -23,7 +23,7 @@ public:
             VK_QUERY_PIPELINE_STATISTIC_FRAGMENT_SHADER_INVOCATIONS_BIT |
             VK_QUERY_PIPELINE_STATISTIC_COMPUTE_SHADER_INVOCATIONS_BIT;
 
-        m_queryPool.Init(VK_QUERY_TYPE_PIPELINE_STATISTICS, 4096, stats);
+        m_queryPool.Init(VK_QUERY_TYPE_PIPELINE_STATISTICS, 8192, stats);
         
         for(u32 i = 0; i < FRAMES_IN_FLIGHT; ++i)
             m_accumulatedStats[i] = {};

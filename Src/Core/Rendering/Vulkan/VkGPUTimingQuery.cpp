@@ -12,16 +12,23 @@ void VkGPUTimingQuery::Init(u32 maxPasses)
     const auto& props = VkGlobals::GetPhysicalDeviceProperties();
     m_timestampPeriodNs = static_cast<f64>(props.limits.timestampPeriod);
 
-    m_queryPool.Init(VK_QUERY_TYPE_TIMESTAMP, m_queryCount);
+    for (u32 i = 0; i < FRAMES_IN_FLIGHT; ++i)
+    {
+        m_queryPools[i].Init(VK_QUERY_TYPE_TIMESTAMP, m_queryCount);
+        m_timestampResults[i].resize(m_queryCount, 0);
+        m_poolInitialized.push_back(false);
+    }
 
-    m_timestampResults.resize(m_queryCount, 0);
     m_results.reserve(maxPasses);
 }
 
 void VkGPUTimingQuery::Destroy()
 {
-    m_queryPool.CleanUp();
-    m_timestampResults.clear();
+    for (u32 i = 0; i < FRAMES_IN_FLIGHT; ++i)
+    {
+        m_queryPools[i].CleanUp();
+        m_timestampResults[i].clear();
+    }
     m_results.clear();
     m_passNameToIndex.clear();
     m_nextPassIndex = 0;
@@ -29,44 +36,50 @@ void VkGPUTimingQuery::Destroy()
 
 void VkGPUTimingQuery::ResetQueries(CommandBuffer* pCmdBuffer, u32 frameIdx)
 {
-    if (!m_enabled || m_queryPool.GetRef() == VK_NULL_HANDLE)
+    m_currentFrameIdx = frameIdx % FRAMES_IN_FLIGHT;
+
+    if (!m_enabled || m_queryPools[m_currentFrameIdx].GetRef() == VK_NULL_HANDLE)
         return;
 
-    // Note: Don't clear run flags here - we need them for ReadResults which happens after this
+    m_poolInitialized[m_currentFrameIdx] = true;
 
     ResetQueryPoolCmd cmd{};
-    cmd.queryPool = &m_queryPool;
+    cmd.queryPool = &m_queryPools[m_currentFrameIdx];
     cmd.firstQuery = 0;
     cmd.queryCount = m_queryCount;
     pCmdBuffer->RecordCommand(cmd);
 }
 
+
 void VkGPUTimingQuery::ReadResults(u32 frameIdx)
 {
-    if (!m_enabled || m_queryPool.GetRef() == VK_NULL_HANDLE || m_nextPassIndex == 0)
+    u32 readFrameIdx = frameIdx % FRAMES_IN_FLIGHT;
+
+    if (!m_enabled || !m_poolInitialized[readFrameIdx] || m_queryPools[readFrameIdx].GetRef() == VK_NULL_HANDLE || m_nextPassIndex == 0)
         return;
 
     u32 queryCount = m_nextPassIndex * 2;
 
     VkResult result = vkGetQueryPoolResults(VkGlobals::GetLogicalDevice(),
-                                            m_queryPool.GetRef(),
+                                            m_queryPools[readFrameIdx].GetRef(),
                                             0,
                                             queryCount,
                                             queryCount * sizeof(u64),
-                                            m_timestampResults.data(),
+                                            m_timestampResults[readFrameIdx].data(),
                                             sizeof(u64),
                                             VK_QUERY_RESULT_64_BIT);
 
     if (result != VK_SUCCESS && result != VK_NOT_READY)
         return;
 
-    // Find the earliest timestamp across all passes to use as the frame origin
+    auto& results = m_timestampResults[readFrameIdx];
+
     u64 globalMinTs = ~0ull;
     for (u32 i = 0; i < m_nextPassIndex && i < m_results.size(); ++i)
     {
         if (DidPassRun(i))
         {
-            u64 startTs = m_timestampResults[i * 2];
+            u64 startTs = results[i * 2];
             if (startTs < globalMinTs) globalMinTs = startTs;
         }
     }
@@ -86,8 +99,8 @@ void VkGPUTimingQuery::ReadResults(u32 frameIdx)
             continue;
         }
 
-        u64 startTs = m_timestampResults[i * 2];
-        u64 endTs = m_timestampResults[i * 2 + 1];
+        u64 startTs = results[i * 2];
+        u64 endTs = results[i * 2 + 1];
 
         m_results[i].startMs = static_cast<f32>(static_cast<f64>(startTs - globalMinTs) * nsToMs);
         m_results[i].endMs = static_cast<f32>(static_cast<f64>(endTs - globalMinTs) * nsToMs);
@@ -106,14 +119,13 @@ void VkGPUTimingQuery::ReadResults(u32 frameIdx)
 
 void VkGPUTimingQuery::WriteTimestampImpl(CommandBuffer* pCmdBuffer, u32 passIndex, bool isStart)
 {
-    if (!m_enabled || m_queryPool.GetRef() == VK_NULL_HANDLE)
+    if (!m_enabled || m_queryPools[m_currentFrameIdx].GetRef() == VK_NULL_HANDLE)
         return;
 
     u32 queryIndex = passIndex * 2 + (isStart ? 0 : 1);
     if (queryIndex >= m_queryCount)
         return;
-    
-    // Capture queue family index on start
+
     if (isStart)
     {
         auto* pVulkanCmd = static_cast<CBufferVulkan*>(pCmdBuffer);
@@ -125,7 +137,7 @@ void VkGPUTimingQuery::WriteTimestampImpl(CommandBuffer* pCmdBuffer, u32 passInd
     }
 
     WriteTimestampCmd cmd{};
-    cmd.queryPool = &m_queryPool;
+    cmd.queryPool = &m_queryPools[m_currentFrameIdx];
     cmd.query = queryIndex;
     cmd.isStart = isStart;
     pCmdBuffer->RecordCommand(cmd);

@@ -170,16 +170,16 @@ public:
         return m_bindlessDescriptorSet;
     }
 
+    static void SetLayoutBarrierMasks(ImageLayoutTransitionCmd& transitionCmd,
+                                      const ImageLayout oldLayout,
+                                      const ImageLayout newLayout);
+
 protected:
     VkImageViewCreateInfo GenerateImageViewInfo(VkFormat format, VkImage image, bool isArray);
 
     static void SetNoMipMap(VkImageViewCreateInfo& createInfo, u32 layerCount = 1);
     static void SetMipMap(VkImageViewCreateInfo& createInfo);
     static void SetNoSwizzle(VkImageViewCreateInfo& createInfo);
-
-    static void SetLayoutBarrierMasks(ImageLayoutTransitionCmd& transitionCmd,
-                                      const ImageLayout oldLayout,
-                                      const ImageLayout newLayout);
 
     VkImageCreateInfo FillImageCreateInfoFlat2D(const DynamicTextureRequest& info);
 
