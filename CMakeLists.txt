@@ -2,7 +2,7 @@
 include(FetchContent)
 Set(FETCHCONTENT_QUIET FALSE)
 
-#set(UNITY_BUILD ON)
+set(UNITY_BUILD ON)
 # Clang complains about all these in our libraries...
 #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unsafe-buffer-usage -Wno-switch-default -Wno-format -Wno-nontrivial-memcall -Wno-error")
 

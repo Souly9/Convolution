@@ -18,6 +18,7 @@
 #include "Core/Rendering/Vulkan/VkAttachment.h"
 #include "Core/SceneGraph/Mesh.h"
 #include "Core/WindowManager.h"
+#include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
 #include "GBuffer.h"
 #include "LightResourceManager.h"
 
@@ -132,6 +133,7 @@ struct MainPassData
 
 enum class PassType
 {
+    AsyncCompute,
     PreProcess,
     Main,
     UI,
@@ -142,72 +144,57 @@ enum class PassType
 };
 
 // ============================================================================
-// PASS GROUP EXECUTION ORDER
-// Defines the order in which pass groups are executed and synchronized.
-// Each group uses a single command buffer and waits on the previous group.
+// PASS SCHEDULE
+// Defines stages of execution. Groups within the same stage run in parallel
+// on the GPU (each submits independently, waiting on the same timeline value).
+// Stages are sequentially ordered — each stage waits for the previous to finish.
+// Edit PASS_SCHEDULE to control which groups are parallel.
 // ============================================================================
-inline constexpr PassType GROUP_EXECUTION_ORDER[] = {
-    PassType::PreProcess, PassType::Main, PassType::Debug, PassType::Shadow, PassType::UI, PassType::Composite};
-inline constexpr u32 GROUP_COUNT = sizeof(GROUP_EXECUTION_ORDER) / sizeof(PassType);
-
-// Helper to get pass type name for logging
-inline const char* GetPassTypeName(PassType type)
+struct PassStage
 {
-    switch (type)
-    {
-        case PassType::PreProcess:
-            return "PreProcess";
-        case PassType::Main:
-            return "Main";
-        case PassType::Debug:
-            return "Debug";
-        case PassType::Shadow:
-            return "Shadow";
-        case PassType::UI:
-            return "UI";
-        case PassType::Composite:
-            return "Composite";
-        case PassType::PostProcess:
-            return "PostProcess";
-        default:
-            return "Unknown";
-    }
-}
-
-struct PassGroupContext
-{
-    CommandPool cmdPool;
-    CommandPool computeCmdPool;
-    // Outer vector: swapchain images, Inner vector: command buffers for passes in this group
-    stltype::fixed_vector<stltype::vector<CommandBuffer*>, SWAPCHAIN_IMAGES> cmdBuffers{SWAPCHAIN_IMAGES};
-    stltype::fixed_vector<stltype::vector<CommandBuffer*>, SWAPCHAIN_IMAGES> computeCmdBuffers{SWAPCHAIN_IMAGES};
-    // Per-pass queue type (indexed by pass order, skipping non-rendering passes)
-    stltype::vector<QueueType> passQueueTypes{};
-    bool initialized{false};
-
-    void Reset(u32 imageIdx)
-    {
-        for (auto* cmdBuffer : cmdBuffers[imageIdx])
-            static_cast<CBufferVulkan*>(cmdBuffer)->ResetBuffer();
-        for (auto* cmdBuffer : computeCmdBuffers[imageIdx])
-            static_cast<CBufferVulkan*>(cmdBuffer)->ResetBuffer();
-    }
+    stltype::fixed_vector<PassType, 8> groups;
 };
 
+inline const PassStage PASS_SCHEDULE[] = {
+    PassStage{{PassType::AsyncCompute}},
+    PassStage{{PassType::PreProcess}},
+    PassStage{{PassType::Main, PassType::Debug, PassType::Shadow}},
+    PassStage{{PassType::UI}},
+    PassStage{{PassType::Composite}},
+};
+inline constexpr u32 STAGE_COUNT = sizeof(PASS_SCHEDULE) / sizeof(PassStage);
+
+inline stltype::fixed_vector<PassType, 8> GetComputePassTypes()
+{
+    return {PassType::AsyncCompute};
+}
+
+struct GraphicsFrameContext
+{
+    CommandPool cmdPool;
+    stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> cmdBuffers{SWAPCHAIN_IMAGES};
+    bool initialized{false};
+};
+
+struct ComputeFrameContext
+{
+    CommandPool cmdPool;
+    stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> cmdBuffers{SWAPCHAIN_IMAGES};
+    bool initialized{false};
+};
 
 struct FrameRendererContext
 {
-    // Timeline semaphore for pass group synchronization
+    // Timeline semaphore for graphics queue synchronization (wait on acquire, signal for present)
     TimelineSemaphore frameTimeline{};
-    u64 nextTimelineValue{1}; // Reset to 1 each frame, 0 is initial value
+    u64 nextTimelineValue{1};
 
-    Semaphore pInitialLayoutTransitionSignalSemaphore{};
-    // Signaled when the swapchain image is transitioned to the present layout
+    // Separate timeline for the async compute group
+    TimelineSemaphore computeTimeline{};
+    u64 nextComputeTimelineValue{1};
+
+    // Signaled when the swapchain image is transitioned to the present layout, waited on by present
     Semaphore pPresentLayoutTransitionSignalSemaphore{};
-    // Signaled when the passes that don't care about color attachment values are
-    // finished rendering
-    Semaphore nonLoadRenderingFinished{};
-    Semaphore toReadTransitionFinished{};
 
     // Swapchain texture to render into for final presentation
     Texture* pCurrentSwapchainTexture{nullptr};
@@ -319,23 +306,19 @@ protected:
 
     bool AnyPassWantsToRender() const;
     void PrepareMainPassDataForFrame(MainPassData& mainPassData, FrameRendererContext& ctx, u32 frameIdx);
-    void PerformInitialLayoutTransitions(FrameRendererContext& ctx,
-                                         const stltype::vector<const Texture*>& gbufferTextures,
-                                         Texture* pSwapChainTexture,
-                                         Semaphore& imageAvailableSemaphore);
     void RenderAllPassGroups(const MainPassData& mainPassData,
                              FrameRendererContext& ctx,
                              Semaphore& imageAvailableSemaphore);
-    bool RenderPassGroup(PassType groupType, const MainPassData& data, FrameRendererContext& ctx);
-    void InitPassGroupContexts();
+    void RenderPassGroup(PassType groupType, const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer);
+    void InitFrameContexts();
 
-    // Layout transition helpers
-    Semaphore* GetLastActiveGroupSemaphore(FrameRendererContext& ctx);
-    void TransitionGBuffersToShaderRead(FrameRendererContext& ctx,
-                                        const stltype::vector<const Texture*>& gbufferTextures);
-    void TransitionUIToShaderRead(FrameRendererContext& ctx, const Texture* pUITexture);
-    void TransitionSwapchainToColorAttachment(FrameRendererContext& ctx);
-    void TransitionSwapchainToPresent(FrameRendererContext& ctx);
+    // Inline layout transition helpers — record directly into pCmdBuffer
+    void RecordInitialLayoutTransitions(CommandBuffer* pCmdBuffer,
+                                        const stltype::vector<const Texture*>& allGbufferAndSwapchain);
+    void RecordGBufferToShaderRead(CommandBuffer* pCmdBuffer,
+                                   const stltype::vector<const Texture*>& gbufferTextures);
+    void RecordUIToShaderRead(CommandBuffer* pCmdBuffer, const Texture* pUITexture);
+    void RecordSwapchainToPresent(CommandBuffer* pCmdBuffer);
 
 private:
     ProfiledLockable(CustomMutex, m_passDataMutex);
@@ -356,12 +339,13 @@ private:
     // Pass data for each frame
     stltype::hash_map<PassType, stltype::vector<stltype::unique_ptr<ConvolutionRenderPass>>> m_passes{};
     stltype::fixed_vector<MainPassData, SWAPCHAIN_IMAGES> m_mainPassData{SWAPCHAIN_IMAGES};
-    stltype::fixed_vector<FrameRendererContext, SWAPCHAIN_IMAGES> m_frameRendererContexts{};
+    stltype::fixed_vector<FrameRendererContext, SWAPCHAIN_IMAGES> m_frameRendererContexts{SWAPCHAIN_IMAGES};
     stltype::fixed_vector<Semaphore, SWAPCHAIN_IMAGES> m_imageAvailableSemaphores{SWAPCHAIN_IMAGES};
     stltype::fixed_vector<Fence, SWAPCHAIN_IMAGES> m_imageAvailableFences{SWAPCHAIN_IMAGES};
     // Fences to track when rendering to each swapchain image completes (for semaphore reuse safety)
     stltype::fixed_vector<Fence, SWAPCHAIN_IMAGES> m_renderFinishedFences{SWAPCHAIN_IMAGES};
-    stltype::hash_map<PassType, PassGroupContext> m_passGroupContexts{};
+    GraphicsFrameContext m_graphicsFrameCtx;
+    ComputeFrameContext m_computeFrameCtx;
     stltype::hash_map<ECS::EntityID, u32> m_entityToTransformUBOIdx{};
     stltype::hash_map<ECS::EntityID, u32> m_entityToObjectDataIdx{};
 

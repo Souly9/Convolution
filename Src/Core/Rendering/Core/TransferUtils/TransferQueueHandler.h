@@ -107,9 +107,6 @@ protected:
     StagingBuffer& AcquireStagingBuffer(u64 requiredSize);
     void ReleaseStagingBuffers(const stltype::vector<u32>& indices);
 
-    void SubmitCommandBuffersIndividualSubmit(stltype::vector<CommandBufferRequest>& commandBuffers)
-    {
-    }
     void SubmitCommandBuffers(stltype::vector<CommandBufferRequest>& commandBuffers);
 
     void FreeInFlightCommandBuffers();

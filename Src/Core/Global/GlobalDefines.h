@@ -48,7 +48,9 @@ constexpr static inline u32 MAX_MESHES = 4096;
 #define DEPTH_BUFFER_FORMAT TexFormat::D32_SFLOAT
 
 // Definitions
+#ifndef USE_VULKAN
 #define USE_VULKAN
+#endif
 
 #ifdef USE_VULKAN
 #include "Core/Rendering/Core/APITraits.h"
