@@ -12,6 +12,9 @@ static inline void QueryImageForPresentationFromMainSwapchain(const Semaphore& i
 
 IMPLEMENT_GRAPHICS_API
 static inline void SubmitForPresentationToMainSwapchain(Semaphore* pWaitSemaphore, u32 swapChainIdx);
+
+IMPLEMENT_GRAPHICS_API
+static inline void WaitForDeviceIdle();
 } // namespace SRF
 
 #ifdef USE_VULKAN

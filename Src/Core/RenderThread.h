@@ -18,6 +18,8 @@ public:
     void RenderLoop();
 
     RenderPasses::PassManager* Start();
+    void CleanUp();
+
     stltype::unique_ptr<RenderPasses::PassManager> m_passManager;
     ImGuiManager* m_pImGuiManager{};
 };

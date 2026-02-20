@@ -1,4 +1,5 @@
 #include "ApplicationState.h"
+#include "Core/Rendering/Core/StaticFunctions.h"
 #include "Core/SceneGraph/Scene.h"
 
 void ApplicationStateManager::ProcessStateUpdates()
@@ -33,6 +34,8 @@ void ApplicationStateManager::ProcessStateUpdates()
 void ApplicationStateManager::SwitchSceneInternal()
 {
     DEBUG_LOGF("Setting current scene to: {}", m_pNextScene->GetName().c_str());
+    // Doesn't need to be fast nor do we want to to run into weird sync errors
+    SRF::WaitForDeviceIdle<RenderAPI>();
     UnloadCurrentScene();
     m_pNextScene->Load();
     m_pCurrentScene = std::move(m_pNextScene);

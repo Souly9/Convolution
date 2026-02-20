@@ -235,24 +235,30 @@ void SharedResourceManager::WriteInstanceSSBODescriptorUpdate(u32 targetFrame)
 }
 
 void SharedResourceManager::UpdateTransformBuffer(const stltype::vector<DirectX::XMFLOAT4X4>& transformBuffer,
-                                                  u32 thisFrame)
+                                                  u32 thisFrame,
+                                                  u32 updateCount)
 {
     auto pDescriptor = m_frameData[thisFrame].pSceneInstanceSSBOSet;
+    u64 transferSize = updateCount > 0 ? updateCount * sizeof(DirectX::XMFLOAT4X4) : transformBuffer.size() * sizeof(DirectX::XMFLOAT4X4);
+    if (transferSize == 0) return;
+    
     AsyncQueueHandler::SSBOTransfer transfer{.data = (void*)transformBuffer.data(),
-                                             .size = transformBuffer.size() * sizeof(DirectX::XMFLOAT4X4),
+                                             .size = transferSize,
                                              .offset = 0,
                                              .pDescriptorSet = pDescriptor,
                                              .pStorageBuffer = &m_transformBuffer,
                                              .dstBinding = s_modelSSBOBindingSlot};
     g_pQueueHandler->SubmitTransferCommandAsync(transfer);
-    g_pQueueHandler->SubmitTransferCommandAsync(transfer);
 }
 
-void SharedResourceManager::UpdateSceneAABBBuffer(const stltype::vector<AABB>& aabbBuffer, u32 thisFrame)
+void SharedResourceManager::UpdateSceneAABBBuffer(const stltype::vector<AABB>& aabbBuffer, u32 thisFrame, u32 updateCount)
 {
     auto pDescriptor = m_frameData[thisFrame].pSceneAABBSet;
+    u64 transferSize = updateCount > 0 ? updateCount * sizeof(AABB) : aabbBuffer.size() * sizeof(AABB);
+    if (transferSize == 0) return;
+
     AsyncQueueHandler::SSBOTransfer transfer{.data = (void*)aabbBuffer.data(),
-                                             .size = aabbBuffer.size() * sizeof(AABB),
+                                             .size = transferSize,
                                              .offset = 0,
                                              .pDescriptorSet = pDescriptor,
                                              .pStorageBuffer = &m_sceneAABBBuffer,

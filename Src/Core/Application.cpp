@@ -58,13 +58,19 @@ void Application::CreateMainPSO()
 
 Application::~Application()
 {
-    m_pProfiler->Destroy();
-    VkGlobals::SetProfiler(nullptr);
+    m_renderThread.Stop();
+    
     g_mainRenderThreadSyncSemaphore.Post();
     g_frameTimerSemaphore2.Post();
     g_imguiSemaphore.Post();
-    vkDeviceWaitIdle(VkGlobals::GetLogicalDevice());
+    
     m_renderThread.ShutdownThread();
+    vkDeviceWaitIdle(VkGlobals::GetLogicalDevice());
+    
+    m_renderThread.CleanUp();
+    
+    m_pProfiler->Destroy();
+    VkGlobals::SetProfiler(nullptr);
 
     m_imGuiManager.CleanUp();
 }
