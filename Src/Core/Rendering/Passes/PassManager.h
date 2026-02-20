@@ -296,6 +296,7 @@ protected:
     void PreProcessMeshData(const stltype::vector<PassMeshData>& meshes, u32 lastFrame, u32 curFrame);
 
     void RecreateShadowMaps(u32 cascades, const mathstl::Vector2& extents);
+    void RegisterImGuiTextures();
 
     // Helpers to split large Init / ExecutePasses
     void InitResourceManagerAndCallbacks();
@@ -351,6 +352,9 @@ private:
 
     // Current Geometry state, mainly used as a simple way to check for changes
     PassGeometryData m_currentPassGeometryState{};
+
+    stltype::vector<DirectX::XMFLOAT4X4> m_cachedTransformSSBO{};
+    stltype::vector<AABB> m_cachedSceneAABBs{};
 
     // Global transform SSBO
     StorageBuffer m_lightClusterSSBO;
@@ -431,6 +435,7 @@ private:
         mathstl::Vector2 shadowMapExtents{};
     };
     ShadowMapState m_currentShadowMapState{};
+    stltype::vector<u64> m_csmCascadeImGuiIDs{};
 
     u32 m_currentFrame{0};
     bool m_needsToPropagateMainDataUpdate{false};

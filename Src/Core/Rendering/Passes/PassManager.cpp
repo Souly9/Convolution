@@ -205,17 +205,6 @@ void PassManager::InitPassesAndImGui()
     VkDescriptorSet depthId = ImGui_ImplVulkan_AddTexture(
         pDepthTex->GetSampler(), pDepthTex->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
-    // Register per-cascade CSM views (already created in RecreateShadowMaps or constructor)
-    auto& csm = m_globalRendererAttachments.directionalLightShadowMap;
-    stltype::vector<u64> cascadeImGuiIDs;
-    cascadeImGuiIDs.reserve(csm.cascades);
-    for (u32 i = 0; i < csm.cascades; ++i)
-    {
-        VkDescriptorSet cascadeDescriptor = ImGui_ImplVulkan_AddTexture(
-            csm.pTexture->GetSampler(), csm.cascadeViews[i], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-        cascadeImGuiIDs.push_back(reinterpret_cast<u64>(cascadeDescriptor));
-    }
-
     VkDescriptorSet idNormal =
         ImGui_ImplVulkan_AddTexture(m_gbuffer.Get(GBufferTextureType::GBufferNormal)->GetSampler(),
                                     m_gbuffer.Get(GBufferTextureType::GBufferNormal)->GetImageView(),
@@ -232,9 +221,9 @@ void PassManager::InitPassesAndImGui()
                                     m_gbuffer.Get(GBufferTextureType::GBufferDebug)->GetImageView(),
                                     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     g_pApplicationState->RegisterUpdateFunction(
-        [depthId, cascadeImGuiIDs, idNormal, idAlbedo, idUI, idDebug](auto& state)
+        [this, depthId, idNormal, idAlbedo, idUI, idDebug](auto& state)
         {
-            state.renderState.csmCascadeImGuiIDs = cascadeImGuiIDs;
+            state.renderState.csmCascadeImGuiIDs = m_csmCascadeImGuiIDs;
             state.renderState.depthbufferImGuiID = reinterpret_cast<u64>(depthId);
             state.renderState.gbufferImGuiIDs.clear();
             state.renderState.gbufferImGuiIDs.push_back(reinterpret_cast<u64>(idNormal));
@@ -242,6 +231,8 @@ void PassManager::InitPassesAndImGui()
             state.renderState.gbufferImGuiIDs.push_back(reinterpret_cast<u64>(idUI));
             state.renderState.gbufferImGuiIDs.push_back(reinterpret_cast<u64>(idDebug));
         });
+
+    RegisterImGuiTextures();
 
     g_pQueueHandler->WaitForFences();
 }
@@ -453,6 +444,9 @@ void PassManager::Init()
     InitFrameContexts();
     InitPassesAndImGui();
 
+    m_cachedTransformSSBO.resize(MAX_ENTITIES);
+    m_cachedSceneAABBs.resize(MAX_ENTITIES);
+
     // Initialize GPU timing query
     m_gpuTimingQuery.Init(128); // Support up to 128 passes
 
@@ -583,6 +577,8 @@ void PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
             RecreateShadowMaps(csmCascades, csmResolution);
             m_currentShadowMapState.cascadeCount = csmCascades;
             m_currentShadowMapState.shadowMapExtents = csmResolution;
+            
+            RegisterImGuiTextures();
         }
     }
     if (m_needsToPropagateMainDataUpdate && m_dataToBePreProcessed.IsEmpty())
@@ -616,9 +612,6 @@ void PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
     {
         DEBUG_ASSERT(m_dataToBePreProcessed.IsValid());
         PassGeometryData passData{};
-
-        stltype::vector<DirectX::XMFLOAT4X4> transformSSBO(MAX_ENTITIES);
-        stltype::vector<AABB> sceneAABBs(MAX_ENTITIES);
 
         if (m_dataToBePreProcessed.entityMeshData.empty() == false)
         {
@@ -680,7 +673,13 @@ void PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
         for (const auto& data : m_dataToBePreProcessed.entityTransformData)
         {
             const auto& entityID = data.first;
-            transformSSBO[m_entityToTransformUBOIdx[entityID]] = data.second;
+            auto uboIt = m_entityToTransformUBOIdx.find(entityID);
+            // If we haven't gotten any new mesh data we shouldn't need any transform data either
+            // TODO: See if that's true aka biting me in the ass somewhere
+            if (uboIt == m_entityToTransformUBOIdx.end()) continue;
+
+            const u32 ssboIdx = uboIt->second;
+            m_cachedTransformSSBO[ssboIdx] = data.second;
             // Also populate AABBs
             AABB aabb{};
             if (m_dataToBePreProcessed.entityMeshData.find(entityID) != m_dataToBePreProcessed.entityMeshData.end())
@@ -691,10 +690,10 @@ void PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
                     aabb = meshDataVec[0].aabb;
                 }
             }
-            sceneAABBs[m_entityToTransformUBOIdx[entityID]] = aabb;
+            m_cachedSceneAABBs[ssboIdx] = aabb;
         }
-        m_resourceManager.UpdateTransformBuffer(transformSSBO, m_currentSwapChainIdx);
-        m_resourceManager.UpdateSceneAABBBuffer(sceneAABBs, m_currentSwapChainIdx);
+        m_resourceManager.UpdateTransformBuffer(m_cachedTransformSSBO, m_currentSwapChainIdx, (u32)m_entityToTransformUBOIdx.size());
+        m_resourceManager.UpdateSceneAABBBuffer(m_cachedSceneAABBs, m_currentSwapChainIdx, (u32)m_entityToTransformUBOIdx.size());
 
         if (m_dataToBePreProcessed.mainViewUBO.has_value())
         {
@@ -970,8 +969,7 @@ void RenderPasses::PassManager::RecreateShadowMaps(u32 cascades, const mathstl::
 
     csm.pTexture = static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(shadowMapInfo));
     csm.bindlessHandle = g_pTexManager->MakeTextureBindless(shadowMapInfo.handle);
-
-    // Create per-cascade 2D image views for ImGui debug display
+    
     for (auto& view : csm.cascadeViews)
     {
         if (view != VK_NULL_HANDLE)
@@ -1030,6 +1028,34 @@ void RenderPasses::PassManager::TransferPassData(const PassGeometryData& passDat
 void RenderPasses::PassManager::UpdateMainViewUBO(const void* data, size_t size, u32 frameIdx)
 {
     std::memcpy(m_mappedViewUBOBuffer, data, size);
+}
+
+void RenderPasses::PassManager::RegisterImGuiTextures()
+{
+    auto& csm = m_globalRendererAttachments.directionalLightShadowMap;
+
+    for (auto& id : m_csmCascadeImGuiIDs)
+    {
+        ImGui_ImplVulkan_RemoveTexture(reinterpret_cast<VkDescriptorSet>(id));
+    }
+    m_csmCascadeImGuiIDs.clear();
+    m_csmCascadeImGuiIDs.reserve(csm.cascades);
+
+    for (u32 i = 0; i < csm.cascades; ++i)
+    {
+        if (csm.cascadeViews[i] != VK_NULL_HANDLE)
+        {
+            VkDescriptorSet cascadeDescriptor = ImGui_ImplVulkan_AddTexture(
+                static_cast<TextureVulkan*>(g_pTexManager->GetTexture(csm.handle))->GetSampler(), csm.cascadeViews[i], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            m_csmCascadeImGuiIDs.push_back(reinterpret_cast<u64>(cascadeDescriptor));
+        }
+    }
+
+    g_pApplicationState->RegisterUpdateFunction(
+        [this](auto& state)
+        {
+            state.renderState.csmCascadeImGuiIDs = m_csmCascadeImGuiIDs;
+        });
 }
 
 void RenderPasses::PassManager::UpdateShadowViewUBO(const UBO::ShadowmapViewUBO& data, u32 frameIdx)

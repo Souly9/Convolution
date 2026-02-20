@@ -190,4 +190,11 @@ static void SubmitForPresentationToMainSwapchain<Vulkan>(Semaphore* pWaitSemapho
 
     DEBUG_ASSERT(vkQueuePresentKHR(VkGlobals::GetPresentQueue(), &presentInfo) == VK_SUCCESS);
 }
+
+template<>
+static void WaitForDeviceIdle<Vulkan>()
+{
+    vkDeviceWaitIdle(VK_LOGICAL_DEVICE);
+}
+
 } // namespace SRF
