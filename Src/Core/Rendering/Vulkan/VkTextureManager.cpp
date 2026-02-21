@@ -414,11 +414,11 @@ void VkTextureManager::EnqueueAsyncImageLayoutTransition(const AsyncLayoutTransi
     }
     if (request.pTimelineWaitSemaphore)
     {
-        m_transferCommandBuffer->SetTimelineWait(request.pTimelineWaitSemaphore, request.timelineWaitValue);
+        m_transferCommandBuffer->AddTimelineWait(request.pTimelineWaitSemaphore, request.timelineWaitValue);
     }
     if (request.pTimelineSignalSemaphore)
     {
-        m_transferCommandBuffer->SetTimelineSignal(request.pTimelineSignalSemaphore, request.timelineSignalValue);
+        m_transferCommandBuffer->AddTimelineSignal(request.pTimelineSignalSemaphore, request.timelineSignalValue);
     }
     m_sharedDataMutex.unlock();
 }

@@ -50,22 +50,29 @@ static void SubmitCommandBufferToQueue(const stltype::vector<CommandBuffer*>& co
         const auto& signalSemaphores = pCmdBuffer->GetSignalSemaphores();
         const auto waitStages = pCmdBuffer->GetWaitStages();
         const auto signalStages = pCmdBuffer->GetSignalStages();
-        const bool hasTimeline = pCmdBuffer->HasTimelineSemaphores();
+        const auto& timelineWaits = pCmdBuffer->GetTimelineWaits();
+        const auto& timelineSignals = pCmdBuffer->GetTimelineSignals();
         const bool hasBinary = !waitSemaphores.empty() || !signalSemaphores.empty();
+        const bool hasTimeline = !timelineWaits.empty() || !timelineSignals.empty();
 
         // Track where our semaphore infos start in the vectors
         const size_t waitInfoStart = waitSemaphoreInfos.size();
         const size_t signalInfoStart = signalSemaphoreInfos.size();
 
-        // Add timeline wait semaphore if present
-        if (hasTimeline && pCmdBuffer->GetTimelineWaitSemaphore() != VK_NULL_HANDLE)
+        // Add timeline wait semaphores if present
+        if (hasTimeline && !timelineWaits.empty())
         {
-            VkSemaphoreSubmitInfo& waitInfo = waitSemaphoreInfos.emplace_back();
-            waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-            waitInfo.semaphore = pCmdBuffer->GetTimelineWaitSemaphore();
-            waitInfo.stageMask = waitStages;
-            waitInfo.value = pCmdBuffer->GetTimelineWaitValue();
-            waitInfo.pNext = nullptr;
+            for (const auto& wait : timelineWaits)
+            {
+                if (wait.semaphore == VK_NULL_HANDLE)
+                    continue;
+                VkSemaphoreSubmitInfo& waitInfo = waitSemaphoreInfos.emplace_back();
+                waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+                waitInfo.semaphore = wait.semaphore;
+                waitInfo.stageMask = waitStages;
+                waitInfo.value = wait.value;
+                waitInfo.pNext = nullptr;
+            }
         }
 
         // Add binary wait semaphores if present
@@ -75,15 +82,20 @@ static void SubmitCommandBufferToQueue(const stltype::vector<CommandBuffer*>& co
             FillSemaphoreSubmitInfo(addedSemaphores, waitSemaphoreInfos, waitSemaphores, waitStages);
         }
 
-        // Add timeline signal semaphore if present
-        if (hasTimeline && pCmdBuffer->GetTimelineSignalSemaphore() != VK_NULL_HANDLE)
+        // Add timeline signal semaphores if present
+        if (hasTimeline && !timelineSignals.empty())
         {
-            VkSemaphoreSubmitInfo& signalInfo = signalSemaphoreInfos.emplace_back();
-            signalInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-            signalInfo.semaphore = pCmdBuffer->GetTimelineSignalSemaphore();
-            signalInfo.stageMask = signalStages;
-            signalInfo.value = pCmdBuffer->GetTimelineSignalValue();
-            signalInfo.pNext = nullptr;
+            for (const auto& signal : timelineSignals)
+            {
+                if (signal.semaphore == VK_NULL_HANDLE)
+                    continue;
+                VkSemaphoreSubmitInfo& signalInfo = signalSemaphoreInfos.emplace_back();
+                signalInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+                signalInfo.semaphore = signal.semaphore;
+                signalInfo.stageMask = signalStages;
+                signalInfo.value = signal.value;
+                signalInfo.pNext = nullptr;
+            }
         }
 
         // Add binary signal semaphores if present

@@ -7,15 +7,14 @@
 #include "Core/Rendering/Core/RenderingTypeDefs.h"
 #include "Core/Rendering/Core/ShaderManager.h"
 #include "Core/Rendering/Core/Utils/DescriptorLayoutUtils.h"
+#include "Core/Rendering/Vulkan/VkTextureManager.h"
 #include "DebugShapePass.h"
 #include "ImGuiPass.h"
 #include "PreProcess/DepthPrePass.h"
 #include "ShadowPass.h"
 #include "StaticMeshPass.h"
-#include "Core/Rendering/Vulkan/VkTextureManager.h"
 #include <cstring>
 #include <imgui/backends/imgui_impl_vulkan.h>
-
 
 using namespace RenderPasses;
 
@@ -28,7 +27,7 @@ void PassManager::InitResourceManagerAndCallbacks()
     g_pEventSystem->AddShaderHotReloadEventCallback([this](const auto&) { RebuildPipelinesForAllPasses(); });
 
     // Create pass objects
-    AddPass(PassType::PreProcess, stltype::make_unique<RenderPasses::LightGridComputePass>());
+    AddPass(PassType::EarlyAsyncCompute, stltype::make_unique<RenderPasses::LightGridComputePass>());
     AddPass(PassType::PreProcess, stltype::make_unique<RenderPasses::DepthPrePass>());
     AddPass(PassType::Main, stltype::make_unique<RenderPasses::StaticMainMeshPass>());
     AddPass(PassType::Main, stltype::make_unique<RenderPasses::DebugShapePass>());
@@ -150,9 +149,6 @@ void PassManager::InitPassesAndImGui()
         m_currentShadowMapState.shadowMapExtents = csmResolution;
     }
 
-    // Moved RecreateGbuffers to after depth attachment creation
-    // RecreateGbuffers(mathstl::Vector2(FrameGlobals::GetSwapChainExtent().x, FrameGlobals::GetSwapChainExtent().y));
-
     ColorAttachmentInfo colorAttachmentInfo{};
     colorAttachmentInfo.format = SWAPCHAIN_FORMAT;
     colorAttachmentInfo.finalLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
@@ -264,7 +260,6 @@ void PassManager::PrepareMainPassDataForFrame(MainPassData& mainPassData, FrameR
     mainPassData.csmStepSize = g_pApplicationState->GetCurrentApplicationState().renderState.csmStepSize;
 }
 
-
 void PassManager::InitFrameContexts()
 {
     const auto& indices = VkGlobals::GetQueueFamilyIndices();
@@ -273,7 +268,12 @@ void PassManager::InitFrameContexts()
     {
         m_graphicsFrameCtx.cmdPool = CommandPool::Create(indices.graphicsFamily.value());
         for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
-            m_graphicsFrameCtx.cmdBuffers[i] = m_graphicsFrameCtx.cmdPool.CreateCommandBuffer(CommandBufferCreateInfo{});
+        {
+            m_graphicsFrameCtx.cmdBuffers[i] =
+                m_graphicsFrameCtx.cmdPool.CreateCommandBuffer(CommandBufferCreateInfo{});
+            m_graphicsFrameCtx.compositeCmdBuffers[i] =
+                m_graphicsFrameCtx.cmdPool.CreateCommandBuffer(CommandBufferCreateInfo{});
+        }
         m_graphicsFrameCtx.initialized = true;
     }
 
@@ -306,76 +306,96 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
                                       FrameRendererContext& ctx,
                                       Semaphore& imageAvailableSemaphore)
 {
+    // Reset GPU timing queries at the start of the frame
+    // Reset on the CPU as we can guarantee the query pool is finished with the same frame idx 
+    // (eg. if we're frame 0, we know the previous frame 0 already executed)
+    if (m_gpuTimingQuery.IsEnabled())
+    {
+        m_gpuTimingQuery.ResetQueries(ctx.currentFrame);
+    }
+
     stltype::vector<const Texture*> gbufferTextures = m_gbuffer.GetAllTexturesWithoutUI();
     const auto* pUITexture = m_gbuffer.Get(GBufferTextureType::GBufferUI);
     stltype::vector<const Texture*> allColorTextures = gbufferTextures;
     allColorTextures.push_back(ctx.pCurrentSwapchainTexture);
     allColorTextures.push_back(pUITexture);
 
-    CommandBuffer* cmdBuffer = m_graphicsFrameCtx.cmdBuffers[ctx.imageIdx];
-    static_cast<CBufferVulkan*>(cmdBuffer)->ResetBuffer();
-
-    // Reset GPU timing queries at the start of the frame
-    if (m_gpuTimingQuery.IsEnabled())
-        m_gpuTimingQuery.ResetQueries(cmdBuffer, ctx.currentFrame);
+    CommandBuffer* pMainGraphicsWorkBuffer = m_graphicsFrameCtx.cmdBuffers[ctx.imageIdx];
+    CommandBuffer* pComputeCmdBuffer = m_computeFrameCtx.cmdBuffers[ctx.imageIdx];
+    CommandBuffer* pCompositeCmdBuffer = m_graphicsFrameCtx.compositeCmdBuffers[ctx.imageIdx];
+    (pMainGraphicsWorkBuffer)->ResetBuffer();
+    (pComputeCmdBuffer)->ResetBuffer();
+    (pCompositeCmdBuffer)->ResetBuffer();
 
     // Transition all color attachments and depth/shadow from UNDEFINED to their write layouts
-    RecordInitialLayoutTransitions(cmdBuffer, allColorTextures);
+    RecordInitialLayoutTransitions(pMainGraphicsWorkBuffer, allColorTextures);
+
+    u64 computeSignalValue = ctx.nextComputeTimelineValue++;
+    u64 graphicsTimelineValue = ctx.nextTimelineValue++;
+
+    // Dispatch early async compute work
+    {
+        RenderPassGroup(PassType::EarlyAsyncCompute, mainPassData, ctx, pComputeCmdBuffer);
+        // Don't need the wait semaphore here since we only access data buffers which are guaranteed to be ready now
+        // computeCmdBuffer->AddWaitSemaphore(&imageAvailableSemaphore);
+        (pComputeCmdBuffer)->AddTimelineSignal(&ctx.computeTimeline, computeSignalValue);
+        pComputeCmdBuffer->SetSignalStages(SyncStages::COMPUTE_SHADER);
+        
+        pComputeCmdBuffer->Bake();
+        g_pQueueHandler->SubmitCommandBufferThisFrame({pComputeCmdBuffer, QueueType::Compute});
+    }
 
     // Record all graphics pass groups in schedule order
-    for (u32 stageIdx = 0; stageIdx < STAGE_COUNT; ++stageIdx)
+    // First stage is async compute, last one is composite which need special stuff hence we only iterate through the central blob
+    for (u32 stageIdx = 1; stageIdx < STAGE_COUNT - 1; ++stageIdx)
     {
         const auto& stage = PASS_SCHEDULE[stageIdx];
 
-        bool isComputeStage = false;
-        for (auto groupType : stage.groups)
-            if (groupType == PassType::AsyncCompute)
-            {
-                isComputeStage = true;
-                break;
-            }
+        CommandBuffer* pCurrentCmdBuffer = pMainGraphicsWorkBuffer;
 
-        if (isComputeStage)
-            continue;
-
-        bool hasGeometry = false;
-        bool hasUI = false;
+        // UI needs to read GBuffers and depth to display them for debug
+        // Should only have one UI stage so we can transition it based on simple dumb logic
         for (auto groupType : stage.groups)
         {
-            if (groupType == PassType::Main || groupType == PassType::Shadow || groupType == PassType::Debug)
-                hasGeometry = true;
             if (groupType == PassType::UI)
-                hasUI = true;
+                RecordGBufferToShaderRead(pCurrentCmdBuffer, gbufferTextures);
         }
 
         for (auto groupType : stage.groups)
-            RenderPassGroup(groupType, mainPassData, ctx, cmdBuffer);
-
-        // Insert barriers between geometry passes and the composite/UI that reads them
-        if (hasGeometry)
-        {
-            RecordGBufferToShaderRead(cmdBuffer, gbufferTextures);
-        }
-        if (hasUI)
-        {
-            RecordUIToShaderRead(cmdBuffer, pUITexture);
-        }
+            RenderPassGroup(groupType, mainPassData, ctx, pCurrentCmdBuffer);
     }
 
+    // Composite stage
+    {
+        // Already transitioned gbuffers and depth before ui stage
+        // Just need to transition ui texture for compositing
+        RecordUIToShaderRead(pCompositeCmdBuffer, pUITexture);
+        RenderPassGroup(PassType::Composite, mainPassData, ctx, pCompositeCmdBuffer);
+    }
     // Transition swapchain to present as the final command
-    RecordSwapchainToPresent(cmdBuffer);
+    RecordSwapchainToPresent(pCompositeCmdBuffer);
 
-    cmdBuffer->Bake();
+    // Setup semaphores
+    // cmdBuffer contains main graphics work on gbuffer/depth pass but doesn't touch the swapchain, so don't need to wait on anything
+    (pMainGraphicsWorkBuffer)->AddTimelineSignal(&ctx.frameTimeline, graphicsTimelineValue);
+    pMainGraphicsWorkBuffer->SetSignalStages(SyncStages::COLOR_ATTACHMENT_OUTPUT);
 
-    // Single graphics submit: wait on image available (binary), signal present semaphore (binary)
-    static_cast<CBufferVulkan*>(cmdBuffer)->AddWaitSemaphore(&imageAvailableSemaphore);
-    static_cast<CBufferVulkan*>(cmdBuffer)->AddSignalSemaphore(&ctx.pPresentLayoutTransitionSignalSemaphore);
-    cmdBuffer->SetWaitStages(SyncStages::COLOR_ATTACHMENT_OUTPUT);
-    cmdBuffer->SetSignalStages(SyncStages::COLOR_ATTACHMENT_OUTPUT);
+    // compositeCmdBuffer will wait need swapchain, the async compute work and gbuffers hence we wait on everything
+    // and will signal pPresentLayoutTransitionSignalSemaphore
+    pCompositeCmdBuffer->AddWaitSemaphore(&imageAvailableSemaphore);
+    (pCompositeCmdBuffer)->AddTimelineWait(&ctx.frameTimeline, graphicsTimelineValue);
+    (pCompositeCmdBuffer)->AddTimelineWait(&ctx.computeTimeline, computeSignalValue);
+    pCompositeCmdBuffer->SetWaitStages(SyncStages::COLOR_ATTACHMENT_OUTPUT | SyncStages::COMPUTE_SHADER);
 
-    g_pQueueHandler->SubmitCommandBufferThisFrame({cmdBuffer, QueueType::Graphics});
+    (pCompositeCmdBuffer)->AddSignalSemaphore(&ctx.pPresentLayoutTransitionSignalSemaphore);
+    pCompositeCmdBuffer->SetSignalStages(SyncStages::COLOR_ATTACHMENT_OUTPUT);
+
+    pMainGraphicsWorkBuffer->Bake();
+    g_pQueueHandler->SubmitCommandBufferThisFrame({pMainGraphicsWorkBuffer, QueueType::Graphics});
+
+    pCompositeCmdBuffer->Bake();
+    g_pQueueHandler->SubmitCommandBufferThisFrame({pCompositeCmdBuffer, QueueType::Graphics});
 }
-
 
 void PassManager::RecordInitialLayoutTransitions(CommandBuffer* pCmdBuffer,
                                                  const stltype::vector<const Texture*>& allGbufferAndSwapchain)
@@ -386,32 +406,33 @@ void PassManager::RecordInitialLayoutTransitions(CommandBuffer* pCmdBuffer,
     VkTextureManager::SetLayoutBarrierMasks(colorCmd, ImageLayout::UNDEFINED, ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
     pCmdBuffer->RecordCommand(colorCmd);
 
-    stltype::vector<const Texture*> depthTextures = {
-        m_globalRendererAttachments.depthAttachment.GetTexture(),
-        m_globalRendererAttachments.directionalLightShadowMap.pTexture};
+    stltype::vector<const Texture*> depthTextures = {m_globalRendererAttachments.depthAttachment.GetTexture(),
+                                                     m_globalRendererAttachments.directionalLightShadowMap.pTexture};
     ImageLayoutTransitionCmd depthCmd(depthTextures);
     depthCmd.oldLayout = ImageLayout::UNDEFINED;
     depthCmd.newLayout = ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(depthCmd, ImageLayout::UNDEFINED, ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+    VkTextureManager::SetLayoutBarrierMasks(
+        depthCmd, ImageLayout::UNDEFINED, ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
     pCmdBuffer->RecordCommand(depthCmd);
 }
 
 void PassManager::RecordGBufferToShaderRead(CommandBuffer* pCmdBuffer,
-                                             const stltype::vector<const Texture*>& gbufferTextures)
+                                            const stltype::vector<const Texture*>& gbufferTextures)
 {
     ImageLayoutTransitionCmd colorCmd(gbufferTextures);
     colorCmd.oldLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
     colorCmd.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(colorCmd, ImageLayout::COLOR_ATTACHMENT_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    VkTextureManager::SetLayoutBarrierMasks(
+        colorCmd, ImageLayout::COLOR_ATTACHMENT_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
     pCmdBuffer->RecordCommand(colorCmd);
 
-    stltype::vector<const Texture*> depthTextures = {
-        m_globalRendererAttachments.directionalLightShadowMap.pTexture,
-        m_globalRendererAttachments.depthAttachment.GetTexture()};
+    stltype::vector<const Texture*> depthTextures = {m_globalRendererAttachments.directionalLightShadowMap.pTexture,
+                                                     m_globalRendererAttachments.depthAttachment.GetTexture()};
     ImageLayoutTransitionCmd depthCmd(depthTextures);
     depthCmd.oldLayout = ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     depthCmd.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(depthCmd, ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    VkTextureManager::SetLayoutBarrierMasks(
+        depthCmd, ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
     pCmdBuffer->RecordCommand(depthCmd);
 }
 
@@ -421,13 +442,15 @@ void PassManager::RecordUIToShaderRead(CommandBuffer* pCmdBuffer, const Texture*
     ImageLayoutTransitionCmd cmd(textures);
     cmd.oldLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
     cmd.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::COLOR_ATTACHMENT_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    VkTextureManager::SetLayoutBarrierMasks(
+        cmd, ImageLayout::COLOR_ATTACHMENT_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
     pCmdBuffer->RecordCommand(cmd);
 }
 
 void PassManager::RecordSwapchainToPresent(CommandBuffer* pCmdBuffer)
 {
-    stltype::vector<const Texture*> textures = {m_frameRendererContexts[m_currentSwapChainIdx].pCurrentSwapchainTexture};
+    stltype::vector<const Texture*> textures = {
+        m_frameRendererContexts[m_currentSwapChainIdx].pCurrentSwapchainTexture};
     ImageLayoutTransitionCmd cmd(textures);
     cmd.oldLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
     cmd.newLayout = ImageLayout::PRESENT_SRC_KHR;
@@ -577,7 +600,7 @@ void PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
             RecreateShadowMaps(csmCascades, csmResolution);
             m_currentShadowMapState.cascadeCount = csmCascades;
             m_currentShadowMapState.shadowMapExtents = csmResolution;
-            
+
             RegisterImGuiTextures();
         }
     }
@@ -676,7 +699,8 @@ void PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
             auto uboIt = m_entityToTransformUBOIdx.find(entityID);
             // If we haven't gotten any new mesh data we shouldn't need any transform data either
             // TODO: See if that's true aka biting me in the ass somewhere
-            if (uboIt == m_entityToTransformUBOIdx.end()) continue;
+            if (uboIt == m_entityToTransformUBOIdx.end())
+                continue;
 
             const u32 ssboIdx = uboIt->second;
             m_cachedTransformSSBO[ssboIdx] = data.second;
@@ -692,8 +716,10 @@ void PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
             }
             m_cachedSceneAABBs[ssboIdx] = aabb;
         }
-        m_resourceManager.UpdateTransformBuffer(m_cachedTransformSSBO, m_currentSwapChainIdx, (u32)m_entityToTransformUBOIdx.size());
-        m_resourceManager.UpdateSceneAABBBuffer(m_cachedSceneAABBs, m_currentSwapChainIdx, (u32)m_entityToTransformUBOIdx.size());
+        m_resourceManager.UpdateTransformBuffer(
+            m_cachedTransformSSBO, m_currentSwapChainIdx, (u32)m_entityToTransformUBOIdx.size());
+        m_resourceManager.UpdateSceneAABBBuffer(
+            m_cachedSceneAABBs, m_currentSwapChainIdx, (u32)m_entityToTransformUBOIdx.size());
 
         if (m_dataToBePreProcessed.mainViewUBO.has_value())
         {
@@ -885,7 +911,7 @@ void RenderPasses::PassManager::DispatchSSBOTransfer(
     AsyncQueueHandler::SSBOTransfer transfer{.data = data,
                                              .size = size,
                                              .offset = offset,
-                                             .pDescriptorSet = pDescriptor,
+                                             .pDescriptorSet = nullptr,
                                              .pStorageBuffer = pSSBO,
                                              .dstBinding = dstBinding};
     g_pQueueHandler->SubmitTransferCommandAsync(transfer);
@@ -969,7 +995,7 @@ void RenderPasses::PassManager::RecreateShadowMaps(u32 cascades, const mathstl::
 
     csm.pTexture = static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(shadowMapInfo));
     csm.bindlessHandle = g_pTexManager->MakeTextureBindless(shadowMapInfo.handle);
-    
+
     for (auto& view : csm.cascadeViews)
     {
         if (view != VK_NULL_HANDLE)
@@ -1046,16 +1072,15 @@ void RenderPasses::PassManager::RegisterImGuiTextures()
         if (csm.cascadeViews[i] != VK_NULL_HANDLE)
         {
             VkDescriptorSet cascadeDescriptor = ImGui_ImplVulkan_AddTexture(
-                static_cast<TextureVulkan*>(g_pTexManager->GetTexture(csm.handle))->GetSampler(), csm.cascadeViews[i], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                static_cast<TextureVulkan*>(g_pTexManager->GetTexture(csm.handle))->GetSampler(),
+                csm.cascadeViews[i],
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
             m_csmCascadeImGuiIDs.push_back(reinterpret_cast<u64>(cascadeDescriptor));
         }
     }
 
-    g_pApplicationState->RegisterUpdateFunction(
-        [this](auto& state)
-        {
-            state.renderState.csmCascadeImGuiIDs = m_csmCascadeImGuiIDs;
-        });
+    g_pApplicationState->RegisterUpdateFunction([this](auto& state)
+                                                { state.renderState.csmCascadeImGuiIDs = m_csmCascadeImGuiIDs; });
 }
 
 void RenderPasses::PassManager::UpdateShadowViewUBO(const UBO::ShadowmapViewUBO& data, u32 frameIdx)
@@ -1067,7 +1092,7 @@ void RenderPasses::PassManager::UpdateLightClusterSSBO(const UBO::LightClusterSS
 {
     // Upload entire LightClusterSSBO (dirLight + numLights + pad + lights array)
     DispatchSSBOTransfer((void*)&data,
-                         m_frameRendererContexts[frameIdx].tileArraySSBODescriptor,
+                         nullptr,
                          UBO::LightClusterSSBOSize,
                          &m_lightClusterSSBO,
                          0,

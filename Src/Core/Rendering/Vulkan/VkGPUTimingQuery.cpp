@@ -34,7 +34,7 @@ void VkGPUTimingQuery::Destroy()
     m_nextPassIndex = 0;
 }
 
-void VkGPUTimingQuery::ResetQueries(CommandBuffer* pCmdBuffer, u32 frameIdx)
+void VkGPUTimingQuery::ResetQueries(u32 frameIdx)
 {
     m_currentFrameIdx = frameIdx % FRAMES_IN_FLIGHT;
 
@@ -43,11 +43,7 @@ void VkGPUTimingQuery::ResetQueries(CommandBuffer* pCmdBuffer, u32 frameIdx)
 
     m_poolInitialized[m_currentFrameIdx] = true;
 
-    ResetQueryPoolCmd cmd{};
-    cmd.queryPool = &m_queryPools[m_currentFrameIdx];
-    cmd.firstQuery = 0;
-    cmd.queryCount = m_queryCount;
-    pCmdBuffer->RecordCommand(cmd);
+    vkResetQueryPool(VkGlobals::GetLogicalDevice(), m_queryPools[m_currentFrameIdx].GetRef(), 0, m_queryCount);
 }
 
 

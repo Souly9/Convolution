@@ -49,6 +49,6 @@ public:
                                         .isShadowCaster = true};
         g_pEntityManager->AddComponent(dirLightEnt, dirLight);
         auto lightsRootEnt = g_pEntityManager->CreateEntity(mathstl::Vector3(0, 0, 0), "LightsRoot");
-        // CreateTestLights(mathstl::Vector3(0.0f, 0.0f, 0.0f), 150, 0.9f, lightsRootEnt);
+        CreateTestLights(mathstl::Vector3(-15, 5, 5), 15, 3.0f, lightsRootEnt);
     }
 };

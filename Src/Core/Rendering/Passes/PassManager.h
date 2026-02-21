@@ -133,7 +133,7 @@ struct MainPassData
 
 enum class PassType
 {
-    AsyncCompute,
+    EarlyAsyncCompute,
     PreProcess,
     Main,
     UI,
@@ -156,7 +156,7 @@ struct PassStage
 };
 
 inline const PassStage PASS_SCHEDULE[] = {
-    PassStage{{PassType::AsyncCompute}},
+    PassStage{{PassType::EarlyAsyncCompute}},
     PassStage{{PassType::PreProcess}},
     PassStage{{PassType::Main, PassType::Debug, PassType::Shadow}},
     PassStage{{PassType::UI}},
@@ -164,15 +164,16 @@ inline const PassStage PASS_SCHEDULE[] = {
 };
 inline constexpr u32 STAGE_COUNT = sizeof(PASS_SCHEDULE) / sizeof(PassStage);
 
-inline stltype::fixed_vector<PassType, 8> GetComputePassTypes()
+inline bool IsComputePass(PassType type)
 {
-    return {PassType::AsyncCompute};
+    return type == PassType::EarlyAsyncCompute;
 }
 
 struct GraphicsFrameContext
 {
     CommandPool cmdPool;
     stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> cmdBuffers{SWAPCHAIN_IMAGES};
+    stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> compositeCmdBuffers{SWAPCHAIN_IMAGES};
     bool initialized{false};
 };
 
