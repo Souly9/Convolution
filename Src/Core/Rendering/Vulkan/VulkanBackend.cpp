@@ -239,6 +239,7 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
     features12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
     features12.descriptorBindingVariableDescriptorCount = VK_TRUE;
     features12.descriptorBindingUniformBufferUpdateAfterBind = VK_TRUE;
+    features12.hostQueryReset = VK_TRUE;
     features12.pNext = &features13;
 
     // VK 1.1 features

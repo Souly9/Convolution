@@ -11,7 +11,7 @@ public:
     void Init(u32 maxPasses) override;
     void Destroy() override;
 
-    void ResetQueries(CommandBuffer* pCmdBuffer, u32 frameIdx) override;
+    void ResetQueries(u32 frameIdx) override;
     void ReadResults(u32 frameIdx) override;
 
 protected:

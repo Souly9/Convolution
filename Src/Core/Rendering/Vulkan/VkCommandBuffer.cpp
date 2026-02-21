@@ -406,20 +406,18 @@ void CBufferVulkan::AddSignalSemaphore(Semaphore* pSemaphore)
     m_signalSemaphores.push_back(pSemaphore->GetRef());
 }
 
-void CBufferVulkan::SetTimelineWait(TimelineSemaphore* pSemaphore, u64 waitValue)
+void CBufferVulkan::AddTimelineWait(TimelineSemaphore* pSemaphore, u64 waitValue)
 {
     if (pSemaphore == nullptr)
         return;
-    m_timelineWaitSemaphore = pSemaphore->GetRef();
-    m_timelineWaitValue = waitValue;
+    m_timelineWaits.push_back({pSemaphore->GetRef(), waitValue});
 }
 
-void CBufferVulkan::SetTimelineSignal(TimelineSemaphore* pSemaphore, u64 signalValue)
+void CBufferVulkan::AddTimelineSignal(TimelineSemaphore* pSemaphore, u64 signalValue)
 {
     if (pSemaphore == nullptr)
         return;
-    m_timelineSignalSemaphore = pSemaphore->GetRef();
-    m_timelineSignalValue = signalValue;
+    m_timelineSignals.push_back({pSemaphore->GetRef(), signalValue});
 }
 
 void CBufferVulkan::SetWaitStages(SyncStages stages)

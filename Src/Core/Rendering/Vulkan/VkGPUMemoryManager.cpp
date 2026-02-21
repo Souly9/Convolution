@@ -26,6 +26,8 @@ inline bool NeedsMappableHandle(const BufferUsage& m)
         case BufferUsage::SSBOHost:
         case BufferUsage::IndirectDrawCmds:
             return true;
+        default:
+            break;
     }
     return false;
 }
@@ -90,6 +92,24 @@ GPUMemManager<Vulkan>::~GPUMemManager()
             */
             DEBUG_ASSERT(false);
         }
+
+        // Unmap all mapped memory, otherwise leads to errors
+        bool wasMapped = true;
+        while (wasMapped)
+        {
+            SimpleScopedGuard<CustomMutex> lock(m_mappingMutex);
+            auto mapped_it = std::find(m_mappedMemoryHandles.begin(), m_mappedMemoryHandles.end(), handle.memoryHandle);
+            if (mapped_it != m_mappedMemoryHandles.end())
+            {
+                vmaUnmapMemory(s_vmaAllocator, *mapped_it);
+                m_mappedMemoryHandles.erase(mapped_it);
+            }
+            else
+            {
+                wasMapped = false;
+            }
+        }
+
         if (handle.bufferHandle != VK_NULL_HANDLE)
         {
             vmaDestroyBuffer(s_vmaAllocator, handle.bufferHandle, handle.vmaAllocation);

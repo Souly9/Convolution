@@ -20,7 +20,7 @@ public:
     virtual void Init(u32 maxPasses) = 0;
     virtual void Destroy() = 0;
 
-    virtual void ResetQueries(CommandBuffer* pCmdBuffer, u32 frameIdx) = 0;
+    virtual void ResetQueries(u32 frameIdx) = 0;
     virtual void ReadResults(u32 frameIdx) = 0;
 
     u32 RegisterPass(const stltype::string& name)

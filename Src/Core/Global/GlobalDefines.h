@@ -70,6 +70,6 @@ using CurrentAPI = API_Vulkan;
 #define COMP_ID(component) ECS::ComponentID<ECS::Components::##component>::ID
 
 static inline constexpr f32 FLOAT_TOLERANCE = 0.00001f;
-static inline constexpr f32 AMBIENT_STRENGTH = 0.1f;
+static inline constexpr f32 AMBIENT_STRENGTH = 0.03f;
 
 

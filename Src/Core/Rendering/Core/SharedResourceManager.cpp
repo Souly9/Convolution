@@ -1,5 +1,5 @@
 #include "SharedResourceManager.h"
-#include "../Passes/Utils/RenderPassUtils.h"
+
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Global/LogDefines.h"
@@ -245,7 +245,7 @@ void SharedResourceManager::UpdateTransformBuffer(const stltype::vector<DirectX:
     AsyncQueueHandler::SSBOTransfer transfer{.data = (void*)transformBuffer.data(),
                                              .size = transferSize,
                                              .offset = 0,
-                                             .pDescriptorSet = pDescriptor,
+                                             .pDescriptorSet = nullptr,
                                              .pStorageBuffer = &m_transformBuffer,
                                              .dstBinding = s_modelSSBOBindingSlot};
     g_pQueueHandler->SubmitTransferCommandAsync(transfer);
@@ -260,7 +260,7 @@ void SharedResourceManager::UpdateSceneAABBBuffer(const stltype::vector<AABB>& a
     AsyncQueueHandler::SSBOTransfer transfer{.data = (void*)aabbBuffer.data(),
                                              .size = transferSize,
                                              .offset = 0,
-                                             .pDescriptorSet = pDescriptor,
+                                             .pDescriptorSet = nullptr,
                                              .pStorageBuffer = &m_sceneAABBBuffer,
                                              .dstBinding = s_sceneAABBsSSBOBindingSlot};
     g_pQueueHandler->SubmitTransferCommandAsync(transfer);
@@ -272,7 +272,7 @@ void SharedResourceManager::UpdateGlobalMaterialBuffer(const UBO::MaterialBuffer
     AsyncQueueHandler::SSBOTransfer transfer{.data = (void*)materialBuffer.data(),
                                              .size = UBO::GlobalMaterialSSBOSize,
                                              .offset = 0,
-                                             .pDescriptorSet = pDescriptor,
+                                             .pDescriptorSet = nullptr,
                                              .pStorageBuffer = &m_materialBuffer,
                                              .dstBinding = s_globalMaterialBufferSlot};
     g_pQueueHandler->SubmitTransferCommandAsync(transfer);

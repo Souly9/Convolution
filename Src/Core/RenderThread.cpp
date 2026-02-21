@@ -26,9 +26,6 @@ void RenderThread::RenderLoop()
     {
         WaitForGameThreadAndPreviousFrame();
 
-        if (!KeepRunning())
-            break;
-
         // Start imgui frame, update frame numbers
         {
             lastFrame = currentFrame;
@@ -46,9 +43,6 @@ void RenderThread::RenderLoop()
         // Sync ended, signal gamethread
         g_renderThreadReadSemaphore.Post();
         g_imguiSemaphore.Wait();
-        
-        if (!KeepRunning())
-            break;
 
         {
             m_passManager->PreProcessDataForCurrentFrame(lastFrame);
@@ -78,4 +72,5 @@ RenderPasses::PassManager* RenderThread::Start()
 void RenderThread::CleanUp()
 {
     m_passManager.reset();
+    g_pDeleteQueue->ForceEmptyQueue();
 }
