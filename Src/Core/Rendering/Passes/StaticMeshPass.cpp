@@ -33,7 +33,7 @@ void StaticMainMeshPass::Init(RendererAttachmentInfo& attachmentInfo,
     const auto gbuffer3 = CreateDefaultColorAttachment(
         gbufferInfo.GetFormat(GBufferTextureType::TexCoordMatData), LoadOp::CLEAR, nullptr);
     m_mainRenderingData.depthAttachment =
-        CreateDefaultDepthAttachment(LoadOp::LOAD, attachmentInfo.depthAttachment.GetTexture());
+        CreateReadOnlyDepthAttachment(LoadOp::LOAD, attachmentInfo.depthAttachment.GetTexture());
     m_mainRenderingData.colorAttachments = {gbufferPosition, gbufferNormal, gbuffer3};
 
     InitBaseData(attachmentInfo);
@@ -52,6 +52,7 @@ void StaticMainMeshPass::BuildPipelines()
     PipelineInfo info{};
     // info.descriptorSetLayout.pipelineSpecificDescriptors.emplace_back();
     info.descriptorSetLayout.sharedDescriptors = m_sharedDescriptors;
+    info.depthWriteEnable = false;
     info.attachmentInfos =
         CreateAttachmentInfo({m_mainRenderingData.colorAttachments}, m_mainRenderingData.depthAttachment);
     m_mainPSO = PSO(

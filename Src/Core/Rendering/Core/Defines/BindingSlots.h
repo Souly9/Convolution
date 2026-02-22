@@ -14,6 +14,7 @@ static constexpr u32 s_shadowmapViewUBOBindingSlot = ShadowMapDataBindingSlot;
 static constexpr u32 s_clusterAABBsBindingSlot = ClusterGridSSBOSlot;
 static constexpr u32 s_globalBindlessTextureBufferBindingSlot = GlobalBindlessTextureBufferSlot;
 static constexpr u32 s_globalBindlessArrayTextureBufferBindingSlot = GlobalBindlessArrayTextureBufferSlot;
+static constexpr u32 s_globalBindlessImageBufferBindingSlot = GlobalBindlessImageBufferSlot;
 static constexpr u32 s_globalBindlessViewMatricesBufferBindingSlot = 300;
 static constexpr u32 s_clusterGridSSBOBindingSlot = ClusterGridSSBOSlot;
 static constexpr u32 s_sceneAABBsSSBOBindingSlot = SceneAABBsSSBOSlot;

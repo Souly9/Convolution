@@ -23,6 +23,7 @@ public:
     void WriteSSBOUpdate(const GenBufferVulkan& buffer, u32 bindingSlot = 0);
     void WriteBufferUpdate(const GenBufferVulkan& buffer, bool isUBO, u32 size, u32 bindingSlot = 0, u32 offset = 0);
     void WriteBindlessTextureUpdate(const TextureVulkan* pTex, u32 idx, u32 bindingSlot = 0);
+    void WriteBindlessImageUpdate(const TextureVulkan* pTex, u32 idx, u32 bindingSlot = 0);
 
 private:
     VkDescriptorSet m_descriptorSet{VK_NULL_HANDLE};

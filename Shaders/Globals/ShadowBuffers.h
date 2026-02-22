@@ -4,5 +4,6 @@ layout(scalar, set = ShadowViewUBOSet, binding = ShadowMapDataBindingSlot) unifo
     mat4 csmViewMatrices[16];
     vec4 cascadeSplits[4];
     int cascadeCount;
+    int screenSpaceShadows;
 }
 shadowmapViewUBO;

@@ -36,7 +36,8 @@ void VkGPUTimingQuery::Destroy()
 
 void VkGPUTimingQuery::ResetQueries(u32 frameIdx)
 {
-    m_currentFrameIdx = frameIdx % FRAMES_IN_FLIGHT;
+    SetCurrentFrameIdx(frameIdx);
+    ClearRunFlags(frameIdx);
 
     if (!m_enabled || m_queryPools[m_currentFrameIdx].GetRef() == VK_NULL_HANDLE)
         return;
@@ -54,26 +55,28 @@ void VkGPUTimingQuery::ReadResults(u32 frameIdx)
     if (!m_enabled || !m_poolInitialized[readFrameIdx] || m_queryPools[readFrameIdx].GetRef() == VK_NULL_HANDLE || m_nextPassIndex == 0)
         return;
 
-    u32 queryCount = m_nextPassIndex * 2;
-
-    VkResult result = vkGetQueryPoolResults(VkGlobals::GetLogicalDevice(),
-                                            m_queryPools[readFrameIdx].GetRef(),
-                                            0,
-                                            queryCount,
-                                            queryCount * sizeof(u64),
-                                            m_timestampResults[readFrameIdx].data(),
-                                            sizeof(u64),
-                                            VK_QUERY_RESULT_64_BIT);
-
-    if (result != VK_SUCCESS && result != VK_NOT_READY)
-        return;
+    for (u32 i = 0; i < m_nextPassIndex; ++i)
+    {
+        if (DidPassRun(i, frameIdx))
+        {
+            u32 queryIndex = i * 2;
+            vkGetQueryPoolResults(VkGlobals::GetLogicalDevice(),
+                                  m_queryPools[readFrameIdx].GetRef(),
+                                  queryIndex,
+                                  2,
+                                  2 * sizeof(u64),
+                                  &m_timestampResults[readFrameIdx][queryIndex],
+                                  sizeof(u64),
+                                  VK_QUERY_RESULT_64_BIT);
+        }
+    }
 
     auto& results = m_timestampResults[readFrameIdx];
 
     u64 globalMinTs = ~0ull;
     for (u32 i = 0; i < m_nextPassIndex && i < m_results.size(); ++i)
     {
-        if (DidPassRun(i))
+        if (DidPassRun(i, frameIdx))
         {
             u64 startTs = results[i * 2];
             if (startTs < globalMinTs) globalMinTs = startTs;
@@ -85,7 +88,7 @@ void VkGPUTimingQuery::ReadResults(u32 frameIdx)
 
     for (u32 i = 0; i < m_nextPassIndex && i < m_results.size(); ++i)
     {
-        m_results[i].wasRun = DidPassRun(i);
+        m_results[i].wasRun = DidPassRun(i, frameIdx);
 
         if (!m_results[i].wasRun)
         {

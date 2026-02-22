@@ -34,31 +34,37 @@ public:
         m_queryPool.CleanUp();
     }
 
-    // Called at start of frame to reset
-    void BeginFrame(u32 frameIdx) override
+    // Called at start of frame to reset query partitioning and clear the generational slot for new recording
+    void ResetFrame(u32 frameIdx) override
     {
-        SimpleScopedGuard<CustomMutex> lock(m_statsMutex);
-        RendererState::SceneRenderStats gpuStats = m_accumulatedStats[frameIdx];
-        g_pApplicationState->RegisterUpdateFunction([gpuStats, this](ApplicationState& appState) {
-            appState.renderState.stats.numVertices = gpuStats.numVertices;
-            appState.renderState.stats.numPrimitives = gpuStats.numPrimitives;
-            appState.renderState.stats.numShadersInvocations = gpuStats.numShadersInvocations;
-
-            // CPU Stats (accumulated from previous frame's command buffers)
-            appState.renderState.stats.numDrawCalls = gpuStats.numDrawCalls;
-            appState.renderState.stats.numDrawIndirectCalls = gpuStats.numDrawIndirectCalls;
-            appState.renderState.stats.numComputeDispatches = gpuStats.numComputeDispatches;
-            appState.renderState.stats.numDescriptorBinds = gpuStats.numDescriptorBinds;
-            appState.renderState.stats.numPipelineBinds = gpuStats.numPipelineBinds;
-        });
-
         // Partition queries based on frame index to avoid race conditions
         u32 queriesPerFrame = m_queryPool.GetCount() / FRAMES_IN_FLIGHT;
         m_currentQueryIdx = frameIdx * queriesPerFrame;
         m_baseQueryIdx = m_currentQueryIdx;
         m_maxQueryIdx = m_baseQueryIdx + queriesPerFrame;
         
+        SimpleScopedGuard<CustomMutex> lock(m_statsMutex);
         m_accumulatedStats[frameIdx] = {};
+    }
+
+    // Publishes accumulated results to the application state
+    void PublishResults(u32 frameIdx) override
+    {
+        SimpleScopedGuard<CustomMutex> lock(m_statsMutex);
+        RendererState::SceneRenderStats gpuStats = m_accumulatedStats[frameIdx];
+
+        g_pApplicationState->RegisterUpdateFunction([gpuStats](ApplicationState& appState) {
+            appState.renderState.stats.numVertices = gpuStats.numVertices;
+            appState.renderState.stats.numPrimitives = gpuStats.numPrimitives;
+            appState.renderState.stats.numShadersInvocations = gpuStats.numShadersInvocations;
+
+            // CPU Stats
+            appState.renderState.stats.numDrawCalls = gpuStats.numDrawCalls;
+            appState.renderState.stats.numDrawIndirectCalls = gpuStats.numDrawIndirectCalls;
+            appState.renderState.stats.numComputeDispatches = gpuStats.numComputeDispatches;
+            appState.renderState.stats.numDescriptorBinds = gpuStats.numDescriptorBinds;
+            appState.renderState.stats.numPipelineBinds = gpuStats.numPipelineBinds;
+        });
     }
 
     // Returns a query index to use for a command buffer
@@ -81,7 +87,7 @@ public:
     }
     
     // Called when a command buffer is finished to add its results
-    void AddQuery(u32 queryIdx) override
+    void AddQuery(u32 queryIdx, u32 frameIdx) override
     {
         // Fetch GPU stats if valid query
         if (queryIdx != ~0u)
@@ -91,30 +97,25 @@ public:
             
             if (results.size() >= 7)
             {
-                u32 frameIdx = GetFrameIdxFromQueryIdx(queryIdx);
-                if (frameIdx < FRAMES_IN_FLIGHT)
-                {
-                    m_accumulatedStats[frameIdx].numVertices += results[0];
-                    m_accumulatedStats[frameIdx].numPrimitives += results[1];
-                    m_accumulatedStats[frameIdx].numShadersInvocations += results[2] + results[5] + results[6]; // VS + FS + CS
-                }
+                u32 slotIdx = frameIdx % FRAMES_IN_FLIGHT;
+                SimpleScopedGuard<CustomMutex> lock(m_statsMutex);
+                m_accumulatedStats[slotIdx].numVertices += results[0];
+                m_accumulatedStats[slotIdx].numPrimitives += results[1];
+                m_accumulatedStats[slotIdx].numShadersInvocations += results[2] + results[5] + results[6]; // VS + FS + CS
             }
         }
     }
 
-    void AddCPUStats(const RendererState::SceneRenderStats& stats, u32 queryIdx) override
+    void AddCPUStats(const RendererState::SceneRenderStats& stats, u32 frameIdx) override
     {
-        u32 frameIdx = GetFrameIdxFromQueryIdx(queryIdx);
+        u32 slotIdx = frameIdx % FRAMES_IN_FLIGHT;
 
-        if (frameIdx < FRAMES_IN_FLIGHT)
-        {
-            SimpleScopedGuard<CustomMutex> lock(m_statsMutex);
-            m_accumulatedStats[frameIdx].numDrawCalls += stats.numDrawCalls;
-            m_accumulatedStats[frameIdx].numDrawIndirectCalls += stats.numDrawIndirectCalls;
-            m_accumulatedStats[frameIdx].numComputeDispatches += stats.numComputeDispatches;
-            m_accumulatedStats[frameIdx].numDescriptorBinds += stats.numDescriptorBinds;
-            m_accumulatedStats[frameIdx].numPipelineBinds += stats.numPipelineBinds;
-        }
+        SimpleScopedGuard<CustomMutex> lock(m_statsMutex);
+        m_accumulatedStats[slotIdx].numDrawCalls += stats.numDrawCalls;
+        m_accumulatedStats[slotIdx].numDrawIndirectCalls += stats.numDrawIndirectCalls;
+        m_accumulatedStats[slotIdx].numComputeDispatches += stats.numComputeDispatches;
+        m_accumulatedStats[slotIdx].numDescriptorBinds += stats.numDescriptorBinds;
+        m_accumulatedStats[slotIdx].numPipelineBinds += stats.numPipelineBinds;
     }
     
 
@@ -126,12 +127,5 @@ private:
     
     CustomMutex m_statsMutex;
     RendererState::SceneRenderStats m_accumulatedStats[FRAMES_IN_FLIGHT];
-
-    u32 GetFrameIdxFromQueryIdx(u32 queryIdx) const
-    {
-        if (queryIdx == ~0u) return ~0u;
-        u32 queriesPerFrame = m_queryPool.GetCount() / FRAMES_IN_FLIGHT;
-        return queryIdx / queriesPerFrame;
-    }
 };
 

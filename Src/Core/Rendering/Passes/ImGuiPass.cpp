@@ -31,7 +31,7 @@ void ImGuiPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourc
     const auto gbufferUI =
         CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBufferUI), LoadOp::CLEAR, nullptr);
     m_mainRenderingData.depthAttachment =
-        CreateDefaultDepthAttachment(LoadOp::LOAD, attachmentInfo.depthAttachment.GetTexture());
+        CreateReadOnlyDepthAttachment(LoadOp::LOAD, attachmentInfo.depthAttachment.GetTexture());
     m_mainRenderingData.colorAttachments = {gbufferUI};
 
     InitBaseData(attachmentInfo);

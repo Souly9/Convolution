@@ -121,7 +121,7 @@ public:
         // 3. Create Lights
         // Create a dense grid of lights
         auto dirLightEnt = g_pEntityManager->CreateEntity(mathstl::Vector3(2, 17, 1), "DirectionalLight");
-        ECS::Components::Light dirLight{.direction = mathstl::Vector3(10, 2, -10),
+        ECS::Components::Light dirLight{.direction = mathstl::Vector3(10, -2, -10),
                                         .color = mathstl::Vector4(1.0f, 1.0f, 0.9f, 1.0f),
                                         .type = ECS::Components::LightType::Directional,
                                         .isShadowCaster = true};

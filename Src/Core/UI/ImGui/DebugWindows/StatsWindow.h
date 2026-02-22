@@ -64,6 +64,18 @@ public:
             ImGui::Text("Renderer State");
             ImGui::Text("Device: %s", device.c_str());
 
+            f32 usedMB = static_cast<f32>(m_lastState.usedVramBytes) / (1024.f * 1024.f);
+            f32 totalMB = static_cast<f32>(m_lastState.totalVramBytes) / (1024.f * 1024.f);
+            
+            if (totalMB > 1024.f)
+            {
+                ImGui::Text("VRAM: %.2f / %.2f GB", usedMB / 1024.f, totalMB / 1024.f);
+            }
+            else
+            {
+                ImGui::Text("VRAM: %.2f / %.2f MB", usedMB, totalMB);
+            }
+
             ImGui::End();
         }
 

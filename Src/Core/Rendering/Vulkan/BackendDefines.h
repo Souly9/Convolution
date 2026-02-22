@@ -44,7 +44,7 @@ static inline const stltype::vector<const char*> g_deviceExtensions = {"VK_KHR_s
 static inline const stltype::vector<VkDynamicState> g_dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT,
                                                                        VK_DYNAMIC_STATE_SCISSOR};
 
-#define SWAPCHAINCOLORSPACE  VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT
+#define SWAPCHAINCOLORSPACE  VK_COLOR_SPACE_SRGB_NONLINEAR_KHR
 #define SWAPCHAINPRESENTMODE VK_PRESENT_MODE_FIFO_KHR
 
 #ifdef NDEBUG

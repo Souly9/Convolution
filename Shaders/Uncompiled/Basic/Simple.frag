@@ -49,13 +49,16 @@ void main()
     vec4 uiColor = vec4(texture(GlobalBindlessTextures[gbufferUBO.gbufferUIIdx], texCoords));
     vec3 albedo = texture(GlobalBindlessTextures[gbufferUBO.gbufferAlbedoIdx], texCoords).xyz;
     vec4 texCoordMatData = vec4(texture(GlobalBindlessTextures[gbufferUBO.gbufferTexCoordMatIdx], texCoords));
-    uint fragMatIdx = uint(texCoordMatData.z);
+    vec4 fragNormalData = texture(GlobalBindlessTextures[gbufferUBO.gbufferNormalIdx], texCoords);
+    uint fragMatIdx = uint(fragNormalData.w);
     Material fragMaterial = globalObjectDataSSBO.materials[fragMatIdx];
-    vec3 fragNormal = texture(GlobalBindlessTextures[gbufferUBO.gbufferNormalIdx], texCoords).xyz;
+    vec3 fragNormal = fragNormalData.xyz;
 
     float fragmentDepth = texture(GlobalBindlessTextures[gbufferUBO.depthBufferIdx], texCoords).r;
 
     uiColor.a = mix(0, 0.95, uiColor.a);
+    // Linearize ImGui's UNORM sRGB bytes into Linear space before blending with the linear scene
+    uiColor.rgb = pow(uiColor.rgb, vec3(2.2));
 
     vec4 clipSpacePosition;
     clipSpacePosition.x = texCoords.x * 2.0 - 1.0;
@@ -150,24 +153,27 @@ void main()
     }
 
     // --- Directional Light ---
+    float dirLightShadow = computeShadow(fragPosWorldSpace, viewDepth, N, L);
+    float sss = texture(GlobalBindlessTextures[shadowmapViewUBO.screenSpaceShadows], texCoords).r;
+    if (lightUniforms.data.ClusterValues.w < 0.5)
+        sss = 1.0f;
+    dirLightShadow = min(dirLightShadow, sss);
     {
-        vec3 lightDir = normalize(-dirLight.direction.xyz);
+        vec3 lightDir = normalize(dirLight.direction.xyz);
         float lightIntensity = dirLight.color.w;
         vec3 lightColor = dirLight.color.xyz * lightIntensity;
 
         vec3 lightContribution = computeDirLight(lightDir, V, N, lightColor, albedo, roughness, metallic);
 
-        directLighting += lightContribution;
+        directLighting += lightContribution * dirLightShadow; // Apply shadow only to directional light
     }
-    // Update call to computeShadow with viewDepth
-    float dirLightShadow = computeShadow(fragPosWorldSpace, viewDepth, N, L);
 
     float ambientIntensity = lightUniforms.data.LightGlobals.z;
     vec3 indirectLighting = computeAmbient(albedo, ambientIntensity);
 
     // Exposure
     float exposure = lightUniforms.data.LightGlobals.x;
-    vec3 finalHDRColor = (directLighting * dirLightShadow + indirectLighting) * exposure;
+    vec3 finalHDRColor = (directLighting + indirectLighting) * exposure;
 
     // Tone Mapping
     int toneMapperType = int(lightUniforms.data.LightGlobals.y);
@@ -191,8 +197,10 @@ void main()
     // Apply UI Color overlay / Final output assignment
     vec4 debugColor = texture(GlobalBindlessTextures[gbufferUBO.gbufferDebugIdx], texCoords);
 
+    // Convert Linear SDR Tonemapped output to sRGB SDR presentation output
     vec3 finalSceneColor = finalLDRColor;
-    finalSceneColor += debugColor.rgb;
+    // finalSceneColor += debugColor.rgb;
+    
 
     outColor.rgb = finalSceneColor * (1.0 - uiColor.a) + uiColor.rgb * uiColor.a;
     outColor.a = 1.0;

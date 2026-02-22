@@ -81,7 +81,6 @@ void Application::Run()
     u32 lastFrame = 1;
     while (!glfwWindowShouldClose(g_pWindowManager->GetWindow()))
     {
-        m_pProfiler->BeginFrame(currentFrame);
         WaitForRendererToFinish();
 
         {

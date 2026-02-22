@@ -22,7 +22,7 @@ void PipelineVulkanBase::PrepareGraphicsBase(const ShaderCollection& shaders,
                                              VkPipelineColorBlendStateCreateInfo& outColorBlending,
                                              VkPipelineRenderingCreateInfo& outPipelineRenderingCreateInfo)
 {
-    // Assume we always have a vert and fragment shader here for now
+    // Assume we always have a vert shader here for now
     Shader& vertShader = *shaders.pVertShader;
     if (vertShader.GetDesc() == VK_NULL_HANDLE)
         g_pFileReader->FinishAllRequests();
@@ -77,6 +77,7 @@ void PipelineVulkanBase::PrepareGraphicsBase(const ShaderCollection& shaders,
     outPipelineRenderingCreateInfo.colorAttachmentCount = m_colorAttachmentFormats.size();
     outPipelineRenderingCreateInfo.depthAttachmentFormat = Conv(pipeInfo.attachmentInfos.depthAttachmentFormat);
     outPipelineRenderingCreateInfo.viewMask = pipeInfo.viewMask;
+    m_info = pipeInfo;
 }
 
 ComputePipelineVulkan::ComputePipelineVulkan(const ShaderCollection& shaders, const PipelineInfo& pipeInfo)
@@ -170,7 +171,7 @@ GraphicsPipelineVulkan::GraphicsPipelineVulkan(const ShaderCollection& shaders,
     pipelineInfo.pNext = &pipelineRenderingCreateInfo;
     if (pipeInfo.hasDepth)
     {
-        const auto depthStencil = CreateDepthStencilLayout();
+        const auto depthStencil = CreateDepthStencilLayout(pipeInfo.depthWriteEnable);
         pipelineInfo.pDepthStencilState = &depthStencil;
         DEBUG_ASSERT(
             vkCreateGraphicsPipelines(
@@ -333,12 +334,12 @@ VkPipelineColorBlendStateCreateInfo PipelineVulkanBase::CreateColorBlendInfo(
     return colorBlending;
 }
 
-VkPipelineDepthStencilStateCreateInfo GraphicsPipelineVulkan::CreateDepthStencilLayout()
+VkPipelineDepthStencilStateCreateInfo GraphicsPipelineVulkan::CreateDepthStencilLayout(bool depthWriteEnable)
 {
     VkPipelineDepthStencilStateCreateInfo depthStencil{};
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
     depthStencil.depthTestEnable = VK_TRUE;
-    depthStencil.depthWriteEnable = VK_TRUE;
+    depthStencil.depthWriteEnable = depthWriteEnable ? VK_TRUE : VK_FALSE;
     depthStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
     depthStencil.depthBoundsTestEnable = VK_FALSE;
     depthStencil.minDepthBounds = 0.0f; // Optional

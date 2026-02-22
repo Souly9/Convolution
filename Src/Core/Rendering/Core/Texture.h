@@ -10,6 +10,7 @@ struct TextureInfoBase
     DirectX::XMUINT3 extents;
     ImageLayout layout{ImageLayout::UNDEFINED};
     u64 size{0};
+    Usage usage{Usage::Sampled};
     bool hasMipMaps{false};
 };
 

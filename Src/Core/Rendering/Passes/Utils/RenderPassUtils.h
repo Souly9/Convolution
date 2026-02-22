@@ -45,6 +45,22 @@ static inline DepthAttachment CreateDefaultDepthAttachment(LoadOp loadOp, Textur
     return CreateDefaultDepthAttachment(loadOp, StoreOp::STORE, pTex);
 }
 
+static inline DepthAttachment CreateReadOnlyDepthAttachment(LoadOp loadOp, Texture* pTex)
+{
+    DepthBufferAttachmentInfo info{};
+    info.format = pTex ? (TexFormat)pTex->GetInfo().format : DEPTH_BUFFER_FORMAT;
+
+    info.loadOp = loadOp;
+    info.storeOp = StoreOp::DONT_CARE;
+    info.initialLayout = ImageLayout::UNDEFINED;
+    info.finalLayout = ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+    info.renderingLayout = ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+    
+    auto att = DepthAttachment::Create(info, pTex);
+    att.SetClearValue(mathstl::Vector4(1.0f, 0.0f, 0.0f, 0.0f)); // Depth 1.0, Stencil 0
+    return att;
+}
+
 static inline bool NeedToRender(const IndirectDrawCmdBuf& buffer)
 {
     if (buffer.GetDrawCmdNum() == 0)
@@ -81,7 +97,10 @@ static inline RenderAttachmentInfo ToRenderAttachmentInfo(const DepthAttachment&
 {
     RenderAttachmentInfo info{};
     info.pTexture = const_cast<Texture*>(attachment.GetTexture());
-    info.renderingLayout = ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    
+    // Use the rendering layout assigned to the attachment
+    info.renderingLayout = (ImageLayout)attachment.GetRenderingLayout();
+    
     info.loadOp = (LoadOp)attachment.GetDesc().loadOp;
     info.storeOp = (StoreOp)attachment.GetDesc().storeOp;
     

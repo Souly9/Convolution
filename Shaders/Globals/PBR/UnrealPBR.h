@@ -108,7 +108,7 @@ vec3 computePointLight(vec3 worldPos,
 {
     vec3 L = normalize(lightPos - worldPos);
     float attenuation = compAttentuation(worldPos, lightPos);
-    vec3 radiance = lightColor * attenuation;
+    vec3 radiance = lightColor * attenuation * PI;
 
     return computePBRDirectLight(L, radiance, viewDir, normal, diffuseAlbedo, roughness, metallic);
 }
@@ -118,7 +118,7 @@ vec3 computeDirLight(
 {
     // (attenuation is 1.0)
     vec3 L = normalize(-lightDir);
-    vec3 radiance = lightColor;
+    vec3 radiance = lightColor * PI;
 
     return computePBRDirectLight(L, radiance, viewDir, normal, diffuseAlbedo, roughness, metallic);
 }

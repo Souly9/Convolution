@@ -165,9 +165,13 @@ public:
     {
         return m_swapChainTextures;
     }
-    DescriptorSetVulkan* GetBindlessDescriptorSet()
+    DescriptorSet* GetBindlessDescriptorSet()
     {
         return m_bindlessDescriptorSet;
+    }
+    DescriptorSet* GetBindlessImageDescriptorSet()
+    {
+        return m_bindlessImageDescriptorSet;
     }
 
     static void SetLayoutBarrierMasks(ImageLayoutTransitionCmd& transitionCmd,
@@ -212,6 +216,8 @@ protected:
     DescriptorPool m_bindlessDescriptorPool;
     DescriptorSet* m_bindlessDescriptorSet{nullptr};
     DescriptorSetLayout m_bindlessDescriptorSetLayout;
+    DescriptorSet* m_bindlessImageDescriptorSet{nullptr};
+    DescriptorSetLayout m_bindlessImageDescriptorSetLayout;
     stltype::vector<TextureHandle> m_texturesToMakeBindless;
 
     // Frequently accessed by threads

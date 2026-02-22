@@ -130,5 +130,6 @@ struct ShadowmapViewUBO
     stltype::array<mathstl::Matrix, 16> lightViewProjMatrices{};
     stltype::array<mathstl::Vector4, 4> cascadeSplits{};
     s32 cascadeCount;
+    BindlessTextureHandle screenSpaceShadows;
 };
 } // namespace UBO

@@ -3,6 +3,9 @@
 #include "Core/Rendering/Core/TextureManager.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
 #include "Core/Rendering/Core/Utils/DeleteQueue.h"
+#include "Core/Rendering/Vulkan/VkGlobals.h"
+#include "Core/Rendering/Vulkan/VkProfiler.h"
+
 
 RenderThread::RenderThread(ImGuiManager* pImGuiManager) : m_pImGuiManager(pImGuiManager)
 {
@@ -50,6 +53,8 @@ void RenderThread::RenderLoop()
 
         {
             g_pQueueHandler->WaitForFences();
+            VkGlobals::GetProfiler()->PublishResults(lastFrame);
+            VkGlobals::GetProfiler()->ResetFrame(lastFrame);
             m_passManager->ReadAndPublishTimingResults(lastFrame);
             m_passManager->ExecutePasses(lastFrame);
         }

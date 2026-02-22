@@ -236,6 +236,8 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
     features12.descriptorBindingPartiallyBound = VK_TRUE;
     features12.runtimeDescriptorArray = VK_TRUE;
     features12.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
+    features12.descriptorBindingStorageImageUpdateAfterBind = VK_TRUE;
+    features12.shaderStorageImageArrayNonUniformIndexing = VK_TRUE;
     features12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
     features12.descriptorBindingVariableDescriptorCount = VK_TRUE;
     features12.descriptorBindingUniformBufferUpdateAfterBind = VK_TRUE;
@@ -313,6 +315,10 @@ bool RenderBackendImpl<Vulkan>::PickPhysicalDevice()
             m_physicalDevice = device;
             VkPhysicalDeviceProperties deviceProperties;
             vkGetPhysicalDeviceProperties(m_physicalDevice, &deviceProperties);
+
+            VkPhysicalDeviceMemoryProperties memProperties;
+            vkGetPhysicalDeviceMemoryProperties(m_physicalDevice, &memProperties);
+            VkGlobals::SetPhysicalDeviceMemoryProperties(memProperties);
 
             stltype::string deviceName(deviceProperties.deviceName);
             g_pApplicationState->RegisterUpdateFunction([deviceName](ApplicationState& state)

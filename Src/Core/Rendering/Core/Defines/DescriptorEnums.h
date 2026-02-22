@@ -20,5 +20,6 @@ enum class DescriptorType
     UniformBuffer,
     StorageBuffer,
     CombinedImageSampler,
-    BindlessTextures
+    BindlessTextures,
+    BindlessImages
 };

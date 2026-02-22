@@ -24,7 +24,7 @@ void ClusterDebugPass::Init(RendererAttachmentInfo& attachmentInfo, const Shared
     m_mainRenderingData.colorAttachments.clear();
     m_mainRenderingData.colorAttachments.push_back(std::move(gbufferDebug));
     m_mainRenderingData.depthAttachment =
-        CreateDefaultDepthAttachment(LoadOp::LOAD, attachmentInfo.depthAttachment.GetTexture());
+        CreateReadOnlyDepthAttachment(LoadOp::LOAD, attachmentInfo.depthAttachment.GetTexture());
     
     InitBaseData(attachmentInfo);
     
@@ -78,6 +78,7 @@ void ClusterDebugPass::BuildPipelines()
     
     // Depth test
     info.hasDepth = true;
+    info.depthWriteEnable = false;
     
     m_pipeline = PSO(ShaderCollection{&vert, &frag}, PipeVertInfo{m_vertexInputDescription, {}}, info);
 }

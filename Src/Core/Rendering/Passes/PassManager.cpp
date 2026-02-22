@@ -6,11 +6,13 @@
 #include "Core/Rendering/Core/MaterialManager.h"
 #include "Core/Rendering/Core/RenderingTypeDefs.h"
 #include "Core/Rendering/Core/ShaderManager.h"
+#include "Core/Rendering/Core/Synchronization.h"
 #include "Core/Rendering/Core/Utils/DescriptorLayoutUtils.h"
 #include "Core/Rendering/Vulkan/VkTextureManager.h"
 #include "DebugShapePass.h"
 #include "ImGuiPass.h"
 #include "PreProcess/DepthPrePass.h"
+#include "ScreenSpaceShadowPass.h"
 #include "ShadowPass.h"
 #include "StaticMeshPass.h"
 #include <cstring>
@@ -29,6 +31,7 @@ void PassManager::InitResourceManagerAndCallbacks()
     // Create pass objects
     AddPass(PassType::EarlyAsyncCompute, stltype::make_unique<RenderPasses::LightGridComputePass>());
     AddPass(PassType::PreProcess, stltype::make_unique<RenderPasses::DepthPrePass>());
+    AddPass(PassType::DepthReliantCompute, stltype::make_unique<RenderPasses::ScreenSpaceShadowPass>());
     AddPass(PassType::Main, stltype::make_unique<RenderPasses::StaticMainMeshPass>());
     AddPass(PassType::Main, stltype::make_unique<RenderPasses::DebugShapePass>());
     AddPass(PassType::Shadow, stltype::make_unique<RenderPasses::CSMPass>());
@@ -186,6 +189,8 @@ void PassManager::InitPassesAndImGui()
             m_frameRendererContexts[idx].gbufferPostProcessDescriptor;
         mainPassData.bufferDescriptors[UBO::DescriptorContentsType::BindlessTextureArray] =
             g_pTexManager->GetBindlessDescriptorSet();
+        mainPassData.bufferDescriptors[UBO::DescriptorContentsType::BindlessImageArray] =
+            g_pTexManager->GetBindlessImageDescriptorSet();
         mainPassData.bufferDescriptors[UBO::DescriptorContentsType::ClusterGrid] =
             m_frameRendererContexts[idx].clusterGridDescriptor;
         ++idx;
@@ -199,7 +204,7 @@ void PassManager::InitPassesAndImGui()
     }
     // ImGui textures
     VkDescriptorSet depthId = ImGui_ImplVulkan_AddTexture(
-        pDepthTex->GetSampler(), pDepthTex->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        pDepthTex->GetSampler(), pDepthTex->GetImageView(), VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
 
     VkDescriptorSet idNormal =
         ImGui_ImplVulkan_AddTexture(m_gbuffer.Get(GBufferTextureType::GBufferNormal)->GetSampler(),
@@ -216,8 +221,13 @@ void PassManager::InitPassesAndImGui()
         ImGui_ImplVulkan_AddTexture(m_gbuffer.Get(GBufferTextureType::GBufferDebug)->GetSampler(),
                                     m_gbuffer.Get(GBufferTextureType::GBufferDebug)->GetImageView(),
                                     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    VkDescriptorSet idSSS = ImGui_ImplVulkan_AddTexture(
+        m_pScreenSpaceShadowTexture->GetSampler(),
+        m_pScreenSpaceShadowTexture->GetImageView(),
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
     g_pApplicationState->RegisterUpdateFunction(
-        [this, depthId, idNormal, idAlbedo, idUI, idDebug](auto& state)
+        [this, depthId, idNormal, idAlbedo, idUI, idDebug, idSSS](auto& state)
         {
             state.renderState.csmCascadeImGuiIDs = m_csmCascadeImGuiIDs;
             state.renderState.depthbufferImGuiID = reinterpret_cast<u64>(depthId);
@@ -226,6 +236,7 @@ void PassManager::InitPassesAndImGui()
             state.renderState.gbufferImGuiIDs.push_back(reinterpret_cast<u64>(idAlbedo));
             state.renderState.gbufferImGuiIDs.push_back(reinterpret_cast<u64>(idUI));
             state.renderState.gbufferImGuiIDs.push_back(reinterpret_cast<u64>(idDebug));
+            state.renderState.gbufferImGuiIDs.push_back(reinterpret_cast<u64>(idSSS));
         });
 
     RegisterImGuiTextures();
@@ -257,7 +268,7 @@ void PassManager::PrepareMainPassDataForFrame(MainPassData& mainPassData, FrameR
     mainPassData.mainView.descriptorSet = ctx.mainViewUBODescriptor;
     mainPassData.directionalLightShadowMap = m_globalRendererAttachments.directionalLightShadowMap;
     mainPassData.cascades = m_currentShadowMapState.cascadeCount;
-    mainPassData.csmStepSize = g_pApplicationState->GetCurrentApplicationState().renderState.csmStepSize;
+    mainPassData.depthBufferBindlessHandle = m_depthBindlessHandle;
 }
 
 void PassManager::InitFrameContexts()
@@ -273,6 +284,8 @@ void PassManager::InitFrameContexts()
                 m_graphicsFrameCtx.cmdPool.CreateCommandBuffer(CommandBufferCreateInfo{});
             m_graphicsFrameCtx.compositeCmdBuffers[i] =
                 m_graphicsFrameCtx.cmdPool.CreateCommandBuffer(CommandBufferCreateInfo{});
+            m_graphicsFrameCtx.depthPrePassCmdBuffers[i] =
+                m_graphicsFrameCtx.cmdPool.CreateCommandBuffer(CommandBufferCreateInfo{});
         }
         m_graphicsFrameCtx.initialized = true;
     }
@@ -281,7 +294,10 @@ void PassManager::InitFrameContexts()
     {
         m_computeFrameCtx.cmdPool = CommandPool::Create(indices.computeFamily.value());
         for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
+        {
             m_computeFrameCtx.cmdBuffers[i] = m_computeFrameCtx.cmdPool.CreateCommandBuffer(CommandBufferCreateInfo{});
+            m_computeFrameCtx.sssComputeCmdBuffers[i] = m_computeFrameCtx.cmdPool.CreateCommandBuffer(CommandBufferCreateInfo{});
+        }
         m_computeFrameCtx.initialized = true;
     }
 }
@@ -322,22 +338,32 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
 
     CommandBuffer* pMainGraphicsWorkBuffer = m_graphicsFrameCtx.cmdBuffers[ctx.imageIdx];
     CommandBuffer* pComputeCmdBuffer = m_computeFrameCtx.cmdBuffers[ctx.imageIdx];
+    CommandBuffer* pDepthWorkBuffer = m_graphicsFrameCtx.depthPrePassCmdBuffers[ctx.imageIdx];
+    CommandBuffer* pSSSWorkBuffer = m_computeFrameCtx.sssComputeCmdBuffers[ctx.imageIdx];
     CommandBuffer* pCompositeCmdBuffer = m_graphicsFrameCtx.compositeCmdBuffers[ctx.imageIdx];
     (pMainGraphicsWorkBuffer)->ResetBuffer();
     (pComputeCmdBuffer)->ResetBuffer();
+    (pDepthWorkBuffer)->ResetBuffer();
+    (pSSSWorkBuffer)->ResetBuffer();
     (pCompositeCmdBuffer)->ResetBuffer();
+
+    pMainGraphicsWorkBuffer->SetFrameIdx(ctx.currentFrame);
+    pComputeCmdBuffer->SetFrameIdx(ctx.currentFrame);
+    pDepthWorkBuffer->SetFrameIdx(ctx.currentFrame);
+    pSSSWorkBuffer->SetFrameIdx(ctx.currentFrame);
+    pCompositeCmdBuffer->SetFrameIdx(ctx.currentFrame);
 
     // Transition all color attachments and depth/shadow from UNDEFINED to their write layouts
     RecordInitialLayoutTransitions(pMainGraphicsWorkBuffer, allColorTextures);
 
     u64 computeSignalValue = ctx.nextComputeTimelineValue++;
+    u64 depthPassSignalValue = ctx.nextTimelineValue++;
+    u64 sssSignalValue = ctx.nextComputeTimelineValue++;
     u64 graphicsTimelineValue = ctx.nextTimelineValue++;
 
     // Dispatch early async compute work
     {
         RenderPassGroup(PassType::EarlyAsyncCompute, mainPassData, ctx, pComputeCmdBuffer);
-        // Don't need the wait semaphore here since we only access data buffers which are guaranteed to be ready now
-        // computeCmdBuffer->AddWaitSemaphore(&imageAvailableSemaphore);
         (pComputeCmdBuffer)->AddTimelineSignal(&ctx.computeTimeline, computeSignalValue);
         pComputeCmdBuffer->SetSignalStages(SyncStages::COMPUTE_SHADER);
         
@@ -345,9 +371,34 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
         g_pQueueHandler->SubmitCommandBufferThisFrame({pComputeCmdBuffer, QueueType::Compute});
     }
 
-    // Record all graphics pass groups in schedule order
-    // First stage is async compute, last one is composite which need special stuff hence we only iterate through the central blob
-    for (u32 stageIdx = 1; stageIdx < STAGE_COUNT - 1; ++stageIdx)
+    // Manual dispatch Depth Pre-Pass (PreProcess group)
+    {
+        RecordInitialLayoutTransitions(pDepthWorkBuffer, allColorTextures);
+        RenderPassGroup(PassType::PreProcess, mainPassData, ctx, pDepthWorkBuffer);
+        RecordDepthToReadOnly(pDepthWorkBuffer);
+        pDepthWorkBuffer->AddTimelineSignal(&ctx.frameTimeline, depthPassSignalValue);
+        pDepthWorkBuffer->SetSignalStages(SyncStages::EARLY_FRAGMENT_TESTS | SyncStages::LATE_FRAGMENT_TESTS | SyncStages::COMPUTE_SHADER);
+        pDepthWorkBuffer->Bake();
+        g_pQueueHandler->SubmitCommandBufferThisFrame({pDepthWorkBuffer, QueueType::Graphics});
+    }
+
+    // Manual dispatch SSS (DepthReliantCompute group)
+    {
+        RecordSSSOutputToGeneral(pSSSWorkBuffer);
+        RenderPassGroup(PassType::DepthReliantCompute, mainPassData, ctx, pSSSWorkBuffer);
+        RecordSSSOutputToShaderRead(pSSSWorkBuffer);
+
+        pSSSWorkBuffer->AddTimelineWait(&ctx.frameTimeline, depthPassSignalValue);
+        pSSSWorkBuffer->SetWaitStages(SyncStages::COMPUTE_SHADER);
+        pSSSWorkBuffer->AddTimelineSignal(&ctx.computeTimeline, sssSignalValue);
+        pSSSWorkBuffer->SetSignalStages(SyncStages::COMPUTE_SHADER);
+
+        pSSSWorkBuffer->Bake();
+        g_pQueueHandler->SubmitCommandBufferThisFrame({pSSSWorkBuffer, QueueType::Compute});
+    }
+
+    // Record all graphics pass groups in schedule order (Starting from Main at stage 3)
+    for (u32 stageIdx = 3; stageIdx < STAGE_COUNT - 1; ++stageIdx)
     {
         const auto& stage = PASS_SCHEDULE[stageIdx];
 
@@ -376,22 +427,25 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
     RecordSwapchainToPresent(pCompositeCmdBuffer);
 
     // Setup semaphores
-    // cmdBuffer contains main graphics work on gbuffer/depth pass but doesn't touch the swapchain, so don't need to wait on anything
-    (pMainGraphicsWorkBuffer)->AddTimelineSignal(&ctx.frameTimeline, graphicsTimelineValue);
+    // Main graphics work depends on Depth Pre-Pass
+    pMainGraphicsWorkBuffer->AddTimelineWait(&ctx.frameTimeline, depthPassSignalValue);
+    pMainGraphicsWorkBuffer->SetWaitStages(SyncStages::EARLY_FRAGMENT_TESTS | SyncStages::COLOR_ATTACHMENT_OUTPUT);
+    
+    pMainGraphicsWorkBuffer->AddTimelineSignal(&ctx.frameTimeline, graphicsTimelineValue);
     pMainGraphicsWorkBuffer->SetSignalStages(SyncStages::COLOR_ATTACHMENT_OUTPUT);
+    
+    pMainGraphicsWorkBuffer->Bake();
+    g_pQueueHandler->SubmitCommandBufferThisFrame({pMainGraphicsWorkBuffer, QueueType::Graphics});
 
     // compositeCmdBuffer will wait need swapchain, the async compute work and gbuffers hence we wait on everything
     // and will signal pPresentLayoutTransitionSignalSemaphore
     pCompositeCmdBuffer->AddWaitSemaphore(&imageAvailableSemaphore);
-    (pCompositeCmdBuffer)->AddTimelineWait(&ctx.frameTimeline, graphicsTimelineValue);
-    (pCompositeCmdBuffer)->AddTimelineWait(&ctx.computeTimeline, computeSignalValue);
+    pCompositeCmdBuffer->AddTimelineWait(&ctx.frameTimeline, graphicsTimelineValue);
+    pCompositeCmdBuffer->AddTimelineWait(&ctx.computeTimeline, sssSignalValue);
     pCompositeCmdBuffer->SetWaitStages(SyncStages::COLOR_ATTACHMENT_OUTPUT | SyncStages::COMPUTE_SHADER);
 
-    (pCompositeCmdBuffer)->AddSignalSemaphore(&ctx.pPresentLayoutTransitionSignalSemaphore);
+    pCompositeCmdBuffer->AddSignalSemaphore(&ctx.pPresentLayoutTransitionSignalSemaphore);
     pCompositeCmdBuffer->SetSignalStages(SyncStages::COLOR_ATTACHMENT_OUTPUT);
-
-    pMainGraphicsWorkBuffer->Bake();
-    g_pQueueHandler->SubmitCommandBufferThisFrame({pMainGraphicsWorkBuffer, QueueType::Graphics});
 
     pCompositeCmdBuffer->Bake();
     g_pQueueHandler->SubmitCommandBufferThisFrame({pCompositeCmdBuffer, QueueType::Graphics});
@@ -426,14 +480,44 @@ void PassManager::RecordGBufferToShaderRead(CommandBuffer* pCmdBuffer,
         colorCmd, ImageLayout::COLOR_ATTACHMENT_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
     pCmdBuffer->RecordCommand(colorCmd);
 
-    stltype::vector<const Texture*> depthTextures = {m_globalRendererAttachments.directionalLightShadowMap.pTexture,
-                                                     m_globalRendererAttachments.depthAttachment.GetTexture()};
+    stltype::vector<const Texture*> depthTextures = {m_globalRendererAttachments.directionalLightShadowMap.pTexture};
     ImageLayoutTransitionCmd depthCmd(depthTextures);
     depthCmd.oldLayout = ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     depthCmd.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
     VkTextureManager::SetLayoutBarrierMasks(
         depthCmd, ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
     pCmdBuffer->RecordCommand(depthCmd);
+}
+
+void PassManager::RecordDepthToReadOnly(CommandBuffer* pCmdBuffer)
+{
+    stltype::vector<const Texture*> depthTextures = {m_globalRendererAttachments.depthAttachment.GetTexture()};
+    ImageLayoutTransitionCmd depthCmd(depthTextures);
+    depthCmd.oldLayout = ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    depthCmd.newLayout = ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+    VkTextureManager::SetLayoutBarrierMasks(
+        depthCmd, ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+    pCmdBuffer->RecordCommand(depthCmd);
+}
+
+void PassManager::RecordSSSOutputToGeneral(CommandBuffer* pCmdBuffer)
+{
+    if (!m_pScreenSpaceShadowTexture) return;
+    ImageLayoutTransitionCmd outputToGeneralCmd(stltype::vector<const Texture*>{m_pScreenSpaceShadowTexture});
+    outputToGeneralCmd.oldLayout = ImageLayout::UNDEFINED;
+    outputToGeneralCmd.newLayout = ImageLayout::GENERAL;
+    VkTextureManager::SetLayoutBarrierMasks(outputToGeneralCmd, ImageLayout::UNDEFINED, ImageLayout::GENERAL);
+    pCmdBuffer->RecordCommand(outputToGeneralCmd);
+}
+
+void PassManager::RecordSSSOutputToShaderRead(CommandBuffer* pCmdBuffer)
+{
+    if (!m_pScreenSpaceShadowTexture) return;
+    ImageLayoutTransitionCmd generalToShaderReadCmd(stltype::vector<const Texture*>{m_pScreenSpaceShadowTexture});
+    generalToShaderReadCmd.oldLayout = ImageLayout::GENERAL;
+    generalToShaderReadCmd.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
+    VkTextureManager::SetLayoutBarrierMasks(generalToShaderReadCmd, ImageLayout::GENERAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    pCmdBuffer->RecordCommand(generalToShaderReadCmd);
 }
 
 void PassManager::RecordUIToShaderRead(CommandBuffer* pCmdBuffer, const Texture* pUITexture)
@@ -525,15 +609,19 @@ void PassManager::ReadAndPublishTimingResults(u32 frameIdx)
     {
         passTimings.push_back({r.passName, r.gpuTimeMs, r.startMs, r.endMs, r.queueFamilyIndex, r.wasRun});
     }
+    u64 totalVram = 0;
+    u64 usedVram = 0;
+    g_pGPUMemoryManager->GetVramStats(totalVram, usedVram);
+
     g_pApplicationState->RegisterUpdateFunction(
-        [passTimings, totalTime](ApplicationState& state)
+        [passTimings, totalTime, totalVram, usedVram](ApplicationState& state)
         {
             state.renderState.passTimings.clear();
             state.renderState.passTimings = passTimings;
             state.renderState.totalGPUTimeMs = totalTime;
+            state.renderState.totalVramBytes = totalVram;
+            state.renderState.usedVramBytes = usedVram;
         });
-
-    m_gpuTimingQuery.ClearRunFlags();
 }
 
 // Ensure destructor symbol exists
@@ -886,6 +974,28 @@ void RenderPasses::PassManager::RecreateGbuffers(const mathstl::Vector2& resolut
     gbufferRequestDebug.AddName("GBuffer Debug");
     gbuffer.Set(GBufferTextureType::GBufferDebug,
                 static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(gbufferRequestDebug)));
+
+    DynamicTextureRequest sssRequest = gbufferRequestBase;
+    sssRequest.format = TexFormat::R8_UNORM;
+    sssRequest.handle = g_pTexManager->GenerateHandle();
+    sssRequest.AddName("Screen Space Shadows");
+    sssRequest.usage = Usage::Storage | Usage::Sampled;
+
+    if (m_pScreenSpaceShadowTexture)
+    {
+        g_pTexManager->FreeTexture(m_screenSpaceShadowsTextureHandle);
+    }
+
+    m_pScreenSpaceShadowTexture = static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(sssRequest));
+    m_screenSpaceShadowsTextureHandle = sssRequest.handle;
+    m_screenSpaceShadowBindlessHandle = g_pTexManager->MakeTextureBindless(sssRequest.handle);
+    m_globalRendererAttachments.pScreenSpaceShadowTexture = m_pScreenSpaceShadowTexture;
+
+    for (auto& passData : m_mainPassData)
+    {
+        passData.pScreenSpaceShadowTexture = m_pScreenSpaceShadowTexture;
+        passData.screenSpaceShadows = m_screenSpaceShadowBindlessHandle;
+    }
 
     stltype::vector<BindlessTextureHandle> gbufferHandles = {
         g_pTexManager->MakeTextureBindless(gbufferRequestPosition.handle),

@@ -83,6 +83,7 @@ struct PipelineInfo
     u32 viewMask{0};
     bool dynamicViewScissor{true};
     bool hasDepth{true};
+    bool depthWriteEnable{true};
 };
 
 // Function declarations - implementations in Pipeline.cpp

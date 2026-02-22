@@ -24,7 +24,7 @@ void DebugShapePass::Init(RendererAttachmentInfo& attachmentInfo,
         CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBufferDebug), LoadOp::CLEAR, nullptr);
     
     m_mainRenderingData.depthAttachment =
-        CreateDefaultDepthAttachment(LoadOp::LOAD, attachmentInfo.depthAttachment.GetTexture());
+        CreateReadOnlyDepthAttachment(LoadOp::LOAD, attachmentInfo.depthAttachment.GetTexture());
     m_mainRenderingData.colorAttachments = {debugAttachment};
 
     InitBaseData(attachmentInfo);
@@ -43,6 +43,7 @@ void DebugShapePass::BuildPipelines()
     PipelineInfo info{};
     // info.descriptorSetLayout.pipelineSpecificDescriptors.emplace_back();
     info.descriptorSetLayout.sharedDescriptors = m_sharedDescriptors;
+    info.depthWriteEnable = false;
     info.attachmentInfos =
         CreateAttachmentInfo(m_mainRenderingData.colorAttachments, m_mainRenderingData.depthAttachment);
     m_solidDebugObjectsPSO = PSO(
@@ -140,6 +141,8 @@ void DebugShapePass::Render(const MainPassData& data,
 
     if (data.bufferDescriptors.empty() == false)
     {
+        StartRenderPassProfilingScope(pCmdBuffer);
+
         const auto transformSSBOSet = data.bufferDescriptors.at(UBO::DescriptorContentsType::GlobalInstanceData);
         const auto texArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessTextureArray);
 
@@ -173,6 +176,7 @@ void DebugShapePass::Render(const MainPassData& data,
             pCmdBuffer->RecordCommand(cmd);
             pCmdBuffer->RecordCommand(EndRenderingCmd{});
         }
+        EndRenderPassProfilingScope(pCmdBuffer);
     }
 }
 

@@ -19,6 +19,7 @@
 #include "Core/SceneGraph/Mesh.h"
 #include "Core/WindowManager.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
+#include "EASTL/fixed_vector.h"
 #include "GBuffer.h"
 #include "LightResourceManager.h"
 
@@ -121,12 +122,14 @@ struct MainPassData
     mathstl::Matrix mainCamInvViewProj;
     // Views we want to render with CSMs
     stltype::vector<CsmRenderView> csmViews;
-    // Views we just render into normal shadowmaps whatever those will end up
-    // being
+    // Views we just render into normal shadowmaps whatever those will end up being
     stltype::vector<RenderView> shadowViews;
     stltype::vector<DescriptorSet*> viewDescriptorSets;
     stltype::hash_map<UBO::DescriptorContentsType, DescriptorSet*> bufferDescriptors;
     CascadedShadowMap directionalLightShadowMap;
+    Texture* pScreenSpaceShadowTexture;
+    BindlessTextureHandle screenSpaceShadows;
+    BindlessTextureHandle depthBufferBindlessHandle;
     u32 cascades;
     f32 csmStepSize;
 };
@@ -135,6 +138,7 @@ enum class PassType
 {
     EarlyAsyncCompute,
     PreProcess,
+    DepthReliantCompute,
     Main,
     UI,
     Debug,
@@ -155,14 +159,15 @@ struct PassStage
     stltype::fixed_vector<PassType, 8> groups;
 };
 
-inline const PassStage PASS_SCHEDULE[] = {
+inline const stltype::fixed_vector<PassStage, 6> PASS_SCHEDULE = {
     PassStage{{PassType::EarlyAsyncCompute}},
     PassStage{{PassType::PreProcess}},
+    PassStage{{PassType::DepthReliantCompute}},
     PassStage{{PassType::Main, PassType::Debug, PassType::Shadow}},
     PassStage{{PassType::UI}},
     PassStage{{PassType::Composite}},
 };
-inline constexpr u32 STAGE_COUNT = sizeof(PASS_SCHEDULE) / sizeof(PassStage);
+inline const u32 STAGE_COUNT = PASS_SCHEDULE.size();
 
 inline bool IsComputePass(PassType type)
 {
@@ -174,6 +179,7 @@ struct GraphicsFrameContext
     CommandPool cmdPool;
     stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> cmdBuffers{SWAPCHAIN_IMAGES};
     stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> compositeCmdBuffers{SWAPCHAIN_IMAGES};
+    stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> depthPrePassCmdBuffers{SWAPCHAIN_IMAGES};
     bool initialized{false};
 };
 
@@ -181,6 +187,7 @@ struct ComputeFrameContext
 {
     CommandPool cmdPool;
     stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> cmdBuffers{SWAPCHAIN_IMAGES};
+    stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> sssComputeCmdBuffers{SWAPCHAIN_IMAGES};
     bool initialized{false};
 };
 
@@ -193,6 +200,7 @@ struct FrameRendererContext
     // Separate timeline for the async compute group
     TimelineSemaphore computeTimeline{};
     u64 nextComputeTimelineValue{1};
+    u64 nextSSSComputeTimelineValue{1};
 
     // Signaled when the swapchain image is transitioned to the present layout, waited on by present
     Semaphore pPresentLayoutTransitionSignalSemaphore{};
@@ -236,6 +244,7 @@ struct RendererAttachmentInfo
     CascadedShadowMap directionalLightShadowMap;
     stltype::hash_map<ColorAttachmentType, stltype::vector<ColorAttachment>> colorAttachments;
     DepthBufferAttachmentVulkan depthAttachment;
+    Texture* pScreenSpaceShadowTexture{nullptr};
 };
 
 struct InstancedMeshDataInfo
@@ -320,6 +329,9 @@ protected:
     void RecordGBufferToShaderRead(CommandBuffer* pCmdBuffer,
                                    const stltype::vector<const Texture*>& gbufferTextures);
     void RecordUIToShaderRead(CommandBuffer* pCmdBuffer, const Texture* pUITexture);
+    void RecordDepthToReadOnly(CommandBuffer* pCmdBuffer);
+    void RecordSSSOutputToGeneral(CommandBuffer* pCmdBuffer);
+    void RecordSSSOutputToShaderRead(CommandBuffer* pCmdBuffer);
     void RecordSwapchainToPresent(CommandBuffer* pCmdBuffer);
 
 private:
@@ -442,6 +454,9 @@ private:
     bool m_needsToPropagateMainDataUpdate{false};
     u32 m_frameIdxToPropagate{0};
     BindlessTextureHandle m_depthBindlessHandle{0};
+    Texture* m_pScreenSpaceShadowTexture{nullptr};
+    TextureHandle m_screenSpaceShadowsTextureHandle{0};
+    BindlessTextureHandle m_screenSpaceShadowBindlessHandle{0};
 };
 } // namespace RenderPasses
 

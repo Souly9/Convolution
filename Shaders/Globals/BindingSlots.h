@@ -2,8 +2,10 @@
 #define ShadowMapDataBindingSlot             301
 #define GlobalBindlessTextureBufferSlot      1
 #define GlobalBindlessArrayTextureBufferSlot 2
+#define GlobalBindlessImageBufferSlot        3
 #define GlobalTileArraySSBOSlot              1
 #define GlobalLightDataUBOSlot               2
+
 #define GlobalPerObjectDataSSBOSlot          502
 #define PassPerObjectDataSSBOSlot            1
 #define ClusterGridSSBOSlot                  1

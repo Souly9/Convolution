@@ -203,8 +203,8 @@ struct ImageLayoutTransitionCmd : public CommandBase
     u32 baseArrayLayer{0};
     u32 layerCount{1};
 
-    u32 srcAccessMask;
-    u32 dstAccessMask;
+    u64 srcAccessMask;
+    u64 dstAccessMask;
 
     u32 srcStage;
     u32 dstStage;
@@ -383,7 +383,17 @@ public:
         m_executionFinishedCallbacks.clear();
     }
 
+    void SetFrameIdx(u32 idx)
+    {
+        m_frameIdx = idx;
+    }
+    u32 GetFrameIdx() const
+    {
+        return m_frameIdx;
+    }
+
 protected:
+    u32 m_frameIdx{0};
     stltype::vector<Command> m_commands;
     CommandBufferStats m_stats{};
     // Gets called when buffer gets destroyed or reset indirectly guaranteeing execution has finished

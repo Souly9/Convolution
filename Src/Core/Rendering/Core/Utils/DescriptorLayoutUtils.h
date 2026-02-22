@@ -14,6 +14,8 @@ static inline VkDescriptorType Conv(const DescriptorType& m)
         case DescriptorType::CombinedImageSampler:
         case DescriptorType::BindlessTextures:
             return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        case DescriptorType::BindlessImages:
+            return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
         default:
             DEBUG_ASSERT(false);
     }
@@ -32,6 +34,7 @@ static inline VkDescriptorBindingFlags ConvFlags(const DescriptorType& m)
         case DescriptorType::CombinedImageSampler:
             return 0;
         case DescriptorType::BindlessTextures:
+        case DescriptorType::BindlessImages:
             return VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
         default:
             DEBUG_ASSERT(false);

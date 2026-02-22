@@ -21,6 +21,8 @@ void DescriptorPoolVulkan::Create(const DescriptorPoolCreateInfo& createInfo)
     {
         poolSizes.push_back(
             CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_BINDLESS_TEXTURES * 2));
+        poolSizes.push_back(
+            CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, MAX_BINDLESS_TEXTURES));
     }
     if (createInfo.enableStorageBufferDescriptors)
     {
@@ -156,7 +158,17 @@ void DescriptorSetVulkan::WriteBufferUpdate(
 void DescriptorSetVulkan::WriteBindlessTextureUpdate(const TextureVulkan* pTex, u32 idx, u32 bindingSlot)
 {
     VkDescriptorImageInfo imageInfo{};
-    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    
+    auto usage = pTex->GetInfo().usage;
+    if (((u32)usage & (u32)Usage::DepthAttachment) || ((u32)usage & (u32)Usage::StencilAttachment))
+    {
+        imageInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+    }
+    else
+    {
+        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    }
+    
     imageInfo.imageView = pTex->GetImageView();
     imageInfo.sampler = pTex->GetSampler();
 
@@ -166,6 +178,27 @@ void DescriptorSetVulkan::WriteBindlessTextureUpdate(const TextureVulkan* pTex, 
     descriptorWrite.dstBinding = bindingSlot == 0 ? m_bindingSlot : bindingSlot;
     descriptorWrite.dstArrayElement = idx;
     descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorWrite.descriptorCount = 1;
+    descriptorWrite.pImageInfo = &imageInfo;
+    descriptorWrite.pBufferInfo = nullptr;      // Optional
+    descriptorWrite.pTexelBufferView = nullptr; // Optional
+
+    vkUpdateDescriptorSets(VK_LOGICAL_DEVICE, 1, &descriptorWrite, 0, nullptr);
+}
+
+void DescriptorSetVulkan::WriteBindlessImageUpdate(const TextureVulkan* pTex, u32 idx, u32 bindingSlot)
+{
+    VkDescriptorImageInfo imageInfo{};
+    imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+    imageInfo.imageView = pTex->GetImageView();
+    imageInfo.sampler = VK_NULL_HANDLE;
+
+    VkWriteDescriptorSet descriptorWrite{};
+    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrite.dstSet = GetRef();
+    descriptorWrite.dstBinding = bindingSlot == 0 ? m_bindingSlot : bindingSlot;
+    descriptorWrite.dstArrayElement = idx;
+    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     descriptorWrite.descriptorCount = 1;
     descriptorWrite.pImageInfo = &imageInfo;
     descriptorWrite.pBufferInfo = nullptr;      // Optional

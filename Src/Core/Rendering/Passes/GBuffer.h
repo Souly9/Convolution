@@ -1,6 +1,6 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
-#include "Core/Global/FrameGlobals.h"
+
 #include "Core/Rendering/Core/RenderingForwardDecls.h"
 #include "Core/Rendering/Core/RenderDefinitions.h"
 
@@ -22,15 +22,15 @@ struct GBufferInfo
         switch (type)
         {
             case GBufferTextureType::GBufferAlbedo:
-                return SWAPCHAIN_FORMAT;
+                return TexFormat::R32G32B32A32_FLOAT;
             case GBufferTextureType::GBufferNormal:
-                return SWAPCHAIN_FORMAT;
+                return TexFormat::R32G32B32A32_FLOAT;
             case GBufferTextureType::TexCoordMatData:
-                return SWAPCHAIN_FORMAT;
+                return TexFormat::R32G32B32A32_FLOAT;
             case GBufferTextureType::GBufferUI:
                 return TexFormat::R8G8B8A8_UNORM;
             case GBufferTextureType::GBufferDebug:
-                return SWAPCHAIN_FORMAT;
+                return TexFormat::R32G32B32A32_FLOAT;
             default:
                 DEBUG_ASSERT(false);
                 return TexFormat::UNDEFINED;

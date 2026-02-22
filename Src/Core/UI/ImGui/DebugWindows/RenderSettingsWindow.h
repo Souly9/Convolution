@@ -64,8 +64,9 @@ public:
                 }
                 if (ImGui::SliderFloat("Reference Luminance (nits)", &refLuminance, 50.0f, 500.0f))
                 {
-                    g_pApplicationState->RegisterUpdateFunction([refLuminance](ApplicationState& state)
-                                                                { state.renderState.gt7ReferenceLuminance = refLuminance; });
+                    g_pApplicationState->RegisterUpdateFunction(
+                        [refLuminance](ApplicationState& state)
+                        { state.renderState.gt7ReferenceLuminance = refLuminance; });
                 }
             }
         }
@@ -87,51 +88,60 @@ public:
         bool debugCulling = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::CullFrustum);
         if (ImGui::Checkbox("Debug Culling", &debugCulling))
         {
-            g_pApplicationState->RegisterUpdateFunction([debugCulling](ApplicationState& state)
-                                                        { mathstl::setFlag(state.renderState.debugFlags, (u32)DebugFlags::CullFrustum, debugCulling); });
+            g_pApplicationState->RegisterUpdateFunction(
+                [debugCulling](ApplicationState& state)
+                { mathstl::setFlag(state.renderState.debugFlags, (u32)DebugFlags::CullFrustum, debugCulling); });
         }
 
         ImGui::Separator();
-        ImGui::Text("Shadows");
-        bool shadowsEnabled = renderState.shadowsEnabled;
-        if (ImGui::Checkbox("Shadows Enabled", &shadowsEnabled))
+        if (ImGui::CollapsingHeader("Shadow Settings"))
         {
-            g_pApplicationState->RegisterUpdateFunction([shadowsEnabled](ApplicationState& state)
-                                                        { state.renderState.shadowsEnabled = shadowsEnabled; });
-        }
-        // CSM Resolution selector
-        const char* resolutionOptions[] = {"512", "1024", "2048", "4096", "8192", "16384"};
-        const int resolutionValues[] = {512, 1024, 2048, 4096, 8192, 16384};
-        int currentRes = static_cast<int>(renderState.csmResolution.x);
-        int currentIdx = 1; // Default to 1024
-        for (int i = 0; i < 6; ++i)
-        {
-            if (resolutionValues[i] == currentRes)
+            bool shadowsEnabled = renderState.shadowsEnabled;
+            if (ImGui::Checkbox("CSM Shadows Enabled", &shadowsEnabled))
             {
-                currentIdx = i;
-                break;
+                g_pApplicationState->RegisterUpdateFunction([shadowsEnabled](ApplicationState& state)
+                                                            { state.renderState.shadowsEnabled = shadowsEnabled; });
+            }
+            bool sssEnabled = renderState.sssEnabled;
+            if (ImGui::Checkbox("Screen Space Shadows Enabled", &sssEnabled))
+            {
+                g_pApplicationState->RegisterUpdateFunction([sssEnabled](ApplicationState& state)
+                                                            { state.renderState.sssEnabled = sssEnabled; });
+            }
+            // CSM Resolution selector
+            const char* resolutionOptions[] = {"512", "1024", "2048", "4096", "8192", "16384"};
+            const int resolutionValues[] = {512, 1024, 2048, 4096, 8192, 16384};
+            int currentRes = static_cast<int>(renderState.csmResolution.x);
+            int currentIdx = 1;
+            for (int i = 0; i < 6; ++i)
+            {
+                if (resolutionValues[i] == currentRes)
+                {
+                    currentIdx = i;
+                    break;
+                }
+            }
+            if (ImGui::Combo("Shadowmap Resolution", &currentIdx, resolutionOptions, IM_ARRAYSIZE(resolutionOptions)))
+            {
+                f32 newRes = static_cast<f32>(resolutionValues[currentIdx]);
+                g_pApplicationState->RegisterUpdateFunction(
+                    [newRes](auto& state) { state.renderState.csmResolution = mathstl::Vector2(newRes, newRes); });
+            }
+            s32 currentCascades = renderState.directionalLightCascades;
+            if (ImGui::SliderInt("Cascades", &currentCascades, 1, 4))
+            {
+                g_pApplicationState->RegisterUpdateFunction(
+                    [currentCascades](ApplicationState& state)
+                    { state.renderState.directionalLightCascades = currentCascades; });
+            }
+
+            f32 csmLambda = renderState.csmLambda;
+            if (ImGui::SliderFloat("CSM Lambda", &csmLambda, 0.001f, 1.0f))
+            {
+                g_pApplicationState->RegisterUpdateFunction([csmLambda](ApplicationState& state)
+                                                            { state.renderState.csmLambda = csmLambda; });
             }
         }
-        if (ImGui::Combo("Shadowmap Resolution", &currentIdx, resolutionOptions, IM_ARRAYSIZE(resolutionOptions)))
-        {
-            f32 newRes = static_cast<f32>(resolutionValues[currentIdx]);
-            g_pApplicationState->RegisterUpdateFunction(
-                [newRes](auto& state) { state.renderState.csmResolution = mathstl::Vector2(newRes, newRes); });
-        }
-        s32 currentCascades = renderState.directionalLightCascades;
-        if (ImGui::SliderInt("Cascades", &currentCascades, 1, 4))
-        {
-            g_pApplicationState->RegisterUpdateFunction([currentCascades](ApplicationState& state)
-                                                        { state.renderState.directionalLightCascades = currentCascades; });
-        }
-
-        f32 csmLambda = renderState.csmLambda;
-        if (ImGui::SliderFloat("CSM Lambda", &csmLambda, 0.001f, 1.0f))
-        {
-            g_pApplicationState->RegisterUpdateFunction([csmLambda](ApplicationState& state)
-                                                        { state.renderState.csmLambda = csmLambda; });
-        }
-
         ImGui::Separator();
         ImGui::Text("Clustered Lighting");
 

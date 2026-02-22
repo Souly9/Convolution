@@ -265,3 +265,24 @@ void GPUMemManager<Vulkan>::FreeVMA()
 {
     vmaDestroyAllocator(s_vmaAllocator);
 }
+
+void GPUMemManager<Vulkan>::GetVramStats(u64& total, u64& used)
+{
+    total = VkGlobals::GetTotalVram();
+    used = 0;
+    if (m_allocatorMode != Allocator::VMA || s_vmaAllocator == VK_NULL_HANDLE)
+        return;
+
+    const VkPhysicalDeviceMemoryProperties& memProps = VkGlobals::GetPhysicalDeviceMemoryProperties();
+
+    VmaBudget budgets[VK_MAX_MEMORY_HEAPS];
+    vmaGetHeapBudgets(s_vmaAllocator, budgets);
+
+    for (u32 i = 0; i < memProps.memoryHeapCount; ++i)
+    {
+        if (memProps.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)
+        {
+            used += budgets[i].usage;
+        }
+    }
+}

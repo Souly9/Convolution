@@ -374,7 +374,7 @@ void CBufferVulkan::Bake()
 
     // Register callback to update stats
     CommandBufferStats capturedStats = m_stats; 
-    AddExecutionFinishedCallback([=]() {
+    AddExecutionFinishedCallback([=, this]() {
         RendererState::SceneRenderStats ctx;
         ctx.numDescriptorBinds = capturedStats.descriptorBinds;
         ctx.numPipelineBinds = capturedStats.pipelineBinds;
@@ -382,10 +382,9 @@ void CBufferVulkan::Bake()
         ctx.numDrawIndirectCalls = capturedStats.drawIndirectCalls;
         ctx.numComputeDispatches = capturedStats.computeDispatches;
         
-        
-        VkGlobals::GetProfiler()->AddCPUStats(ctx, queryIdx);
-
-        VkGlobals::GetProfiler()->AddQuery(queryIdx);
+        // Capture every commandbuffer for profiling
+        VkGlobals::GetProfiler()->AddCPUStats(ctx, m_frameIdx);
+        VkGlobals::GetProfiler()->AddQuery(queryIdx, m_frameIdx);
     });
 
     m_commands.clear();

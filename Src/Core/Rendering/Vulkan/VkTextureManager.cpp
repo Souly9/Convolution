@@ -24,6 +24,7 @@ static TextureInfo RequestToTexInfo(const DynamicTextureRequest& info)
     genericInfo.hasMipMaps = info.hasMipMaps;
     genericInfo.format = info.format;
     genericInfo.layout = ImageLayout::UNDEFINED;
+    genericInfo.usage = info.usage;
     return genericInfo;
 }
 
@@ -143,6 +144,13 @@ void VkTextureManager::PostRender()
         {
             m_bindlessDescriptorSet->WriteBindlessTextureUpdate(pTex, m_lastBindlessTextureWriteIdx);
         }
+        
+        if ((u32)pTex->GetInfo().usage & (u32)Usage::Storage)
+        {
+            m_bindlessImageDescriptorSet->WriteBindlessImageUpdate(
+                pTex, m_lastBindlessTextureWriteIdx, s_globalBindlessImageBufferBindingSlot);
+        }
+
         ++m_lastBindlessTextureWriteIdx;
     }
     m_texturesToMakeBindless.clear();
@@ -707,6 +715,29 @@ void VkTextureManager::SetLayoutBarrierMasks(ImageLayoutTransitionCmd& transitio
         transitionCmd.srcStage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
         transitionCmd.dstStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
     }
+    // Not strictly great but mainly used for compute shaders
+    else if (oldLayout == ImageLayout::UNDEFINED && newLayout == ImageLayout::GENERAL)
+    {
+        transitionCmd.srcAccessMask = 0;
+        transitionCmd.dstAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+    }
+    else if (oldLayout == ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL && newLayout == ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL)
+    {
+        transitionCmd.srcAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        transitionCmd.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
+        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+    }
+    // Not strictly great but mainly used for compute shaders
+    else if (oldLayout == ImageLayout::GENERAL && newLayout == ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+    {
+        transitionCmd.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+        transitionCmd.dstAccessMask = 0;
+        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        transitionCmd.dstStage = 0;
+    }
     else
     {
         DEBUG_ASSERT(false);
@@ -736,15 +767,25 @@ VkImageCreateInfo VkTextureManager::FillImageCreateInfoFlat2D(const DynamicTextu
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     
     const auto& indices = VkGlobals::GetQueueFamilyIndices();
-    if (indices.graphicsFamily.has_value() && indices.transferFamily.has_value() && 
-        indices.graphicsFamily.value() != indices.transferFamily.value())
+    static u32 families[3];
+    u32 count = 0;
+    
+    auto addFamily = [&](stltype::optional<u32> family) {
+        if (family.has_value()) {
+            for (u32 i = 0; i < count; ++i) if (families[i] == family.value()) return;
+            families[count++] = family.value();
+        }
+    };
+
+    addFamily(indices.graphicsFamily);
+    addFamily(indices.computeFamily);
+    addFamily(indices.transferFamily);
+
+    if (count > 1)
     {
         imageInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
-        imageInfo.queueFamilyIndexCount = 2;
-        static u32 queueFamilyIndices[2];
-        queueFamilyIndices[0] = indices.graphicsFamily.value();
-        queueFamilyIndices[1] = indices.transferFamily.value();
-        imageInfo.pQueueFamilyIndices = queueFamilyIndices;
+        imageInfo.queueFamilyIndexCount = count;
+        imageInfo.pQueueFamilyIndices = families;
     }
     else
     {
@@ -798,6 +839,12 @@ void VkTextureManager::CreateBindlessDescriptorSet()
 
         m_bindlessDescriptorSet = m_bindlessDescriptorPool.CreateDescriptorSet(m_bindlessDescriptorSetLayout.GetRef());
         m_bindlessDescriptorSet->SetBindingSlot(s_globalBindlessTextureBufferBindingSlot);
+
+        m_bindlessImageDescriptorSetLayout = DescriptorLaytoutUtils::CreateOneDescriptorSetForAll(
+            {PipelineDescriptorLayout(Bindless::BindlessType::GlobalImages)});
+
+        m_bindlessImageDescriptorSet = m_bindlessDescriptorPool.CreateDescriptorSet(m_bindlessImageDescriptorSetLayout.GetRef());
+        m_bindlessImageDescriptorSet->SetBindingSlot(s_globalBindlessImageBufferBindingSlot);
     }
 }
 

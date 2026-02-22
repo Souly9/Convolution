@@ -13,6 +13,8 @@ QueueFamilyIndices VkGlobals::s_indices{};
 Queues VkGlobals::s_queues{};
 VkPhysicalDevice VkGlobals::s_physicalDevice = VK_NULL_HANDLE;
 VkPhysicalDeviceProperties VkGlobals::s_physicalDeviceProperties{};
+VkPhysicalDeviceMemoryProperties VkGlobals::s_physicalDeviceMemoryProperties{};
+u64 VkGlobals::s_totalVram = 0;
 stltype::unique_ptr<GPUMemManager<Vulkan>> g_pGPUMemoryManager = stltype::make_unique<GPUMemManager<Vulkan>>();
 Texture* VkGlobals::s_pDepthStencilBuffer = nullptr;
 VulkanContext VkGlobals::s_context{};
@@ -74,6 +76,14 @@ const VkPhysicalDeviceProperties& VkGlobals::GetPhysicalDeviceProperties()
 {
     return s_physicalDeviceProperties;
 }
+const VkPhysicalDeviceMemoryProperties& VkGlobals::GetPhysicalDeviceMemoryProperties()
+{
+    return s_physicalDeviceMemoryProperties;
+}
+u64 VkGlobals::GetTotalVram()
+{
+    return s_totalVram;
+}
 
 Texture* VkGlobals::GetDepthStencilBuffer()
 {
@@ -93,6 +103,18 @@ void VkGlobals::SetProfiler(VkProfiler* pProfiler)
 void VkGlobals::SetPhysicalDeviceProperties(const VkPhysicalDeviceProperties& physDeviceProps)
 {
     s_physicalDeviceProperties = physDeviceProps;
+}
+void VkGlobals::SetPhysicalDeviceMemoryProperties(const VkPhysicalDeviceMemoryProperties& memProps)
+{
+    s_physicalDeviceMemoryProperties = memProps;
+    s_totalVram = 0;
+    for (u32 i = 0; i < memProps.memoryHeapCount; ++i)
+    {
+        if (memProps.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)
+        {
+            s_totalVram += memProps.memoryHeaps[i].size;
+        }
+    }
 }
 
 void VkGlobals::SetLogicalDevice(VkDevice physDevice)

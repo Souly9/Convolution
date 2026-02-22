@@ -38,11 +38,14 @@ public:
     static QueueFamilyIndices GetQueueFamilyIndices();
     static VkPhysicalDevice GetPhysicalDevice();
     static const VkPhysicalDeviceProperties& GetPhysicalDeviceProperties();
+    static const VkPhysicalDeviceMemoryProperties& GetPhysicalDeviceMemoryProperties();
+    static u64 GetTotalVram();
     static Texture* GetDepthStencilBuffer();
     static void SetContext(const VulkanContext& context);
     static void SetProfiler(VkProfiler* pProfiler);
 
     static void SetPhysicalDeviceProperties(const VkPhysicalDeviceProperties& physDeviceProps);
+    static void SetPhysicalDeviceMemoryProperties(const VkPhysicalDeviceMemoryProperties& memProps);
     static void SetLogicalDevice(VkDevice physDevice);
     static void SetSwapChainImageFormat(VkFormat physDevice);
     static void SetMainSwapChain(const VkSwapchainKHR swapChain);
@@ -69,5 +72,7 @@ private:
     static Queues s_queues;
     static VkPhysicalDevice s_physicalDevice;
     static VkPhysicalDeviceProperties s_physicalDeviceProperties;
+    static VkPhysicalDeviceMemoryProperties s_physicalDeviceMemoryProperties;
+    static u64 s_totalVram;
     static VulkanContext s_context;
 };

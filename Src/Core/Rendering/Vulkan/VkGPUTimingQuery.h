@@ -24,5 +24,4 @@ private:
     u32 m_queryCount{0};
     stltype::fixed_vector<stltype::vector<u64>, FRAMES_IN_FLIGHT, false> m_timestampResults{FRAMES_IN_FLIGHT};
     stltype::fixed_vector<bool, FRAMES_IN_FLIGHT, false> m_poolInitialized;
-    u32 m_currentFrameIdx{0};
 };

@@ -123,7 +123,7 @@ public:
     }
 
 private:
-    VkPipelineDepthStencilStateCreateInfo CreateDepthStencilLayout();
+    VkPipelineDepthStencilStateCreateInfo CreateDepthStencilLayout(bool depthWriteEnable);
 
     VkPipeline m_pipeline{VK_NULL_HANDLE};
 };

@@ -23,6 +23,7 @@ public:
     void TryFreeMemory(GPUMemoryHandle memoryHandle);
 
     void BindImageMemory(GPUMemoryHandle handle);
+    void GetVramStats(u64& total, u64& used);
 
 protected:
     void FreeMemory(GPUMemoryHandle memoryHandle);

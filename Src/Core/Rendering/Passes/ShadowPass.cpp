@@ -157,6 +157,7 @@ void CSMPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comman
                                      (u32)extents.x);
 
         uboData.cascadeCount = (s32)data.cascades;
+        uboData.screenSpaceShadows = data.screenSpaceShadows;
         for (u32 i = 0; i < 4; ++i)
         {
             uboData.cascadeSplits[i] =
@@ -188,7 +189,7 @@ void CSMPass::CreateSharedDescriptorLayout()
 
 bool CSMPass::WantsToRender() const
 {
-    return NeedToRender(m_indirectCmdBuffer);
+    return NeedToRender(m_indirectCmdBuffer) && g_pApplicationState->GetCurrentApplicationState().renderState.shadowsEnabled;
 }
 
 void CSMPass::SetCascadeCount(u32 cascades)
@@ -230,7 +231,6 @@ stltype::array<mathstl::Matrix, 16> CSMPass::ComputeLightViewProjMatrices(
 
     mathstl::Vector3 lightDirection = lightDir;
     lightDirection.Normalize();
-    lightDirection = -lightDirection;
 
     mathstl::Vector3 up = (std::abs(lightDirection.Dot(mathstl::Vector3(0, 1, 0))) > 0.999f)
                               ? mathstl::Vector3(0, 0, 1)
