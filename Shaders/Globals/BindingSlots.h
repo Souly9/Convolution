@@ -1,4 +1,4 @@
-#define ViewUBOBindingSlot                   300
+#define SharedDataUBOBindingSlot             300
 #define ShadowMapDataBindingSlot             301
 #define GlobalBindlessTextureBufferSlot      1
 #define GlobalBindlessArrayTextureBufferSlot 2

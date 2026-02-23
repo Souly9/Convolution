@@ -5,8 +5,8 @@
 
 vec3 GT7TMO(vec3 color)
 {
-    float paperWhite = lightUniforms.data.GT7Params.x; // e.g. 250.0
-    float refLuminance = lightUniforms.data.GT7Params.y; // e.g. 100.0
+    float paperWhite = ubo.gt7PaperWhite; // e.g. 250.0
+    float refLuminance = ubo.gt7ReferenceLuminance; // e.g. 100.0
 
     // If uniforms are 0 (uninitialized), set defaults
     if (paperWhite < 1.0) paperWhite = 250.0;

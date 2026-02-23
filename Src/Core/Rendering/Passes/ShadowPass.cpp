@@ -51,19 +51,17 @@ void CSMPass::BuildPipelines()
     ScopedZone("ShadowPass::BuildPipelines");
 
     auto mainVert = Shader("Shaders/DirLightCSM.vert.spv", "main");
-    auto mainFrag = Shader("Shaders/DirLightCSM.frag.spv", "main");
 
     PipelineInfo info{};
-    // info.descriptorSetLayout.pipelineSpecificDescriptors.emplace_back();
-    // info.pushConstantInfo.constants.push_back({ ShaderTypeBits::Vertex, 0, sizeof(mathstl::Matrix) * 3 });
     info.descriptorSetLayout.sharedDescriptors = m_sharedDescriptors;
     info.attachmentInfos =
         CreateAttachmentInfo({m_mainRenderingData.colorAttachments}, m_mainRenderingData.depthAttachment);
     // Compute viewMask from cascade count: (1 << cascades) - 1 gives bitmask for all layers
     info.viewMask = (1 << m_cascadeCount) - 1;
+    info.depthCompareOp = DepthCompareOp::LESS_OR_EQUAL;
     info.rasterizerInfo.cullmode = CullMode::BACK;
     m_mainPSO = PSO(
-        ShaderCollection{&mainVert, &mainFrag}, PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions}, info);
+        ShaderCollection{&mainVert, nullptr}, PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions}, info);
 }
 
 void CSMPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
@@ -92,7 +90,6 @@ void CSMPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
     }
     RebuildPerObjectBuffer(instanceDataIndices);
     m_indirectCmdBuffer.FillCmds();
-    // m_needsBufferSync = true;
 }
 
 void CSMPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
@@ -124,7 +121,7 @@ void CSMPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comman
         const auto transformSSBOSet = data.bufferDescriptors.at(UBO::DescriptorContentsType::GlobalInstanceData);
         const auto texArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessTextureArray);
         cmd.descriptorSets = {texArraySet,
-                              ctx.mainViewUBODescriptor,
+                              ctx.sharedDataUBODescriptor,
                               transformSSBOSet,
                               passCtx.m_perObjectDescriptor,
                               ctx.shadowViewUBODescriptor};

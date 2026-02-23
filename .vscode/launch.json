@@ -2,6 +2,17 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Convolution (MSVC Natvis)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/bin/Convolution.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}/bin",
+            "console": "integratedTerminal",
+            "visualizerFile": "${workspaceFolder}/External/EASTL/doc/EASTL.natvis",
+            "showDisplayString": true
+        },
+        {
             "name": "Convolution (LLDB)",
             "type": "lldb",
             "request": "launch",

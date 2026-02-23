@@ -1,6 +1,6 @@
 #version 450 core
 #extension GL_ARB_shading_language_include : enable
-#define ViewUBOSet 1
+#define SharedDataUBOSet     1
 #define TransformSSBOSet 2
 #define PassPerObjectDataSet 3
 layout(location = 0) in vec3 inPosition;

@@ -3,6 +3,8 @@
 
 #include "Core/Global/State/ApplicationState.h"
 #include "Core/Global/Utils/MathFunctions.h"
+#include "Core/ECS/EntityManager.h"
+#include "Core/ECS/Components/View.h"
 #include "imgui.h"
 
 class RenderSettingsWindow : public ImGuiWindow
@@ -18,6 +20,7 @@ public:
         // Local copies for UI interaction
         float exposure = renderState.exposure;
         float ambientIntensity = renderState.ambientIntensity;
+        bool needsUpdate = false;
 
         ImGui::Begin("Render Settings", &m_isOpen);
 
@@ -27,12 +30,14 @@ public:
         {
             g_pApplicationState->RegisterUpdateFunction([exposure](ApplicationState& state)
                                                         { state.renderState.exposure = exposure; });
+            needsUpdate = true;
         }
 
         if (ImGui::SliderFloat("Ambient Intensity", &ambientIntensity, 0.0f, 1.0f))
         {
             g_pApplicationState->RegisterUpdateFunction([ambientIntensity](ApplicationState& state)
                                                         { state.renderState.ambientIntensity = ambientIntensity; });
+            needsUpdate = true;
         }
 
         // Tone Mapper
@@ -47,6 +52,7 @@ public:
             {
                 g_pApplicationState->RegisterUpdateFunction([uiToneMapper](ApplicationState& state)
                                                             { state.renderState.toneMapperType = uiToneMapper; });
+                needsUpdate = true;
             }
         }
 
@@ -61,12 +67,14 @@ public:
                 {
                     g_pApplicationState->RegisterUpdateFunction([paperWhite](ApplicationState& state)
                                                                 { state.renderState.gt7PaperWhite = paperWhite; });
+                    needsUpdate = true;
                 }
                 if (ImGui::SliderFloat("Reference Luminance (nits)", &refLuminance, 50.0f, 500.0f))
                 {
                     g_pApplicationState->RegisterUpdateFunction(
                         [refLuminance](ApplicationState& state)
                         { state.renderState.gt7ReferenceLuminance = refLuminance; });
+                    needsUpdate = true;
                 }
             }
         }
@@ -82,6 +90,7 @@ public:
             {
                 g_pApplicationState->RegisterUpdateFunction([uiDebugMode](ApplicationState& state)
                                                             { state.renderState.debugViewMode = uiDebugMode; });
+                needsUpdate = true;
             }
         }
 
@@ -91,6 +100,7 @@ public:
             g_pApplicationState->RegisterUpdateFunction(
                 [debugCulling](ApplicationState& state)
                 { mathstl::setFlag(state.renderState.debugFlags, (u32)DebugFlags::CullFrustum, debugCulling); });
+            needsUpdate = true;
         }
 
         ImGui::Separator();
@@ -101,12 +111,14 @@ public:
             {
                 g_pApplicationState->RegisterUpdateFunction([shadowsEnabled](ApplicationState& state)
                                                             { state.renderState.shadowsEnabled = shadowsEnabled; });
+                needsUpdate = true;
             }
             bool sssEnabled = renderState.sssEnabled;
             if (ImGui::Checkbox("Screen Space Shadows Enabled", &sssEnabled))
             {
                 g_pApplicationState->RegisterUpdateFunction([sssEnabled](ApplicationState& state)
                                                             { state.renderState.sssEnabled = sssEnabled; });
+                needsUpdate = true;
             }
             // CSM Resolution selector
             const char* resolutionOptions[] = {"512", "1024", "2048", "4096", "8192", "16384"};
@@ -126,6 +138,7 @@ public:
                 f32 newRes = static_cast<f32>(resolutionValues[currentIdx]);
                 g_pApplicationState->RegisterUpdateFunction(
                     [newRes](auto& state) { state.renderState.csmResolution = mathstl::Vector2(newRes, newRes); });
+                needsUpdate = true;
             }
             s32 currentCascades = renderState.directionalLightCascades;
             if (ImGui::SliderInt("Cascades", &currentCascades, 1, 4))
@@ -133,6 +146,7 @@ public:
                 g_pApplicationState->RegisterUpdateFunction(
                     [currentCascades](ApplicationState& state)
                     { state.renderState.directionalLightCascades = currentCascades; });
+                needsUpdate = true;
             }
 
             f32 csmLambda = renderState.csmLambda;
@@ -140,6 +154,7 @@ public:
             {
                 g_pApplicationState->RegisterUpdateFunction([csmLambda](ApplicationState& state)
                                                             { state.renderState.csmLambda = csmLambda; });
+                needsUpdate = true;
             }
         }
         ImGui::Separator();
@@ -153,16 +168,25 @@ public:
         {
             g_pApplicationState->RegisterUpdateFunction([clusterX](ApplicationState& state)
                                                         { state.renderState.clusterCount.x = clusterX; });
+            needsUpdate = true;
         }
         if (ImGui::SliderInt("Cluster Y", &clusterY, 4, 32))
         {
             g_pApplicationState->RegisterUpdateFunction([clusterY](ApplicationState& state)
                                                         { state.renderState.clusterCount.y = clusterY; });
+            needsUpdate = true;
         }
         if (ImGui::SliderInt("Cluster Z", &clusterZ, 8, 64))
         {
             g_pApplicationState->RegisterUpdateFunction([clusterZ](ApplicationState& state)
                                                         { state.renderState.clusterCount.z = clusterZ; });
+            needsUpdate = true;
+        }
+
+        if (needsUpdate)
+        {
+            g_pEntityManager->MarkComponentDirty(ECS::ComponentID<ECS::Components::Camera>::ID);
+            g_pEntityManager->MarkComponentDirty(ECS::ComponentID<ECS::Components::View>::ID);
         }
 
         ImGui::End();

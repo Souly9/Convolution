@@ -4,7 +4,7 @@
 #extension GL_EXT_scalar_block_layout : enable
 #extension GL_EXT_debug_printf : enable
 
-#define ViewUBOSet           1
+#define SharedDataUBOSet     1
 #define TransformSSBOSet     2
 #define TileArraySet         3
 #define GBufferUBOSet        4
@@ -13,6 +13,7 @@
 #include "../../Globals/GBufferUBO.h"
 #include "../../Globals/GlobalBuffers.h"
 #include "../../Globals/LightData.h"
+#include "../../Globals/ClusteredShading/LightIndexIO.h"
 #include "../../Globals/PBR/UnrealPBR.h"
 #include "../../Globals/PerObjectBuffers.h"
 #include "../../Globals/ShadowBuffers.h"
@@ -41,6 +42,16 @@ vec3 getCascadeDebugColor(int cascadeIndex)
                                           vec3(0.6, 0.2, 1.0)  // Purple - cascade 7
     );
     return cascadeColors[clamp(cascadeIndex, 0, 7)];
+}
+
+float SampleGlobalShadowmaps(vec4 worldPos, float viewDepth, vec3 normal, vec3 lightDir)
+{
+    float shadow = 1.0;
+    if (IsFlagSet(ubo.debugFlags, DEBUG_FLAG_SHADOWS_ENABLED))
+    {
+        shadow = computeShadow(worldPos, viewDepth, normal, lightDir);
+    }
+    return shadow;
 }
 
 void main()
@@ -75,12 +86,12 @@ void main()
     vec4 fragPosViewSpace = view * fragPosWorldSpace;
 
     vec3 normal = fragNormal;
-    vec3 camPos = lightUniforms.data.CameraPos.xyz;
+    vec3 camPos = ubo.viewPos.xyz;
 
     vec3 viewDir = normalize(camPos - fragPosWorldSpace.xyz);
     // Debug View modes
 
-    int debugViewMode = int(lightUniforms.data.LightGlobals.w);
+    int debugViewMode = ubo.debugViewMode;
 
     DirectionalLight dirLight = lightData.dirLight;
     vec3 L = normalize(-dirLight.direction.xyz);
@@ -104,7 +115,7 @@ void main()
     // 2 = Cluster Debug
     else if (debugViewMode == 2)
     {
-        uint clusterIdx = getClusterIndex(fragPosViewSpace.xyz, ubo.proj);
+        uint clusterIdx = getClusterIndex(fragPosViewSpace.xyz, ubo.projection);
 
         // Use a simple hash to generate a color from the cluster index
         float r = fract(sin(float(clusterIdx) * 12.9898 + 78.233) * 43758.5453);
@@ -128,16 +139,16 @@ void main()
     vec3 directLighting = vec3(0.0);
 
     // Clustered Lighting logic
-    uint clusterIdx = getClusterIndex(fragPosViewSpace.xyz, ubo.proj);
+    uint clusterIdx = getClusterIndex(fragPosViewSpace.xyz, ubo.projection);
 
     // Read start index from offsets buffer (written by compute shader)
-    uint baseIndex = lightData.clusterOffsets[clusterIdx];
-    uint lightCount = lightData.clusterLightIndices[baseIndex];
+    uint baseIndex = GetClusterLightBaseIndex(clusterIdx);
+    uint lightCount = GetClusterLightCount(baseIndex);
 
     // --- Point/Spot Light Loop ---
     for (uint i = 0; i < lightCount; ++i)
     {
-        Light light = lightData.lights[lightData.clusterLightIndices[baseIndex + i]];
+        Light light = lightData.lights[FetchClusterLightIndex(baseIndex, i)];
 
         vec3 lightPos = light.position.xyz;
         float lightIntensity = light.color.w;
@@ -153,9 +164,9 @@ void main()
     }
 
     // --- Directional Light ---
-    float dirLightShadow = computeShadow(fragPosWorldSpace, viewDepth, N, L);
+    float dirLightShadow = SampleGlobalShadowmaps(fragPosWorldSpace, viewDepth, N, L);
     float sss = texture(GlobalBindlessTextures[shadowmapViewUBO.screenSpaceShadows], texCoords).r;
-    if (lightUniforms.data.ClusterValues.w < 0.5)
+    if (!IsFlagSet(ubo.debugFlags, DEBUG_FLAG_SSS_ENABLED))
         sss = 1.0f;
     dirLightShadow = min(dirLightShadow, sss);
     {
@@ -168,15 +179,15 @@ void main()
         directLighting += lightContribution * dirLightShadow; // Apply shadow only to directional light
     }
 
-    float ambientIntensity = lightUniforms.data.LightGlobals.z;
+    float ambientIntensity = ubo.ambientIntensity;
     vec3 indirectLighting = computeAmbient(albedo, ambientIntensity);
 
     // Exposure
-    float exposure = lightUniforms.data.LightGlobals.x;
+    float exposure = ubo.exposure;
     vec3 finalHDRColor = (directLighting + indirectLighting) * exposure;
 
     // Tone Mapping
-    int toneMapperType = int(lightUniforms.data.LightGlobals.y);
+    int toneMapperType = ubo.toneMapperType;
     vec3 finalLDRColor = finalHDRColor;
 
     if (toneMapperType == 1) // ACES

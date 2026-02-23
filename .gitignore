@@ -54,3 +54,14 @@ External/additional_libs/glsl/SPIRV-Tools-optd.lib
 External/additional_libs/glsl/SPIRV-Toolsd.lib
 .vs/*
 .vscode/*   
+.github/copilot-instructions.md
+.vs/ProjectSettings.json
+.vs/slnx.sqlite
+.vs/VSWorkspaceState.json
+.vs/Convolution/FileContentIndex/read.lock
+.vs/Convolution/v17/.suo
+.vs/Convolution/v17/Browse.VC.db
+.vscode/settings.json
+.gitignore
+.gitignore
+.gitignore

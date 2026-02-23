@@ -42,11 +42,8 @@ struct DirectionalRenderLight
 // Uniform data needed by fragment shaders for lighting
 struct LightUniforms
 {
-    mathstl::Vector4 CameraPos;
-    mathstl::Vector4 LightGlobals;  // x = exposure, y = toneMapperType, z = ambientIntensity, w = csmDebugView
     mathstl::Vector4 ClusterValues; // x=scale, y=bias, z=maxSlices, w=shadowsEnabled
     mathstl::Vector4 ClusterSize;   // x=dimX, y=dimY, z=dimZ, w=tileSizeX
-    mathstl::Vector4 GT7Params; // x=PaperWhite, y=ReferenceLuminance, z=unused, w=unused
 };
 
 inline DirectionalRenderLight ConvertToDirectionalRenderLight(const ECS::Components::Light* light,

@@ -5,9 +5,13 @@ using DescriptorSet = DescriptorSetVulkan;
 
 struct RenderView
 {
+    mathstl::Vector3 position;
+    mathstl::Vector3 rotation;
     mathstl::Viewport viewport;
     DescriptorSet* descriptorSet;
     f32 fov;
+    f32 zNear;
+    f32 zFar;
 };
 struct CsmRenderView
 {

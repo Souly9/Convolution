@@ -4,7 +4,7 @@
 #extension GL_EXT_scalar_block_layout : enable
 
 // TODO: Define correct sets
-#define ViewUBOSet 0
+#define SharedDataUBOSet 0
 #define TransformSSBOSet 1
 
 #include "../../Globals/GlobalBuffers.h"

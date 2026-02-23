@@ -74,10 +74,6 @@ float sampleShadowCascade(int cascadeIndex, vec4 fragPosWorldSpace, vec3 normal,
 
 float computeShadow(vec4 fragPosWorldSpace, float viewDepth, vec3 normal, vec3 lightDir)
 {
-    // Check if shadows are globally disabled
-    if (lightUniforms.data.ClusterValues.w < 0.5)
-        return 1.0;
-
     int cascadeIndex = getCascadeIndex(viewDepth);
     int cascadeCount = shadowmapViewUBO.cascadeCount;
     if (cascadeIndex < 0 || cascadeIndex >= cascadeCount)

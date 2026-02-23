@@ -122,7 +122,7 @@ enum class StoreOp
     DONT_CARE
 };
 
-enum class CompareOp
+enum class DepthCompareOp
 {
     NEVER,
     LESS,

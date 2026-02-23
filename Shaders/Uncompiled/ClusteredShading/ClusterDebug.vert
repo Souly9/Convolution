@@ -3,7 +3,7 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_EXT_scalar_block_layout : enable
 
-#define ViewUBOSet     1
+#define SharedDataUBOSet 1
 #define ClusterGridSet 2
 
 #include "../../Globals/BindingSlots.h"
@@ -37,6 +37,6 @@ void main()
 
     vec3 pos = minB + corners[cornerIndex] * size;
 
-    gl_Position = ubo.proj * vec4(pos, 1.0);
+    gl_Position = ubo.viewProjection * vec4(pos, 1.0);
     outColor = vec3(0.0, 1.0, 0.0); // Green
 }

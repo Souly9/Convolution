@@ -3,12 +3,13 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_EXT_scalar_block_layout : enable
 
-#define ViewUBOSet           0
+#define SharedDataUBOSet     0
 #define TileArraySet         1
 #define ClusterGridSet       2
 #include "../../Globals/ClusteredShading/AABBs.h"
 #include "../../Globals/GlobalBuffers.h"
 #include "../../Globals/LightData.h"
+#include "../../Globals/ClusteredShading/LightIndexIO.h"
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
@@ -86,15 +87,12 @@ void main()
     // We use MAX_LIGHTS_PER_CLUSTER stride strictly.
     uint baseIndex = clusterIdx * MAX_LIGHTS_PER_CLUSTER;
 
-    // 1. Write the offset to the offsets buffer
-    lightData.clusterOffsets[clusterIdx] = baseIndex;
+    // 1. Write offset and count for this cluster
+    StoreClusterLightOffsetAndCount(clusterIdx, baseIndex, visibleCount);
 
-    // 2. Write the count at the beginning of the block
-    lightData.clusterLightIndices[baseIndex] = visibleCount;
-
-    // 3. Write the light indices
+    // 2. Write the light indices
     for (uint i = 0; i < visibleCount; ++i)
     {
-        lightData.clusterLightIndices[baseIndex + 1 + i] = sharedLightIndices[localIdx][i];
+        StoreClusterLightIndex(baseIndex, i, sharedLightIndices[localIdx][i]);
     }
 }

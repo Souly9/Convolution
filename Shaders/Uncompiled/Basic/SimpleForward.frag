@@ -1,7 +1,7 @@
 #version 450 core
 #extension GL_ARB_shading_language_include : enable
 #extension GL_EXT_nonuniform_qualifier : enable
-#define ViewUBOSet 1
+#define SharedDataUBOSet     1
 #define TransformSSBOSet 2
 #define PassPerObjectDataSet 3
 #include "../../Globals/GBufferOutput.h"

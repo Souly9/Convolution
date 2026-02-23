@@ -74,6 +74,7 @@ struct PipelineInfo
     PipelineAttachmentInfo attachmentInfos;
     PushConstantInfo pushConstantInfo{};
     ColorBlendInfo colorInfo{};
+    DepthCompareOp depthCompareOp{DepthCompareOp::EQUAL}; // Using depth prepass so this is fine as default
     ColorBlendAttachmentInfo colorBlendInfo{};
     MultisampleInfo multisampleInfo{};
     RasterizerInfo rasterizerInfo{};

@@ -285,6 +285,32 @@ inline VkFrontFace Conv(const FrontFace& m)
     return VK_FRONT_FACE_COUNTER_CLOCKWISE;
 }
 
+inline VkCompareOp Conv(const DepthCompareOp& m)
+{
+    switch (m)
+    {
+        case DepthCompareOp::NEVER:
+            return VK_COMPARE_OP_NEVER;
+        case DepthCompareOp::LESS:
+            return VK_COMPARE_OP_LESS;
+        case DepthCompareOp::EQUAL:
+            return VK_COMPARE_OP_EQUAL;
+        case DepthCompareOp::LESS_OR_EQUAL:
+            return VK_COMPARE_OP_LESS_OR_EQUAL;
+        case DepthCompareOp::GREATER:
+            return VK_COMPARE_OP_GREATER;
+        case DepthCompareOp::NOT_EQUAL:
+            return VK_COMPARE_OP_NOT_EQUAL;
+        case DepthCompareOp::GREATER_OR_EQUAL:
+            return VK_COMPARE_OP_GREATER_OR_EQUAL;
+        case DepthCompareOp::ALWAYS:
+            return VK_COMPARE_OP_ALWAYS;
+    }
+
+    DEBUG_ASSERT(false);
+    return VK_COMPARE_OP_LESS_OR_EQUAL;
+}
+
 inline VkAttachmentLoadOp Conv(const LoadOp& m)
 {
     switch (m)

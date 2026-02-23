@@ -2,7 +2,6 @@
 #include "Core/ECS/EntityManager.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Rendering/Passes/PassManager.h"
-#include "Core/Global/Utils/MathFunctions.h"
 
 void ECS::System::SView::Init(const SystemInitData& data)
 {
@@ -50,8 +49,8 @@ void ECS::System::SView::SyncData(u32 currentFrame)
 
         if (pViewComp->type == ECS::Components::ViewType::MainRenderView)
         {
-            auto ubo = BuildMainViewUBO(pViewComp, pTransformComp);
-            m_pPassManager->SetMainViewData(std::move(ubo), pViewComp->zNear, pViewComp->zFar, currentFrame);
+            auto mainView = BuildRenderView(pViewComp, pTransformComp);
+            m_pPassManager->SetSharedData(std::move(mainView), currentFrame);
         }
     }
 }
@@ -68,54 +67,14 @@ bool ECS::System::SView::AccessesAnyComponents(const stltype::vector<C_ID>& comp
                             }) != components.cend();
 }
 
-UBO::ViewUBO ECS::System::SView::BuildMainViewUBO(const Components::View* pView,
-                                                  const Components::Transform* pTransform)
+RenderView ECS::System::SView::BuildRenderView(const Components::View* pView,
+                                                 const Components::Transform* pTransform)
 {
-    UBO::ViewUBO ubo{};
-
-    using namespace mathstl;
-
-    const Vector3& pRotInDegrees = pTransform->rotation;
-    // Standard Up vector for RHS is (0, 1, 0)
-    const Vector3 upVector = Vector3(0.f, 1.f, 0.f);
-
-    const Vector3 rotation = Vector3(DirectX::XMConvertToRadians(pRotInDegrees.x),
-                                     DirectX::XMConvertToRadians(pRotInDegrees.y),
-                                     DirectX::XMConvertToRadians(pRotInDegrees.z));
-
-    const Vector3& viewPos = pTransform->position;
-
-    Matrix rotationMatrix = Matrix::CreateFromYawPitchRoll(rotation.y, rotation.x, rotation.z);
-
-    Vector3 forward = Vector3::Transform(Vector3(0, 0, 1), rotationMatrix);
-    Vector3 rotatedFocusPos = viewPos - forward;
-
-    Matrix viewMat = Matrix::CreateLookAt(viewPos, rotatedFocusPos, upVector);
-
-    Matrix projMat =
-        Matrix::CreatePerspectiveFieldOfView(DirectX::XMConvertToRadians(pView->fov),
-                                             FrameGlobals::GetScreenAspectRatio(),
-                                             mathstl::max(pView->zNear, 0.000001f), // Prevent division by zero
-                                             pView->zFar);
-   //projMat._22 *= -1.0f;
-
-    Matrix viewProj = viewMat * projMat;
-
-    auto viewInv = ubo.viewInverse = viewMat.Invert();
-    auto projInv = ubo.projectionInverse = projMat.Invert();
-
-    ubo.view = viewMat;
-    ubo.projection = projMat;
-    ubo.viewProjection = viewProj;
-    ubo.viewPos = Vector4(viewPos.x, viewPos.y, viewPos.z, 1.0f);
-    
-    g_pApplicationState->RegisterUpdateFunction(
-        [viewInv, projInv, viewProj](ApplicationState& state)
-        {
-            state.invMainCamProjectionMatrix = projInv;
-            state.invMainCamViewMatrix = viewInv;
-            state.mainCamViewProjectionMatrix = viewProj;
-        });
-
-    return ubo;
+    RenderView view{};
+    view.position = pTransform->position;
+    view.rotation = pTransform->rotation;
+    view.fov = pView->fov;
+    view.zNear = pView->zNear;
+    view.zFar = pView->zFar;
+    return view;
 }

@@ -97,7 +97,7 @@ void LightGridComputePass::Render(const MainPassData& data,
     // Create AABBs for each cluster
     {
         GenericComputeDispatchCmd cmd(&m_clusterComputePipeline, workgroupsX, workgroupsY, workgroupsZ);
-        cmd.descriptorSets = {ctx.mainViewUBODescriptor, ctx.tileArraySSBODescriptor, ctx.clusterGridDescriptor};
+        cmd.descriptorSets = {ctx.sharedDataUBODescriptor, ctx.tileArraySSBODescriptor, ctx.clusterGridDescriptor};
         cmd.SetPushConstants(0, m_pushConstants);
         pCmdBuffer->RecordCommand(cmd);
     }
@@ -112,7 +112,7 @@ void LightGridComputePass::Render(const MainPassData& data,
     // Cull lights for each cluster
     {
         GenericComputeDispatchCmd cmd(&m_lightCullingComputePipeline, workgroupsX, workgroupsY, workgroupsZ);
-        cmd.descriptorSets = {ctx.mainViewUBODescriptor, ctx.tileArraySSBODescriptor, ctx.clusterGridDescriptor};
+        cmd.descriptorSets = {ctx.sharedDataUBODescriptor, ctx.tileArraySSBODescriptor, ctx.clusterGridDescriptor};
         cmd.SetPushConstants(0, m_pushConstants);
         pCmdBuffer->RecordCommand(cmd);
     }

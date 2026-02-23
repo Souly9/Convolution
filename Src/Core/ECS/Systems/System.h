@@ -48,6 +48,11 @@ public:
         return false;
     }
 
+    virtual bool ShouldRunWhenNoDirtyComponents() const
+    {
+        return false;
+    }
+
 protected:
     template <typename T>
     bool AccessesComponent(const stltype::vector<C_ID>& components) const

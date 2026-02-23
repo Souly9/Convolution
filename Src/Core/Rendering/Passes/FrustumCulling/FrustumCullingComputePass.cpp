@@ -86,7 +86,7 @@ void FrustumCullingComputePass::Render(const MainPassData& data,
 
     {
         GenericComputeDispatchCmd cmd(&m_cullingPipeline, groupCountX, groupCountY, groupCountZ);
-        cmd.descriptorSets = {ctx.mainViewUBODescriptor, ctx.pResourceManager->GetInstanceSSBODescriptorSet(ctx.imageIdx),
+        cmd.descriptorSets = {ctx.sharedDataUBODescriptor, ctx.pResourceManager->GetInstanceSSBODescriptorSet(ctx.imageIdx),
                               ctx.pResourceManager->GetSceneAABBSSBODescriptorSet(ctx.imageIdx)};
         cmd.SetPushConstants(0, m_pushConstants);
         //pCmdBuffer->RecordCommand(cmd);

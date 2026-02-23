@@ -1,7 +1,7 @@
 #version 450 core
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_ARB_shading_language_include : enable
-#define ViewUBOSet 1
+#define SharedDataUBOSet     1
 #define TransformSSBOSet 2
 #define PassPerObjectDataSet 3
 #include "../../Globals/GlobalBuffers.h"
@@ -17,5 +17,5 @@ void main() {
    InstanceData iData = globalInstanceDataSSBO.instances[instanceIdx];
    uint transformIdx = GetTransformIdx(iData);
    mat4 worldMat = globalTransformSSBO.modelMatrices[transformIdx];
-   gl_Position = ubo.proj * ubo.view * worldMat * vec4(inPosition, 1.0);
+   gl_Position = ubo.viewProjection * worldMat * vec4(inPosition, 1.0);
 }

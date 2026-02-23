@@ -52,7 +52,7 @@ struct RendererState
     s32 toneMapperType{1}; // 0 = None, 1 = ACES, 2 = Uncharted, 3 = GT7
     f32 gt7PaperWhite{150.0f};
     f32 gt7ReferenceLuminance{150.0f};
-    f32 ambientIntensity{0.03f};
+    f32 ambientIntensity{0.15f};
 
     // Render info
     u32 triangleCount{};

@@ -3,7 +3,8 @@
 #extension GL_ARB_shading_language_include : enable
 #extension GL_EXT_multiview : require
 
-#define ViewUBOSet 1
+#define SharedDataUBOSet     1
+#define SharedDataUBOSet     1
 #define TransformSSBOSet 2
 #define PassPerObjectDataSet 3
 #define ShadowViewUBOSet 4

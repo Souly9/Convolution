@@ -1,18 +1,46 @@
-﻿cmake_minimum_required (VERSION 3.20)
+cmake_minimum_required(VERSION 3.20)
 include(FetchContent)
-Set(FETCHCONTENT_QUIET FALSE)
+set(FETCHCONTENT_QUIET OFF)
 
-set(UNITY_BUILD ON)
-# Clang complains about all these in our libraries...
-#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unsafe-buffer-usage -Wno-switch-default -Wno-format -Wno-nontrivial-memcall -Wno-error")
+option(CONV_USE_CLANG_CL "Use clang-cl on Windows (configure with a fresh build dir)" OFF)
+option(CONV_ENABLE_UNITY_BUILD "Enable CMake unity/jumbo build for faster incremental compile" ON)
+option(CONV_SUPPRESS_EXTERNAL_WARNINGS "Suppress warning output when compiling external dependencies" ON)
+option(CONV_ENABLE_TRACY_PROFILING "Enable Tracy profiling instrumentation" ON)
+option(CONNECT_TO_GIT "Fetch dependencies from git" ON)
+
+if(CONV_SUPPRESS_EXTERNAL_WARNINGS)
+    set(CMAKE_WARN_DEPRECATED OFF CACHE BOOL "Suppress CMake deprecation warnings" FORCE)
+    set(CMAKE_SUPPRESS_DEVELOPER_WARNINGS 1 CACHE BOOL "Suppress CMake developer warnings" FORCE)
+endif()
+
+if(WIN32 AND CONV_USE_CLANG_CL)
+  if(CMAKE_GENERATOR MATCHES "Visual Studio")
+    set(CMAKE_GENERATOR_TOOLSET "ClangCL" CACHE STRING "Toolset used by generator" FORCE)
+  endif()
+  if(NOT DEFINED CMAKE_C_COMPILER)
+    set(CMAKE_C_COMPILER "clang-cl" CACHE STRING "C compiler" FORCE)
+  endif()
+  if(NOT DEFINED CMAKE_CXX_COMPILER)
+    set(CMAKE_CXX_COMPILER "clang-cl" CACHE STRING "CXX compiler" FORCE)
+  endif()
+endif()
+
 
 find_package(Git REQUIRED)
 if(Git_FOUND)
   message("Git found: ${GIT_EXECUTABLE}")
 endif()
 
-project ("Convolution")
+project("Convolution")
 set(NAME "Convolution")
+
+set(USE_CLANG_CL OFF)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    if(CMAKE_CXX_SIMULATE_ID STREQUAL "MSVC" OR CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+        set(USE_CLANG_CL ON)
+    endif()
+endif()
+message(STATUS "USE_CLANG_CL (detected): ${USE_CLANG_CL}")
 
 # Enable multi-core compilation for MSVC
 if(MSVC)
@@ -25,11 +53,19 @@ set(LLVM_ENABLE_RTTI ON)
 set(LLVM_ENABLE_EH ON)
 
 set(FETCHCONTENT_BASE_DIR "${CMAKE_SOURCE_DIR}/External/")
+set(FETCHCONTENT_UPDATES_DISCONNECTED ON CACHE BOOL "Do not contact remotes on every configure" FORCE)
+if(NOT CONNECT_TO_GIT)
+  set(FETCHCONTENT_FULLY_DISCONNECTED ON CACHE BOOL "Use only already-downloaded dependencies" FORCE)
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED on)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+#set(CMAKE_UNITY_BUILD ${CONV_ENABLE_UNITY_BUILD})
+#set(CMAKE_UNITY_BUILD_BATCH_SIZE 16)
 
-option(CONNECT_TO_GIT "Fetch dependancies from git" ON)
+set(TRACY_ENABLE ${CONV_ENABLE_TRACY_PROFILING} CACHE BOOL "Enable Tracy instrumentation" FORCE)
+
 
 FetchContent_Declare(
   VulkanMemoryAllocator
@@ -130,7 +166,6 @@ set(ASSIMP_BUILD_ALL_IMPORTERS_BY_DEFAULT OFF CACHE BOOL "Disable all importers"
 set(ASSIMP_BUILD_FBX_IMPORTER ON CACHE BOOL "Enable FBX importer" FORCE)
 set(ASSIMP_BUILD_OBJ_IMPORTER ON CACHE BOOL "Enable OBJ importer" FORCE)
 set(ASSIMP_BUILD_GLTF_IMPORTER ON CACHE BOOL "Enable glTF importer" FORCE)
-set(ASSIMP_BUILD_COLLADA_IMPORTER ON CACHE BOOL "Enable Collada importer" FORCE)
 
 # Disable all exporters (not needed for import-only workflow)
 set(ASSIMP_BUILD_ALL_EXPORTERS_BY_DEFAULT OFF CACHE BOOL "Disable all exporters" FORCE)
@@ -153,9 +188,17 @@ message(STATUS "ImGui found at ${IMGUI_INCLUDE_DIR}")
 #endif()
 
 file(GLOB_RECURSE ADD_LIBS 
-	"${CMAKE_SOURCE_DIR}/External/additonal_libs/*"
+	"${CMAKE_SOURCE_DIR}/External/additional_libs/*.lib"
+	"${CMAKE_SOURCE_DIR}/External/additional_libs/*.a"
 	${ASSIMP_LIBRARY_SEARCH_DIR}
 )
+
+set(AFTERMATH_SDK_LIB "${CMAKE_SOURCE_DIR}/External/additional_libs/GFSDK_Aftermath_Lib.x64.lib")
+set(AFTERMATH_SDK_DLL "${CMAKE_SOURCE_DIR}/External/additional_libs/GFSDK_Aftermath_Lib.x64.dll")
+set(CONV_WITH_AFTERMATH_SDK OFF)
+if(WIN32 AND EXISTS "${AFTERMATH_SDK_LIB}")
+    set(CONV_WITH_AFTERMATH_SDK ON)
+endif()
 add_library(ImGui STATIC ${IMGUI_SOURCE})
 target_include_directories(ImGui PUBLIC
    ${CMAKE_SOURCE_DIR}/External/imgui/backends
@@ -167,36 +210,72 @@ target_include_directories(ImGui PUBLIC
 
 add_compile_definitions(CONV_DEBUG)
 add_compile_definitions(USE_VULKAN)
-if(${CMAKE_BUILD_TYPE} MATCHES "Debug" OR ${CMAKE_BUILD_TYPE} MATCHES "RelWithDebInfo")
-    if (MSVC)
-        # Use /Z7 (debug info in .obj) instead of /Zi (PDB) for better LLDB compatibility
-        add_compile_options(/Z7)
-        string(REPLACE "/Zi" "" CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
-        string(REPLACE "/Zi" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
-        string(REPLACE "/Zi" "" CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO}")
-        string(REPLACE "/Zi" "" CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
-    endif()
+
+set(CONV_EXTERNAL_TARGETS
+    assimp
+    glfw
+    EASTL
+    EAStdC
+    EAAssert
+    EABase
+    EAThread
+    TracyClient
+    ImGui
+)
+
+set(CONV_EXTERNAL_LINK_TARGETS
+    assimp
+    EASTL
+    EAStdC
+    EAAssert
+    EAThread
+    ImGui
+)
+
+if(CONV_ENABLE_TRACY_PROFILING)
+    list(APPEND CONV_EXTERNAL_LINK_TARGETS TracyClient)
 endif()
 
-# Fix Assimp warnings
-if(TARGET assimp)
+# Disable warnings for our ext libs
+function(conv_suppress_target_warnings target_name)
+    if(NOT TARGET ${target_name})
+        return()
+    endif()
+    get_target_property(target_type ${target_name} TYPE)
+    if(target_type STREQUAL "INTERFACE_LIBRARY")
+        return()
+    endif()
+
     if(MSVC)
-        target_compile_options(assimp PRIVATE)
+        target_compile_options(${target_name} PRIVATE /W0 /WX-)
     else()
-        target_compile_options(assimp PRIVATE -Wno-error -Wno-nontrivial-memcall)
+        target_compile_options(${target_name} PRIVATE -w)
     endif()
+endfunction()
+
+if(CONV_SUPPRESS_EXTERNAL_WARNINGS)
+    foreach(ext_target IN LISTS CONV_EXTERNAL_TARGETS)
+        conv_suppress_target_warnings(${ext_target})
+    endforeach()
 endif()
 
-
-set(LIBS ${GLFW3_LIBRARY} ${Vulkan_LIBRARIES} ${ADD_LIBS} assimp EASTL EAStdC EAAssert EAThread ${ASSIMP_LIBRARY} TracyClient ImGui)
-
+set(LIBS
+    ${GLFW3_LIBRARY}
+    ${Vulkan_LIBRARIES}
+    ${ADD_LIBS}
+    ${CONV_EXTERNAL_LINK_TARGETS}
+    ${ASSIMP_LIBRARY}
+)
+if(CONV_WITH_AFTERMATH_SDK)
+    list(APPEND LIBS ${AFTERMATH_SDK_LIB})
+endif()
 
 link_directories(${CMAKE_SOURCE_DIR}/External/additional_libs)
 
-file(GLOB_RECURSE SOURCE
+file(GLOB_RECURSE SOURCE CONFIGURE_DEPENDS
 	"${CMAKE_SOURCE_DIR}/Src/*.cpp"
 )
-file(GLOB_RECURSE HEADERS
+file(GLOB_RECURSE HEADERS CONFIGURE_DEPENDS
 	"${CMAKE_SOURCE_DIR}/Src/*.h"
 	"${CMAKE_SOURCE_DIR}/Src/*.inl"
 )
@@ -221,6 +300,13 @@ add_custom_command(TARGET ${NAME} POST_BUILD
         ${CMAKE_SOURCE_DIR}/External/imgui/misc/debuggers/imgui.natvis
         $<TARGET_FILE_DIR:${NAME}>/imgui.natvis
 )
+if(CONV_WITH_AFTERMATH_SDK AND EXISTS "${AFTERMATH_SDK_DLL}")
+add_custom_command(TARGET ${NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${AFTERMATH_SDK_DLL}
+        $<TARGET_FILE_DIR:${NAME}>/GFSDK_Aftermath_Lib.x64.dll
+)
+endif()
 
 add_custom_target(
     CopyResources
@@ -252,11 +338,15 @@ SYSTEM
     ${CMAKE_SOURCE_DIR}/External/Assimp/include
     ${CMAKE_SOURCE_DIR}/External/dds
     ${CMAKE_SOURCE_DIR}/External/imgui
+    ${CMAKE_SOURCE_DIR}/External/Aftermath/include
 )
 
 target_compile_definitions(${NAME} PRIVATE 
     $<$<CONFIG:Debug>:CONV_DEBUG=1>
-    PROFILING_ENABLED=1
+    $<$<BOOL:${CONV_ENABLE_TRACY_PROFILING}>:PROFILING_ENABLED=1>
+    $<$<NOT:$<BOOL:${CONV_ENABLE_TRACY_PROFILING}>>:PROFILING_ENABLED=0>
+    $<$<BOOL:${CONV_WITH_AFTERMATH_SDK}>:CONV_WITH_AFTERMATH_SDK=1>
+    $<$<NOT:$<BOOL:${CONV_WITH_AFTERMATH_SDK}>>:CONV_WITH_AFTERMATH_SDK=0>
     NOMINMAX
 )
 
@@ -314,3 +404,5 @@ target_link_libraries(${NAME} PRIVATE ${LIBS} GPUOpen::VulkanMemoryAllocator ${G
 #					COMMAND cmd /C ${CMAKE_SOURCE_DIR}/Scripts/CopyTextures.bat
 #					)
 #endif()
+
+

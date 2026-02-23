@@ -2,9 +2,9 @@
 #include "../StaticFunctions.h"
 #include "Core/Events/EventSystem.h"
 #include "Core/Global/CommonGlobals.h"
+#include "Core/Rendering/Core/Nvidia/AftermathManager.h"
 #include "Core/Rendering/Vulkan/VkGlobals.h"
 #include "Core/SceneGraph/Mesh.h"
-#include "TransferQueueHandler.h"
 #include <EASTL/algorithm.h>
 #include <EASTL/utility.h>
 
@@ -323,6 +323,10 @@ void AsyncQueueHandler::WaitForFences()
     {
         fenceToWaitOn.fence.WaitFor();
 
+        if (!fenceToWaitOn.fence.IsSignaled())
+        {
+            Nvidia::AftermathManager::LogFenceTimeoutDiagnostics();
+        }
         DEBUG_ASSERT(fenceToWaitOn.fence.IsSignaled());
 
         for (auto& cmdBufferRequest : fenceToWaitOn.requests)

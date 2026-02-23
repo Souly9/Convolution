@@ -46,7 +46,7 @@ static inline DescriptorType GetDescriptorType(BufferType type)
         return DescriptorType::UniformBuffer;
 }
 static inline stltype::hash_map<BufferType, u32> s_UBOTypeToBindingSlot = {
-    {BufferType::View, s_viewBindingSlot},
+    {BufferType::View, s_sharedDataBindingSlot},
     {BufferType::GlobalObjectDataSSBOs, s_globalMaterialBufferSlot},
     {BufferType::TileArraySSBO, s_tileArrayBindingSlot},
     {BufferType::ClusterAABBsSSBO, s_clusterAABBsBindingSlot},

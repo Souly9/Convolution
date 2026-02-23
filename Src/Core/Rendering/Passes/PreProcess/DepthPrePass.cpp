@@ -23,6 +23,7 @@ void DepthPrePass::BuildPipelines()
     info.descriptorSetLayout.sharedDescriptors = m_sharedDescriptors;
     info.attachmentInfos =
         CreateAttachmentInfo({m_mainRenderingData.colorAttachments}, m_mainRenderingData.depthAttachment);
+    info.depthCompareOp = DepthCompareOp::LESS_OR_EQUAL;
     m_mainPSO = PSO(
         ShaderCollection{&mainVert, &mainFrag}, PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions}, info);
 }
@@ -100,7 +101,7 @@ void DepthPrePass::Render(const MainPassData& data, FrameRendererContext& ctx, C
 
     const auto transformSSBOSet = data.bufferDescriptors.at(UBO::DescriptorContentsType::GlobalInstanceData);
     const auto texArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessTextureArray);
-    cmd.descriptorSets = {texArraySet, ctx.mainViewUBODescriptor, transformSSBOSet, passCtx.m_perObjectDescriptor};
+    cmd.descriptorSets = {texArraySet, ctx.sharedDataUBODescriptor, transformSSBOSet, passCtx.m_perObjectDescriptor};
 
     cmdBegin.drawCmdBuffer = &m_indirectCmdBuffer;
 

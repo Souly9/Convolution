@@ -106,11 +106,11 @@ void EntityManager::SyncSystemData(u32 frameIdx)
 {
     ScopedZone("Sync Game Data with Render Thread");
 
-    if (m_dirtyComponents[frameIdx].empty())
-        return;
+    const bool hasDirtyComponents = !m_dirtyComponents[frameIdx].empty();
     for (auto& pSystem : m_systems)
     {
-        if (pSystem->AccessesAnyComponents(m_dirtyComponents[frameIdx]))
+        if (pSystem->ShouldRunWhenNoDirtyComponents() ||
+            (hasDirtyComponents && pSystem->AccessesAnyComponents(m_dirtyComponents[frameIdx])))
             pSystem->SyncData(frameIdx);
     }
     m_dirtyComponents[frameIdx].clear();
@@ -120,11 +120,11 @@ void EntityManager::UpdateSystems(u32 frameIdx)
 {
     ScopedZone("Update Game Data");
 
-    if (m_dirtyComponents[frameIdx].empty())
-        return;
+    const bool hasDirtyComponents = !m_dirtyComponents[frameIdx].empty();
     for (auto& pSystem : m_systems)
     {
-        if (pSystem->AccessesAnyComponents(m_dirtyComponents[frameIdx]))
+        if (pSystem->ShouldRunWhenNoDirtyComponents() ||
+            (hasDirtyComponents && pSystem->AccessesAnyComponents(m_dirtyComponents[frameIdx])))
             pSystem->Process();
     }
 }

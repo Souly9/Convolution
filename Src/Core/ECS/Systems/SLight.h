@@ -17,6 +17,7 @@ public:
     virtual void SyncData(u32 currentFrame) override;
 
     virtual bool AccessesAnyComponents(const stltype::vector<C_ID>& components) override;
+    virtual bool ShouldRunWhenNoDirtyComponents() const override { return true; }
 
 protected:
     RenderPasses::PassManager* m_pPassManager;

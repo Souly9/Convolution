@@ -1,4 +1,6 @@
 #include "MeshConverter.h"
+#include "Core/Global/GlobalVariables.h"
+#include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
 #include "Core/ECS/Components/Camera.h"
 #include "Core/ECS/Components/RenderComponent.h"
 #include "Core/Global/GlobalVariables.h"
@@ -117,7 +119,8 @@ SceneNode Convert(const aiScene* pScene)
             g_pEntityManager->MarkComponentDirty(ECS::ComponentID<ECS::Components::Light>::ID);
             g_pMaterialManager->MarkMaterialsDirty();
         });
-
+    
+    g_pQueueHandler->DispatchAllRequests();
     return SceneNode{rootEntity};
 }
 
@@ -168,6 +171,7 @@ Material* ExtractMaterial(const aiMaterial* pMaterial)
     {
         stltype::string texPath = "Resources\\Models\\" + eastl::string(path.C_Str());
         mat.diffuseTexture = g_pTexManager->MakeTextureBindless(g_pTexManager->SubmitAsyncTextureCreation({texPath}));
+        g_pTexManager->DispatchAsyncOps("File texture transfers");
     }
     else
     {

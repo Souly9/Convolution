@@ -1,8 +1,6 @@
 #pragma once
 #include "Core/ECS//Systems/System.h"
 #include "Core/ECS/Components/View.h"
-#include "Core/Global/GlobalDefines.h"
-#include "Core/Rendering/Core/Defines/GlobalBuffers.h"
 #include "Core/Rendering/Core/View.h"
 
 struct ApplicationState;
@@ -22,9 +20,10 @@ public:
     virtual void SyncData(u32 currentFrame) override;
 
     virtual bool AccessesAnyComponents(const stltype::vector<C_ID>& components) override;
+    virtual bool ShouldRunWhenNoDirtyComponents() const override { return true; }
 
 private:
-    UBO::ViewUBO BuildMainViewUBO(const Components::View* pView, const Components::Transform* pTransform);
+    RenderView BuildRenderView(const Components::View* pView, const Components::Transform* pTransform);
 
 protected:
     RenderPasses::PassManager* m_pPassManager;

@@ -29,6 +29,8 @@ void PipelineVulkanBase::PrepareGraphicsBase(const ShaderCollection& shaders,
     // At least one shader must be valid
     DEBUG_ASSERT(vertShader.GetDesc() != VK_NULL_HANDLE);
 
+    m_info = pipeInfo;
+    
     VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
     vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
@@ -77,7 +79,6 @@ void PipelineVulkanBase::PrepareGraphicsBase(const ShaderCollection& shaders,
     outPipelineRenderingCreateInfo.colorAttachmentCount = m_colorAttachmentFormats.size();
     outPipelineRenderingCreateInfo.depthAttachmentFormat = Conv(pipeInfo.attachmentInfos.depthAttachmentFormat);
     outPipelineRenderingCreateInfo.viewMask = pipeInfo.viewMask;
-    m_info = pipeInfo;
 }
 
 ComputePipelineVulkan::ComputePipelineVulkan(const ShaderCollection& shaders, const PipelineInfo& pipeInfo)
@@ -340,7 +341,7 @@ VkPipelineDepthStencilStateCreateInfo GraphicsPipelineVulkan::CreateDepthStencil
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
     depthStencil.depthTestEnable = VK_TRUE;
     depthStencil.depthWriteEnable = depthWriteEnable ? VK_TRUE : VK_FALSE;
-    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+    depthStencil.depthCompareOp = Conv(m_info.depthCompareOp);
     depthStencil.depthBoundsTestEnable = VK_FALSE;
     depthStencil.minDepthBounds = 0.0f; // Optional
     depthStencil.maxDepthBounds = 1.0f; // Optional

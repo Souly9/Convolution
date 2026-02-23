@@ -2,7 +2,7 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_ARB_shading_language_include : enable
 
-#define ViewUBOSet           1
+#define SharedDataUBOSet     1
 #define TransformSSBOSet     2
 #define PassPerObjectDataSet 3
 

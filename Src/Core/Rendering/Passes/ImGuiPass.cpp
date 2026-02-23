@@ -4,6 +4,7 @@
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
 #include "Core/Rendering/Vulkan/Utils/VkEnumHelpers.h"
 #include "Core/Rendering/Vulkan/VkGlobals.h"
+#include "Core/Rendering/Vulkan/VkTextureManager.h"
 #include "Utils/RenderPassUtils.h"
 #include <imgui/backends/imgui_impl_glfw.h>
 #include <imgui/backends/imgui_impl_vulkan.h>

@@ -1,14 +1,26 @@
 #extension GL_EXT_nonuniform_qualifier : require
+#extension GL_EXT_scalar_block_layout : require
 #include "BindingSlots.h"
 
-layout(set = ViewUBOSet, binding = ViewUBOBindingSlot) uniform ViewUBO
+#include "DebugFlags.h"
+
+layout(scalar, set = SharedDataUBOSet, binding = SharedDataUBOBindingSlot) uniform SharedDataUBO
 {
     mat4 view;
-    mat4 proj;
+    mat4 projection;
     mat4 viewProjection;
     mat4 viewInverse;
     mat4 projectionInverse;
     vec4 viewPos;
+
+    // Debug & Global settings
+    uint debugFlags;
+    int debugViewMode;
+    float exposure;
+    int toneMapperType;
+    float ambientIntensity;
+    float gt7PaperWhite;
+    float gt7ReferenceLuminance;
 }
 ubo;
 

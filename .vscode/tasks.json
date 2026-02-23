@@ -11,7 +11,8 @@
                 "--config",
                 "RelWithDebInfo"
             ],
-            "group": "build"
+            "group": "build",
+            "problemMatcher": []
         },
         {
             "label": "CMake: Configure (RelWithDebInfo)",
@@ -23,7 +24,15 @@
                 "${workspaceFolder}",
                 "-B",
                 "${workspaceFolder}/out/build/RelWithDebInfo"
-            ]
+            ],
+            "problemMatcher": []
+        },
+        {
+            "type": "cmake",
+            "label": "CMake: workflow",
+            "command": "workflow",
+            "problemMatcher": [],
+            "detail": "CMake template workflow task"
         }
     ]
 }

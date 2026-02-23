@@ -1,4 +1,5 @@
 #include "PassManager.h"
+#include "Core/Global/Utils/MathFunctions.h"
 #include "ClusteredShading/ClusterDebugPass.h"
 #include "ClusteredShading/LightGridComputePass.h"
 #include "Compositing/CompositPass.h"
@@ -40,103 +41,11 @@ void PassManager::InitResourceManagerAndCallbacks()
     AddPass(PassType::Composite, stltype::make_unique<RenderPasses::CompositPass>());
 }
 
-void PassManager::CreatePassObjectsAndLayouts()
-{
-    DescriptorPoolCreateInfo info{};
-    info.enableBindlessTextureDescriptors = false;
-    info.enableStorageBufferDescriptors = true;
-    m_descriptorPool.Create(info);
-
-    m_lightClusterSSBOLayout = DescriptorLaytoutUtils::CreateOneDescriptorSetForAll(
-        {PipelineDescriptorLayout(UBO::BufferType::TileArraySSBO),
-         PipelineDescriptorLayout(UBO::BufferType::LightUniformsUBO)});
-    m_viewUBOLayout =
-        DescriptorLaytoutUtils::CreateOneDescriptorSetForAll({PipelineDescriptorLayout(UBO::BufferType::View)});
-    m_gbufferPostProcessLayout =
-        DescriptorLaytoutUtils::CreateOneDescriptorSetForAll({PipelineDescriptorLayout(UBO::BufferType::GBufferUBO),
-                                                              PipelineDescriptorLayout(UBO::BufferType::ShadowmapUBO)});
-    m_shadowViewUBOLayout = DescriptorLaytoutUtils::CreateOneDescriptorSetForAll(
-        {PipelineDescriptorLayout(UBO::BufferType::ShadowmapViewUBO)});
-
-    // Cluster grid
-    m_clusterGridSSBOLayout = DescriptorLaytoutUtils::CreateOneDescriptorSetForAll(
-        {PipelineDescriptorLayout(UBO::BufferType::ClusterAABBsSSBO)});
-}
-
 void PassManager::CreateUBOsAndMap()
 {
-    u64 viewUBOSize = sizeof(UBO::ViewUBO);
-
-    m_lightClusterSSBO = StorageBuffer(UBO::LightClusterSSBOSize, true);
-    m_clusterGridSSBO = StorageBuffer(UBO::ClusterAABBSetSize, true);
-
-    m_viewUBO = UniformBuffer(viewUBOSize);
-    m_mappedViewUBOBuffer = m_viewUBO.MapMemory();
-    m_lightUniformsUBO = UniformBuffer(sizeof(LightUniforms));
-    m_gbufferPostProcessUBO = UniformBuffer(sizeof(UBO::GBufferPostProcessUBO));
-    m_shadowMapUBO = UniformBuffer(sizeof(UBO::ShadowMapUBO));
-    m_shadowViewUBO = UniformBuffer(sizeof(UBO::ShadowmapViewUBO));
-
-    m_mappedLightUniformsUBO = m_lightUniformsUBO.MapMemory();
-    m_mappedGBufferPostProcessUBO = m_gbufferPostProcessUBO.MapMemory();
-    m_mappedShadowMapUBO = m_shadowMapUBO.MapMemory();
-    m_mappedShadowViewUBO = m_shadowViewUBO.MapMemory();
-}
-
-void PassManager::CreateFrameRendererContexts()
-{
-    m_frameRendererContexts.resize(SWAPCHAIN_IMAGES);
-    for (size_t i = 0; i < SWAPCHAIN_IMAGES; i++)
-    {
-        auto& frameContext = m_frameRendererContexts[i];
-        frameContext.frameTimeline.Create(0);
-        frameContext.computeTimeline.Create(0);
-        frameContext.pPresentLayoutTransitionSignalSemaphore.Create();
-        frameContext.shadowViewUBODescriptor = m_descriptorPool.CreateDescriptorSet(m_shadowViewUBOLayout.GetRef());
-        frameContext.shadowViewUBODescriptor->WriteBufferUpdate(m_shadowViewUBO, s_shadowmapViewUBOBindingSlot);
-        frameContext.mainViewUBODescriptor = m_descriptorPool.CreateDescriptorSet(m_viewUBOLayout.GetRef());
-        frameContext.mainViewUBODescriptor->SetBindingSlot(s_viewBindingSlot);
-        frameContext.mainViewUBODescriptor->WriteBufferUpdate(m_viewUBO, s_viewBindingSlot);
-
-        frameContext.gbufferPostProcessDescriptor =
-            m_descriptorPool.CreateDescriptorSet(m_gbufferPostProcessLayout.GetRef());
-        frameContext.gbufferPostProcessDescriptor->WriteBufferUpdate(m_gbufferPostProcessUBO,
-                                                                     s_globalGbufferPostProcessUBOSlot);
-        frameContext.gbufferPostProcessDescriptor->WriteBufferUpdate(m_shadowMapUBO, s_shadowmapUBOBindingSlot);
-
-        const auto numberString = stltype::to_string(i);
-        frameContext.frameTimeline.SetName("Frame Timeline Semaphore " + numberString);
-        frameContext.pPresentLayoutTransitionSignalSemaphore.SetName("Present Layout Transition Signal Semaphore " +
-                                                                     numberString);
-        m_imageAvailableSemaphores[i].Create();
-        m_imageAvailableFences[i].Create(false);
-        m_imageAvailableFences[i].SetName("Image Available Fence " + numberString);
-        m_imageAvailableSemaphores[i].SetName("Image Available Semaphore " + numberString);
-        // Create render finished fence as signaled so first frame doesn't wait
-        m_renderFinishedFences[i].Create(true);
-        m_renderFinishedFences[i].SetName("Render Finished Fence " + numberString);
-
-        // Tile array data
-        frameContext.tileArraySSBODescriptor = m_descriptorPool.CreateDescriptorSet(m_lightClusterSSBOLayout.GetRef());
-        frameContext.tileArraySSBODescriptor->SetBindingSlot(s_tileArrayBindingSlot);
-        frameContext.tileArraySSBODescriptor->WriteSSBOUpdate(m_lightClusterSSBO);
-        frameContext.tileArraySSBODescriptor->WriteBufferUpdate(m_lightUniformsUBO, s_globalLightUniformsBindingSlot);
-
-        // Cluster grid descriptor
-        frameContext.clusterGridDescriptor = m_descriptorPool.CreateDescriptorSet(m_clusterGridSSBOLayout.GetRef());
-        frameContext.clusterGridDescriptor->SetBindingSlot(s_clusterGridSSBOBindingSlot);
-        frameContext.clusterGridDescriptor->WriteSSBOUpdate(m_clusterGridSSBO);
-
-        // Point the rendering finished semaphore to the present transition semaphore for presentation sync
-        frameContext.renderingFinishedSemaphore = &frameContext.pPresentLayoutTransitionSignalSemaphore;
-
-        // Set shadow view UBO pointers for passes to use
-        frameContext.pShadowViewUBO = &m_shadowViewUBO;
-        frameContext.pMappedShadowViewUBO = m_mappedShadowViewUBO;
-
-        UBO::ViewUBO view{};
-        UpdateMainViewUBO((const void*)&view, sizeof(UBO::ViewUBO), i);
-    }
+    m_frameResourceManager.Init();
+    m_frameResourceManager.CreatePassObjectsAndLayouts();
+    m_frameResourceManager.CreateFrameRendererContexts(m_imageAvailableSemaphores, m_imageAvailableFences, m_renderFinishedFences);
 }
 
 void PassManager::InitPassesAndImGui()
@@ -148,8 +57,9 @@ void PassManager::InitPassesAndImGui()
         const auto csmCascades = renderState.directionalLightCascades;
         const auto csmResolution = renderState.csmResolution;
         RecreateShadowMaps(csmCascades, csmResolution);
-        m_currentShadowMapState.cascadeCount = csmCascades;
-        m_currentShadowMapState.shadowMapExtents = csmResolution;
+        auto& shadowMapState = m_frameResourceManager.GetShadowMapState();
+        shadowMapState.cascadeCount = csmCascades;
+        shadowMapState.shadowMapExtents = csmResolution;
     }
 
     ColorAttachmentInfo colorAttachmentInfo{};
@@ -184,15 +94,15 @@ void PassManager::InitPassesAndImGui()
         mainPassData.bufferDescriptors[UBO::DescriptorContentsType::GlobalInstanceData] =
             m_resourceManager.GetInstanceSSBODescriptorSet(idx);
         mainPassData.bufferDescriptors[UBO::DescriptorContentsType::LightData] =
-            m_frameRendererContexts[idx].tileArraySSBODescriptor;
+            m_frameResourceManager.GetFrameRendererContext(idx).tileArraySSBODescriptor;
         mainPassData.bufferDescriptors[UBO::DescriptorContentsType::GBuffer] =
-            m_frameRendererContexts[idx].gbufferPostProcessDescriptor;
+            m_frameResourceManager.GetFrameRendererContext(idx).gbufferPostProcessDescriptor;
         mainPassData.bufferDescriptors[UBO::DescriptorContentsType::BindlessTextureArray] =
             g_pTexManager->GetBindlessDescriptorSet();
         mainPassData.bufferDescriptors[UBO::DescriptorContentsType::BindlessImageArray] =
             g_pTexManager->GetBindlessImageDescriptorSet();
         mainPassData.bufferDescriptors[UBO::DescriptorContentsType::ClusterGrid] =
-            m_frameRendererContexts[idx].clusterGridDescriptor;
+            m_frameResourceManager.GetFrameRendererContext(idx).clusterGridDescriptor;
         ++idx;
     }
     for (auto& [type, passes] : m_passes)
@@ -203,9 +113,6 @@ void PassManager::InitPassesAndImGui()
         }
     }
     // ImGui textures
-    VkDescriptorSet depthId = ImGui_ImplVulkan_AddTexture(
-        pDepthTex->GetSampler(), pDepthTex->GetImageView(), VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
-
     VkDescriptorSet idNormal =
         ImGui_ImplVulkan_AddTexture(m_gbuffer.Get(GBufferTextureType::GBufferNormal)->GetSampler(),
                                     m_gbuffer.Get(GBufferTextureType::GBufferNormal)->GetImageView(),
@@ -227,10 +134,9 @@ void PassManager::InitPassesAndImGui()
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
     g_pApplicationState->RegisterUpdateFunction(
-        [this, depthId, idNormal, idAlbedo, idUI, idDebug, idSSS](auto& state)
+        [this, idNormal, idAlbedo, idUI, idDebug, idSSS](auto& state)
         {
             state.renderState.csmCascadeImGuiIDs = m_csmCascadeImGuiIDs;
-            state.renderState.depthbufferImGuiID = reinterpret_cast<u64>(depthId);
             state.renderState.gbufferImGuiIDs.clear();
             state.renderState.gbufferImGuiIDs.push_back(reinterpret_cast<u64>(idNormal));
             state.renderState.gbufferImGuiIDs.push_back(reinterpret_cast<u64>(idAlbedo));
@@ -265,9 +171,9 @@ void PassManager::PrepareMainPassDataForFrame(MainPassData& mainPassData, FrameR
 {
     mainPassData.pResourceManager = &m_resourceManager;
     mainPassData.pGbuffer = &m_gbuffer;
-    mainPassData.mainView.descriptorSet = ctx.mainViewUBODescriptor;
+    mainPassData.mainView.descriptorSet = ctx.sharedDataUBODescriptor;
     mainPassData.directionalLightShadowMap = m_globalRendererAttachments.directionalLightShadowMap;
-    mainPassData.cascades = m_currentShadowMapState.cascadeCount;
+    mainPassData.cascades = m_frameResourceManager.GetShadowMapState().cascadeCount;
     mainPassData.depthBufferBindlessHandle = m_depthBindlessHandle;
 }
 
@@ -380,6 +286,7 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
         pDepthWorkBuffer->SetSignalStages(SyncStages::EARLY_FRAGMENT_TESTS | SyncStages::LATE_FRAGMENT_TESTS | SyncStages::COMPUTE_SHADER);
         pDepthWorkBuffer->Bake();
         g_pQueueHandler->SubmitCommandBufferThisFrame({pDepthWorkBuffer, QueueType::Graphics});
+        g_pQueueHandler->DispatchAllRequests();
     }
 
     // Manual dispatch SSS (DepthReliantCompute group)
@@ -449,6 +356,7 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
 
     pCompositeCmdBuffer->Bake();
     g_pQueueHandler->SubmitCommandBufferThisFrame({pCompositeCmdBuffer, QueueType::Graphics});
+    g_pQueueHandler->DispatchAllRequests();
 }
 
 void PassManager::RecordInitialLayoutTransitions(CommandBuffer* pCmdBuffer,
@@ -479,14 +387,17 @@ void PassManager::RecordGBufferToShaderRead(CommandBuffer* pCmdBuffer,
     VkTextureManager::SetLayoutBarrierMasks(
         colorCmd, ImageLayout::COLOR_ATTACHMENT_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
     pCmdBuffer->RecordCommand(colorCmd);
+    const auto* pShadowMap = m_globalRendererAttachments.directionalLightShadowMap.pTexture;
+    if (pShadowMap == nullptr)
+        return;
 
-    stltype::vector<const Texture*> depthTextures = {m_globalRendererAttachments.directionalLightShadowMap.pTexture};
-    ImageLayoutTransitionCmd depthCmd(depthTextures);
-    depthCmd.oldLayout = ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-    depthCmd.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
+    stltype::vector<const Texture*> shadowTextures = {pShadowMap};
+    ImageLayoutTransitionCmd shadowCmd(shadowTextures);
+    shadowCmd.oldLayout = ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    shadowCmd.newLayout = ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL;
     VkTextureManager::SetLayoutBarrierMasks(
-        depthCmd, ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-    pCmdBuffer->RecordCommand(depthCmd);
+        shadowCmd, ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+    pCmdBuffer->RecordCommand(shadowCmd);
 }
 
 void PassManager::RecordDepthToReadOnly(CommandBuffer* pCmdBuffer)
@@ -534,7 +445,7 @@ void PassManager::RecordUIToShaderRead(CommandBuffer* pCmdBuffer, const Texture*
 void PassManager::RecordSwapchainToPresent(CommandBuffer* pCmdBuffer)
 {
     stltype::vector<const Texture*> textures = {
-        m_frameRendererContexts[m_currentSwapChainIdx].pCurrentSwapchainTexture};
+        m_frameResourceManager.GetFrameRendererContext(m_currentSwapChainIdx).pCurrentSwapchainTexture};
     ImageLayoutTransitionCmd cmd(textures);
     cmd.oldLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
     cmd.newLayout = ImageLayout::PRESENT_SRC_KHR;
@@ -545,14 +456,11 @@ void PassManager::RecordSwapchainToPresent(CommandBuffer* pCmdBuffer)
 void PassManager::Init()
 {
     InitResourceManagerAndCallbacks();
-    CreatePassObjectsAndLayouts();
-    CreateUBOsAndMap();
-    CreateFrameRendererContexts();
+    CreateUBOsAndMap(); // Reuses Initialize for everything
     InitFrameContexts();
     InitPassesAndImGui();
 
-    m_cachedTransformSSBO.resize(MAX_ENTITIES);
-    m_cachedSceneAABBs.resize(MAX_ENTITIES);
+    // Removed caching arrays related to rendering loop
 
     // Initialize GPU timing query
     m_gpuTimingQuery.Init(128); // Support up to 128 passes
@@ -567,10 +475,8 @@ void PassManager::Init()
 
 void PassManager::ExecutePasses(u32 frameIdx)
 {
-    auto& mainPassData = m_mainPassData.at(frameIdx);
-
-    // UI and Composite always render, so we always have something to present
-    auto& ctx = m_frameRendererContexts.at(m_currentSwapChainIdx);
+    auto& ctx = m_frameResourceManager.GetFrameRendererContext(m_currentSwapChainIdx);
+    auto& mainPassData = m_mainPassData.at(m_currentSwapChainIdx);
 
     DEBUG_ASSERT(ctx.renderingFinishedSemaphore == &ctx.pPresentLayoutTransitionSignalSemaphore);
     DEBUG_ASSERT(ctx.renderingFinishedSemaphore->GetRef() != VK_NULL_HANDLE);
@@ -638,298 +544,29 @@ void PassManager::AddPass(PassType type, stltype::unique_ptr<ConvolutionRenderPa
 
 void PassManager::SetEntityMeshDataForFrame(EntityMeshDataMap&& data, u32 frameIdx)
 {
-    // DEBUG_ASSERT(frameIdx == FrameGlobals::GetFrameNumber());
-    m_passDataMutex.lock();
-    m_dataToBePreProcessed.entityMeshData = std::move(data);
-    m_dataToBePreProcessed.frameIdx = frameIdx;
-    m_passDataMutex.unlock();
+    m_frameResourceManager.SetEntityMeshDataForFrame(std::move(data), frameIdx);
 }
 
 void PassManager::SetEntityTransformDataForFrame(TransformSystemData&& data, u32 frameIdx)
 {
-    // DEBUG_ASSERT(frameIdx == FrameGlobals::GetFrameNumber());
-    m_passDataMutex.lock();
-    m_dataToBePreProcessed.entityTransformData = std::move(data);
-    m_dataToBePreProcessed.frameIdx = frameIdx;
-    m_passDataMutex.unlock();
+    m_frameResourceManager.SetEntityTransformDataForFrame(std::move(data), frameIdx);
 }
 
 void PassManager::SetLightDataForFrame(PointLightVector&& data, DirLightVector&& dirLights, u32 frameIdx)
 {
-    // DEBUG_ASSERT(frameIdx == FrameGlobals::GetFrameNumber());
-    m_passDataMutex.lock();
-    m_dataToBePreProcessed.lightVector = data;
-    m_dataToBePreProcessed.dirLightVector = dirLights;
-    m_dataToBePreProcessed.frameIdx = frameIdx;
-    m_passDataMutex.unlock();
+    m_frameResourceManager.SetLightDataForFrame(std::move(data), std::move(dirLights), frameIdx);
 }
 
-void PassManager::SetMainViewData(UBO::ViewUBO&& viewUBO, f32 zNear, f32 zFar, u32 frameIdx)
+void RenderPasses::PassManager::SetSharedData(RenderView&& mainView, u32 frameIdx)
 {
-    m_passDataMutex.lock();
-    m_dataToBePreProcessed.mainViewUBO = std::move(viewUBO);
-    m_dataToBePreProcessed.zNear = zNear;
-    m_dataToBePreProcessed.zFar = zFar;
-    m_dataToBePreProcessed.frameIdx = frameIdx;
-    m_passDataMutex.unlock();
+    m_frameResourceManager.SetSharedData(std::move(mainView), frameIdx);
 }
 
 void PassManager::PreProcessDataForCurrentFrame(u32 frameIdx)
 {
-    const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
-    // Recreate shadow maps
-    {
-        const auto csmCascades = renderState.directionalLightCascades;
-        const auto csmResolution = renderState.csmResolution;
-        if (m_currentShadowMapState.cascadeCount != csmCascades ||
-            m_currentShadowMapState.shadowMapExtents.x != csmResolution.x ||
-            m_currentShadowMapState.shadowMapExtents.y != csmResolution.y)
-        {
-            RecreateShadowMaps(csmCascades, csmResolution);
-            m_currentShadowMapState.cascadeCount = csmCascades;
-            m_currentShadowMapState.shadowMapExtents = csmResolution;
-
-            RegisterImGuiTextures();
-        }
-    }
-    if (m_needsToPropagateMainDataUpdate && m_dataToBePreProcessed.IsEmpty())
-    {
-        u32 frameToPropagate = m_frameIdxToPropagate;
-        u32 targetFrame = FrameGlobals::GetPreviousFrameNumber(m_frameIdxToPropagate);
-        m_needsToPropagateMainDataUpdate = false;
-        // Use m_currentSwapChainIdx because that's the context we are preparing for
-        auto& ctx = m_frameRendererContexts[m_currentSwapChainIdx];
-
-        // Also update zNear/zFar for the target frame if we are propagating
-        ctx.zNear = m_dataToBePreProcessed.zNear;
-        ctx.zFar = m_dataToBePreProcessed.zFar;
-
-        m_resourceManager.WriteInstanceSSBODescriptorUpdate(m_currentSwapChainIdx);
-
-        ctx.mainViewUBODescriptor->WriteBufferUpdate(m_viewUBO);
-        ctx.tileArraySSBODescriptor->WriteSSBOUpdate(m_lightClusterSSBO);
-        ctx.tileArraySSBODescriptor->WriteBufferUpdate(m_lightUniformsUBO, s_globalLightUniformsBindingSlot);
-    }
-
-    if (g_pMaterialManager->IsBufferDirty())
-    {
-        m_resourceManager.UpdateGlobalMaterialBuffer(g_pMaterialManager->GetMaterialBuffer(), m_currentSwapChainIdx);
-        m_needsToPropagateMainDataUpdate = true;
-        m_frameIdxToPropagate = frameIdx;
-        g_pMaterialManager->MarkBufferUploaded();
-    }
-
-    if (m_dataToBePreProcessed.IsEmpty() == false)
-    {
-        DEBUG_ASSERT(m_dataToBePreProcessed.IsValid());
-        PassGeometryData passData{};
-
-        if (m_dataToBePreProcessed.entityMeshData.empty() == false)
-        {
-            stltype::hash_map<u64, u32> entityToMeshIdx;
-            entityToMeshIdx.reserve(m_dataToBePreProcessed.entityMeshData.size());
-            u32 meshIdx = 0;
-
-            for (const auto& data : m_dataToBePreProcessed.entityTransformData)
-            {
-                const auto& entityID = data.first;
-                DEBUG_ASSERT(entityToMeshIdx.find(entityID) == entityToMeshIdx.end());
-                entityToMeshIdx.insert({entityID, meshIdx});
-                ++meshIdx;
-            }
-
-            passData.staticMeshPassData.reserve(m_dataToBePreProcessed.entityMeshData.size());
-            m_entityToTransformUBOIdx = entityToMeshIdx;
-            for (const auto& meshDataVecPair : m_dataToBePreProcessed.entityMeshData)
-            {
-                const auto& entityID = meshDataVecPair.first;
-                for (const auto& meshData : meshDataVecPair.second)
-                {
-                    DEBUG_ASSERT(m_entityToTransformUBOIdx.find(entityID) != m_entityToTransformUBOIdx.end());
-                    const auto& bufferIndex = m_entityToTransformUBOIdx[entityID];
-                    passData.staticMeshPassData.emplace_back(meshData, bufferIndex);
-                }
-            }
-
-            // Compare to current state
-            bool needsRebuild = false;
-            // Refactor the preprocessmeshdata to also hand over current state and check for differences
-            if (m_currentPassGeometryState.staticMeshPassData.size() == passData.staticMeshPassData.size())
-            {
-                for (u32 i = 0; i < m_currentPassGeometryState.staticMeshPassData.size(); ++i)
-                {
-                    const auto& currentMeshData = m_currentPassGeometryState.staticMeshPassData[i].meshData;
-                    const auto& newMeshData = passData.staticMeshPassData[i].meshData;
-                    if (newMeshData.DidGeometryChange(currentMeshData))
-                    {
-                        needsRebuild = true;
-                        break;
-                    }
-                }
-            }
-            else
-            {
-                needsRebuild = true;
-            }
-            m_currentPassGeometryState = passData;
-            if (needsRebuild)
-            {
-                m_resourceManager.UpdateInstanceDataSSBO(passData.staticMeshPassData, m_currentSwapChainIdx);
-                PreProcessMeshData(
-                    passData.staticMeshPassData, FrameGlobals::GetPreviousFrameNumber(frameIdx), frameIdx);
-            }
-            TransferPassData(std::move(passData), m_dataToBePreProcessed.frameIdx);
-        }
-
-        for (const auto& data : m_dataToBePreProcessed.entityTransformData)
-        {
-            const auto& entityID = data.first;
-            auto uboIt = m_entityToTransformUBOIdx.find(entityID);
-            // If we haven't gotten any new mesh data we shouldn't need any transform data either
-            // TODO: See if that's true aka biting me in the ass somewhere
-            if (uboIt == m_entityToTransformUBOIdx.end())
-                continue;
-
-            const u32 ssboIdx = uboIt->second;
-            m_cachedTransformSSBO[ssboIdx] = data.second;
-            // Also populate AABBs
-            AABB aabb{};
-            if (m_dataToBePreProcessed.entityMeshData.find(entityID) != m_dataToBePreProcessed.entityMeshData.end())
-            {
-                const auto& meshDataVec = m_dataToBePreProcessed.entityMeshData.at(entityID);
-                if (!meshDataVec.empty())
-                {
-                    aabb = meshDataVec[0].aabb;
-                }
-            }
-            m_cachedSceneAABBs[ssboIdx] = aabb;
-        }
-        m_resourceManager.UpdateTransformBuffer(
-            m_cachedTransformSSBO, m_currentSwapChainIdx, (u32)m_entityToTransformUBOIdx.size());
-        m_resourceManager.UpdateSceneAABBBuffer(
-            m_cachedSceneAABBs, m_currentSwapChainIdx, (u32)m_entityToTransformUBOIdx.size());
-
-        if (m_dataToBePreProcessed.mainViewUBO.has_value())
-        {
-            UpdateMainViewUBO(&m_dataToBePreProcessed.mainViewUBO.value(), sizeof(UBO::ViewUBO), m_currentSwapChainIdx);
-        }
-
-        // Set zNear/zFar for this frame's context (needed by shadow pass)
-        auto& ctx = m_frameRendererContexts[m_currentSwapChainIdx];
-        ctx.zNear = m_dataToBePreProcessed.zNear;
-        ctx.zFar = m_dataToBePreProcessed.zFar;
-
-        // Set the camera view matrix for shadow cascade computation
-        if (m_dataToBePreProcessed.mainViewUBO.has_value())
-        {
-            m_mainPassData[m_currentSwapChainIdx].mainCamViewMatrix = m_dataToBePreProcessed.mainViewUBO->view;
-            m_mainPassData[m_currentSwapChainIdx].mainCamInvViewProj =
-                m_dataToBePreProcessed.mainViewUBO->viewProjection.Invert();
-        }
-
-        if (m_dataToBePreProcessed.lightVector.empty() == false ||
-            m_dataToBePreProcessed.dirLightVector.empty() == false)
-        {
-            // Light data - populate LightClusterSSBO
-            auto& lightCluster = m_lightCluster;
-            lightCluster.numLights = 0;
-
-            for (const auto& light : m_dataToBePreProcessed.lightVector)
-            {
-                if (lightCluster.numLights < MAX_SCENE_LIGHTS)
-                {
-                    lightCluster.lights[lightCluster.numLights++] = light;
-                }
-            }
-            if (m_dataToBePreProcessed.dirLightVector.empty() == false)
-            {
-                const auto& dirLight = m_dataToBePreProcessed.dirLightVector[0];
-                lightCluster.dirLight.direction =
-                    mathstl::Vector4(dirLight.direction.x, dirLight.direction.y, dirLight.direction.z, 1);
-                lightCluster.dirLight.direction.Normalize();
-                lightCluster.dirLight.color =
-                    mathstl::Vector4(dirLight.color.x, dirLight.color.y, dirLight.color.z, dirLight.color.w);
-            }
-            UpdateLightClusterSSBO(lightCluster, m_currentSwapChainIdx);
-
-            // Directional lights
-            {
-                const auto& dirLights = m_dataToBePreProcessed.dirLightVector;
-                m_mainPassData.at(m_currentSwapChainIdx).csmViews.clear();
-                for (const auto& dirLight : dirLights)
-                {
-                    auto& dirLightView = m_mainPassData.at(m_currentSwapChainIdx).csmViews.emplace_back();
-                    dirLightView.dir =
-                        mathstl::Vector3(dirLight.direction.x, dirLight.direction.y, dirLight.direction.z);
-                    dirLightView.cascades = 1; // Force Single Shadow Map
-                }
-            }
-        }
-
-        // Clear
-        m_needsToPropagateMainDataUpdate = true;
-        m_frameIdxToPropagate = m_currentSwapChainIdx;
-        m_dataToBePreProcessed.Clear();
-        g_pQueueHandler->DispatchAllRequests();
-    }
-
-    // Light uniforms (updated every frame for camera pos, exposure, ambient, etc.)
-    {
-        auto& mainPassData = m_mainPassData.at(m_currentSwapChainIdx);
-        const auto camEnt = g_pApplicationState->GetCurrentApplicationState().mainCameraEntity;
-        const ECS::Components::Camera* camComp = g_pEntityManager->GetComponent<ECS::Components::Camera>(camEnt);
-
-        // Skip if camera component doesn't exist yet
-        if (!camComp)
-            return;
-
-        LightUniforms data;
-
-        // Get camera position from ECS Transform component
-        const ECS::Components::Transform* camTransform =
-            g_pEntityManager->GetComponent<ECS::Components::Transform>(camEnt);
-        mathstl::Vector3 camPos = camTransform ? camTransform->position : mathstl::Vector3::Zero;
-
-        data.CameraPos = mathstl::Vector4(camPos.x, camPos.y, camPos.z, 1);
-        data.LightGlobals = mathstl::Vector4(renderState.exposure,
-                                             static_cast<f32>(renderState.toneMapperType),
-                                             renderState.ambientIntensity,
-                                             static_cast<f32>(renderState.debugViewMode));
-
-        // Cluster parameters
-        // Assume zNear/zFar from camera
-        float zNear = camComp->zNear;
-        float zFar = camComp->zFar;
-        u32 sliceCount = renderState.clusterCount.z;
-
-        float logRatio = std::log(zFar / zNear);
-        float scale = (float)sliceCount / logRatio;
-        float bias = -std::log(zNear) * scale;
-
-        data.ClusterValues = mathstl::Vector4(scale, bias, (float)sliceCount, renderState.shadowsEnabled ? 1.0f : 0.0f);
-        data.ClusterSize = mathstl::Vector4((float)renderState.clusterCount.x,
-                                            (float)renderState.clusterCount.y,
-                                            (float)renderState.clusterCount.z,
-                                            0.0f); // TODO: Tile size in pixels if needed
-        data.GT7Params = mathstl::Vector4(renderState.gt7PaperWhite, renderState.gt7ReferenceLuminance, 0.0f, 0.0f);
-
-        mainPassData.mainView.viewport =
-            RenderViewUtils::CreateViewportFromData(FrameGlobals::GetSwapChainExtent(), camComp->zNear, camComp->zFar);
-        mainPassData.mainView.fov = camComp->fov;
-
-        auto& ctx = m_frameRendererContexts[m_currentSwapChainIdx];
-        if (m_dataToBePreProcessed.frameIdx == frameIdx)
-        {
-            ctx.zNear = m_dataToBePreProcessed.zNear;
-            ctx.zFar = m_dataToBePreProcessed.zFar;
-        }
-
-        auto pDescriptor = m_frameRendererContexts[m_currentSwapChainIdx].tileArraySSBODescriptor;
-        auto mappedBuffer = m_mappedLightUniformsUBO;
-        memcpy(mappedBuffer, &data, m_lightUniformsUBO.GetInfo().size);
-        pDescriptor->WriteBufferUpdate(m_lightUniformsUBO, s_globalLightUniformsBindingSlot);
-    }
+    m_frameResourceManager.PreProcessDataForCurrentFrame(frameIdx, m_currentSwapChainIdx, this);
 }
+
 
 void RenderPasses::PassManager::RecreateGbuffers(const mathstl::Vector2& resolution)
 {
@@ -1004,28 +641,19 @@ void RenderPasses::PassManager::RecreateGbuffers(const mathstl::Vector2& resolut
         g_pTexManager->MakeTextureBindless(gbufferRequestUI.handle),
         g_pTexManager->MakeTextureBindless(gbufferRequestDebug.handle)};
 
-    // Add depth texture handle
+    // Keep depth bound for composite/SSS paths that reconstruct position from scene depth.
     gbufferHandles.push_back(m_depthBindlessHandle);
 
     // Update gbuffer descriptor set
-    memcpy(m_mappedGBufferPostProcessUBO, &gbufferHandles[0], sizeof(BindlessTextureHandle) * gbufferHandles.size());
-    for (auto& ctx : m_frameRendererContexts)
+    memcpy(m_frameResourceManager.GetMappedGBufferPostProcessUBO(), &gbufferHandles[0], sizeof(BindlessTextureHandle) * gbufferHandles.size());
+    for (u32 i = 0; i < SWAPCHAIN_IMAGES; i++)
     {
-        ctx.gbufferPostProcessDescriptor->WriteBufferUpdate(m_gbufferPostProcessUBO, s_globalGbufferPostProcessUBOSlot);
+        auto& ctx = m_frameResourceManager.GetFrameRendererContext(i);
+        ctx.gbufferPostProcessDescriptor->WriteBufferUpdate(m_frameResourceManager.GetGBufferPostProcessUBO(), s_globalGbufferPostProcessUBOSlot);
     }
 }
 
-void RenderPasses::PassManager::DispatchSSBOTransfer(
-    void* data, DescriptorSet* pDescriptor, u32 size, StorageBuffer* pSSBO, u32 offset, u32 dstBinding)
-{
-    AsyncQueueHandler::SSBOTransfer transfer{.data = data,
-                                             .size = size,
-                                             .offset = offset,
-                                             .pDescriptorSet = nullptr,
-                                             .pStorageBuffer = pSSBO,
-                                             .dstBinding = dstBinding};
-    g_pQueueHandler->SubmitTransferCommandAsync(transfer);
-}
+
 
 void RenderPasses::PassManager::BlockUntilPassesFinished(u32 frameIdx)
 {
@@ -1068,7 +696,7 @@ void RenderPasses::PassManager::PreProcessMeshData(const stltype::vector<PassMes
 {
     ScopedZone("PassManager::PreProcessMeshData");
 
-    auto& lastFrameCtx = m_frameRendererContexts[lastFrame];
+    auto& lastFrameCtx = m_frameResourceManager.GetFrameRendererContext(lastFrame);
     lastFrameCtx.pResourceManager = &m_resourceManager;
     for (auto& [type, passes] : m_passes)
     {
@@ -1134,10 +762,11 @@ void RenderPasses::PassManager::RecreateShadowMaps(u32 cascades, const mathstl::
     }
 
     // Update gbuffer descriptor set
-    std::memcpy(m_mappedShadowMapUBO, &csm.bindlessHandle, sizeof(BindlessTextureHandle));
-    for (auto& ctx : m_frameRendererContexts)
+    std::memcpy(m_frameResourceManager.GetMappedShadowMapUBO(), &csm.bindlessHandle, sizeof(BindlessTextureHandle));
+    for (u32 i = 0; i < SWAPCHAIN_IMAGES; i++)
     {
-        ctx.gbufferPostProcessDescriptor->WriteBufferUpdate(m_shadowMapUBO, s_shadowmapUBOBindingSlot);
+        auto& ctx = m_frameResourceManager.GetFrameRendererContext(i);
+        ctx.gbufferPostProcessDescriptor->WriteBufferUpdate(m_frameResourceManager.GetShadowMapUBO(), s_shadowmapUBOBindingSlot);
     }
 
     // Notify CSM pass to rebuild pipeline with new cascade count
@@ -1154,6 +783,33 @@ void RenderPasses::PassManager::RecreateShadowMaps(u32 cascades, const mathstl::
     }
 }
 
+void RenderPasses::PassManager::RegisterImGuiTextures()
+{
+    m_csmCascadeImGuiIDs.clear();
+
+    const auto& csm = m_globalRendererAttachments.directionalLightShadowMap;
+    if (csm.pTexture == nullptr || csm.cascadeViews.empty())
+    {
+        g_pApplicationState->RegisterUpdateFunction(
+            [](ApplicationState& state) { state.renderState.csmCascadeImGuiIDs.clear(); });
+        return;
+    }
+
+    m_csmCascadeImGuiIDs.reserve(csm.cascadeViews.size());
+    for (const auto& cascadeView : csm.cascadeViews)
+    {
+        if (cascadeView == VK_NULL_HANDLE)
+            continue;
+
+        VkDescriptorSet id = ImGui_ImplVulkan_AddTexture(
+            csm.pTexture->GetSampler(), cascadeView, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+        m_csmCascadeImGuiIDs.push_back(reinterpret_cast<u64>(id));
+    }
+
+    g_pApplicationState->RegisterUpdateFunction(
+        [cascadeIDs = m_csmCascadeImGuiIDs](ApplicationState& state) { state.renderState.csmCascadeImGuiIDs = cascadeIDs; });
+}
+
 void RenderPasses::PassManager::TransferPassData(const PassGeometryData& passData, u32 frameIdx)
 {
     // Intentionally empty - placeholder for future transfer logic
@@ -1161,53 +817,7 @@ void RenderPasses::PassManager::TransferPassData(const PassGeometryData& passDat
     (void)frameIdx;
 }
 
-void RenderPasses::PassManager::UpdateMainViewUBO(const void* data, size_t size, u32 frameIdx)
-{
-    std::memcpy(m_mappedViewUBOBuffer, data, size);
-}
 
-void RenderPasses::PassManager::RegisterImGuiTextures()
-{
-    auto& csm = m_globalRendererAttachments.directionalLightShadowMap;
-
-    for (auto& id : m_csmCascadeImGuiIDs)
-    {
-        ImGui_ImplVulkan_RemoveTexture(reinterpret_cast<VkDescriptorSet>(id));
-    }
-    m_csmCascadeImGuiIDs.clear();
-    m_csmCascadeImGuiIDs.reserve(csm.cascades);
-
-    for (u32 i = 0; i < csm.cascades; ++i)
-    {
-        if (csm.cascadeViews[i] != VK_NULL_HANDLE)
-        {
-            VkDescriptorSet cascadeDescriptor = ImGui_ImplVulkan_AddTexture(
-                static_cast<TextureVulkan*>(g_pTexManager->GetTexture(csm.handle))->GetSampler(),
-                csm.cascadeViews[i],
-                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-            m_csmCascadeImGuiIDs.push_back(reinterpret_cast<u64>(cascadeDescriptor));
-        }
-    }
-
-    g_pApplicationState->RegisterUpdateFunction([this](auto& state)
-                                                { state.renderState.csmCascadeImGuiIDs = m_csmCascadeImGuiIDs; });
-}
-
-void RenderPasses::PassManager::UpdateShadowViewUBO(const UBO::ShadowmapViewUBO& data, u32 frameIdx)
-{
-    std::memcpy(m_mappedShadowViewUBO, &data, sizeof(UBO::ShadowmapViewUBO));
-}
-
-void RenderPasses::PassManager::UpdateLightClusterSSBO(const UBO::LightClusterSSBO& data, u32 frameIdx)
-{
-    // Upload entire LightClusterSSBO (dirLight + numLights + pad + lights array)
-    DispatchSSBOTransfer((void*)&data,
-                         nullptr,
-                         UBO::LightClusterSSBOSize,
-                         &m_lightClusterSSBO,
-                         0,
-                         s_tileArrayBindingSlot);
-}
 
 const stltype::vector<PassTimingResult>& RenderPasses::PassManager::GetPassTimingResults() const
 {

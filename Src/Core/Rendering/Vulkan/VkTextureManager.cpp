@@ -702,10 +702,10 @@ void VkTextureManager::SetLayoutBarrierMasks(ImageLayoutTransitionCmd& transitio
     }
     else if (oldLayout == ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL && newLayout == ImageLayout::SHADER_READ_ONLY_OPTIMAL)
     {
-        transitionCmd.srcAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        transitionCmd.srcAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
         transitionCmd.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
 
-        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
+        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
         transitionCmd.dstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
     }
     else if (oldLayout == ImageLayout::UNDEFINED && newLayout == ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
@@ -725,9 +725,9 @@ void VkTextureManager::SetLayoutBarrierMasks(ImageLayoutTransitionCmd& transitio
     }
     else if (oldLayout == ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL && newLayout == ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL)
     {
-        transitionCmd.srcAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        transitionCmd.srcAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
         transitionCmd.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
-        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
+        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
         transitionCmd.dstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
     }
     // Not strictly great but mainly used for compute shaders

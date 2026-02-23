@@ -2,6 +2,7 @@
 #include "../Material.h"
 #include "Core/Rendering/Core/RenderingForwardDecls.h"
 #include "LightDefines.h"
+#include "../../../../Shaders/Globals/DebugFlags.h"
 
 namespace UBO
 {
@@ -95,7 +96,7 @@ struct PerPassObjectDataSSBO
 };
 static constexpr u64 PerPassObjectDataSSBOSize = sizeof(u32) * MAX_ENTITIES;
 
-struct ViewUBO
+struct SharedDataUBO
 {
     mathstl::Matrix view;
     mathstl::Matrix projection;
@@ -103,6 +104,15 @@ struct ViewUBO
     mathstl::Matrix viewInverse;
     mathstl::Matrix projectionInverse;
     mathstl::Vector4 viewPos;
+    
+    // Debug & Global settings
+    u32 debugFlags;
+    s32 debugViewMode;
+    f32 exposure;
+    s32 toneMapperType;
+    f32 ambientIntensity;
+    f32 gt7PaperWhite;
+    f32 gt7ReferenceLuminance;
 };
 
 struct RenderPassUBO
