@@ -145,7 +145,8 @@ FetchContent_Declare(
 	SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/ImGuizmo"
 	GIT_PROGRESS TRUE
 )
-add_subdirectory("${CMAKE_SOURCE_DIR}/External/VMA")
+# VMA is now handled by FetchContent_MakeAvailable below
+
 
 # GLFW build options - disable docs, examples, and tests
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "Disable GLFW documentation" FORCE)
@@ -170,7 +171,7 @@ set(ASSIMP_BUILD_GLTF_IMPORTER ON CACHE BOOL "Enable glTF importer" FORCE)
 # Disable all exporters (not needed for import-only workflow)
 set(ASSIMP_BUILD_ALL_EXPORTERS_BY_DEFAULT OFF CACHE BOOL "Disable all exporters" FORCE)
 
-FetchContent_MakeAvailable(EASTL EAStdC EAAssert EAThread GLFW3 IMGUI DIRECTXMATH ASSIMP TRACY)
+FetchContent_MakeAvailable(VulkanMemoryAllocator EASTL EAStdC EAAssert EAThread GLFW3 IMGUI DIRECTXMATH ASSIMP TRACY ImGuizmo)
 
 find_package(DIRECTXMATH REQUIRED)
 message(STATUS "DirectXMath found at ${DIRECTXMATH_INCLUDE_DIR}")
