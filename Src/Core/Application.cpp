@@ -11,8 +11,6 @@
 #include "TimeData.h"
 #include <GLFW/glfw3.h>
 #include <imgui/backends/imgui_impl_glfw.h>
-#include <imgui/backends/imgui_impl_glfw.h>
-#include <imgui/backends/imgui_impl_glfw.h>
 #include <imgui/backends/imgui_impl_vulkan.h>
 #include <imgui/imgui.h>
 #include "Core/Rendering/Vulkan/VkProfiler.h"

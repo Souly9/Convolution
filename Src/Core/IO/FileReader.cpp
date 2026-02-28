@@ -149,10 +149,15 @@ void FileReader::ReadImageFile(const IORequest& request)
     if (isDDS)
     {
         dds::Image img;
-        dds::readFile(request.filePath.data(), &img);
+        if (dds::readFile(request.filePath.data(), &img) != dds::ReadResult::Success)
+        {
+            DEBUG_LOGF("[FileReader] Failed to load DDS: {}", request.filePath.data());
+            return;
+        }
+
         if (img.mipmaps.empty())
         {
-            DEBUG_LOGF("[FileReader] Failed to load DDS or empty mipmaps: {}", request.filePath.data());
+            DEBUG_LOGF("[FileReader] Empty mipmaps in DDS: {}", request.filePath.data());
             return;
         }
 

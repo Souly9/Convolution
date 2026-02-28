@@ -88,7 +88,7 @@ private:
             ImGui::Indent(depth * ImGui::GetStyle().IndentSpacing);
         }
 
-        bool node_open = ImGui::TreeNodeEx((void*)&transform, node_flags, "%s", transform.name.c_str());
+        ImGui::TreeNodeEx((void*)&transform, node_flags, "%s", transform.name.c_str());
 
         if (depth > 0)
         {

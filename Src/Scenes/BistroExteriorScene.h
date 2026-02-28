@@ -45,7 +45,5 @@ public:
                                         .type = ECS::Components::LightType::Directional,
                                         .isShadowCaster = true};
         g_pEntityManager->AddComponent(dirLightEnt, dirLight);
-        auto lightsRootEnt = g_pEntityManager->CreateEntity(mathstl::Vector3(0, 0, 0), "LightsRoot");
-        //CreateTestLights(mathstl::Vector3(-30, 0, -100), 20, 5.0f, lightsRootEnt);
     }
 };

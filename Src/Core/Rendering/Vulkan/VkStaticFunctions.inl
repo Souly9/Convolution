@@ -143,7 +143,7 @@ static void SubmitCommandBufferToQueue(const stltype::vector<CommandBuffer*>& co
         }
     }
 
-    VkQueue submitQueue;
+    VkQueue submitQueue = VK_NULL_HANDLE;
     if (queue == QueueType::Transfer)
         submitQueue = VkGlobals::GetAllQueues().transfer;
     else if (queue == QueueType::Compute)

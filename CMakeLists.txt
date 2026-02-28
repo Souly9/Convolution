@@ -147,12 +147,34 @@ FetchContent_Declare(
 	GIT_PROGRESS TRUE
 )
 
-# SimpleMath headers are often missing on fresh clones if not tracked
+# SimpleMath, dds, stb, and aftermath headers are often missing on fresh clones if not tracked
 if(NOT EXISTS "${CMAKE_SOURCE_DIR}/External/SimpleMath/SimpleMath.h")
-    message(STATUS "SimpleMath.h not found, downloading from Microsoft repository...")
+    message(STATUS "SimpleMath.h not found, downloading...")
     file(MAKE_DIRECTORY "${CMAKE_SOURCE_DIR}/External/SimpleMath")
     file(DOWNLOAD "https://raw.githubusercontent.com/microsoft/DirectXTK/main/Inc/SimpleMath.h" "${CMAKE_SOURCE_DIR}/External/SimpleMath/SimpleMath.h" SHOW_PROGRESS)
     file(DOWNLOAD "https://raw.githubusercontent.com/microsoft/DirectXTK/main/Inc/SimpleMath.inl" "${CMAKE_SOURCE_DIR}/External/SimpleMath/SimpleMath.inl" SHOW_PROGRESS)
+endif()
+
+if(NOT EXISTS "${CMAKE_SOURCE_DIR}/External/dds/dds.hpp")
+    message(STATUS "dds.hpp not found, downloading from spnda/dds-image...")
+    file(MAKE_DIRECTORY "${CMAKE_SOURCE_DIR}/External/dds")
+    file(DOWNLOAD "https://raw.githubusercontent.com/spnda/dds-image/master/dds.hpp" "${CMAKE_SOURCE_DIR}/External/dds/dds.hpp" SHOW_PROGRESS)
+    file(DOWNLOAD "https://raw.githubusercontent.com/spnda/dds-image/master/dds_formats.hpp" "${CMAKE_SOURCE_DIR}/External/dds/dds_formats.hpp" SHOW_PROGRESS)
+endif()
+
+if(NOT EXISTS "${CMAKE_SOURCE_DIR}/External/stb/stb_image.h")
+    message(STATUS "stb_image.h not found, downloading from nothings/stb...")
+    file(MAKE_DIRECTORY "${CMAKE_SOURCE_DIR}/External/stb")
+    file(DOWNLOAD "https://raw.githubusercontent.com/nothings/stb/master/stb_image.h" "${CMAKE_SOURCE_DIR}/External/stb/stb_image.h" SHOW_PROGRESS)
+endif()
+
+if(NOT EXISTS "${CMAKE_SOURCE_DIR}/External/Aftermath/include/GFSDK_Aftermath.h")
+    message(STATUS "Aftermath headers not found, downloading from NVIDIA/nsight-aftermath-samples...")
+    file(MAKE_DIRECTORY "${CMAKE_SOURCE_DIR}/External/Aftermath/include")
+    file(DOWNLOAD "https://raw.githubusercontent.com/NVIDIA/nsight-aftermath-samples/master/include/GFSDK_Aftermath.h" "${CMAKE_SOURCE_DIR}/External/Aftermath/include/GFSDK_Aftermath.h" SHOW_PROGRESS)
+    file(DOWNLOAD "https://raw.githubusercontent.com/NVIDIA/nsight-aftermath-samples/master/include/GFSDK_Aftermath_Defines.h" "${CMAKE_SOURCE_DIR}/External/Aftermath/include/GFSDK_Aftermath_Defines.h" SHOW_PROGRESS)
+    file(DOWNLOAD "https://raw.githubusercontent.com/NVIDIA/nsight-aftermath-samples/master/include/GFSDK_Aftermath_GpuCrashDump.h" "${CMAKE_SOURCE_DIR}/External/Aftermath/include/GFSDK_Aftermath_GpuCrashDump.h" SHOW_PROGRESS)
+    file(DOWNLOAD "https://raw.githubusercontent.com/NVIDIA/nsight-aftermath-samples/master/include/GFSDK_Aftermath_GpuCrashDumpDecoding.h" "${CMAKE_SOURCE_DIR}/External/Aftermath/include/GFSDK_Aftermath_GpuCrashDumpDecoding.h" SHOW_PROGRESS)
 endif()
 # VMA is now handled by FetchContent_MakeAvailable below
 

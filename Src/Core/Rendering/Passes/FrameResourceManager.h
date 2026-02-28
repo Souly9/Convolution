@@ -31,13 +31,13 @@ struct EntityMeshData
 {
     Mesh* pMesh;
     Material* pMaterial;
-    class AABB aabb;
+    AABB aabb;
     // Needed for creating the instanced to draw in the renderpasses
     // Only guaranteed to be valid during Renderpass RebuildInternalData
     MeshHandle meshResourceHandle;
     u32 instanceDataIdx;
 
-    EntityMeshData(Mesh* pM, Material* pMat, const class AABB& box, bool isDebug) : pMesh(pM), pMaterial(pMat), aabb{box}
+    EntityMeshData(Mesh* pM, Material* pMat, const AABB& box, bool isDebug) : pMesh(pM), pMaterial(pMat), aabb{box}
     {
         flags[s_isDebugMeshFlag] = isDebug;
     }
@@ -283,7 +283,7 @@ private:
     stltype::hash_map<ECS::EntityID, u32> m_entityToObjectDataIdx{};
     DirLightVector m_cachedDirLights{};
     stltype::vector<DirectX::XMFLOAT4X4> m_cachedTransformSSBO{};
-    stltype::vector<class AABB> m_cachedSceneAABBs{};
+    stltype::vector<AABB> m_cachedSceneAABBs{};
 
     bool m_needsToPropagateMainDataUpdate{false};
     u32 m_frameIdxToPropagate{0};

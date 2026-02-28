@@ -31,8 +31,8 @@
 #include <EAStdC/EAString.h>
 
 // EA Thread
-#include <EAThread/eathread_futex.h>
-#include <EAThread/eathread_thread.h>
+#include <eathread/eathread_futex.h>
+#include <eathread/eathread_thread.h>
 
 // Vulkan / GLFW
 #define GLFW_INCLUDE_VULKAN

@@ -6,7 +6,7 @@
 #include "Core/Rendering/Core/RenderingIncludes.h"
 #include "Core/Rendering/Vulkan/VkCommandPool.h"
 #include "Core/SceneGraph/Mesh.h"
-#include <EAThread/eathread.h>
+#include <eathread/eathread.h>
 #include "Core/Global/ThreadPool.h"
 
 enum class QueueType
@@ -16,7 +16,7 @@ enum class QueueType
     Graphics
 };
 
-class Mesh;
+struct Mesh;
 struct RenderingData;
 
 // Used to submit commandbuffers to various queues asynchronously or build simple commandbuffers

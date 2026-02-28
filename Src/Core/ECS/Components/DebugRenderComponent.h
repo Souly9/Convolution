@@ -3,8 +3,8 @@
 #include "Core/Global/GlobalDefines.h"
 #include "RenderComponent.h"
 
-class Mesh;
-class Material;
+struct Mesh;
+struct Material;
 
 namespace ECS
 {

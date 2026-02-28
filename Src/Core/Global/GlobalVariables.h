@@ -1,7 +1,7 @@
 #pragma once
 #include "GlobalDefines.h"
 #include "FrameGlobals.h"
-#include <EAThread/eathread_condition.h>
+#include <eathread/eathread_condition.h>
 
 extern threadstl::Semaphore g_mainRenderThreadSyncSemaphore;
 extern threadstl::Semaphore g_renderThreadReadSemaphore;
