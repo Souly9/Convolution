@@ -156,10 +156,10 @@ if(NOT EXISTS "${CMAKE_SOURCE_DIR}/External/SimpleMath/SimpleMath.h")
 endif()
 
 if(NOT EXISTS "${CMAKE_SOURCE_DIR}/External/dds/dds.hpp")
-    message(STATUS "dds.hpp not found, downloading from spnda/dds-image...")
+    message(STATUS "dds.hpp not found, downloading from spnda/dds_image...")
     file(MAKE_DIRECTORY "${CMAKE_SOURCE_DIR}/External/dds")
-    file(DOWNLOAD "https://raw.githubusercontent.com/spnda/dds-image/master/dds.hpp" "${CMAKE_SOURCE_DIR}/External/dds/dds.hpp" SHOW_PROGRESS)
-    file(DOWNLOAD "https://raw.githubusercontent.com/spnda/dds-image/master/dds_formats.hpp" "${CMAKE_SOURCE_DIR}/External/dds/dds_formats.hpp" SHOW_PROGRESS)
+    file(DOWNLOAD "https://raw.githubusercontent.com/spnda/dds_image/main/dds.hpp" "${CMAKE_SOURCE_DIR}/External/dds/dds.hpp" SHOW_PROGRESS)
+    file(DOWNLOAD "https://raw.githubusercontent.com/spnda/dds_image/main/dds_formats.hpp" "${CMAKE_SOURCE_DIR}/External/dds/dds_formats.hpp" SHOW_PROGRESS)
 endif()
 
 if(NOT EXISTS "${CMAKE_SOURCE_DIR}/External/stb/stb_image.h")
