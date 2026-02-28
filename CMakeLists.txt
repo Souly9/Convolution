@@ -11,6 +11,7 @@ option(CONNECT_TO_GIT "Fetch dependencies from git" ON)
 if(CONV_SUPPRESS_EXTERNAL_WARNINGS)
     set(CMAKE_WARN_DEPRECATED OFF CACHE BOOL "Suppress CMake deprecation warnings" FORCE)
     set(CMAKE_SUPPRESS_DEVELOPER_WARNINGS 1 CACHE BOOL "Suppress CMake developer warnings" FORCE)
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 endif()
 
 if(WIN32 AND CONV_USE_CLANG_CL)
@@ -145,6 +146,14 @@ FetchContent_Declare(
 	SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/ImGuizmo"
 	GIT_PROGRESS TRUE
 )
+
+# SimpleMath headers are often missing on fresh clones if not tracked
+if(NOT EXISTS "${CMAKE_SOURCE_DIR}/External/SimpleMath/SimpleMath.h")
+    message(STATUS "SimpleMath.h not found, downloading from Microsoft repository...")
+    file(MAKE_DIRECTORY "${CMAKE_SOURCE_DIR}/External/SimpleMath")
+    file(DOWNLOAD "https://raw.githubusercontent.com/microsoft/DirectXTK/main/Inc/SimpleMath.h" "${CMAKE_SOURCE_DIR}/External/SimpleMath/SimpleMath.h" SHOW_PROGRESS)
+    file(DOWNLOAD "https://raw.githubusercontent.com/microsoft/DirectXTK/main/Inc/SimpleMath.inl" "${CMAKE_SOURCE_DIR}/External/SimpleMath/SimpleMath.inl" SHOW_PROGRESS)
+endif()
 # VMA is now handled by FetchContent_MakeAvailable below
 
 

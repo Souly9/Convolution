@@ -1,33 +1,3 @@
-# Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
-# file Copyright.txt or https://cmake.org/licensing for details.
-
-#[=======================================================================[.rst:
-FindVulkan
-----------
-
-Find Vulkan, which is a low-overhead, cross-platform 3D graphics
-and computing API.
-
-IMPORTED Targets
-^^^^^^^^^^^^^^^^
-
-This module defines :prop_tgt:`IMPORTED` targets if Vulkan has been found:
-
-``Vulkan::Vulkan``
-  The main Vulkan library.
-
-Result Variables
-^^^^^^^^^^^^^^^^
-
-This module defines the following variables:
-
-``Vulkan_FOUND``
-  set to true if Vulkan was found
-``Vulkan_INCLUDE_DIRS``
-  include directories for Vulkan
-``Vulkan_LIBRARIES``
-  link against this library to use Vulkan
-#]=======================================================================]
 
 # Try to find Vulkan headers
 find_path(Vulkan_INCLUDE_DIR
@@ -35,7 +5,7 @@ find_path(Vulkan_INCLUDE_DIR
   HINTS
     "$ENV{VULKAN_SDK}/Include"
     "$ENV{VULKAN_SDK}/include"
-    "${CMAKE_SOURCE_DIR}/External/VulkanSDK/1.4.309/Include"
+    "$ENV{VULKAN_SDK}"
 )
 
 # Try to find Vulkan library
@@ -51,7 +21,6 @@ find_library(Vulkan_LIBRARY
   NAMES ${_Vulkan_library_names}
   HINTS
     "$ENV{VULKAN_SDK}"
-    "${CMAKE_SOURCE_DIR}/External/VulkanSDK/1.4.309"
   PATH_SUFFIXES ${_Vulkan_hint_names}
 )
 
