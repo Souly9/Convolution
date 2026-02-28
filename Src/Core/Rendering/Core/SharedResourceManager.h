@@ -40,7 +40,9 @@ public:
     void WriteInstanceSSBODescriptorUpdate(u32 targetFrame);
 
     void UpdateTransformBuffer(const stltype::vector<DirectX::XMFLOAT4X4>& transformBuffer, u32 thisFrame, u32 updateCount = 0);
+    void UpdateTransformRange(const stltype::vector<DirectX::XMFLOAT4X4>& transformBuffer, u32 startIdx, u32 count);
     void UpdateSceneAABBBuffer(const stltype::vector<AABB>& aabbBuffer, u32 thisFrame, u32 updateCount = 0);
+    void UpdateSceneAABBRange(const stltype::vector<AABB>& aabbBuffer, u32 startIdx, u32 count);
     void UpdateGlobalMaterialBuffer(const UBO::MaterialBuffer& materialBuffer, u32 thisFrame);
 
     DescriptorSet* GetInstanceSSBODescriptorSet(u32 frameIdx)
@@ -51,6 +53,16 @@ public:
     DescriptorSet* GetSceneAABBSSBODescriptorSet(u32 frameIdx)
     {
         return m_frameData[frameIdx].pSceneAABBSet;
+    }
+
+    DescriptorSet* GetViewSpaceLightsDescriptorSet(u32 frameIdx)
+    {
+        return m_frameData[frameIdx].pViewSpaceLightsSet;
+    }
+
+    StorageBuffer& GetViewSpaceLightsSSBO()
+    {
+        return m_viewSpaceLightsSSBO;
     }
 
     const BufferData& GetSceneGeometryBuffers() const
@@ -100,14 +112,17 @@ private:
     StorageBuffer m_sceneInstanceBuffer;
     StorageBuffer m_sceneAABBBuffer;
     StorageBuffer m_materialBuffer;
+    StorageBuffer m_viewSpaceLightsSSBO;
 
     DescriptorSetLayoutVulkan m_sceneInstanceSSBOLayout;
     DescriptorSetLayoutVulkan m_sceneAABBLayout;
+    DescriptorSetLayoutVulkan m_viewSpaceLightsLayout;
     DescriptorPool m_descriptorPool;
     struct FrameData
     {
         DescriptorSet* pSceneInstanceSSBOSet;
         DescriptorSet* pSceneAABBSet;
+        DescriptorSet* pViewSpaceLightsSet;
     };
     stltype::fixed_vector<FrameData, SWAPCHAIN_IMAGES, false> m_frameData;
 

@@ -20,7 +20,7 @@ public:
     virtual void SyncData(u32 currentFrame) override;
 
     virtual bool AccessesAnyComponents(const stltype::vector<C_ID>& components) override;
-    virtual bool ShouldRunWhenNoDirtyComponents() const override { return true; }
+    virtual bool ShouldRunWhenNoDirtyComponents() const override { return false; }
 
 private:
     RenderView BuildRenderView(const Components::View* pView, const Components::Transform* pTransform);

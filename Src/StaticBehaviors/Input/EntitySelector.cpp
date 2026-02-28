@@ -112,43 +112,37 @@ void EntitySelector::OnLeftMouseClick(const LeftMouseClickEventData& data)
     WorldPosMouseRay ray(CreateRay(deviceCoords));
     // ray.m_screenPos = mousePos;
 
-    // Cast against scene
-    auto& renderComps = g_pEntityManager->GetComponentVector<ECS::Components::RenderComponent>();
-    const auto& debugRenderComps = g_pEntityManager->GetComponentVector<ECS::Components::DebugRenderComponent>();
-
-    for (const auto& debugRenderComp : debugRenderComps)
-    {
-        if (debugRenderComp.component.shouldRender)
-        {
-            renderComps.emplace_back((ECS::Components::RenderComponent)debugRenderComp.component,
-                                     debugRenderComp.entity);
-        }
-    }
     f32 overallMinDist = FLT_MAX;
     ECS::Entity rsltEntity;
     const Vector3 rayDir(ray.direction);
-    const Vector3 dirInverted = ray.invOrigin;
+    const Vector3 dirInverted = ray.invDirection;
 
-    for (size_t i = 0; i < renderComps.size(); i++)
-    {
-        const auto& aabb = renderComps[i].component.boundingBox;
-        const Vector4 aabbCenter = aabb.center;
-        const Vector4 aabbExtents = aabb.extents;
-        const Vector3 aabbMin =
-            Vector3(aabbCenter.x - aabbExtents.x, aabbCenter.y - aabbExtents.y, aabbCenter.z - aabbExtents.z);
-        const Vector3 aabbMax =
-            Vector3(aabbCenter.x + aabbExtents.x, aabbCenter.y + aabbExtents.y, aabbCenter.z + aabbExtents.z);
-
-        f32 dist;
-        if (RayAABBIntersection(ray.worldOrigin, dirInverted, ray.distance, aabbMin, aabbMax, dist))
+    auto checkIntersections = [&](const auto& comps) {
+        for (size_t i = 0; i < comps.size(); i++)
         {
-            if (dist < overallMinDist)
+            const auto& aabb = comps[i].component.boundingBox;
+            const Vector4 aabbCenter = aabb.center;
+            const Vector4 aabbExtents = aabb.extents;
+            const Vector3 aabbMin =
+                Vector3(aabbCenter.x - aabbExtents.x, aabbCenter.y - aabbExtents.y, aabbCenter.z - aabbExtents.z);
+            const Vector3 aabbMax =
+                Vector3(aabbCenter.x + aabbExtents.x, aabbCenter.y + aabbExtents.y, aabbCenter.z + aabbExtents.z);
+
+            f32 dist;
+            if (RayAABBIntersection(ray.worldOrigin, dirInverted, ray.distance, aabbMin, aabbMax, dist))
             {
-                overallMinDist = dist;
-                rsltEntity = renderComps[i].entity;
+                if (dist < overallMinDist)
+                {
+                    overallMinDist = dist;
+                    rsltEntity = comps[i].entity;
+                }
             }
         }
-    }
+    };
+
+    checkIntersections(g_pEntityManager->GetComponentVector<ECS::Components::RenderComponent>());
+    checkIntersections(g_pEntityManager->GetComponentVector<ECS::Components::DebugRenderComponent>());
+
 
     auto deslectEntity = [](const ECS::Entity& entity, bool select = false)
     {
@@ -211,8 +205,7 @@ EntitySelector::WorldPosMouseRay EntitySelector::CreateRay(const mathstl::Vector
     worldCoordsEnd = mathstl::Vector4::Transform(worldCoordsEnd, invView);
 
     mathstl::Vector3 dir = (mathstl::Vector3)worldCoordsEnd - (mathstl::Vector3)worldCoordsOrigin;
-    dir.y *= -1.f;
     dir.Normalize();
 
-    return {(mathstl::Vector3)worldCoordsOrigin, mathstl::Vector3(1) / dir, dir, 10000.f};
+    return {(mathstl::Vector3)worldCoordsOrigin, mathstl::Vector3(1.0f) / dir, dir, 10000.f};
 }

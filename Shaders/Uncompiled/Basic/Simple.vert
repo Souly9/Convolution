@@ -1,6 +1,8 @@
-#version 450
-#extension GL_EXT_nonuniform_qualifier : require
+#version 450 core
 #extension GL_ARB_shading_language_include : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_scalar_block_layout : enable
+#include "../../Globals/LightingPass.h"
 
 layout(location = 0) in vec3 inPosition;
 layout(location = 2) in vec2 inTexCoord0;

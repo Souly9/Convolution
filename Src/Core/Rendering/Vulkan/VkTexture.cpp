@@ -25,10 +25,10 @@ TextureVulkan::~TextureVulkan()
 
 void TextureVulkan::CleanUp()
 {
-    DEBUG_LOGF("[TextureVulkan] CleanUp: m_image={}, m_imageMemory={}", (unsigned long long)m_image, (unsigned long long)m_imageMemory);
     VK_FREE_IF(m_imageMemory, g_pGPUMemoryManager->TryFreeMemory(m_imageMemory));
     VK_FREE_IF(m_imageView, vkDestroyImageView(VK_LOGICAL_DEVICE, m_imageView, VulkanAllocator()));
     VK_FREE_IF(m_sampler, vkDestroySampler(VK_LOGICAL_DEVICE, m_sampler, VulkanAllocator()));
+    m_image = VK_NULL_HANDLE;
 }
 
 void TextureVulkan::SetImageView(VkImageView view)

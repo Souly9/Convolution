@@ -33,10 +33,11 @@ public:
         return m_queueFamilyIndex;
     }
 
-    void ReturnCommandBuffer(const CommandBuffer* commandBuffer);
+    void ReturnCommandBuffer(CommandBuffer* commandBuffer);
     void ClearAll()
     {
         m_commandBuffers.clear();
+        m_freeCommandBuffers.clear();
     }
 
     virtual void NamingCallBack(const stltype::string& name) override;
@@ -47,6 +48,7 @@ protected:
 
     VkCommandPool m_commandPool{VK_NULL_HANDLE};
     stltype::deque<CBufferVulkan> m_commandBuffers{};
+    stltype::vector<CommandBuffer*> m_freeCommandBuffers{};
     u32 m_queueFamilyIndex{~0u};
 };
 

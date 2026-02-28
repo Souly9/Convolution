@@ -6,9 +6,11 @@
 MaterialManager::MaterialManager()
 {
     m_materials.reserve(MAX_MATERIALS);
-    Material defaultMaterial;
-    defaultMaterial.properties.baseColor = mathstl::Vector4(1.0f, 0.0f, 1.0f, 1.0f);
+    Material defaultMaterial{};
+    defaultMaterial.baseColor = mathstl::Vector4(1.0f, 0.0f, 1.0f, 1.0f);
     defaultMaterial.diffuseTexture = 0;
+    defaultMaterial.flags = 0;
+    // SetMaterialFlag is in Material.h which is included by MaterialManager.h
 
     AllocateMaterial("Default", defaultMaterial);
 
@@ -35,9 +37,20 @@ Material* MaterialManager::AllocateMaterial(const stltype::string& name, const M
     m_materialNameToBufferPos.emplace(name, m_materials.size());
 
     Material* pVecMaterial = &m_materials.emplace_back();
-    pVecMaterial->properties = pMaterial.properties;
+    pVecMaterial->baseColor = pMaterial.baseColor;
+    pVecMaterial->metallic = pMaterial.metallic;
+    pVecMaterial->roughness = pMaterial.roughness;
+    pVecMaterial->emissive = pMaterial.emissive;
     pVecMaterial->diffuseTexture = pMaterial.diffuseTexture;
     pVecMaterial->normalTexture = pMaterial.normalTexture;
+    pVecMaterial->metallicRoughnessTexture = pMaterial.metallicRoughnessTexture;
+    pVecMaterial->emissiveTexture = pMaterial.emissiveTexture;
+    pVecMaterial->sheenTexture = pMaterial.sheenTexture;
+    pVecMaterial->clearcoatTexture = pMaterial.clearcoatTexture;
+    pVecMaterial->anisotropicTintIorClearcoat = pMaterial.anisotropicTintIorClearcoat;
+    pVecMaterial->glossSheenSTransFlatness = pMaterial.glossSheenSTransFlatness;
+    pVecMaterial->flags = pMaterial.flags;
+    m_materialToBufferPosMap[pVecMaterial] = (u32)(m_materials.size() - 1);
     MarkMaterialsDirty();
     m_matToNameMap[pVecMaterial] = name;
 

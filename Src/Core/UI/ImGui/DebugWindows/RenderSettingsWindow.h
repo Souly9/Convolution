@@ -1,17 +1,19 @@
 #pragma once
 #include "Core/Global/GlobalVariables.h"
+#include "Core/Global/Profiling.h"
 
 #include "Core/Global/State/ApplicationState.h"
 #include "Core/Global/Utils/MathFunctions.h"
 #include "Core/ECS/EntityManager.h"
 #include "Core/ECS/Components/View.h"
-#include "imgui.h"
+#include "InfoWindow.h"
 
 class RenderSettingsWindow : public ImGuiWindow
 {
 public:
     virtual void DrawWindow(f32 dt)
     {
+        ScopedZone("RenderSettingsWindow");
         if (!m_isOpen)
             return;
 
@@ -185,8 +187,8 @@ public:
 
         if (needsUpdate)
         {
-            g_pEntityManager->MarkComponentDirty(ECS::ComponentID<ECS::Components::Camera>::ID);
-            g_pEntityManager->MarkComponentDirty(ECS::ComponentID<ECS::Components::View>::ID);
+            g_pEntityManager->MarkComponentDirty({}, ECS::ComponentID<ECS::Components::Camera>::ID);
+            g_pEntityManager->MarkComponentDirty({}, ECS::ComponentID<ECS::Components::View>::ID);
         }
 
         ImGui::End();

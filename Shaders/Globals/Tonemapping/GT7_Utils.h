@@ -1,5 +1,3 @@
-#include "../Utils/Math.h"
-
 // GT7 functions based on the reference implementation:
 // https://blog.selfshadow.com/publications/s2025-shading-course/pdi/supplemental/gt7_tone_mapping.cpp
 
@@ -72,7 +70,7 @@ float EvaluateGTCurve(float x, GTToneMappingCurveParams params)
         return 0.0;
     }
 
-    float weightLinear = smoothStep(x, 0.0, params.midPoint);
+    float weightLinear = smoothstep(0.0, params.midPoint, x);
     float weightToe    = 1.0 - weightLinear;
 
     // Shoulder mapping for highlights.
@@ -91,7 +89,7 @@ float EvaluateGTCurve(float x, GTToneMappingCurveParams params)
 
 float chromaCurve(float x, float a, float b)
 {
-    return 1.0 - smoothStep(x, a, b);
+    return 1.0 - smoothstep(a, b, x);
 }
 
 // -----------------------------------------------------------------------------

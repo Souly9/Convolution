@@ -1,4 +1,5 @@
 #include "BindingSlots.h"
+#include "Types.h"
 
 struct Light
 {
@@ -52,6 +53,8 @@ uint getClusterIndex(vec3 viewPos, mat4 projMat)
 
     vec4 clipPos = projMat * vec4(viewPos, 1.0);
     vec3 ndc = clipPos.xyz / clipPos.w;
+    // Y-coordinate flip logic matches the inverted viewport setup!
+    ndc.y = -ndc.y;
     vec2 uv = ndc.xy * 0.5 + 0.5;
 
     uint x = uint(uv.x * clusterSize.x);

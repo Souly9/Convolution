@@ -17,16 +17,16 @@ static inline bool Visualize(ECS::Components::RenderComponent* pRenderComp)
                 g_pMaterialManager->GetMaterialName(pRenderComp->pMaterial).data()); // should always be null terminated
 
             if (ImGui::ColorEdit4(
-                    "Color", (float*)&pRenderComp->pMaterial->properties.baseColor, ImGuiColorEditFlags_NoInputs))
+                    "Color", &pRenderComp->pMaterial->baseColor.x, ImGuiColorEditFlags_NoInputs))
             {
                 g_pMaterialManager->MarkMaterialsDirty();
             }
 
-            needsUpdate |= DrawFloatSlider("Metallic", &pRenderComp->pMaterial->properties.metallic.x, 0.f, 1.f);
-            needsUpdate |= DrawFloatSlider("Roughness", &pRenderComp->pMaterial->properties.roughness.x, 0.f, 1.f);
+            needsUpdate |= DrawFloatSlider("Metallic", &pRenderComp->pMaterial->metallic.x, 0.f, 1.f);
+            needsUpdate |= DrawFloatSlider("Roughness", &pRenderComp->pMaterial->roughness.x, 0.f, 1.f);
 
             if (ImGui::ColorEdit4(
-                    "Emissive", (float*)&pRenderComp->pMaterial->properties.emissive, ImGuiColorEditFlags_NoInputs))
+                    "Emissive", &pRenderComp->pMaterial->emissive.x, ImGuiColorEditFlags_NoInputs))
             {
                 g_pMaterialManager->MarkMaterialsDirty();
             }

@@ -24,6 +24,9 @@ void DepthPrePass::BuildPipelines()
     info.attachmentInfos =
         CreateAttachmentInfo({m_mainRenderingData.colorAttachments}, m_mainRenderingData.depthAttachment);
     info.depthCompareOp = DepthCompareOp::LESS_OR_EQUAL;
+    info.depthWriteEnable = true;
+    //info.rasterizerInfo.cullmode = CullMode::BACK;
+    
     m_mainPSO = PSO(
         ShaderCollection{&mainVert, &mainFrag}, PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions}, info);
 }

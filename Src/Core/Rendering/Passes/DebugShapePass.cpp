@@ -61,7 +61,7 @@ void DebugShapePass::RebuildInternalData(const stltype::vector<PassMeshData>& me
                                                        u32 thisFrameNum)
 {
     ScopedZone("DebugShapePass::Rebuild");
-
+    return;
     m_instancedMeshInfoMap.clear();
     bool areAnyDebug = false;
     m_indirectCmdBufferOpaque.EmptyCmds();
@@ -193,5 +193,5 @@ void DebugShapePass::CreateSharedDescriptorLayout()
 
 bool DebugShapePass::WantsToRender() const
 {
-    return NeedToRender(m_indirectCmdBufferOpaque) || NeedToRender(m_indirectCmdBufferWireFrame);
+    return false;// NeedToRender(m_indirectCmdBufferOpaque) || NeedToRender(m_indirectCmdBufferWireFrame);
 }

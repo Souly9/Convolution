@@ -1,19 +1,42 @@
 #pragma once
 #include "GlobalDefines.h"
 #include "Profiling.h"
-
+#include <client/TracyLock.hpp>
 
 // Simple RAII wrapper for mutexes with Lock()/Unlock() interface
-template<typename MutexType>
+template <typename MutexType>
 struct SimpleScopedGuard
 {
-    SimpleScopedGuard(MutexType& mutex) : m_mutex(mutex) { m_mutex.Lock(); }
-    ~SimpleScopedGuard() { m_mutex.Unlock(); }
-    
+    SimpleScopedGuard(MutexType& mutex) : m_mutex(mutex)
+    {
+        m_mutex.Lock();
+    }
+    ~SimpleScopedGuard()
+    {
+        m_mutex.Unlock();
+    }
+
     SimpleScopedGuard(const SimpleScopedGuard&) = delete;
     SimpleScopedGuard& operator=(const SimpleScopedGuard&) = delete;
-    
+
     MutexType& m_mutex;
+};
+template <class T>
+struct SimpleScopedGuard<tracy::Lockable<T>>
+{
+    SimpleScopedGuard(tracy::Lockable<T>& mutex) : m_mutex(mutex)
+    {
+        m_mutex.lock();
+    }
+    ~SimpleScopedGuard()
+    {
+        m_mutex.unlock();
+    }
+
+    SimpleScopedGuard(const SimpleScopedGuard&) = delete;
+    SimpleScopedGuard& operator=(const SimpleScopedGuard&) = delete;
+
+    tracy::Lockable<T>& m_mutex;
 };
 
 // Simple mutex wrapper for eastl mutex to make the methods lowercase for Tracy profiling
@@ -35,6 +58,11 @@ public:
     void Lock()
     {
         lock();
+    }
+
+    threadstl::Mutex* GetMutex()
+    {
+        return &m_mutex;
     }
 
 private:

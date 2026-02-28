@@ -1,0 +1,41 @@
+#version 450
+#extension GL_ARB_shading_language_include : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_scalar_block_layout : enable
+
+#define SharedDataUBOSet    0
+#define TileArraySet        1
+#define ViewSpaceLightsSet  3
+#include "../../Globals/GlobalBuffers.h"
+#include "../../Globals/LightData.h"
+#include "../../Globals/ClusteredShading/ViewSpaceLights.h"
+
+// Best performance on my 5080 for large amount of lights
+#define X_LOCAL_SIZE 256   
+
+layout(local_size_x = X_LOCAL_SIZE, local_size_y = 1, local_size_z = 1) in;
+
+layout(push_constant, scalar) uniform PushConstants
+{
+    ivec3 clusterCount;
+    uint numLights;
+    vec4 nearFar;
+}
+pc;
+
+void main()
+{
+    uint lightIdx = gl_GlobalInvocationID.x;
+    uint totalLights = min(lightData.numLights, MAX_SCENE_LIGHTS);
+
+    if (lightIdx >= totalLights)
+    {
+        return;
+    }
+
+    vec3 worldPos = lightData.lights[lightIdx].position.xyz;
+    float dirW = lightData.lights[lightIdx].direction.w;
+
+    vec3 viewPos = (ubo.view * vec4(worldPos, 1.0)).xyz;
+    viewSpaceLights.lights[lightIdx] = vec4(viewPos, dirW);
+}

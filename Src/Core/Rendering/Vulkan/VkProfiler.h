@@ -43,6 +43,8 @@ public:
         m_baseQueryIdx = m_currentQueryIdx;
         m_maxQueryIdx = m_baseQueryIdx + queriesPerFrame;
         
+        vkResetQueryPool(VkGlobals::GetLogicalDevice(), m_queryPool.GetRef(), m_baseQueryIdx, queriesPerFrame);
+
         SimpleScopedGuard<CustomMutex> lock(m_statsMutex);
         m_accumulatedStats[frameIdx] = {};
     }

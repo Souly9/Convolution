@@ -23,10 +23,20 @@ static void SetBufferSyncInfo(const AsyncQueueHandler::SynchronizableCommand& cm
 AsyncQueueHandler::~AsyncQueueHandler()
 {
     ShutdownThread();
-    for (const auto& fenceToWaitOn : m_fencesToWaitOn)
+    for (auto& frameFences : m_fencesToWaitOn)
     {
-        fenceToWaitOn.fence.WaitFor();
+        for (auto& req : frameFences)
+        {
+            req.fence.WaitFor();
+            for (auto& cmdBufReq : req.requests)
+            {
+                if (cmdBufReq.pBuffer)
+                    cmdBufReq.pBuffer->CallCallbacks();
+            }
+        }
     }
+    for (auto& frameFences : m_fencesToWaitOn)
+        frameFences.clear();
     for (auto& poolPair : m_commandPools)
     {
         poolPair.second.ClearAll();
@@ -101,7 +111,7 @@ void AsyncQueueHandler::ReleaseStagingBuffers(const stltype::vector<u32>& indice
 
 void AsyncQueueHandler::DispatchAllRequests()
 {
-    ReclaimCompletedResources();
+    ReclaimCompletedResources(~0u);
 
     ScopedZone("AsyncQueueHandler::DispatchAllRequests");
 
@@ -127,19 +137,22 @@ void AsyncQueueHandler::DispatchAllRequests()
     BuildTransferCommandBuffer(transferCmdsToProcess);
     SubmitCommandBuffers(m_commandBufferRequests);
 
-    // Attach staging buffer indices to the last in-flight request (the transfer batch)
-    if (!m_currentBatchStagingIndices.empty() && !m_fencesToWaitOn.empty())
-    {
-        m_fencesToWaitOn.back().stagingBufferIndices = stltype::move(m_currentBatchStagingIndices);
-        m_currentBatchStagingIndices.clear();
-    }
-
     SubmitCommandBuffers(m_thisFrameCommandBufferRequests);
     SubmitToSwapchainForPresentation(m_swapchainPresentRequestsThisFrame);
     m_swapchainPresentRequestsThisFrame.clear();
     m_thisFrameCommandBufferRequests.clear();
     // m_transferCommands.clear(); // Removing this as we want to keep the remaining commands
     m_commandBufferRequests.clear();
+    m_sharedDataMutex.unlock();
+}
+
+void AsyncQueueHandler::FlushGraphicsComputeBuffers()
+{
+    m_sharedDataMutex.lock();
+    SubmitCommandBuffers(m_thisFrameCommandBufferRequests);
+    SubmitToSwapchainForPresentation(m_swapchainPresentRequestsThisFrame);
+    m_swapchainPresentRequestsThisFrame.clear();
+    m_thisFrameCommandBufferRequests.clear();
     m_sharedDataMutex.unlock();
 }
 
@@ -176,23 +189,13 @@ void AsyncQueueHandler::CheckRequests()
         if (hasBufferRequests)
         {
             SubmitCommandBuffers(m_commandBufferRequests);
-
-            if (!m_currentBatchStagingIndices.empty() && !m_fencesToWaitOn.empty())
-            {
-                m_fencesToWaitOn.back().stagingBufferIndices = stltype::move(m_currentBatchStagingIndices);
-                m_currentBatchStagingIndices.clear();
-            }
-
             m_commandBufferRequests.clear();
         }
 
         bool moreTransferWork = !m_transferCommands.empty();
         m_sharedDataMutex.unlock();
 
-        if (!hasBufferRequests && !moreTransferWork)
-        {
-            Suspend();
-        }
+        Suspend();
     }
 }
 
@@ -232,10 +235,14 @@ void AsyncQueueHandler::SubmitTransferCommandAsync(const TransferCommand& reques
     m_sharedDataMutex.unlock();
 }
 
-void AsyncQueueHandler::SubmitTransferCommandAsync(const Mesh* pMesh, RenderingData& renderDataToFill)
+void AsyncQueueHandler::SubmitTransferCommandAsync(const Mesh* pMesh, RenderingData& renderDataToFill, u32 frameIdx)
 {
-    SubmitTransferCommandAsync(
-        MeshTransfer{.vertices = pMesh->vertices, .indices = pMesh->indices, .pBuffersToFill = &renderDataToFill});
+    MeshTransfer transfer;
+    transfer.vertices = pMesh->vertices;
+    transfer.indices = pMesh->indices;
+    transfer.pBuffersToFill = &renderDataToFill;
+    transfer.frameIdx = frameIdx;
+    SubmitTransferCommandAsync(transfer);
 }
 
 void AsyncQueueHandler::BuildTransferCommandBuffer(const stltype::vector<TransferCommand>& transferCommands)
@@ -247,40 +254,66 @@ void AsyncQueueHandler::BuildTransferCommandBuffer(const stltype::vector<Transfe
 
     m_currentBatchStagingIndices.clear();
 
-    CommandBuffer* pTransferCmdBuffer =
-        m_commandPools[QueueType::Transfer].CreateCommandBuffer(CommandBufferCreateInfo{});
-
-    for (const auto& transferCommand : transferCommands)
+    stltype::hash_map<u32, stltype::vector<const TransferCommand*>> commandsByFrame;
+    for (const auto& cmd : transferCommands)
     {
-        ScopedZone("AsyncQueueHandler::Building transfer command");
-        stltype::visit([pTransferCmdBuffer, this](const auto& cmd) { BuildTransferCommand(cmd, pTransferCmdBuffer); },
-                       transferCommand);
+        u32 frameIdx = ~0u;
+        stltype::visit([&frameIdx](const auto& c) { frameIdx = c.frameIdx; }, cmd);
+        commandsByFrame[frameIdx].push_back(&cmd);
     }
 
-    pTransferCmdBuffer->Bake();
-    m_commandBufferRequests.emplace_back(pTransferCmdBuffer, QueueType::Transfer);
+    for (const auto& pair : commandsByFrame)
+    {
+        CommandBuffer* pTransferCmdBuffer =
+            m_commandPools[QueueType::Transfer].CreateCommandBuffer(CommandBufferCreateInfo{});
+
+        for (const auto* pCmd : pair.second)
+        {
+            ScopedZone("AsyncQueueHandler::Building transfer command");
+            stltype::visit([pTransferCmdBuffer, this](const auto& c) { BuildTransferCommand(c, pTransferCmdBuffer); },
+                           *pCmd);
+        }
+
+        pTransferCmdBuffer->Bake();
+        m_commandBufferRequests.emplace_back(pTransferCmdBuffer, QueueType::Transfer, pair.first);
+    }
 }
 
-void AsyncQueueHandler::ReclaimCompletedResources()
+void AsyncQueueHandler::ReclaimCompletedResources(u32 frameIdx)
 {
-    m_sharedDataMutex.lock();
-    if (m_fencesToWaitOn.empty())
-    {
-        m_sharedDataMutex.unlock();
-        return;
-    }
-
     stltype::vector<InFlightRequest> completed;
-    stltype::vector<InFlightRequest> stillPending;
+    
+    m_sharedDataMutex.lock();
 
-    for (auto& request : m_fencesToWaitOn)
+    auto gatherCompleted = [this, &completed](u32 fIdx)
     {
-        if (request.fence.IsSignaled())
-            completed.push_back(stltype::move(request));
-        else
-            stillPending.push_back(stltype::move(request));
+        if (m_fencesToWaitOn[fIdx].empty())
+            return;
+
+        stltype::vector<InFlightRequest> stillPending;
+
+        for (auto& request : m_fencesToWaitOn[fIdx])
+        {
+            if (request.fence.IsSignaled())
+                completed.push_back(stltype::move(request));
+            else
+                stillPending.push_back(stltype::move(request));
+        }
+        m_fencesToWaitOn[fIdx] = stltype::move(stillPending);
+    };
+
+    if (frameIdx == ~0u)
+    {
+        for (u32 i = 0; i < FRAMES_IN_FLIGHT + 1; ++i)
+        {
+            gatherCompleted(i);
+        }
     }
-    m_fencesToWaitOn = stltype::move(stillPending);
+    else if (frameIdx < FRAMES_IN_FLIGHT)
+    {
+        gatherCompleted(frameIdx);
+    }
+    
     m_sharedDataMutex.unlock();
 
     for (auto& req : completed)
@@ -305,19 +338,37 @@ void AsyncQueueHandler::ReclaimCompletedResources()
     }
 }
 
-void AsyncQueueHandler::WaitForFences()
+void AsyncQueueHandler::WaitForFences(u32 frameIdx)
 {
     ScopedZone("AsyncQueueHandler::Waiting on fences");
 
-    m_sharedDataMutex.lock();
-    if (m_fencesToWaitOn.empty())
-    {
-        m_sharedDataMutex.unlock();
+    if (frameIdx >= FRAMES_IN_FLIGHT && frameIdx != ~0u)
         return;
+
+    stltype::vector<InFlightRequest> fences;
+
+    m_sharedDataMutex.lock();
+    if (frameIdx == ~0u)
+    {
+        for (u32 i = 0; i < FRAMES_IN_FLIGHT + 1; ++i)
+        {
+            fences.insert(fences.end(), m_fencesToWaitOn[i].begin(), m_fencesToWaitOn[i].end());
+            m_fencesToWaitOn[i].clear();
+        }
     }
-    stltype::vector<InFlightRequest> fences(m_fencesToWaitOn);
-    m_fencesToWaitOn.clear();
+    else
+    {
+        fences = m_fencesToWaitOn[frameIdx];
+        m_fencesToWaitOn[frameIdx].clear();
+        
+        // Also always collect the un-associated ones directly queued by DispatchAllRequests (~0u submits)
+        fences.insert(fences.end(), m_fencesToWaitOn[FRAMES_IN_FLIGHT].begin(), m_fencesToWaitOn[FRAMES_IN_FLIGHT].end());
+        m_fencesToWaitOn[FRAMES_IN_FLIGHT].clear();
+    }
     m_sharedDataMutex.unlock();
+
+    if (fences.empty())
+        return;
 
     for (const auto& fenceToWaitOn : fences)
     {
@@ -341,26 +392,19 @@ void AsyncQueueHandler::WaitForFences()
 
     m_sharedDataMutex.lock();
 
-    if (m_fencesToWaitOn.empty())
+    for (const auto& fenceToWaitOn : fences)
     {
-        FreeInFlightCommandBuffers();
-    }
-    else
-    {
-        for (const auto& fenceToWaitOn : fences)
+        for (auto& cmdBufferRequest : fenceToWaitOn.requests)
         {
-            for (auto& cmdBufferRequest : fenceToWaitOn.requests)
+            if (cmdBufferRequest.pBuffer != nullptr)
             {
-                if (cmdBufferRequest.pBuffer != nullptr)
+                for (auto& poolPair : m_commandPools)
                 {
-                    for (auto& poolPair : m_commandPools)
+                    auto& pool = poolPair.second;
+                    if (cmdBufferRequest.pBuffer->GetPool() == &pool)
                     {
-                        auto& pool = poolPair.second;
-                        if (cmdBufferRequest.pBuffer->GetPool() == &pool)
-                        {
-                            pool.ReturnCommandBuffer(cmdBufferRequest.pBuffer);
-                            break;
-                        }
+                        pool.ReturnCommandBuffer(cmdBufferRequest.pBuffer);
+                        break;
                     }
                 }
             }
@@ -383,8 +427,8 @@ void AsyncQueueHandler::BuildTransferCommand(const MeshTransfer& request, Comman
 
     // Create and transfer ownership to pBuffersToFill first so the VkBuffer handles
     // stay alive when Bake() reads them from the recorded copy commands
-        request.pBuffersToFill->SetVertexBuffer(VertexBuffer(vertDataSize));
-        request.pBuffersToFill->SetIndexBuffer(IndexBuffer(idxDataSize));
+    request.pBuffersToFill->SetVertexBuffer(VertexBuffer(vertDataSize));
+    request.pBuffersToFill->SetIndexBuffer(IndexBuffer(idxDataSize));
 
     StagingBuffer& vertStaging = AcquireStagingBuffer(vertDataSize);
     vertStaging.CopyToMapped(vertexData.data(), vertDataSize);
@@ -443,30 +487,55 @@ void AsyncQueueHandler::SubmitCommandBuffers(stltype::vector<CommandBufferReques
     if (commandBuffers.empty())
         return;
 
-    stltype::hash_map<QueueType, stltype::vector<CommandBuffer*>> buffersByQueue;
-    stltype::hash_map<QueueType, stltype::vector<CommandBufferRequest>> requestsByQueue;
+    stltype::hash_map<u32, stltype::hash_map<QueueType, stltype::vector<CommandBuffer*>>> buffersByFrameAndQueue;
+    stltype::hash_map<u32, stltype::hash_map<QueueType, stltype::vector<CommandBufferRequest>>> requestsByFrameAndQueue;
 
     for (const auto& cmdBufferRequest : commandBuffers)
     {
-        requestsByQueue[cmdBufferRequest.queueType].push_back(cmdBufferRequest);
-        buffersByQueue[cmdBufferRequest.queueType].push_back(cmdBufferRequest.pBuffer);
+        u32 frame = cmdBufferRequest.frameIdx;
+        requestsByFrameAndQueue[frame][cmdBufferRequest.queueType].push_back(cmdBufferRequest);
+        buffersByFrameAndQueue[frame][cmdBufferRequest.queueType].push_back(cmdBufferRequest.pBuffer);
     }
 
-    for (const auto& pair : buffersByQueue)
+    for (const auto& framePair : buffersByFrameAndQueue)
     {
-        QueueType queueType = pair.first;
-        const stltype::vector<CommandBuffer*>& buffers = pair.second;
-        const stltype::vector<CommandBufferRequest>& requests = requestsByQueue.at(queueType);
+        u32 frame = framePair.first;
+        for (const auto& pair : framePair.second)
+        {
+            QueueType queueType = pair.first;
+            const stltype::vector<CommandBuffer*>& buffers = pair.second;
+            const stltype::vector<CommandBufferRequest>& requests = requestsByFrameAndQueue.at(frame).at(queueType);
 
-        if (buffers.empty())
-            continue;
+            if (buffers.empty())
+                continue;
 
-        Fence submissionFence;
-        submissionFence.Create(false);
+            Fence submissionFence;
+            submissionFence.Create(false);
 
-        SRF::SubmitCommandBufferToQueue(buffers, submissionFence, queueType);
-        m_fencesToWaitOn.push_back({requests, {}, submissionFence});
+            SRF::SubmitCommandBufferToQueue(buffers, submissionFence, queueType);
+            
+            // Only attach staging indices once per batch of submissions that needed them
+            stltype::vector<u32> stagingIndicesToAttach;
+            if (!m_currentBatchStagingIndices.empty())
+            {
+                stagingIndicesToAttach = stltype::move(m_currentBatchStagingIndices);
+                m_currentBatchStagingIndices.clear();
+            }
+
+            if (frame != ~0u && frame < FRAMES_IN_FLIGHT)
+            {
+                m_fencesToWaitOn[frame].push_back({requests, stltype::move(stagingIndicesToAttach), submissionFence});
+            }
+            else
+            {
+                // Note: ~0u frame requests are immediate or one-offs that could be tracked differently,
+                // but for now we put them into the last bucket (FRAMES_IN_FLIGHT).
+                m_fencesToWaitOn[FRAMES_IN_FLIGHT].push_back({requests, stltype::move(stagingIndicesToAttach), submissionFence});
+            }
+        }
     }
+
+    m_currentBatchStagingIndices.clear();
 
     for (auto& cmdBufferRequest : commandBuffers)
     {
@@ -481,5 +550,6 @@ void AsyncQueueHandler::FreeInFlightCommandBuffers()
     {
         poolPair.second.ClearAll();
     }
-    m_fencesToWaitOn.clear();
+    for (auto& frameFences : m_fencesToWaitOn)
+        frameFences.clear();
 }

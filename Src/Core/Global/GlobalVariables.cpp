@@ -34,5 +34,5 @@ stltype::unique_ptr<MeshManager> g_pMeshManager = stltype::make_unique<MeshManag
 ApplicationStateManager* g_pApplicationState = nullptr;
 stltype::unique_ptr<ShaderManager> g_pShaderManager = stltype::make_unique<ShaderManager>();
 u32 g_currentFrameNumber = 0;
-TexFormat g_swapChainFormat = TexFormat::R8G8B8A8_SRGB;
+TexFormat g_swapChainFormat = TexFormat::R8G8B8A8_UNORM;
 mathstl::Vector2 g_swapChainExtent = {0, 0};

@@ -27,13 +27,11 @@ void ImGuiPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourc
 {
     ScopedZone("ImGuiPass::Init");
 
-    const auto& gbufferInfo = attachmentInfo.gbuffer;
-
-    const auto gbufferUI =
-        CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBufferUI), LoadOp::CLEAR, nullptr);
+    const auto swapchainAttachment =
+        CreateDefaultColorAttachment(SWAPCHAIN_FORMAT, LoadOp::LOAD, nullptr);
     m_mainRenderingData.depthAttachment =
         CreateReadOnlyDepthAttachment(LoadOp::LOAD, attachmentInfo.depthAttachment.GetTexture());
-    m_mainRenderingData.colorAttachments = {gbufferUI};
+    m_mainRenderingData.colorAttachments = {swapchainAttachment};
 
     InitBaseData(attachmentInfo);
 
@@ -66,7 +64,7 @@ void ImGuiPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourc
     VkPipelineRenderingCreateInfo imguiRenderingInfo{};
     imguiRenderingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
     imguiRenderingInfo.colorAttachmentCount = 1;
-    imguiRenderingInfo.pColorAttachmentFormats = &gbufferUI.GetDesc().format;
+    imguiRenderingInfo.pColorAttachmentFormats = &swapchainAttachment.GetDesc().format;
     imguiRenderingInfo.depthAttachmentFormat = m_mainRenderingData.depthAttachment.GetDesc().format;
     info.UseDynamicRendering = true;
     info.PipelineRenderingCreateInfo = imguiRenderingInfo;
@@ -83,7 +81,7 @@ void ImGuiPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comm
     ImGui::UpdatePlatformWindows();
     ImGui::RenderPlatformWindowsDefault();
     ColorAttachment swapChainColorAttachment = m_mainRenderingData.colorAttachments[0];
-    swapChainColorAttachment.SetTexture(const_cast<Texture*>(data.pGbuffer->Get(GBufferTextureType::GBufferUI)));
+    swapChainColorAttachment.SetTexture(ctx.pCurrentSwapchainTexture);
 
     stltype::vector<ColorAttachment> colorAttachments;
     colorAttachments.push_back(swapChainColorAttachment);

@@ -1,6 +1,7 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_EXT_scalar_block_layout : enable
 #include "BindingSlots.h"
+#include "Types.h"
 #include "Material.h"
 #include "IndirectDrawStructs.h"
 

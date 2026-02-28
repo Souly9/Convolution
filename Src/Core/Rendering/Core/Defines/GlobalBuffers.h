@@ -89,6 +89,14 @@ static constexpr u64 LightClusterSSBOSize = sizeof(LightClusterSSBO);
 static constexpr u64 ClusterAABBSetSize = sizeof(ClusterAABBSet);
 static constexpr u64 ClusterLightIndexSSBOSize = sizeof(ClusterLightIndexSSBO);
 
+struct ViewSpaceLightsSSBO
+{
+    stltype::array<mathstl::Vector4, MAX_SCENE_LIGHTS> lights; // xyz=view-space position, w=radius
+    stltype::array<u32, MAX_TILE_XY> tileCounters;
+    stltype::array<u32, MAX_TILE_XY * MAX_LIGHTS_PER_TILE> tileLightIndices;
+};
+static constexpr u64 ViewSpaceLightsSSBOSize = sizeof(ViewSpaceLightsSSBO);
+
 // SSBO containing the indices for objects rendered by a specific pass to access the global transforms, materials etc.
 struct PerPassObjectDataSSBO
 {
@@ -125,7 +133,6 @@ struct GBufferPostProcessUBO
     BindlessTextureHandle gbufferAlbedo;
     BindlessTextureHandle gbufferNormal;
     BindlessTextureHandle gbufferTexCoordMat;
-    BindlessTextureHandle gbufferUI;
     BindlessTextureHandle gbufferDebug;
     BindlessTextureHandle depthBufferIdx;
 };

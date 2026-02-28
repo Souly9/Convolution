@@ -28,6 +28,8 @@ struct Entity;
 class EntityManager
 {
 public:
+    static constexpr u32 INVALID_COMP_IDX = UINT32_MAX;
+
     EntityManager();
 
     void UnloadAllEntities();
@@ -39,6 +41,13 @@ public:
     void MarkComponentDirty(C_ID componentID);
     void MarkComponentsDirty(stltype::vector<C_ID> componentID);
 
+    const stltype::vector<Entity>& GetDirtyEntities(C_ID componentID) const;
+    void ClearDirtyEntityIds(C_ID componentID);
+    bool IsAllTransformsDirty() const { return m_allTransformsDirty; }
+
+    void NotifyTransformUpdated(Entity entity) { m_transformsUpdatedThisFrame.push_back(entity); }
+    const stltype::vector<Entity>& GetTransformsUpdatedThisFrame() const { return m_transformsUpdatedThisFrame; }
+
     void SyncSystemData(u32 frameIdx);
     void UpdateSystems(u32 frameIdx);
 
@@ -48,11 +57,6 @@ public:
     COMP_TEMPLATE_FUNC
     bool HasComponent(const Entity& entity) const;
 
-    bool HasComponent(C_ID componentID, const stltype::hash_map<C_ID, size_t>& componentIndices) const
-    {
-        return componentIndices.find(componentID) != componentIndices.end();
-    }
-
     COMP_TEMPLATE_FUNC
     constexpr stltype::vector<ComponentHolder<Component>>& GetComponentVector();
     COMP_TEMPLATE_FUNC
@@ -61,26 +65,25 @@ public:
     COMP_TEMPLATE_FUNC
     Component* GetComponent(const Entity entity);
 
-    // Assumes caller knows that the entity has the component, could do anything
-    // otherwise
     COMP_TEMPLATE_FUNC
     Component* GetComponentUnsafe(const Entity entity)
     {
         auto& compVec = GetComponentVector<Component>();
-        return &compVec.at(m_entityComponentMap[entity].componentIndices.at(ECS::ComponentID<Component>::ID)).component;
+        return &compVec[GetCompIdxArray<Component>()[entity.ID]].component;
     }
 
-    // Not super fast but should be fine since it's only used in low-frequency
-    // systems
+    COMP_TEMPLATE_FUNC
+    stltype::vector<Component*> GetComponentPointerArray();
+
     COMP_TEMPLATE_FUNC
     stltype::vector<Entity> GetEntitiesWithComponent() const
     {
+        const auto& compVec = GetComponentVector<Component>();
         stltype::vector<Entity> rsltEnts;
-        rsltEnts.reserve(GetComponentVector<Component>().size());
-        for (const auto& entity : m_entities)
+        rsltEnts.reserve(compVec.size());
+        for (const auto& holder : compVec)
         {
-            if (HasComponent<Component>(entity))
-                rsltEnts.push_back(entity);
+            rsltEnts.push_back(holder.entity);
         }
         return rsltEnts;
     }
@@ -91,6 +94,15 @@ public:
     }
 
 private:
+    COMP_TEMPLATE_FUNC
+    stltype::vector<u32>& GetCompIdxArray();
+
+    COMP_TEMPLATE_FUNC
+    const stltype::vector<u32>& GetCompIdxArray() const;
+
+    void ClearCompIdx(EntityID id);
+    void AddToFrameDirtyList(C_ID componentID);
+
     stltype::vector<Entity> m_entities;
     struct DirtyEntityInfo
     {
@@ -107,19 +119,66 @@ private:
     stltype::vector<ComponentHolder<Components::View>> m_viewComponents{};
     stltype::vector<ComponentHolder<Components::Camera>> m_cameraComponents{};
     stltype::vector<ComponentHolder<Components::Light>> m_lightComponents{};
+
+    // Flat per-type lookup: EntityID -> index into component vector, INVALID_COMP_IDX = no component
+    stltype::vector<u32> m_transformCompIdx{};
+    stltype::vector<u32> m_renderCompIdx{};
+    stltype::vector<u32> m_debugRenderCompIdx{};
+    stltype::vector<u32> m_viewCompIdx{};
+    stltype::vector<u32> m_cameraCompIdx{};
+    stltype::vector<u32> m_lightCompIdx{};
+
     stltype::vector<stltype::unique_ptr<System::ISystem>> m_systems;
+
+    // Per-type dirty entity lists — populated by MarkComponentDirty(entity, id)
+    stltype::vector<Entity> m_dirtyTransformEntities{};
+    stltype::vector<Entity> m_dirtyRenderEntities{};
+    stltype::vector<Entity> m_dirtyLightEntities{};
+    stltype::vector<Entity> m_transformsUpdatedThisFrame{};
+    bool m_allTransformsDirty{false};
 
     stltype::atomic<u64> m_baseEntityID = 1;
 };
 
 COMP_TEMPLATE_FUNC
+inline stltype::vector<u32>& EntityManager::GetCompIdxArray()
+{
+    if constexpr (ECS::ComponentID<Components::Transform>::ID == ECS::ComponentID<Component>::ID)
+        return m_transformCompIdx;
+    if constexpr (ECS::ComponentID<Components::RenderComponent>::ID == ECS::ComponentID<Component>::ID)
+        return m_renderCompIdx;
+    if constexpr (ECS::ComponentID<Components::View>::ID == ECS::ComponentID<Component>::ID)
+        return m_viewCompIdx;
+    if constexpr (ECS::ComponentID<Components::Camera>::ID == ECS::ComponentID<Component>::ID)
+        return m_cameraCompIdx;
+    if constexpr (ECS::ComponentID<Components::Light>::ID == ECS::ComponentID<Component>::ID)
+        return m_lightCompIdx;
+    if constexpr (ECS::ComponentID<Components::DebugRenderComponent>::ID == ECS::ComponentID<Component>::ID)
+        return m_debugRenderCompIdx;
+}
+
+COMP_TEMPLATE_FUNC
+inline const stltype::vector<u32>& EntityManager::GetCompIdxArray() const
+{
+    if constexpr (ECS::ComponentID<Components::Transform>::ID == ECS::ComponentID<Component>::ID)
+        return m_transformCompIdx;
+    if constexpr (ECS::ComponentID<Components::RenderComponent>::ID == ECS::ComponentID<Component>::ID)
+        return m_renderCompIdx;
+    if constexpr (ECS::ComponentID<Components::View>::ID == ECS::ComponentID<Component>::ID)
+        return m_viewCompIdx;
+    if constexpr (ECS::ComponentID<Components::Camera>::ID == ECS::ComponentID<Component>::ID)
+        return m_cameraCompIdx;
+    if constexpr (ECS::ComponentID<Components::Light>::ID == ECS::ComponentID<Component>::ID)
+        return m_lightCompIdx;
+    if constexpr (ECS::ComponentID<Components::DebugRenderComponent>::ID == ECS::ComponentID<Component>::ID)
+        return m_debugRenderCompIdx;
+}
+
+COMP_TEMPLATE_FUNC
 inline bool EntityManager::HasComponent(const Entity& entity) const
 {
-    if (auto it = m_entityComponentMap.find(entity); it != m_entityComponentMap.end())
-    {
-        return it->second.componentIndices.count(ECS::ComponentID<Component>::ID) > 0;
-    }
-    return false;
+    const auto& idxArr = GetCompIdxArray<Component>();
+    return entity.ID < idxArr.size() && idxArr[entity.ID] != INVALID_COMP_IDX;
 }
 
 COMP_TEMPLATE_FUNC
@@ -127,15 +186,22 @@ inline void EntityManager::AddComponent(Entity entity, const Component& componen
 {
     if (auto it = m_entityComponentMap.find(entity); it != m_entityComponentMap.end())
     {
-        auto& indices = it->second.componentIndices;
-        auto& compVector = GetComponentVector<Component>();
-        if (HasComponent(ECS::ComponentID<Component>::ID, indices))
-        {
+        if (HasComponent<Component>(entity))
             return;
-        }
 
+        auto& compVector = GetComponentVector<Component>();
         compVector.emplace_back(component, entity);
-        indices[ECS::ComponentID<Component>::ID] = compVector.size() - 1;
+        const u32 compIdx = (u32)(compVector.size() - 1);
+
+        if constexpr (ECS::ComponentID<Components::Transform>::ID == ECS::ComponentID<Component>::ID)
+            compVector.back().component.ownerEntity = entity;
+
+        it->second.componentIndices[ECS::ComponentID<Component>::ID] = compIdx;
+
+        auto& idxArr = GetCompIdxArray<Component>();
+        if (entity.ID >= (EntityID)idxArr.size())
+            idxArr.resize((size_t)entity.ID + 1, INVALID_COMP_IDX);
+        idxArr[entity.ID] = compIdx;
     }
 }
 
@@ -200,12 +266,25 @@ constexpr const stltype::vector<ComponentHolder<Component>>& EntityManager::GetC
 COMP_TEMPLATE_FUNC
 inline Component* EntityManager::GetComponent(const Entity entity)
 {
-    if (HasComponent<Component>(entity) == false)
-    {
+    if (!HasComponent<Component>(entity))
         return nullptr;
-    }
-    auto it = m_entityComponentMap.find(entity);
     auto& compVec = GetComponentVector<Component>();
-    return &compVec.at(it->second.componentIndices.at(ECS::ComponentID<Component>::ID)).component;
+    return &compVec[GetCompIdxArray<Component>()[entity.ID]].component;
+}
+
+// Returns an array where the index is exactly the Entity ID, unassigned entities default to nullptr
+COMP_TEMPLATE_FUNC
+inline stltype::vector<Component*> EntityManager::GetComponentPointerArray()
+{
+    const auto& idxArr = GetCompIdxArray<Component>();
+    auto& compVec = GetComponentVector<Component>();
+
+    stltype::vector<Component*> ptrArray(idxArr.size(), nullptr);
+    for (size_t id = 0; id < idxArr.size(); ++id)
+    {
+        if (idxArr[id] != INVALID_COMP_IDX)
+            ptrArray[id] = &compVec[idxArr[id]].component;
+    }
+    return ptrArray;
 }
 } // namespace ECS

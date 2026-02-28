@@ -8,7 +8,7 @@ namespace EntitySelector
 struct WorldPosMouseRay
 {
     mathstl::Vector3 worldOrigin{};
-    mathstl::Vector3 invOrigin{};
+    mathstl::Vector3 invDirection{};
     mathstl::Vector3 direction{};
     f32 distance{};
 };

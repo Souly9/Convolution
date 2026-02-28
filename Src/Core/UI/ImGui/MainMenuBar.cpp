@@ -4,6 +4,7 @@
 #include "Scenes/SampleScene.h"
 #include "Scenes/SponzaScene.h"
 #include <imgui/imgui.h>
+#include "Core/Global/Profiling.h"
 
 MainMenuBar::MainMenuBar() : SelfInstantiatingUIElement()
 {
@@ -17,6 +18,7 @@ MainMenuBar::MainMenuBar() : SelfInstantiatingUIElement()
 
 void MainMenuBar::DrawMenuBar(f32 dt, ApplicationInfos& appInfos)
 {
+    ScopedZone("MainMenuBar");
     if (ImGui::BeginMainMenuBar())
     {
         if (ImGui::BeginMenu("Entity"))

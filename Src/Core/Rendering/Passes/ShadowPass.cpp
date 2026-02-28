@@ -59,7 +59,7 @@ void CSMPass::BuildPipelines()
     // Compute viewMask from cascade count: (1 << cascades) - 1 gives bitmask for all layers
     info.viewMask = (1 << m_cascadeCount) - 1;
     info.depthCompareOp = DepthCompareOp::LESS_OR_EQUAL;
-    info.rasterizerInfo.cullmode = CullMode::BACK;
+    info.rasterizerInfo.cullmode = CullMode::FRONT;
     m_mainPSO = PSO(
         ShaderCollection{&mainVert, nullptr}, PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions}, info);
 }
@@ -254,7 +254,7 @@ stltype::array<mathstl::Matrix, 16> CSMPass::ComputeLightViewProjMatrices(
         float sliceFar = splitDist;
 
         mathstl::Matrix projMat = mathstl::Matrix::CreatePerspectiveFieldOfView(
-            DirectX::XMConvertToRadians(fov), aspectRatio, mathstl::max(sliceNear, 0.000001f), sliceFar);
+            DirectX::XMConvertToRadians(fov), aspectRatio, stltype::max(sliceNear, 0.000001f), sliceFar);
         mathstl::Matrix viewProj = view * projMat;
         auto viewProjInv = viewProj.Invert();
 

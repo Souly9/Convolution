@@ -6,110 +6,111 @@ using namespace DirectX;
 void ECS::System::STransform::Init(const SystemInitData& data)
 {
     m_pPassManager = data.pPassManager;
-
     m_cachedDataMap.reserve(2048);
 }
 
-/**
- * REFACTORED: This function replaces ComputeModelMatrixRecursive.
- * It uses memoization (the cache) to ensure each matrix is computed
- * only once, even with recursion. It returns the matrix.
- */
-mathstl::Matrix ECS::System::STransform::ComputeModelMatrixRecursive(Entity entity)
+void ECS::System::STransform::RebuildHierarchy(
+    stltype::vector<ComponentHolder<Components::Transform>>& transComps)
 {
-    // 1. Check if this entity's matrix is already cached
-    const auto it = m_cachedDataMap.find(entity.ID);
-    if (it != m_cachedDataMap.end())
+    ScopedZone("RebuildHierarchy");
+    for (auto& holder : transComps)
+        holder.component.children.clear();
+
+    for (auto& holder : transComps)
     {
-        return it->second; // Already computed, return cached value
+        if (holder.component.HasParent())
+        {
+            Components::Transform* pParent =
+                g_pEntityManager->GetComponentUnsafe<Components::Transform>(holder.component.parent);
+            if (pParent)
+                pParent->children.push_back(holder.entity);
+        }
     }
-
-    // 2. Not in cache: Get transform and compute local matrix
-    ECS::Components::Transform* pTransform = g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(entity);
-    const auto localModelMatrix = ComputeModelMatrix(pTransform);
-
-    mathstl::Matrix worldMatrix;
-    if (pTransform->HasParent() == false)
-    {
-        // 3a. This is a root node. Its world matrix is its local matrix.
-        worldMatrix = localModelMatrix;
-    }
-    else
-    {
-        // 3b. This is a child node.
-        // Get parent's world matrix (this is the recursive call).
-        mathstl::Matrix parentWorldMatrix = ComputeModelMatrixRecursive(pTransform->parent);
-
-        // World = Local * ParentWorld
-        worldMatrix = localModelMatrix * parentWorldMatrix;
-    }
-
-    // 4. Store the newly computed matrix in the cache and return it
-    m_cachedDataMap[entity.ID] = worldMatrix;
-    return worldMatrix;
 }
 
-/**
- * REFACTORED: Process() is now much simpler and more efficient.
- */
+void ECS::System::STransform::UpdateNode(Entity entity, const mathstl::Matrix& parentWorld, bool dirty)
+{
+    ECS::Components::Transform* pTransform =
+        g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(entity);
+    dirty = dirty | pTransform->isDirty;
+
+    if (dirty)
+    {
+        pTransform->localModelMatrix = ComputeModelMatrix(pTransform);
+        const mathstl::Matrix& world =
+            pTransform->HasParent()
+                ? (pTransform->worldModelMatrix = pTransform->localModelMatrix * parentWorld)
+                : (pTransform->worldModelMatrix = pTransform->localModelMatrix);
+
+        pTransform->worldPosition = mathstl::Vector3(world._41, world._42, world._43);
+        pTransform->worldScale = mathstl::Vector3(
+            sqrtf(world._11 * world._11 + world._12 * world._12 + world._13 * world._13),
+            sqrtf(world._21 * world._21 + world._22 * world._22 + world._23 * world._23),
+            sqrtf(world._31 * world._31 + world._32 * world._32 + world._33 * world._33));
+
+        m_cachedDataMap.push_back({entity.ID, world});
+        g_pEntityManager->NotifyTransformUpdated(entity);
+        pTransform->isDirty = false;
+    }
+
+    for (const Entity& child : pTransform->children)
+        UpdateNode(child, pTransform->worldModelMatrix, dirty);
+}
+
 void ECS::System::STransform::Process()
 {
     ScopedZone("Transform System::Process");
-    stltype::vector<ComponentHolder<Components::Transform>>& transComps =
-        g_pEntityManager->GetComponentVector<Components::Transform>();
+    auto& transComps = g_pEntityManager->GetComponentVector<Components::Transform>();
 
     m_cachedDataMap.clear();
 
-    // -----------------------------------------------------------------
-    // Build the Scene Hierarchy 
-    // -----------------------------------------------------------------
+    if (transComps.size() != m_lastKnownTransformCount)
     {
-        ScopedZone("Build Scene Hierarchy");
+        m_lastKnownTransformCount = transComps.size();
+        RebuildHierarchy(transComps);
+    }
 
-        // Clear all stale children lists from the previous frame
-        for (auto& transformHolder : transComps)
-        {
-            transformHolder.component.children.clear();
-        }
+    {
+        ScopedZone("Update Transforms");
 
-        // Populate children lists.
-        for (auto& transformHolder : transComps)
+        const auto& dirtyEntities = g_pEntityManager->GetDirtyEntities(C_ID(Transform));
+        const bool allDirty = g_pEntityManager->IsAllTransformsDirty() || dirtyEntities.empty();
+
+        if (allDirty)
         {
-            ECS::Components::Transform& transform = transformHolder.component;
-            if (transform.HasParent())
+            for (auto& holder : transComps)
             {
-                // Find the parent's component
-                ECS::Components::Transform* pParentTransform =
-                    g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(transform.parent);
-
-                if (pParentTransform)
-                {
-                    pParentTransform->children.push_back(transformHolder.entity);
-                }
+                if (!holder.component.HasParent())
+                    UpdateNode(holder.entity, mathstl::Matrix::Identity, false);
             }
         }
-    }
-    // -----------------------------------------------------------------
-    // End Hierarchy Building
-    // -----------------------------------------------------------------
+        else
+        {
+            for (const Entity& entity : dirtyEntities)
+            {
+                auto* pTransform = g_pEntityManager->GetComponentUnsafe<Components::Transform>(entity);
+                if (!pTransform)
+                    continue;
 
-    // Compute and decompose all world matrices
-    for (auto& transformHolder : transComps)
-    {
-        mathstl::Matrix worldModel = ComputeModelMatrixRecursive(transformHolder.entity);
+                pTransform->isDirty = true;
 
-        // 3b. Decompose the final matrix back into the component
-        worldModel.Decompose(transformHolder.component.worldScale,
-                             transformHolder.component.worldRotation,
-                             transformHolder.component.worldPosition);
+                mathstl::Matrix parentWorld = mathstl::Matrix::Identity;
+                if (pTransform->HasParent())
+                {
+                    auto* pParent = g_pEntityManager->GetComponentUnsafe<Components::Transform>(pTransform->parent);
+                    parentWorld = pParent->worldModelMatrix;
+                }
+
+                UpdateNode(entity, parentWorld, true);
+            }
+        }
     }
 }
 
 void ECS::System::STransform::SyncData(u32 currentFrame)
 {
     ScopedZone("Transform System::SyncData");
-    auto map = m_cachedDataMap;
-    m_pPassManager->SetEntityTransformDataForFrame(std::move(map), currentFrame);
+    m_pPassManager->SetEntityTransformDataForFrame(stltype::move(m_cachedDataMap), currentFrame);
 }
 
 bool ECS::System::STransform::AccessesAnyComponents(const stltype::vector<C_ID>& components)
@@ -121,14 +122,11 @@ bool ECS::System::STransform::AccessesAnyComponents(const stltype::vector<C_ID>&
 mathstl::Matrix ECS::System::STransform::ComputeModelMatrix(const ECS::Components::Transform* pTransform)
 {
     using namespace mathstl;
-    Vector3 scale(pTransform->scale);
     Vector3 rotation(pTransform->rotation);
     rotation *= XM_PI / 180.f;
 
-    Vector3 position(pTransform->position);
-
     Quaternion transformQuat = Quaternion::CreateFromYawPitchRoll(rotation.y, rotation.x, rotation.z);
 
-    return Matrix::CreateScale(scale) * Matrix::CreateFromQuaternion(transformQuat) *
-           Matrix::CreateTranslation(position);
+    return Matrix::CreateScale(pTransform->scale) * Matrix::CreateFromQuaternion(transformQuat) *
+           Matrix::CreateTranslation(pTransform->position);
 }

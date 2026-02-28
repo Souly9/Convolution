@@ -2,24 +2,7 @@
 #extension GL_ARB_shading_language_include : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_EXT_scalar_block_layout : enable
-#extension GL_EXT_debug_printf : enable
-
-#define SharedDataUBOSet     1
-#define TransformSSBOSet     2
-#define TileArraySet         3
-#define GBufferUBOSet        4
-#define ShadowViewUBOSet     5
-#define PassPerObjectDataSet 10
-#include "../../Globals/GBufferUBO.h"
-#include "../../Globals/GlobalBuffers.h"
-#include "../../Globals/LightData.h"
-#include "../../Globals/ClusteredShading/LightIndexIO.h"
-#include "../../Globals/PBR/UnrealPBR.h"
-#include "../../Globals/PerObjectBuffers.h"
-#include "../../Globals/ShadowBuffers.h"
-#include "../../Globals/Textures.h"
-#include "../../Globals/Utils/Shadows.h"
-#include "../../Tonemapping/GT7.h"
+#include "../../Globals/LightingPass.h"
 
 layout(location = 0) in VertexOut
 {
@@ -57,9 +40,9 @@ float SampleGlobalShadowmaps(vec4 worldPos, float viewDepth, vec3 normal, vec3 l
 void main()
 {
     vec2 texCoords = IN.fragTexCoord;
-    vec4 uiColor = vec4(texture(GlobalBindlessTextures[gbufferUBO.gbufferUIIdx], texCoords));
     vec3 albedo = texture(GlobalBindlessTextures[gbufferUBO.gbufferAlbedoIdx], texCoords).xyz;
-    vec4 texCoordMatData = vec4(texture(GlobalBindlessTextures[gbufferUBO.gbufferTexCoordMatIdx], texCoords));
+    vec4 gbufferTexCoordMat = texture(GlobalBindlessTextures[gbufferUBO.gbufferTexCoordMatIdx], texCoords);
+    vec2 materialUV = gbufferTexCoordMat.xy;
     vec4 fragNormalData = texture(GlobalBindlessTextures[gbufferUBO.gbufferNormalIdx], texCoords);
     uint fragMatIdx = uint(fragNormalData.w);
     Material fragMaterial = globalObjectDataSSBO.materials[fragMatIdx];
@@ -67,14 +50,10 @@ void main()
 
     float fragmentDepth = texture(GlobalBindlessTextures[gbufferUBO.depthBufferIdx], texCoords).r;
 
-    uiColor.a = mix(0, 0.95, uiColor.a);
-    // Linearize ImGui's UNORM sRGB bytes into Linear space before blending with the linear scene
-    uiColor.rgb = pow(uiColor.rgb, vec3(2.2));
-
     vec4 clipSpacePosition;
     clipSpacePosition.x = texCoords.x * 2.0 - 1.0;
-    clipSpacePosition.y = (1.0 - texCoords.y) * 2.0 - 1.0; // <--- THE FLIP FIX
-    clipSpacePosition.z = fragmentDepth;                   // Vulkan NDC Z is 0..1 (no conversion needed)
+    clipSpacePosition.y = (1.0 - texCoords.y) * 2.0 - 1.0; // Vulkan has flipped viewport here
+    clipSpacePosition.z = fragmentDepth;                   
     clipSpacePosition.w = 1.0;
     clipSpacePosition = ubo.projectionInverse * clipSpacePosition;
     clipSpacePosition = (ubo.viewInverse * clipSpacePosition);
@@ -94,9 +73,9 @@ void main()
     int debugViewMode = ubo.debugViewMode;
 
     DirectionalLight dirLight = lightData.dirLight;
-    vec3 L = normalize(-dirLight.direction.xyz);
+    vec3 dirLightTravelDir = normalize(dirLight.direction.xyz);
     float viewDepth = abs(fragPosViewSpace.z);
-    vec3 N = normalize(normal);
+    vec3 N = normal;
     vec3 V = viewDir;
 
     // 1 = CSM Debug
@@ -105,10 +84,10 @@ void main()
         int cascadeIdx = getCascadeIndex(viewDepth);
         vec3 cascadeColor = getCascadeDebugColor(cascadeIdx);
 
-        float shadow = computeShadow(fragPosWorldSpace, viewDepth, N, L);
+        float shadow = computeShadow(fragPosWorldSpace, viewDepth, N, dirLightTravelDir);
         vec3 debugColor = mix(cascadeColor, albedo, shadow);
 
-        outColor.rgb = debugColor * (1.0 - uiColor.a) + uiColor.rgb * uiColor.a;
+        outColor.rgb = debugColor;
         outColor.a = 1.0;
         return;
     }
@@ -124,16 +103,35 @@ void main()
 
         vec3 debugColor = vec3(r, g, b);
 
-        outColor.rgb = debugColor * (1.0 - uiColor.a) + uiColor.rgb * uiColor.a;
+        outColor.rgb = debugColor;
         outColor.a = 1.0;
         return;
     }
 
     Material mat = fragMaterial;
+    SurfaceParameters surface = GetDefaultSurface(albedo * mat.baseColor.rgb, mat.roughness.x, mat.metallic.x);
+    
+    surface.anisotropic = mat.anisotropicTintIorClearcoat.x;
+    surface.specularTint = mat.anisotropicTintIorClearcoat.y;
+    surface.ior = mat.anisotropicTintIorClearcoat.z;
+    surface.clearcoat = mat.anisotropicTintIorClearcoat.w;
+    
+    surface.clearcoatGloss = mat.glossSheenSTransFlatness.x;
+    surface.sheen = mat.glossSheenSTransFlatness.y;
+    surface.sheenTint = mat.glossSheenSTransFlatness.z;
+    surface.specTrans = mat.glossSheenSTransFlatness.w;
 
-    // Use material roughness or custom set roughness
-    float roughness = 1;
-    float metallic = 0;
+    if (IsMaterialFlagSet(mat.flags, MATERIAL_FLAG_SHEEN_BIT))
+    {
+        surface.sheen *= texture(GlobalBindlessTextures[nonuniformEXT(mat.sheenTexture)], materialUV).r;
+    }
+    if (IsMaterialFlagSet(mat.flags, MATERIAL_FLAG_CLEARCOAT_BIT))
+    {
+        surface.clearcoat *= texture(GlobalBindlessTextures[nonuniformEXT(mat.clearcoatTexture)], materialUV).r;
+    }
+
+    vec3 materialAlbedo = surface.baseColor;
+    vec3 emissive = mat.emissive.rgb;
 
     // (Specular + Diffuse)
     vec3 directLighting = vec3(0.0);
@@ -144,6 +142,7 @@ void main()
     // Read start index from offsets buffer (written by compute shader)
     uint baseIndex = GetClusterLightBaseIndex(clusterIdx);
     uint lightCount = GetClusterLightCount(baseIndex);
+    lightCount = min(lightCount, MAX_LIGHTS_PER_CLUSTER);
 
     // --- Point/Spot Light Loop ---
     for (uint i = 0; i < lightCount; ++i)
@@ -151,40 +150,41 @@ void main()
         Light light = lightData.lights[FetchClusterLightIndex(baseIndex, i)];
 
         vec3 lightPos = light.position.xyz;
+        float lightRange = light.direction.w;
         float lightIntensity = light.color.w;
         vec3 lightColor = light.color.xyz * lightIntensity;
-        // Direction and other params for spot lights would be accessed here if needed
-        // For now treating as point lights or checking type
+        
 
-        vec3 lightContribution =
-            computePointLight(fragPosWorldSpace.xyz, lightPos, V, N, lightColor, albedo, roughness, metallic);
+        vec3 lightContribution = computePointLight(
+            fragPosWorldSpace.xyz, lightPos, lightRange, V, N, lightColor, surface);
 
-        // Apply shadow factor and accumulate
+
         directLighting += lightContribution;
     }
 
     // --- Directional Light ---
-    float dirLightShadow = SampleGlobalShadowmaps(fragPosWorldSpace, viewDepth, N, L);
-    float sss = texture(GlobalBindlessTextures[shadowmapViewUBO.screenSpaceShadows], texCoords).r;
-    if (!IsFlagSet(ubo.debugFlags, DEBUG_FLAG_SSS_ENABLED))
-        sss = 1.0f;
-    dirLightShadow = min(dirLightShadow, sss);
+    float dirLightShadow = SampleGlobalShadowmaps(fragPosWorldSpace, viewDepth, N, dirLightTravelDir);
+    if (IsFlagSet(ubo.debugFlags, DEBUG_FLAG_SSS_ENABLED))
     {
-        vec3 lightDir = normalize(dirLight.direction.xyz);
+        float sss = clamp(texture(GlobalBindlessTextures[shadowmapViewUBO.screenSpaceShadows], texCoords).r, 0.0, 1.0);
+        float contactShadowStrength = 0.9;
+        dirLightShadow *= mix(1.0, sss, contactShadowStrength);
+    }
+    {
         float lightIntensity = dirLight.color.w;
         vec3 lightColor = dirLight.color.xyz * lightIntensity;
 
-        vec3 lightContribution = computeDirLight(lightDir, V, N, lightColor, albedo, roughness, metallic);
+        vec3 lightContribution = computeDirLight(dirLightTravelDir, V, N, lightColor, surface);
 
         directLighting += lightContribution * dirLightShadow; // Apply shadow only to directional light
     }
 
     float ambientIntensity = ubo.ambientIntensity;
-    vec3 indirectLighting = computeAmbient(albedo, ambientIntensity);
+    vec3 indirectLighting = computeAmbient(materialAlbedo, ambientIntensity);
 
     // Exposure
     float exposure = ubo.exposure;
-    vec3 finalHDRColor = (directLighting + indirectLighting) * exposure;
+    vec3 finalHDRColor = (directLighting + indirectLighting + emissive) * exposure;
 
     // Tone Mapping
     int toneMapperType = ubo.toneMapperType;
@@ -202,17 +202,14 @@ void main()
     {
         finalLDRColor = GT7TMO(finalHDRColor);
     }
-    // 0 = None (Linear code will pass through) purely clamped at output if swapchain is integer,
-    // but we use float swapchain so it allows HDR output.
-
     // Apply UI Color overlay / Final output assignment
     vec4 debugColor = texture(GlobalBindlessTextures[gbufferUBO.gbufferDebugIdx], texCoords);
 
     // Convert Linear SDR Tonemapped output to sRGB SDR presentation output
     vec3 finalSceneColor = finalLDRColor;
     // finalSceneColor += debugColor.rgb;
-    
+    finalSceneColor = pow(finalSceneColor, vec3(1.0 /2.2));
 
-    outColor.rgb = finalSceneColor * (1.0 - uiColor.a) + uiColor.rgb * uiColor.a;
+    outColor.rgb = finalSceneColor;
     outColor.a = 1.0;
 }

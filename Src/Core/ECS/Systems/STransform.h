@@ -20,10 +20,12 @@ public:
 
 protected:
     mathstl::Matrix ComputeModelMatrix(const ECS::Components::Transform* pTransform);
-    mathstl::Matrix ComputeModelMatrixRecursive(Entity entity);
-    // Cached model matrices of all entities
+    void RebuildHierarchy(stltype::vector<ComponentHolder<Components::Transform>>& transComps);
+    void UpdateNode(Entity entity, const mathstl::Matrix& parentWorld, bool dirty);
+
     RenderPasses::TransformSystemData m_cachedDataMap;
     RenderPasses::PassManager* m_pPassManager;
+    size_t m_lastKnownTransformCount{0};
 };
 } // namespace System
 } // namespace ECS

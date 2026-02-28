@@ -22,7 +22,7 @@ protected:
     struct DelayedDelete
     {
         DeleteFunction func;
-        u8 submittedFrameIdx;
+        u8 framesRemaining;
     };
     stltype::queue<DelayedDelete> m_delayedDeleteQueue;
 };

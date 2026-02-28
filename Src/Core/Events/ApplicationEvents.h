@@ -28,4 +28,4 @@ using ShaderHotReloadEventCallback = stltype::fixed_function<8, void(const Shade
 struct SceneLoadedEventData
 {
 };
-using SceneLoadedEventCallback = stltype::fixed_function<8, void(const SceneLoadedEventData&)>;
+using SceneLoadedEventCallback = stltype::fixed_function<16, void(const SceneLoadedEventData&)>;

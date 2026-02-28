@@ -11,7 +11,6 @@ enum class GBufferTextureType
     GBufferAlbedo,
     GBufferNormal,
     TexCoordMatData,
-    GBufferUI,
     GBufferDebug
 };
 
@@ -22,15 +21,13 @@ struct GBufferInfo
         switch (type)
         {
             case GBufferTextureType::GBufferAlbedo:
-                return TexFormat::R32G32B32A32_FLOAT;
+                return TexFormat::R16G16B16A16_FLOAT;
             case GBufferTextureType::GBufferNormal:
-                return TexFormat::R32G32B32A32_FLOAT;
+                return TexFormat::R16G16B16A16_FLOAT;
             case GBufferTextureType::TexCoordMatData:
-                return TexFormat::R32G32B32A32_FLOAT;
-            case GBufferTextureType::GBufferUI:
-                return TexFormat::R8G8B8A8_UNORM;
+                return TexFormat::R16G16B16A16_FLOAT;
             case GBufferTextureType::GBufferDebug:
-                return TexFormat::R32G32B32A32_FLOAT;
+                return TexFormat::R16G16B16A16_FLOAT;
             default:
                 DEBUG_ASSERT(false);
                 return TexFormat::UNDEFINED;
@@ -41,7 +38,7 @@ struct GBufferInfo
 // Utility thing to hold the gbuffer data
 struct GBuffer : public GBufferInfo
 {
-    stltype::vector<const Texture*> GetAllTexturesWithoutUI()
+    stltype::vector<const Texture*> GetAllTextures()
     {
         return {m_pPositionTexture, m_pNormalTexture, m_pGbufferUVMatTexture, m_pDebugTexture};
     }
@@ -56,8 +53,6 @@ struct GBuffer : public GBufferInfo
                 return m_pNormalTexture;
             case GBufferTextureType::TexCoordMatData:
                 return m_pGbufferUVMatTexture;
-            case GBufferTextureType::GBufferUI:
-                return m_pUITexture;
             case GBufferTextureType::GBufferDebug:
                 return m_pDebugTexture;
             default:
@@ -80,9 +75,6 @@ struct GBuffer : public GBufferInfo
             case GBufferTextureType::TexCoordMatData:
                 m_pGbufferUVMatTexture = pTexture;
                 break;
-            case GBufferTextureType::GBufferUI:
-                m_pUITexture = pTexture;
-                break;
             case GBufferTextureType::GBufferDebug:
                 m_pDebugTexture = pTexture;
                 break;
@@ -95,7 +87,6 @@ private:
     Texture* m_pPositionTexture;
     Texture* m_pNormalTexture;
     Texture* m_pGbufferUVMatTexture;
-    Texture* m_pUITexture;
     Texture* m_pDebugTexture;
     // Add any other necessary members or methods for GBuffer management
 };

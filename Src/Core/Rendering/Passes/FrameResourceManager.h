@@ -96,11 +96,17 @@ struct PassGeometryData
 
 using EntityMeshDataMap = stltype::hash_map<u64, stltype::vector<EntityMeshData>>;
 using EntityDebugMeshDataMap = stltype::hash_map<u64, EntityMeshData>;
-using TransformSystemData = stltype::hash_map<ECS::EntityID, mathstl::Matrix>;
+using TransformSystemData = stltype::vector<stltype::pair<ECS::EntityID, mathstl::Matrix>>;
 using EntityTransformData = stltype::pair<stltype::vector<ECS::EntityID>, stltype::vector<DirectX::XMFLOAT4X4>>;
 using PointLightVector = stltype::vector<RenderLight>;
 using DirLightVector = stltype::vector<DirectionalRenderLight>;
 using EntityMaterialMap = stltype::hash_map<u64, stltype::vector<Material*>>;
+
+struct LightDeltaUpdate
+{
+    u32 index;
+    RenderLight light;
+};
 
 struct FrameRendererContext
 {
@@ -142,6 +148,7 @@ struct FrameRendererContext
 
     f32 zNear{0.1f};
     f32 zFar{300.0f};
+    u32 numLights{0};
 };
 
 struct RenderDataForPreProcessing
@@ -151,17 +158,21 @@ struct RenderDataForPreProcessing
     TransformSystemData entityTransformData{};
     PointLightVector lightVector{};
     DirLightVector dirLightVector{};
+    stltype::vector<LightDeltaUpdate> lightDeltaUpdates{};
+    DirectionalRenderLight dirLightUpdate{};
+    bool dirLightUpdated{false};
     RenderView mainView{mathstl::Vector3::Zero, mathstl::Vector3::Zero, {}, nullptr, 60.0f, 0.1f, 300.0f};
     u32 frameIdx{99};
 
     bool IsValid() const
     {
-        return entityMeshData.size() <= entityTransformData.size() && frameIdx != 99;
+        return frameIdx != 99;
     }
     bool IsEmpty() const
     {
         return entityMeshData.size() == 0 && entityTransformData.size() == 0 && lightVector.size() == 0 &&
-               entityMaterialData.size() == 0 && dirLightVector.size() == 0;
+               entityMaterialData.size() == 0 && dirLightVector.size() == 0 && lightDeltaUpdates.size() == 0 &&
+               !dirLightUpdated;
     }
 
     void Clear()
@@ -170,6 +181,8 @@ struct RenderDataForPreProcessing
         entityTransformData.clear();
         lightVector.clear();
         dirLightVector.clear();
+        lightDeltaUpdates.clear();
+        dirLightUpdated = false;
         entityMaterialData.clear();
         frameIdx = 99;
     }
@@ -195,14 +208,16 @@ public:
     void SetEntityMeshDataForFrame(EntityMeshDataMap&& data, u32 frameIdx);
     void SetEntityTransformDataForFrame(TransformSystemData&& data, u32 frameIdx);
     void SetLightDataForFrame(PointLightVector&& data, DirLightVector&& dirLights, u32 frameIdx);
+    void SetLightDeltaForFrame(stltype::vector<LightDeltaUpdate>&& updates, bool dirLightDirty,
+                               const DirectionalRenderLight& dirLight, u32 frameIdx);
     void SetSharedData(RenderView&& mainView, u32 frameIdx);
 
     void UpdateSharedDataUBO(const void* data, size_t size, u32 frameIdx);
     void UpdateShadowViewUBO(const UBO::ShadowmapViewUBO& data, u32 frameIdx);
-    void UpdateLightClusterSSBO(const UBO::LightClusterSSBO& data, u32 frameIdx);
+    void UpdateLightClusterSSBO(const UBO::LightClusterSSBO& data, u32 numLights, u32 frameIdx);
 
     void DispatchSSBOTransfer(
-        void* data, DescriptorSet* pDescriptor, u32 size, StorageBuffer* pSSBO, u32 offset = 0, u32 dstBinding = 0);
+        void* data, DescriptorSet* pDescriptor, u32 size, StorageBuffer* pSSBO, u32 offset = 0, u32 dstBinding = 0, u32 frameIdx = ~0u);
 
     FrameRendererContext& GetFrameRendererContext(u32 idx) { return m_frameRendererContexts[idx]; }
     const FrameRendererContext& GetFrameRendererContext(u32 idx) const { return m_frameRendererContexts[idx]; }

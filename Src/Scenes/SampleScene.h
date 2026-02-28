@@ -20,7 +20,7 @@ public:
         auto meshEnt = g_pEntityManager->CreateEntity(mathstl::Vector3(4, 0, 0));
         comp.pMesh = g_pMeshManager->GetPrimitiveMesh(MeshManager::PrimitiveType::Cube);
         comp.pMaterial = g_pMaterialManager->AllocateMaterial("DefaultConvolutionMaterial", Material{});
-        comp.pMaterial->properties.baseColor = mathstl::Vector4{1, 1, 1, 1};
+        comp.pMaterial->baseColor = mathstl::Vector4{1, 1, 1, 1};
         g_pEntityManager->AddComponent(meshEnt, comp);
 
         auto parentEnt = g_pEntityManager->CreateEntity(mathstl::Vector3(0, 1, 0));
@@ -62,9 +62,9 @@ public:
         g_pApplicationState->RegisterUpdateFunction(
             [](ApplicationState& state)
             {
-                g_pEntityManager->MarkComponentDirty(ECS::ComponentID<ECS::Components::Transform>::ID);
-                g_pEntityManager->MarkComponentDirty(ECS::ComponentID<ECS::Components::RenderComponent>::ID);
-                g_pEntityManager->MarkComponentDirty(ECS::ComponentID<ECS::Components::Light>::ID);
+                g_pEntityManager->MarkComponentDirty({}, ECS::ComponentID<ECS::Components::Transform>::ID);
+                g_pEntityManager->MarkComponentDirty({}, ECS::ComponentID<ECS::Components::RenderComponent>::ID);
+                g_pEntityManager->MarkComponentDirty({}, ECS::ComponentID<ECS::Components::Light>::ID);
                 g_pMaterialManager->MarkMaterialsDirty();
             });
         g_pApplicationState->RegisterUpdateFunction(

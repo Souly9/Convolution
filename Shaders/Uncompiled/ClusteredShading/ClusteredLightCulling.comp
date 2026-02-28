@@ -3,17 +3,19 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_EXT_scalar_block_layout : enable
 
-#define SharedDataUBOSet     0
 #define TileArraySet         1
 #define ClusterGridSet       2
+#define ViewSpaceLightsSet   3
 #include "../../Globals/ClusteredShading/AABBs.h"
-#include "../../Globals/GlobalBuffers.h"
 #include "../../Globals/LightData.h"
 #include "../../Globals/ClusteredShading/LightIndexIO.h"
+#include "../../Globals/ClusteredShading/ViewSpaceLights.h"
 
-layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+#define X_LOCAL_SIZE 8
+#define Y_LOCAL_SIZE 8
+#define THREAD_COUNT (X_LOCAL_SIZE * Y_LOCAL_SIZE)
+layout(local_size_x = X_LOCAL_SIZE, local_size_y = Y_LOCAL_SIZE, local_size_z = 1) in;
 
-// Push constants for dynamic cluster config
 layout(push_constant) uniform PushConstants
 {
     ivec3 clusterCount;
@@ -22,77 +24,67 @@ layout(push_constant) uniform PushConstants
 }
 pc;
 
-// Shared memory for local light accumulation (64 threads * 64 lights * 4 bytes = 16KB)
-shared uint sharedLightIndices[64][MAX_LIGHTS_PER_CLUSTER];
+shared vec3 sharedLightPos[THREAD_COUNT];
+shared float sharedLightRadius[THREAD_COUNT];
+shared uint sharedLightIndex[THREAD_COUNT];
 
 bool sphereIntersectsAABB(vec3 center, float radius, vec3 aabbMin, vec3 aabbMax)
 {
     vec3 closest = clamp(center, aabbMin, aabbMax);
-    float distSq = dot(center - closest, center - closest);
-    return distSq <= (radius * radius);
+    vec3 diff = center - closest;
+    return dot(diff, diff) <= (radius * radius);
 }
 
 void main()
 {
-    // Calculate global cluster coordinates
-    // We assume 8x8x1 threads, and workgroups dispatched to cover clusterCount
     uint clusterX = gl_GlobalInvocationID.x;
     uint clusterY = gl_GlobalInvocationID.y;
     uint clusterZ = gl_GlobalInvocationID.z;
+    uint localId = gl_LocalInvocationIndex;
 
-    if (clusterX >= pc.clusterCount.x || clusterY >= pc.clusterCount.y || clusterZ >= pc.clusterCount.z)
-        return;
+    bool isValidCluster =
+        (clusterX < pc.clusterCount.x && clusterY < pc.clusterCount.y && clusterZ < pc.clusterCount.z);
 
     uint clusterIdx = clusterX + clusterY * pc.clusterCount.x + clusterZ * pc.clusterCount.x * pc.clusterCount.y;
-    uint localIdx = gl_LocalInvocationIndex; // Flat index within workgroup (0..63)
 
-    // Get cluster AABB from buffer
+    if (!isValidCluster) return;
+
     vec3 aabbMin = clusterGrid.clusters[clusterIdx].minBounds.xyz;
     vec3 aabbMax = clusterGrid.clusters[clusterIdx].maxBounds.xyz;
+    float clusterZMin = min(aabbMin.z, aabbMax.z);
+    float clusterZMax = max(aabbMin.z, aabbMax.z);
 
-    // Local counter for lights in this cluster
+    uint tileIdx = clusterX + clusterY * uint(pc.clusterCount.x);
+    uint tileCount = min(viewSpaceLights.tileCounters[tileIdx], MAX_LIGHTS_PER_TILE);
+    uint tileBase = tileIdx * MAX_LIGHTS_PER_TILE;
+
     uint visibleCount = 0;
+    uint baseIndex = clusterIdx * MAX_LIGHTS_PER_CLUSTER;
 
-    // Iterate over all scene lights
-    uint totalLights = lightData.numLights;
-
-    // Safety clamp
-    totalLights = min(totalLights, MAX_SCENE_LIGHTS);
-
-    for (uint i = 0; i < totalLights; ++i)
+    for (uint i = 0; i < tileCount; ++i)
     {
-        // Check if we have space
         if (visibleCount >= MAX_LIGHTS_PER_CLUSTER)
             break;
 
-        Light light = lightData.lights[i];
+        uint globalLightIdx = viewSpaceLights.tileLightIndices[tileBase + i];
+        vec4 vsLight = viewSpaceLights.lights[globalLightIdx];
 
-        // Transform light position to view space for intersection test with View-Space AABB (or is AABB in view space?)
-        // LightGridComputePass generates AABBs in View Space (if based on frustum slicing).
-        // Light position in buffer is World Space?
-        // Renderer usually uploads World Space lights.
-        // So we need to transform light to View Space.
+        float lZMin = vsLight.z - vsLight.w;
+        float lZMax = vsLight.z + vsLight.w;
 
-        vec3 lightPos = (ubo.view * vec4(light.position.xyz, 1.0)).xyz;
-        float lightRange = light.direction.w;
+        // Fast Z reject
+        if (lZMin > clusterZMax || lZMax < clusterZMin)
+            continue;
 
-        if (sphereIntersectsAABB(lightPos, lightRange, aabbMin, aabbMax))
+        // Fine AABB test
+        if (sphereIntersectsAABB(vsLight.xyz, vsLight.w, aabbMin, aabbMax))
         {
-            sharedLightIndices[localIdx][visibleCount++] = i;
+            // Write directly to global memory 
+            StoreClusterLightIndex(baseIndex, visibleCount, globalLightIdx);
+            visibleCount++;
         }
     }
 
-    // Write to global buffers using fixed stride
-    // Base index into clusterLightIndices
-    // We use MAX_LIGHTS_PER_CLUSTER stride strictly.
-    uint baseIndex = clusterIdx * MAX_LIGHTS_PER_CLUSTER;
-
-    // 1. Write offset and count for this cluster
+    // Save the count
     StoreClusterLightOffsetAndCount(clusterIdx, baseIndex, visibleCount);
-
-    // 2. Write the light indices
-    for (uint i = 0; i < visibleCount; ++i)
-    {
-        StoreClusterLightIndex(baseIndex, i, sharedLightIndices[localIdx][i]);
-    }
 }

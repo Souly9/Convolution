@@ -2,6 +2,7 @@
 #include "Core/Global/GlobalDefines.h"
 #include "Core/UI/LogData.h"
 #include <imgui.h>
+#include "Core/Global/Profiling.h"
 
 class ImGuiWindow
 {
@@ -37,6 +38,7 @@ class InfoWindow : public ImGuiWindow
 public:
     void DrawWindow(f32 dt, ApplicationInfos& appInfos)
     {
+        ScopedZone("LogWindow");
         ImGui::Begin("Log", &m_isOpen);
 
         // Consume new logs from appInfos and clear them

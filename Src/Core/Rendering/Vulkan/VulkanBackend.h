@@ -111,6 +111,5 @@ private:
     QueueFamilyIndices m_indices;
     VkSwapchainKHR m_swapChain{VK_NULL_HANDLE};
     stltype::vector<VkImage> m_swapChainImages;
-    VkFormat m_swapChainImageFormat;
     mathstl::Vector2 m_swapChainExtent;
 };

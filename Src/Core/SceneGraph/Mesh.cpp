@@ -95,3 +95,16 @@ Mesh* MeshManager::GetPrimitiveMesh(PrimitiveType type)
         return m_pCubePrimitive;
     return nullptr;
 }
+
+void MeshManager::Flush()
+{
+    DEBUG_LOGF("[MeshManager] Flushing meshes, keeping standard primitives");
+    
+    // Keep only the first two (Plane and Cube primitives)
+    m_meshes.erase(m_meshes.begin() + 2, m_meshes.end());
+
+    // Clear AABBs but re-add primitives
+    m_meshAABBs.clear();
+    CalcAABB(mathstl::Vector3{-1.0f, -1.0f, 0.0f}, mathstl::Vector3{1.0f, 1.0f, 0.0f}, m_pPlanePrimitive);
+    CalcAABB(mathstl::Vector3{-0.5f}, mathstl::Vector3{0.5f}, m_pCubePrimitive);
+}

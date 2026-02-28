@@ -12,6 +12,7 @@
 #include "Core/Rendering/Vulkan/VkTexture.h"
 #include "Core/WindowManager.h"
 #include "PassManager.h"
+#include <EASTL/algorithm.h>
 #include <cmath>
 #include <cstring>
 
@@ -39,7 +40,7 @@ void FrameResourceManager::BuildSharedDataForView(const RenderView& mainView,
     viewMat = Matrix::CreateLookAt(viewPos, rotatedFocusPos, upVector);
     Matrix projMat = Matrix::CreatePerspectiveFieldOfView(DirectX::XMConvertToRadians(mainView.fov),
                                                           FrameGlobals::GetScreenAspectRatio(),
-                                                          mathstl::max(mainView.zNear, 0.000001f),
+                                                          stltype::max(mainView.zNear, 0.000001f),
                                                           mainView.zFar);
     viewProj = viewMat * projMat;
 
@@ -258,7 +259,7 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
             const auto& mainView = m_dataToBePreProcessed.mainView;
             LightUniforms data;
 
-            float zNear = mathstl::max(mainView.zNear, 0.000001f);
+            float zNear = stltype::max(mainView.zNear, 0.000001f);
             float zFar = mainView.zFar;
             u32 sliceCount = renderState.clusterCount.z;
 
@@ -290,7 +291,7 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
             entityToMeshIdx.reserve(m_dataToBePreProcessed.entityMeshData.size());
             u32 meshIdx = 0;
 
-            for (const auto& data : m_dataToBePreProcessed.entityTransformData)
+            for (const auto& data : m_dataToBePreProcessed.entityMeshData)
             {
                 const auto& entityID = data.first;
                 DEBUG_ASSERT(entityToMeshIdx.find(entityID) == entityToMeshIdx.end());
@@ -342,6 +343,9 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
             pPassManager->TransferPassDataPublic(std::move(passData), m_dataToBePreProcessed.frameIdx);
         }
 
+        auto& resourceManager = pPassManager->GetResourceManager();
+        u32 dirtyMin = ~0u;
+        u32 dirtyMax = 0;
         for (const auto& data : m_dataToBePreProcessed.entityTransformData)
         {
             const auto& entityID = data.first;
@@ -351,27 +355,30 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
 
             const u32 ssboIdx = uboIt->second;
             m_cachedTransformSSBO[ssboIdx] = data.second;
-            // Also populate AABBs
+
             AABB aabb{};
             if (m_dataToBePreProcessed.entityMeshData.find(entityID) != m_dataToBePreProcessed.entityMeshData.end())
             {
                 const auto& meshDataVec = m_dataToBePreProcessed.entityMeshData.at(entityID);
                 if (!meshDataVec.empty())
-                {
                     aabb = meshDataVec[0].aabb;
-                }
             }
             m_cachedSceneAABBs[ssboIdx] = aabb;
+
+            dirtyMin = (stltype::min)(dirtyMin, ssboIdx);
+            dirtyMax = (stltype::max)(dirtyMax, ssboIdx);
         }
-        pPassManager->GetResourceManager().UpdateTransformBuffer(
-            m_cachedTransformSSBO, currentSwapChainIdx, (u32)m_entityToTransformUBOIdx.size());
-        pPassManager->GetResourceManager().UpdateSceneAABBBuffer(
-            m_cachedSceneAABBs, currentSwapChainIdx, (u32)m_entityToTransformUBOIdx.size());
+
+        if (dirtyMin <= dirtyMax)
+        {
+            const u32 dirtyCount = dirtyMax - dirtyMin + 1;
+            resourceManager.UpdateTransformRange(m_cachedTransformSSBO, dirtyMin, dirtyCount);
+            resourceManager.UpdateSceneAABBRange(m_cachedSceneAABBs, dirtyMin, dirtyCount);
+        }
 
         if (m_dataToBePreProcessed.lightVector.empty() == false ||
             m_dataToBePreProcessed.dirLightVector.empty() == false)
         {
-            // Light data - populate LightClusterSSBO
             auto& lightClusterHost = m_lightCluster;
             lightClusterHost.numLights = 0;
 
@@ -392,15 +399,70 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
                 lightClusterHost.dirLight.color =
                     mathstl::Vector4(dirLight.color.x, dirLight.color.y, dirLight.color.z, dirLight.color.w);
             }
-            UpdateLightClusterSSBO(lightClusterHost, currentSwapChainIdx);
+            UpdateLightClusterSSBO(lightClusterHost, lightClusterHost.numLights, currentSwapChainIdx);
+        }
+        else if (!m_dataToBePreProcessed.lightDeltaUpdates.empty() || m_dataToBePreProcessed.dirLightUpdated)
+        {
+            auto& lightClusterHost = m_lightCluster;
+
+            if (m_dataToBePreProcessed.dirLightUpdated)
+            {
+                const auto& dirLight = m_dataToBePreProcessed.dirLightUpdate;
+                m_cachedDirLights = {dirLight};
+                lightClusterHost.dirLight.direction =
+                    mathstl::Vector4(dirLight.direction.x, dirLight.direction.y, dirLight.direction.z, 1);
+                lightClusterHost.dirLight.direction.Normalize();
+                lightClusterHost.dirLight.color =
+                    mathstl::Vector4(dirLight.color.x, dirLight.color.y, dirLight.color.z, dirLight.color.w);
+            }
+
+            u32 dirtyMin = ~0u;
+            u32 dirtyMax = 0;
+            for (const auto& update : m_dataToBePreProcessed.lightDeltaUpdates)
+            {
+                if (update.index < MAX_SCENE_LIGHTS)
+                {
+                    lightClusterHost.lights[update.index] = update.light;
+                    dirtyMin = (stltype::min)(dirtyMin, update.index);
+                    dirtyMax = (stltype::max)(dirtyMax, update.index);
+                }
+            }
+
+            if (m_dataToBePreProcessed.dirLightUpdated && m_dataToBePreProcessed.lightDeltaUpdates.empty())
+            {
+                static constexpr u64 headerSize = offsetof(UBO::LightClusterSSBO, lights);
+                DispatchSSBOTransfer(
+                    (void*)&lightClusterHost, nullptr, (u32)headerSize, &m_lightClusterSSBO, 0, s_tileArrayBindingSlot, currentSwapChainIdx);
+            }
+            else if (dirtyMin <= dirtyMax)
+            {
+                static constexpr u64 lightsOffset = offsetof(UBO::LightClusterSSBO, lights);
+                const u32 rangeCount = dirtyMax - dirtyMin + 1;
+                const u32 byteOffset = (u32)(lightsOffset + dirtyMin * sizeof(RenderLight));
+                const u32 byteSize = rangeCount * sizeof(RenderLight);
+
+                if (m_dataToBePreProcessed.dirLightUpdated)
+                {
+                    const u32 totalSize = byteOffset + byteSize;
+                    DispatchSSBOTransfer(
+                        (void*)&lightClusterHost, nullptr, totalSize, &m_lightClusterSSBO, 0, s_tileArrayBindingSlot, currentSwapChainIdx);
+                }
+                else
+                {
+                    DispatchSSBOTransfer(
+                        (void*)&lightClusterHost.lights[dirtyMin], nullptr, byteSize, &m_lightClusterSSBO, byteOffset, s_tileArrayBindingSlot, currentSwapChainIdx);
+                }
+            }
         }
 
         // Clear
         m_needsToPropagateMainDataUpdate = true;
         m_frameIdxToPropagate = currentSwapChainIdx;
         m_dataToBePreProcessed.Clear();
-        g_pQueueHandler->DispatchAllRequests();
+       g_pQueueHandler->DispatchAllRequests();
     }
+    
+    m_frameRendererContexts[currentSwapChainIdx].numLights = m_lightCluster.numLights;
 }
 
 void FrameResourceManager::SetEntityMeshDataForFrame(EntityMeshDataMap&& data, u32 frameIdx)
@@ -424,6 +486,19 @@ void FrameResourceManager::SetLightDataForFrame(PointLightVector&& data, DirLigh
     m_passDataMutex.lock();
     m_dataToBePreProcessed.lightVector = std::move(data);
     m_dataToBePreProcessed.dirLightVector = std::move(dirLights);
+    m_dataToBePreProcessed.lightDeltaUpdates.clear();
+    m_dataToBePreProcessed.dirLightUpdated = false;
+    m_dataToBePreProcessed.frameIdx = frameIdx;
+    m_passDataMutex.unlock();
+}
+
+void FrameResourceManager::SetLightDeltaForFrame(stltype::vector<LightDeltaUpdate>&& updates, bool dirLightDirty,
+                                                  const DirectionalRenderLight& dirLight, u32 frameIdx)
+{
+    m_passDataMutex.lock();
+    m_dataToBePreProcessed.lightDeltaUpdates = std::move(updates);
+    m_dataToBePreProcessed.dirLightUpdated = dirLightDirty;
+    m_dataToBePreProcessed.dirLightUpdate = dirLight;
     m_dataToBePreProcessed.frameIdx = frameIdx;
     m_passDataMutex.unlock();
 }
@@ -446,21 +521,28 @@ void FrameResourceManager::UpdateShadowViewUBO(const UBO::ShadowmapViewUBO& data
     std::memcpy(m_mappedShadowViewUBO, &data, sizeof(UBO::ShadowmapViewUBO));
 }
 
-void FrameResourceManager::UpdateLightClusterSSBO(const UBO::LightClusterSSBO& data, u32 frameIdx)
+void FrameResourceManager::UpdateLightClusterSSBO(const UBO::LightClusterSSBO& data, u32 numLights, u32 frameIdx)
 {
+    // Only upload the CPU-owned input region: dirLight + numLights field + padding + the active lights.
+    // The cluster output arrays (clusterOffsets, clusterLightIndices) are written by the GPU and must not be overwritten.
+    static constexpr u64 headerSize = offsetof(UBO::LightClusterSSBO, lights);
+    const u64 lightsSize = numLights * sizeof(RenderLight);
+    const u64 transferSize = headerSize + lightsSize;
     DispatchSSBOTransfer(
-        (void*)&data, nullptr, UBO::LightClusterSSBOSize, &m_lightClusterSSBO, 0, s_tileArrayBindingSlot);
+        (void*)&data, nullptr, (u32)transferSize, &m_lightClusterSSBO, 0, s_tileArrayBindingSlot, frameIdx);
 }
 
 void FrameResourceManager::DispatchSSBOTransfer(
-    void* data, DescriptorSet* pDescriptor, u32 size, StorageBuffer* pSSBO, u32 offset, u32 dstBinding)
+    void* data, DescriptorSet* pDescriptor, u32 size, StorageBuffer* pSSBO, u32 offset, u32 dstBinding, u32 frameIdx)
 {
-    AsyncQueueHandler::SSBOTransfer transfer{.data = data,
-                                             .size = size,
-                                             .offset = offset,
-                                             .pDescriptorSet = nullptr,
-                                             .pStorageBuffer = pSSBO,
-                                             .dstBinding = dstBinding};
+    AsyncQueueHandler::SSBOTransfer transfer;
+    transfer.data = data;
+    transfer.size = size;
+    transfer.offset = offset;
+    transfer.pDescriptorSet = nullptr;
+    transfer.pStorageBuffer = pSSBO;
+    transfer.dstBinding = dstBinding;
+    transfer.frameIdx = frameIdx;
     g_pQueueHandler->SubmitTransferCommandAsync(transfer);
 }
 

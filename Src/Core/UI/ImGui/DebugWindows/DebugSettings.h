@@ -3,6 +3,7 @@
 #include "Core/Global/CommonGlobals.h"
 #include "Core/Global/Utils/MathFunctions.h"
 #include "InfoWindow.h"
+#include "Core/Global/Profiling.h"
 
 
 class DebugSettingsWindow : public ImGuiWindow
@@ -10,6 +11,7 @@ class DebugSettingsWindow : public ImGuiWindow
 public:
     void DrawWindow(f32 dt)
     {
+        ScopedZone("DebugSettingsWindow");
         bool drawDebugMeshes = m_drawDebugMeshes;
         ImGui::Begin("Debug Settings", &m_isOpen);
         ImGui::Checkbox("Draw debug meshes", &drawDebugMeshes);

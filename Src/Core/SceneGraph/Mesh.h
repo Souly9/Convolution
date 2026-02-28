@@ -44,6 +44,8 @@ public:
         return m_meshAABBs;
     }
 
+    void Flush();
+
     enum class PrimitiveType
     {
         Quad,

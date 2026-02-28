@@ -4,6 +4,7 @@
 #include "Core/Events/EventSystem.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Global/State/ApplicationState.h"
+#include "Core/Global/Profiling.h"
 #include "InfoWindow.h"
 
 class StatsWindow : public ImGuiWindow
@@ -16,6 +17,7 @@ public:
 
     void DrawWindow(f32 dt)
     {
+        ScopedZone("StatsWindow");
         stltype::string device = m_lastState.physicalRenderDeviceName;
         ImGui::Begin("RenderStats", &m_isOpen);
 
@@ -60,12 +62,13 @@ public:
         ImGui::TextDisabled("(See GPU Timing Window for details)");
         ImGui::Separator();
 
-            // Renderer State
-            ImGui::Text("Renderer State");
-            ImGui::Text("Device: %s", device.c_str());
+        // Renderer State
+        ImGui::Text("Renderer State");
+        ImGui::Text("Device: %s", device.c_str());
+        ImGui::Text("Swapchain Format: %s", SwapchainFormatToString(FrameGlobals::GetSwapChainFormat()));
 
-            f32 usedMB = static_cast<f32>(m_lastState.usedVramBytes) / (1024.f * 1024.f);
-            f32 totalMB = static_cast<f32>(m_lastState.totalVramBytes) / (1024.f * 1024.f);
+        f32 usedMB = static_cast<f32>(m_lastState.usedVramBytes) / (1024.f * 1024.f);
+        f32 totalMB = static_cast<f32>(m_lastState.totalVramBytes) / (1024.f * 1024.f);
             
             if (totalMB > 1024.f)
             {
@@ -142,6 +145,19 @@ public:
     }
 
 protected:
+    static const char* SwapchainFormatToString(TexFormat format)
+    {
+        switch (format)
+        {
+            case TexFormat::R8G8B8A8_SRGB: return "R8G8B8A8_SRGB";
+            case TexFormat::B8G8R8A8_SRGB: return "B8G8R8A8_SRGB";
+            case TexFormat::R8G8B8A8_UNORM: return "R8G8B8A8_UNORM";
+            case TexFormat::B8G8R8A8_UNORM: return "B8G8R8A8_UNORM";
+            case TexFormat::R16G16B16A16_FLOAT: return "R16G16B16A16_FLOAT";
+            default: return "UNKNOWN";
+        }
+    }
+
     static constexpr u32 FRAME_SAMPLE_COUNT = 60;
 
     struct PassAvgData

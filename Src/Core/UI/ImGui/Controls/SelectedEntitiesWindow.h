@@ -7,18 +7,20 @@
 #include "Core/ECS/EntityManager.h"
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Global/GlobalVariables.h"
+#include "Core/Global/Profiling.h"
 
 class SelectedEntityWindow : public InfoWindow
 {
 public:
     void DrawWindow(const UpdateEventData& data)
     {
+        ScopedZone("SelectedEntityWindow");
         ImGui::Begin("Selected Entities", &m_isOpen);
 
         if (data.state.selectedEntities.empty() == false)
         {
             const auto& selectedEntity = data.state.selectedEntities[0];
-            bool isEntityDirty = false;
+
             ECS::Components::Transform* pTransform =
                 g_pEntityManager->GetComponent<ECS::Components::Transform>(selectedEntity);
 
@@ -29,24 +31,21 @@ public:
             }
             ImGui::Text("Entity: %s", pTransform->name.c_str());
 
-            isEntityDirty |= Visualize(pTransform);
+            const bool isTransformDirty = Visualize(pTransform);
 
             ECS::Components::Camera* pCamera = g_pEntityManager->GetComponent<ECS::Components::Camera>(selectedEntity);
             Visualize(pCamera);
 
             auto* pLight = g_pEntityManager->GetComponent<ECS::Components::Light>(selectedEntity);
-            isEntityDirty |= Visualize(pLight);
+            const bool isLightDirty = Visualize(pLight);
 
             auto* pRender = g_pEntityManager->GetComponent<ECS::Components::RenderComponent>(selectedEntity);
-            isEntityDirty |= Visualize(pRender);
+            Visualize(pRender);
 
-            if (isEntityDirty)
-            {
+            if (isTransformDirty)
                 g_pEntityManager->MarkComponentDirty(selectedEntity, ECS::ComponentID<ECS::Components::Transform>::ID);
+            if (isLightDirty)
                 g_pEntityManager->MarkComponentDirty(selectedEntity, ECS::ComponentID<ECS::Components::Light>::ID);
-                // g_pEntityManager->MarkComponentDirty(selectedEntity,
-                // ECS::ComponentID<ECS::Components::RenderComponent>::ID);
-            }
         }
         ImGui::End();
     }

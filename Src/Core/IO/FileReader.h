@@ -4,6 +4,7 @@ struct SceneNode;
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Global/ThreadBase.h"
 #include "Core/SceneGraph/Scene.h"
+#include "Core/Global/ThreadPool.h"
 #include <EASTL/fixed_function.h>
 #include <EASTL/queue.h>
 
@@ -75,6 +76,8 @@ protected:
 
     threadstl::Thread m_ioThread;
     CustomMutex m_requestSubmitMutex{};
+    CustomMutex m_callbackMutex{};
     stltype::queue<IORequest> m_requests{}; // Pending requests, read by iothread
     bool m_keepRunning{true};
+    ThreadPool m_threadPool;
 };

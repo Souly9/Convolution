@@ -1,4 +1,6 @@
 #include "VkTextureManager.h"
+#include "BackendDefines.h"
+#include "Core/Global/FrameGlobals.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/IO/FileReader.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
@@ -11,6 +13,7 @@
 #include <vulkan/vulkan.h>
 #include <dds/dds.hpp>
 #include "Core/Rendering/Core/Utils/DeleteQueue.h"
+#include <cctype>
 
 static constexpr u32 MIPMAP_NUM = 4;
 static constexpr u32 MAX_BINDLESS_UPLOADS = 1;
@@ -28,6 +31,21 @@ static TextureInfo RequestToTexInfo(const DynamicTextureRequest& info)
     return genericInfo;
 }
 
+static TexFormat ChooseTextureFormatForSemantic(TextureSemantic semantic)
+{
+    switch (semantic)
+    {
+        case TextureSemantic::BaseColor:
+        case TextureSemantic::Emissive:
+            return TexFormat::R8G8B8A8_SRGB;
+        case TextureSemantic::Normal:
+        case TextureSemantic::Data:
+        case TextureSemantic::Auto:
+        default:
+            return TexFormat::R8G8B8A8_UNORM;
+    }
+}
+
 VkTextureManager::VkTextureManager()
 {
     m_textures.reserve(MAX_TEXTURES);
@@ -43,7 +61,7 @@ void VkTextureManager::Init()
     m_thread = threadstl::MakeThread([this] { CheckRequests(); });
     InitializeThread("Convolution_TextureManager");
     CreateBindlessDescriptorSet();
-    auto handle = SubmitAsyncTextureCreation({"Resources\\Textures\\placeholder.png", false});
+    auto handle = SubmitAsyncTextureCreation({"Resources\\Textures\\placeholder.png", false, TextureSemantic::BaseColor, true});
     g_pFileReader->FinishAllRequests();
     // Wait for both the request queue to be empty AND the texture to be fully created with a valid image view
     // The request is popped from the queue before texture creation finishes, so we must also check GetTexture()
@@ -53,7 +71,7 @@ void VkTextureManager::Init()
         Sleep(50);
     }
     g_pQueueHandler->DispatchAllRequests();
-    g_pQueueHandler->WaitForFences();
+    g_pQueueHandler->WaitForFences(~0u);
     m_sharedDataMutex.lock();
     for (u32 i = 0; i < MAX_TEXTURES; ++i)
     {
@@ -90,6 +108,8 @@ void VkTextureManager::CheckRequests()
                 m_requests.pop();
                 m_sharedDataMutex.unlock();
 
+                m_processingRequest = true;
+
                 const auto idx = req.index();
                 if (idx == 0)
                     CreateTexture(stltype::get<FileTextureRequest>(req));
@@ -97,6 +117,8 @@ void VkTextureManager::CheckRequests()
                     CreateDynamicTexture(stltype::get<DynamicTextureRequest>(req));
                 else if (idx == 2)
                     EnqueueAsyncImageLayoutTransition(stltype::get<AsyncLayoutTransitionRequest>(req));
+
+                m_processingRequest = false;
             }
             DispatchAsyncOps();
         }
@@ -112,48 +134,54 @@ void VkTextureManager::PostRender()
 {
     ScopedZone("VkTextureManager::PostRender");
 
-    m_sharedDataMutex.lock();
-    // Check if any textures are not ready (null texture or null image view)
-    // Note: We access m_textures directly since we already hold the lock - don't call GetTexture() which would deadlock
-    const auto it = stltype::find_if(m_texturesToMakeBindless.begin(),
-                                     m_texturesToMakeBindless.end(),
-                                     [this](const auto& handle)
-                                     {
-                                         auto texIt = m_textures.find(handle);
-                                         if (texIt == m_textures.end())
-                                             return true; // Texture not found
-                                         return texIt->second.GetImageView() == VK_NULL_HANDLE;
-                                     });
-    if (m_texturesToMakeBindless.empty() == true || it != m_texturesToMakeBindless.end())
+    auto checkNotReady = [this](const stltype::vector<TextureHandle>& handles)
+    {
+        return stltype::find_if(handles.begin(), handles.end(), [this](const auto& handle) {
+            auto texIt = m_textures.find(handle);
+            if (texIt != m_textures.end()) return texIt->second.GetImageView() == VK_NULL_HANDLE;
+            auto pTexIt = m_persistentTextures.find(handle);
+            if (pTexIt != m_persistentTextures.end()) return pTexIt->second.GetImageView() == VK_NULL_HANDLE;
+            return true;
+        }) != handles.end();
+    };
+
+    auto processTextures = [this](stltype::vector<TextureHandle>& handles, u32& writeIdx)
+    {
+        for (u32 i = 0; i < handles.size(); ++i)
+        {
+            TextureVulkan* pTex = nullptr;
+            auto texIt = m_textures.find(handles[i]);
+            if (texIt != m_textures.end()) pTex = &texIt->second;
+            else {
+                auto pTexIt = m_persistentTextures.find(handles[i]);
+                if (pTexIt != m_persistentTextures.end()) pTex = &pTexIt->second;
+            }
+
+            if (pTex->GetInfo().extents.z > 1)
+                m_bindlessDescriptorSet->WriteBindlessTextureUpdate(pTex, writeIdx, s_globalBindlessArrayTextureBufferBindingSlot);
+            else
+                m_bindlessDescriptorSet->WriteBindlessTextureUpdate(pTex, writeIdx);
+            
+            if ((u32)pTex->GetInfo().usage & (u32)Usage::Storage)
+                m_bindlessImageDescriptorSet->WriteBindlessImageUpdate(pTex, writeIdx, s_globalBindlessImageBufferBindingSlot);
+
+            ++writeIdx;
+        }
+        handles.clear();
+    };
+
+    bool normalReady = !m_texturesToMakeBindless.empty() && !checkNotReady(m_texturesToMakeBindless);
+    bool persistentReady = !m_persistentTexturesToMakeBindless.empty() && !checkNotReady(m_persistentTexturesToMakeBindless);
+
+    if (!normalReady && !persistentReady)
     {
         m_sharedDataMutex.unlock();
         return;
     }
 
-    for (u32 i = 0; i < m_texturesToMakeBindless.size(); ++i)
-    {
-        auto texIt = m_textures.find(m_texturesToMakeBindless[i]);
-        auto* pTex = &texIt->second;
-        // We have two bindless arrays for different texture types
-        if (pTex->GetInfo().extents.z > 1)
-        {
-            m_bindlessDescriptorSet->WriteBindlessTextureUpdate(
-                pTex, m_lastBindlessTextureWriteIdx, s_globalBindlessArrayTextureBufferBindingSlot);
-        }
-        else
-        {
-            m_bindlessDescriptorSet->WriteBindlessTextureUpdate(pTex, m_lastBindlessTextureWriteIdx);
-        }
-        
-        if ((u32)pTex->GetInfo().usage & (u32)Usage::Storage)
-        {
-            m_bindlessImageDescriptorSet->WriteBindlessImageUpdate(
-                pTex, m_lastBindlessTextureWriteIdx, s_globalBindlessImageBufferBindingSlot);
-        }
+    if (normalReady) processTextures(m_texturesToMakeBindless, m_lastBindlessTextureWriteIdx);
+    if (persistentReady) processTextures(m_persistentTexturesToMakeBindless, m_lastPersistentBindlessTextureWriteIdx);
 
-        ++m_lastBindlessTextureWriteIdx;
-    }
-    m_texturesToMakeBindless.clear();
     m_sharedDataMutex.unlock();
 }
 
@@ -192,11 +220,12 @@ void VkTextureManager::CreateTexture(const FileTextureRequest& req)
     info.extents.z = 1;
     info.format = readInfo.ddsFormat != 0
                       ? Conv(dds::getVulkanFormat((DXGI_FORMAT)readInfo.ddsFormat, readInfo.supportsAlpha))
-                      : TexFormat::R8G8B8A8_SRGB;
+                      : ChooseTextureFormatForSemantic(req.semantic);
 
     info.tiling = Tiling::OPTIMAL;
     info.usage = Usage::Sampled | Usage::TransferDst;
     info.handle = req.handle;
+    info.isPersistent = req.isPersistent;
 
     Texture* pTex = CreateTextureImmediate(info);
 
@@ -209,7 +238,7 @@ void VkTextureManager::CreateTexture(const FileTextureRequest& req)
     // Note: ImageView and Sampler are already created by CreateTextureImmediate
 
     if (req.makeBindless)
-        MakeTextureBindless(req.handle);
+        MakeTextureBindless(req.handle, req.isPersistent);
 }
 
 Texture* VkTextureManager::CreateDynamicTexture(const DynamicTextureRequest& req)
@@ -226,8 +255,17 @@ Texture* VkTextureManager::CreateTextureImmediate(const DynamicTextureRequest& r
     TextureInfo genericInfo = RequestToTexInfo(req);
 
     m_sharedDataMutex.lock();
-    auto& mapEntry = m_textures.emplace(req.handle, Texture(vulkanTexCreateInfo, genericInfo)).first->second;
-    Texture* pTex = &mapEntry;
+    Texture* pTex = nullptr;
+    if (req.isPersistent)
+    {
+        auto& mapEntry = m_persistentTextures.emplace(req.handle, Texture(vulkanTexCreateInfo, genericInfo)).first->second;
+        pTex = &mapEntry;
+    }
+    else
+    {
+        auto& mapEntry = m_textures.emplace(req.handle, Texture(vulkanTexCreateInfo, genericInfo)).first->second;
+        pTex = &mapEntry;
+    }
     m_sharedDataMutex.unlock();
     
     pTex->SetName(req.GetName());
@@ -281,7 +319,7 @@ TextureHandle VkTextureManager::SubmitAsyncTextureCreation(const TexCreateInfo& 
         return 0;
     }
 
-    if (auto* pCachedData = IsAlreadyRequested(filePath); pCachedData != nullptr)
+    if (auto* pCachedData = IsAlreadyRequested(filePath, createInfo.semantic); pCachedData != nullptr)
     {
         return pCachedData->handle;
     }
@@ -289,10 +327,12 @@ TextureHandle VkTextureManager::SubmitAsyncTextureCreation(const TexCreateInfo& 
     IORequest req{};
     const auto handle = GenerateHandle();
     bool makeBindless = createInfo.makeBindless;
+    TextureSemantic semantic = createInfo.semantic;
+    bool isPersistent = createInfo.isPersistent;
 
     req.filePath = filePath;
     req.requestType = RequestType::Image;
-    req.callback = [this, handle, makeBindless](const ReadTextureInfo& result)
+    req.callback = [this, handle, makeBindless, semantic, isPersistent](const ReadTextureInfo& result)
     {
         FileTextureRequest texReq{};
         texReq.ioInfo.filePath = result.filePath;
@@ -305,10 +345,15 @@ TextureHandle VkTextureManager::SubmitAsyncTextureCreation(const TexCreateInfo& 
 
         texReq.handle = handle;
         texReq.makeBindless = makeBindless;
+        texReq.semantic = semantic;
+        texReq.isPersistent = isPersistent;
         SubmitTextureRequest(texReq);
     };
     m_sharedDataMutex.lock();
-    m_loadedTextureCache.emplace_back(filePath, handle);
+    if (isPersistent)
+        m_persistentLoadedTextureCache.emplace_back(LoadedTexInfo{filePath, semantic, handle});
+    else
+        m_loadedTextureCache.emplace_back(LoadedTexInfo{filePath, semantic, handle});
     m_sharedDataMutex.unlock();
 
     g_pFileReader->SubmitIORequest(req);
@@ -452,6 +497,7 @@ void VkTextureManager::DispatchAsyncOps(stltype::string cbufferName)
     AsyncQueueHandler::CommandBufferRequest cmdBufferRequest{
         .pBuffer = pBuffer,
         .queueType = QueueType::Graphics,
+        .frameIdx = FrameGlobals::GetFrameNumber(),
     };
     m_inflightCommandBuffers.push_back(pBuffer);
     pBuffer->AddExecutionFinishedCallback(
@@ -486,13 +532,26 @@ TextureVulkan* VkTextureManager::GetTexture(TextureHandle handle)
 {
     m_sharedDataMutex.lock();
     auto it = m_textures.find(handle);
+    if (it != m_textures.end())
+    {
+        TextureVulkan* pTex = &(it->second);
+        m_sharedDataMutex.unlock();
+        return pTex;
+    }
+
+    auto itPersistent = m_persistentTextures.find(handle);
+    if (itPersistent != m_persistentTextures.end())
+    {
+        TextureVulkan* pTex = &(itPersistent->second);
+        m_sharedDataMutex.unlock();
+        return pTex;
+    }
+
     m_sharedDataMutex.unlock();
-    if (it == m_textures.end())
-        return nullptr;
-    return &(it->second);
+    return nullptr;
 }
 
-BindlessTextureHandle VkTextureManager::MakeTextureBindless(TextureHandle handle)
+BindlessTextureHandle VkTextureManager::MakeTextureBindless(TextureHandle handle, bool isPersistent)
 {
     if (const auto& pInfo = IsAlreadyBindless(handle); pInfo != nullptr)
     {
@@ -501,15 +560,26 @@ BindlessTextureHandle VkTextureManager::MakeTextureBindless(TextureHandle handle
     else
     {
         m_sharedDataMutex.lock();
-        m_texturesToMakeBindless.push_back(handle);
-        auto bindlessHandle = m_lastBindlessTextureWriteIdx + m_texturesToMakeBindless.size() - 1;
-        m_bindlessTextureCache.emplace_back(handle, bindlessHandle);
-        m_sharedDataMutex.unlock();
-        return bindlessHandle;
+        if (isPersistent)
+        {
+            m_persistentTexturesToMakeBindless.push_back(handle);
+            auto bindlessHandle = m_lastPersistentBindlessTextureWriteIdx + m_persistentTexturesToMakeBindless.size() - 1;
+            m_persistentBindlessTextureCache.emplace_back(handle, bindlessHandle);
+            m_sharedDataMutex.unlock();
+            return bindlessHandle;
+        }
+        else
+        {
+            m_texturesToMakeBindless.push_back(handle);
+            auto bindlessHandle = m_lastBindlessTextureWriteIdx + m_texturesToMakeBindless.size() - 1;
+            m_bindlessTextureCache.emplace_back(handle, bindlessHandle);
+            m_sharedDataMutex.unlock();
+            return bindlessHandle;
+        }
     }
 }
 
-BindlessTextureHandle VkTextureManager::MakeTextureBindless(TextureVulkan* pTex)
+BindlessTextureHandle VkTextureManager::MakeTextureBindless(TextureVulkan* pTex, bool isPersistent)
 {
     DEBUG_ASSERT(false);
     return 0;
@@ -569,19 +639,79 @@ void VkTextureManager::EnqueueAsyncTextureTransfer(StagingBuffer* pStagingBuffer
     EnqueueAsyncTextureTransfer(pStagingBuffer, static_cast<Texture*>(GetTexture(handle)), flagBit);
 }
 
+void VkTextureManager::CancelAllRequests()
+{
+    m_sharedDataMutex.lock();
+    while (!m_requests.empty()) m_requests.pop();
+    m_sharedDataMutex.unlock();
+}
+
+void VkTextureManager::FinishAllRequests()
+{
+    while (!m_requests.empty() || m_processingRequest)
+    {
+        Sleep(1);
+    }
+}
+
+void VkTextureManager::Flush()
+{
+    DEBUG_LOGF("[VkTextureManager] Flushing scene textures, keeping persistent ones");
+
+    CancelAllRequests();
+    FinishAllRequests();
+
+    DispatchAsyncOps();
+    g_pQueueHandler->DispatchAllRequests();
+    g_pQueueHandler->WaitForFences(~0u);
+
+    SimpleScopedGuard<tracy::Lockable<CustomMutex>> lock(m_sharedDataMutex);
+
+    for (auto it = m_textures.begin(); it != m_textures.end();)
+    {
+        it->second.CleanUp();
+        it = m_textures.erase(it);
+    }
+    
+    m_texturesToMakeBindless.clear();
+    m_loadedTextureCache.clear();
+    m_bindlessTextureCache.clear();
+    m_lastBindlessTextureWriteIdx = 1;
+}
+
 void VkTextureManager::FreeTexture(TextureHandle handle)
 {
     m_sharedDataMutex.lock();
-    if (const auto it = m_textures.find(handle); it == m_textures.end())
+    auto it = m_textures.find(handle);
+    auto itPersistent = m_persistentTextures.find(handle);
+
+    DEBUG_ASSERT(!(it != m_textures.end() && itPersistent != m_persistentTextures.end())); // Should not be in both!
+
+    if (it != m_textures.end())
     {
-        DEBUG_LOGF("[VkTextureManager] Tried to free invalid texture handle {}", handle);
+        DEBUG_LOGF("[VkTextureManager] Freeing scene texture \"{}\" handle {}", it->second.GetDebugName().c_str(), handle);
+        it->second.CleanUp();
+        m_textures.erase(it);
+    }
+    else if (itPersistent != m_persistentTextures.end())
+    {
+        DEBUG_LOGF("[VkTextureManager] Freeing persistent texture \"{}\" handle {}", itPersistent->second.GetDebugName().c_str(), handle);
+        itPersistent->second.CleanUp();
+        m_persistentTextures.erase(itPersistent);
     }
     else
     {
-        DEBUG_LOGF("[VkTextureManager] Freeing texture \"{}\" handle {}", it->second.GetDebugName().c_str(), handle);
-        m_textures.erase(it);
+        DEBUG_LOGF("[VkTextureManager] Tried to free invalid texture handle {}", handle);
     }
     m_sharedDataMutex.unlock();
+}
+
+bool VkTextureManager::ShouldFlipNormalMap(const stltype::string& path) const
+{
+    stltype::string pathLower = path;
+    for (auto& c : pathLower)
+        c = (char)tolower(c);
+    return pathLower.find(".dds") != stltype::string::npos || pathLower.find(".dd") != stltype::string::npos;
 }
 
 VkImageViewCreateInfo VkTextureManager::GenerateImageViewInfo(VkFormat format, VkImage image, bool isArray)
@@ -848,14 +978,24 @@ void VkTextureManager::CreateBindlessDescriptorSet()
     }
 }
 
-const VkTextureManager::LoadedTexInfo* VkTextureManager::IsAlreadyRequested(const stltype::string& filePath) const
+const VkTextureManager::LoadedTexInfo* VkTextureManager::IsAlreadyRequested(const stltype::string& filePath,
+                                                                             TextureSemantic semantic) const
 {
     if (const auto it = stltype::find_if(m_loadedTextureCache.cbegin(),
                                          m_loadedTextureCache.cend(),
-                                         [&filePath](const LoadedTexInfo& info) { return info.filePath == filePath; });
+                                         [&filePath, semantic](const LoadedTexInfo& info)
+                                         { return info.filePath == filePath && info.semantic == semantic; });
         it != m_loadedTextureCache.cend())
     {
-        return it;
+        return &(*it);
+    }
+    if (const auto it = stltype::find_if(m_persistentLoadedTextureCache.cbegin(),
+                                         m_persistentLoadedTextureCache.cend(),
+                                         [&filePath, semantic](const LoadedTexInfo& info)
+                                         { return info.filePath == filePath && info.semantic == semantic; });
+        it != m_persistentLoadedTextureCache.cend())
+    {
+        return &(*it);
     }
     return nullptr;
 }
@@ -867,7 +1007,14 @@ const VkTextureManager::BindlessInfo* VkTextureManager::IsAlreadyBindless(Textur
                                          [&handle](const BindlessInfo& info) { return info.handle == handle; });
         it != m_bindlessTextureCache.cend())
     {
-        return it;
+        return &(*it);
+    }
+    if (const auto it = stltype::find_if(m_persistentBindlessTextureCache.cbegin(),
+                                         m_persistentBindlessTextureCache.cend(),
+                                         [&handle](const BindlessInfo& info) { return info.handle == handle; });
+        it != m_persistentBindlessTextureCache.cend())
+    {
+        return &(*it);
     }
     return nullptr;
 }

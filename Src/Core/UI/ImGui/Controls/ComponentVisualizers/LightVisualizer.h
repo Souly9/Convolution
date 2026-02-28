@@ -14,7 +14,7 @@ static inline bool Visualize(ECS::Components::Light* pLight)
         needsUpdate |= ImGui::ColorEdit4("Light Color", (float*)&pLight->color, ImGuiColorEditFlags_NoInputs);
         const char* lightTypes[] = {"Directional", "Spot", "Point"};
         int currentType = static_cast<int>(pLight->type);
-        if (ImGui::SliderFloat("Intensity", &pLight->intensity, 0.0f, 5.0f))
+        if (ImGui::SliderFloat("Intensity", &pLight->intensity, 0.0f, 50.0f))
             needsUpdate = true;
         if (ImGui::Combo("Light Type", &currentType, lightTypes, IM_ARRAYSIZE(lightTypes)))
         {
@@ -25,10 +25,14 @@ static inline bool Visualize(ECS::Components::Light* pLight)
         {
             needsUpdate |= DrawFloat3Visualizer("Direction", pLight->direction);
         }
-        else
+        else if (pLight->type == ECS::Components::LightType::Spot)
         {
             needsUpdate |= ImGui::DragFloat("Cutoff", &pLight->cutoff, 1.0f, 0.0f, 1000.0f);
             needsUpdate |= ImGui::DragFloat("Outer Cutoff", &pLight->outerCutoff, 1.0f, 0.0f, 1000.0f);
+        }
+        else if (pLight->type == ECS::Components::LightType::Point)
+        {
+            needsUpdate |= ImGui::DragFloat("Range", &pLight->range, 1.0f, 0.0f, 1000.0f);
         }
     }
     return needsUpdate;

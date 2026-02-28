@@ -1,0 +1,106 @@
+#version 450
+#extension GL_ARB_shading_language_include : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_scalar_block_layout : enable
+
+#define SharedDataUBOSet    0
+#define TileArraySet        1
+#define ViewSpaceLightsSet  3
+#include "../../Globals/GlobalBuffers.h"
+#include "../../Globals/LightData.h"
+#include "../../Globals/ClusteredShading/ViewSpaceLights.h"
+
+#define X_LOCAL_SIZE 128
+
+layout(local_size_x = X_LOCAL_SIZE, local_size_y = 1, local_size_z = 1) in;
+
+layout(push_constant, scalar) uniform PushConstants
+{
+    ivec3 clusterCount;
+    uint numLights;
+    vec4 nearFar;
+}
+pc;
+
+void main()
+{
+    uint lightIdx = gl_GlobalInvocationID.x;
+    uint totalLights = min(lightData.numLights, MAX_SCENE_LIGHTS);
+    if (lightIdx >= totalLights) return;
+
+    vec4 vsLight = viewSpaceLights.lights[lightIdx];
+    vec3 viewPos = vsLight.xyz;
+    float radius = vsLight.w;
+
+    // Light entirely behind camera (view space: -Z is forward)
+    if (viewPos.z - radius > 0.0) return;
+
+    uint tilesX = uint(pc.clusterCount.x);
+    uint tilesY = uint(pc.clusterCount.y);
+
+    // Light straddles or is behind the near plane — conservatively assign to all tiles
+    if (viewPos.z + radius > -pc.nearFar.x)
+    {
+        for (uint ty = 0; ty < tilesY; ++ty)
+        {
+            for (uint tx = 0; tx < tilesX; ++tx)
+            {
+                uint tileIdx = tx + ty * tilesX;
+                uint slot = atomicAdd(viewSpaceLights.tileCounters[tileIdx], 1);
+                if (slot < MAX_LIGHTS_PER_TILE)
+                    viewSpaceLights.tileLightIndices[tileIdx * MAX_LIGHTS_PER_TILE + slot] = lightIdx;
+            }
+        }
+        return;
+    }
+
+    // Conservative screen-space projection of the light sphere's view-space AABB
+    vec3 c = viewPos;
+    float r = radius;
+    vec3 minV = c - vec3(r);
+    vec3 maxV = c + vec3(r);
+
+    vec4 corners[8];
+    corners[0] = vec4(minV.x, minV.y, minV.z, 1.0);
+    corners[1] = vec4(maxV.x, minV.y, minV.z, 1.0);
+    corners[2] = vec4(minV.x, maxV.y, minV.z, 1.0);
+    corners[3] = vec4(maxV.x, maxV.y, minV.z, 1.0);
+    corners[4] = vec4(minV.x, minV.y, maxV.z, 1.0);
+    corners[5] = vec4(maxV.x, minV.y, maxV.z, 1.0);
+    corners[6] = vec4(minV.x, maxV.y, maxV.z, 1.0);
+    corners[7] = vec4(maxV.x, maxV.y, maxV.z, 1.0);
+
+    vec2 ndcMin = vec2(10000.0);
+    vec2 ndcMax = vec2(-10000.0);
+
+    for (int i = 0; i < 8; ++i)
+    {
+        vec4 clipPos = ubo.projection * corners[i];
+        vec2 ndc = clipPos.xy / clipPos.w;
+
+        ndcMin = min(ndcMin, ndc);
+        ndcMax = max(ndcMax, ndc);
+    }
+
+    vec2 uvMin = ndcMin * 0.5 + 0.5;
+    vec2 uvMax = ndcMax * 0.5 + 0.5;
+
+    uvMin = clamp(uvMin, vec2(0.0), vec2(0.999999));
+    uvMax = clamp(uvMax, vec2(0.0), vec2(0.999999));
+
+    uint tileMinX = uint(uvMin.x * float(tilesX));
+    uint tileMaxX = uint(uvMax.x * float(tilesX));
+    uint tileMinY = uint(uvMin.y * float(tilesY));
+    uint tileMaxY = uint(uvMax.y * float(tilesY));
+
+    for (uint ty = tileMinY; ty <= tileMaxY; ++ty)
+    {
+        for (uint tx = tileMinX; tx <= tileMaxX; ++tx)
+        {
+            uint tileIdx = tx + ty * tilesX;
+            uint slot = atomicAdd(viewSpaceLights.tileCounters[tileIdx], 1);
+            if (slot < MAX_LIGHTS_PER_TILE)
+                viewSpaceLights.tileLightIndices[tileIdx * MAX_LIGHTS_PER_TILE + slot] = lightIdx;
+        }
+    }
+}

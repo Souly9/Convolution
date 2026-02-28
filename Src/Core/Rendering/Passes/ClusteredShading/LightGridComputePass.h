@@ -6,7 +6,6 @@
 
 namespace RenderPasses
 {
-// Push constants for dynamic cluster parameters
 struct ClusterPushConstants
 {
     DirectX::XMINT3 clusterCount;
@@ -14,9 +13,6 @@ struct ClusterPushConstants
     mathstl::Vector4 nearFar; // x=near, y=far, zw=unused
 };
 
-// Compute pass that culls lights into a clustered 3D grid
-// AABB generation is handled by SClusterAABB ECS system
-// Buffer management is handled by PassManager
 class LightGridComputePass : public ConvolutionRenderPass
 {
 public:
@@ -25,7 +21,7 @@ public:
 
     void Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager) override;
     void BuildPipelines() override;
-    void BuildBuffers() override {}
+    void BuildBuffers() override;
     void CreateSharedDescriptorLayout() override;
 
     void RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
@@ -45,7 +41,6 @@ public:
 
 protected:
     ComputePipeline m_lightCullingComputePipeline;
-    ComputePipeline m_clusterComputePipeline;
     ClusterPushConstants m_pushConstants;
 };
 } // namespace RenderPasses

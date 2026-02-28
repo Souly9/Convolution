@@ -1,6 +1,7 @@
 #extension GL_EXT_nonuniform_qualifier : require
 #extension GL_EXT_scalar_block_layout : require
 #include "BindingSlots.h"
+#include "Types.h"
 
 #include "DebugFlags.h"
 

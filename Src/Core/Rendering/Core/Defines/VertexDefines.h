@@ -13,6 +13,7 @@ struct SimpleVertex : public MinVertex
 struct CompleteVertex : SimpleVertex
 {
     mathstl::Vector2 texCoord;
+    mathstl::Vector4 tangent;
 };
 
 namespace VertexInputDefines
@@ -47,7 +48,7 @@ namespace ConcreteVIS
 using namespace VertexInputDefines;
 static inline const VertexAttributeInfo g_completeVertexInputInfo = {
     .attributes = stltype::vector<VertexAttributes>{
-        VertexAttributes::Position, VertexAttributes::Normal, VertexAttributes::TexCoord0}};
+        VertexAttributes::Position, VertexAttributes::Normal, VertexAttributes::TexCoord0, VertexAttributes::Tangent}};
 
 static inline const VertexAttributeInfo g_positionOnlyVertexInputInfo = {
     .attributes = stltype::vector<VertexAttributes>{VertexAttributes::Position}};
@@ -63,24 +64,28 @@ static inline const stltype::hash_map<VertexInputDefines::VertexAttributes, u32>
     {VertexInputDefines::VertexAttributes::Position, sizeof(mathstl::Vector3)},
     {VertexInputDefines::VertexAttributes::Color0, sizeof(mathstl::Vector3)},
     {VertexInputDefines::VertexAttributes::TexCoord0, sizeof(mathstl::Vector2)},
-    {VertexInputDefines::VertexAttributes::Normal, sizeof(mathstl::Vector3)}};
+    {VertexInputDefines::VertexAttributes::Normal, sizeof(mathstl::Vector3)},
+    {VertexInputDefines::VertexAttributes::Tangent, sizeof(mathstl::Vector4)}};
 
 static inline const stltype::hash_map<VertexInputDefines::VertexAttributes, u32> g_VertexAttributeBindingMap = {
     {VertexInputDefines::VertexAttributes::Position, 0},
     {VertexInputDefines::VertexAttributes::Color0, 0},
     {VertexInputDefines::VertexAttributes::TexCoord0, 0},
-    {VertexInputDefines::VertexAttributes::Normal, 0}};
+    {VertexInputDefines::VertexAttributes::Normal, 0},
+    {VertexInputDefines::VertexAttributes::Tangent, 0}};
 
 static inline const stltype::hash_map<VertexInputDefines::VertexAttributes, u32> g_VertexAttributeLocationMap = {
     {VertexInputDefines::VertexAttributes::Position, 0},
     {VertexInputDefines::VertexAttributes::Color0, 8},
     {VertexInputDefines::VertexAttributes::TexCoord0, 2},
-    {VertexInputDefines::VertexAttributes::Normal, 1}};
+    {VertexInputDefines::VertexAttributes::Normal, 1},
+    {VertexInputDefines::VertexAttributes::Tangent, 3}};
 
 #ifdef USE_VULKAN
 static inline const stltype::hash_map<VertexInputDefines::VertexAttributes, VkFormat> g_VertexAttributeVkFormatMap = {
     {VertexInputDefines::VertexAttributes::Position, TEXFORMAT(R32G32B32_SFLOAT)},
     {VertexInputDefines::VertexAttributes::Color0, TEXFORMAT(R32G32B32_SFLOAT)},
     {VertexInputDefines::VertexAttributes::TexCoord0, TEXFORMAT(R32G32_SFLOAT)},
-    {VertexInputDefines::VertexAttributes::Normal, TEXFORMAT(R32G32B32_SFLOAT)}};
+    {VertexInputDefines::VertexAttributes::Normal, TEXFORMAT(R32G32B32_SFLOAT)},
+    {VertexInputDefines::VertexAttributes::Tangent, TEXFORMAT(R32G32B32A32_SFLOAT)}};
 #endif

@@ -11,11 +11,18 @@
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;
 layout(location = 2) in vec2 inTexCoord0;
-
+layout(location = 0) out VertexOut
+{
+    vec2 fragTexCoord;
+    flat uint matIdx;
+}
+OUT;
 void main() {
    uint instanceIdx = perObjectDataSSBO.transformDataIdx[gl_InstanceIndex];
    InstanceData iData = globalInstanceDataSSBO.instances[instanceIdx];
    uint transformIdx = GetTransformIdx(iData);
    mat4 worldMat = globalTransformSSBO.modelMatrices[transformIdx];
+   OUT.fragTexCoord = inTexCoord0;
+   OUT.matIdx = GetMaterialIdx(iData);
    gl_Position = ubo.viewProjection * worldMat * vec4(inPosition, 1.0);
 }

@@ -80,9 +80,9 @@ static inline VkExtent3D Conv(const DirectX::XMUINT3& extent)
 }
 
 // Vulkan function pointers, global
-static inline PFN_vkSetDebugUtilsObjectNameEXT vkSetDebugUtilsObjectName = VK_NULL_HANDLE;
-static inline PFN_vkCmdSetCheckpointNV vkCmdSetCheckpoint = VK_NULL_HANDLE;
-static inline PFN_vkCmdBeginDebugUtilsLabelEXT vkBeginDebugUtilsLabel = VK_NULL_HANDLE;
-static inline PFN_vkCmdEndDebugUtilsLabelEXT vkCmdEndDebugUtilsLabel = VK_NULL_HANDLE;
+extern PFN_vkSetDebugUtilsObjectNameEXT vkSetDebugUtilsObjectName;
+extern PFN_vkCmdSetCheckpointNV vkCmdSetCheckpoint;
+extern PFN_vkCmdBeginDebugUtilsLabelEXT vkBeginDebugUtilsLabel;
+extern PFN_vkCmdEndDebugUtilsLabelEXT vkCmdEndDebugUtilsLabel;
 
 #include "Core/Rendering/Core/RenderingTypeDefs.h"

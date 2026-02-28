@@ -5,6 +5,7 @@
 #define GlobalBindlessImageBufferSlot        3
 #define GlobalTileArraySSBOSlot              1
 #define GlobalLightDataUBOSlot               2
+#define GlobalViewSpaceLightsSSBOSlot        3
 
 #define GlobalPerObjectDataSSBOSlot          502
 #define PassPerObjectDataSSBOSlot            1

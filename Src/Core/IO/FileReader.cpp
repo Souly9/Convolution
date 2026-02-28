@@ -17,7 +17,7 @@
 
 using namespace threadstl;
 
-FileReader::FileReader()
+FileReader::FileReader() : m_threadPool(CORE_COUNT_AVAILABLE)
 {
     m_ioThread = MakeThread([this]() { CheckIORequests(); });
     m_ioThread.SetName("Convolution_IO");
@@ -27,6 +27,7 @@ FileReader::~FileReader()
 {
     m_keepRunning = false;
     m_ioThread.WaitForEnd();
+    m_threadPool.WaitAll();
 }
 
 void FileReader::FinishAllRequests()
@@ -35,6 +36,7 @@ void FileReader::FinishAllRequests()
     {
         Sleep(1);
     }
+    m_threadPool.WaitAll();
 }
 
 void FileReader::CancelAllRequests()
@@ -75,17 +77,17 @@ void FileReader::CheckIORequests()
         {
             case RequestType::Bytes:
             {
-                ReadFileAsGenericBytes(request);
+                m_threadPool.Submit([this, request]() { ReadFileAsGenericBytes(request); });
                 break;
             }
             case RequestType::Image:
             {
-                ReadImageFile(request);
+                m_threadPool.Submit([this, request]() { ReadImageFile(request); });
                 break;
             }
             case RequestType::Mesh:
             {
-                ReadMeshFile(request);
+                m_threadPool.Submit([this, request]() { ReadMeshFile(request); });
                 break;
             }
             default:
@@ -103,7 +105,10 @@ void FileReader::ReadFileAsGenericBytes(const IORequest& request)
 
     const IOByteReadCallback* callback = stltype::get_if<IOByteReadCallback>(&request.callback);
     if (callback)
+    {
+        SimpleScopedGuard<CustomMutex> lock(m_callbackMutex);
         (*callback)(info);
+    }
 }
 
 stltype::vector<char> FileReader::ReadFileAsGenericBytes(const char* filePath)
@@ -175,7 +180,10 @@ void FileReader::ReadImageFile(const IORequest& request)
 
     const IOImageReadCallback* callback = stltype::get_if<IOImageReadCallback>(&request.callback);
     if (callback)
+    {
+        SimpleScopedGuard<CustomMutex> lock(m_callbackMutex);
         (*callback)(info);
+    }
 }
 
 void FileReader::FreeImageData(unsigned char* pixels)
@@ -187,22 +195,28 @@ void FileReader::FreeImageData(unsigned char* pixels)
 void FileReader::ReadMeshFile(const IORequest& request)
 {
     ScopedZone("FileReader::Read Mesh File");
-#define AI_CONFIG_PP_RVC_FLAGS aiComponent::aiComponent_COLORS | aiComponent::aiComponent_CAMERAS
 
     Assimp::Importer importer;
     stltype::string_view path = request.filePath;
     const auto ext = path.substr(path.find_last_of('.'));
     DEBUG_ASSERT(importer.IsExtensionSupported(ext.data()));
-    const aiScene* pMeshScene =
-        importer.ReadFile(path.data(),
-                          aiProcess_ConvertToLeftHanded | aiProcess_Triangulate | aiProcess_JoinIdenticalVertices |
-                              aiProcess_RemoveComponent | aiProcess_RemoveRedundantMaterials | aiProcess_GenUVCoords |
-                              aiProcess_GenBoundingBoxes | aiProcess_GenSmoothNormals);
+
+    importer.SetPropertyInteger(AI_CONFIG_PP_RVC_FLAGS, 
+        aiComponent_ANIMATIONS | aiComponent_BONEWEIGHTS | aiComponent_COLORS | aiComponent_TEXTURES);
+
+    const aiScene* pMeshScene = importer.ReadFile(
+        path.data(),
+        aiProcess_Triangulate | aiProcess_JoinIdenticalVertices | aiProcess_FlipUVs | aiProcess_RemoveComponent |
+            aiProcess_RemoveRedundantMaterials | aiProcess_GenUVCoords | aiProcess_GenBoundingBoxes |
+            aiProcess_GenSmoothNormals | aiProcess_CalcTangentSpace | aiProcess_FixInfacingNormals);
 
     DEBUG_ASSERT(pMeshScene);
     auto scene = MeshConversion::Convert(pMeshScene);
 
     const IOMeshReadCallback* callback = stltype::get_if<IOMeshReadCallback>(&request.callback);
     if (callback)
+    {
+        SimpleScopedGuard<CustomMutex> lock(m_callbackMutex);
         (*callback)({scene});
+    }
 }

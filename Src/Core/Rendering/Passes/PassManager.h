@@ -61,6 +61,9 @@ struct MainPassData
 
 enum class PassType
 {
+    LightTransformCompute,
+    ClusterGenCompute,
+    TileAssignmentCompute,
     EarlyAsyncCompute,
     PreProcess,
     DepthReliantCompute,
@@ -89,14 +92,17 @@ inline const stltype::fixed_vector<PassStage, 6> PASS_SCHEDULE = {
     PassStage{{PassType::PreProcess}},
     PassStage{{PassType::DepthReliantCompute}},
     PassStage{{PassType::Main, PassType::Debug, PassType::Shadow}},
-    PassStage{{PassType::UI}},
     PassStage{{PassType::Composite}},
+    PassStage{{PassType::UI}},
 };
 inline const u32 STAGE_COUNT = PASS_SCHEDULE.size();
 
 inline bool IsComputePass(PassType type)
 {
-    return type == PassType::EarlyAsyncCompute;
+    return type == PassType::EarlyAsyncCompute || 
+           type == PassType::LightTransformCompute || 
+           type == PassType::ClusterGenCompute ||
+           type == PassType::TileAssignmentCompute;
 }
 
 struct GraphicsFrameContext
@@ -152,6 +158,7 @@ public:
 
     void Init();
     void RecreateGbuffers(const mathstl::Vector2& resolution);
+    void RecreateAllRenderResources();
 
     void AddPass(PassType type, stltype::unique_ptr<ConvolutionRenderPass>&& pass);
     void TransferPassData(const PassGeometryData& passData, u32 frameIdx);
@@ -163,6 +170,8 @@ public:
     void SetEntityMeshDataForFrame(EntityMeshDataMap&& data, u32 frameIdx);
     void SetEntityTransformDataForFrame(TransformSystemData&& data, u32 frameIdx);
     void SetLightDataForFrame(PointLightVector&& data, DirLightVector&& dirLights, u32 frameIdx);
+    void SetLightDeltaForFrame(stltype::vector<LightDeltaUpdate>&& updates, bool dirLightDirty,
+                               const DirectionalRenderLight& dirLight, u32 frameIdx);
 
     void SetSharedData(RenderView&& mainView, u32 frameIdx);
 
@@ -201,6 +210,7 @@ protected:
 
     void RecreateShadowMaps(u32 cascades, const mathstl::Vector2& extents);
     void RegisterImGuiTextures();
+    void UpdateImGuiGbufferTextures();
 
     // Helpers to split large Init / ExecutePasses
     void InitResourceManagerAndCallbacks();
@@ -264,6 +274,7 @@ private:
 
 
     stltype::vector<u64> m_csmCascadeImGuiIDs{};
+    stltype::vector<u64> m_gbufferImGuiIDs{};
 
     u32 m_currentFrame{0};
     bool m_needsToPropagateMainDataUpdate{false};

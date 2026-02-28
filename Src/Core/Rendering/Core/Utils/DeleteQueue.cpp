@@ -15,18 +15,21 @@ void DeleteQueue::ProcessDeleteQueue()
         func();
     }
 
-    while (m_delayedDeleteQueue.size() > 0)
+    size_t count = m_delayedDeleteQueue.size();
+    for (size_t i = 0; i < count; ++i)
     {
-        const auto& [func, frame] = m_delayedDeleteQueue.front();
-        if (frame != FrameGlobals::GetFrameNumber())
+        auto delayed = std::move(m_delayedDeleteQueue.front());
+        m_delayedDeleteQueue.pop();
+        
+        if (delayed.framesRemaining == 0)
         {
-            func();
+            delayed.func();
         }
         else
         {
-            break;
+            delayed.framesRemaining--;
+            m_delayedDeleteQueue.push(std::move(delayed));
         }
-        m_delayedDeleteQueue.pop();
     }
 }
 
@@ -56,5 +59,5 @@ void DeleteQueue::RegisterDelete(DeleteFunction&& func)
 void DeleteQueue::RegisterDeleteForNextFrame(DeleteFunction&& func)
 {
     SimpleScopedGuard<CustomMutex> lock(m_sharedDataMutex);
-    m_delayedDeleteQueue.emplace(std::move(func), FrameGlobals::GetFrameNumber());
+    m_delayedDeleteQueue.emplace(std::move(func), (u8)FRAMES_IN_FLIGHT + 1);
 }

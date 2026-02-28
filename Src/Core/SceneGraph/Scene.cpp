@@ -34,23 +34,19 @@ void Scene::FinishLoad(SceneNode root)
     g_pApplicationState->RegisterUpdateFunction(
         [](ApplicationState& state)
         {
-            g_pEntityManager->MarkComponentDirty(ECS::ComponentID<ECS::Components::Transform>::ID);
-            g_pEntityManager->MarkComponentDirty(ECS::ComponentID<ECS::Components::RenderComponent>::ID);
-            g_pEntityManager->MarkComponentDirty(ECS::ComponentID<ECS::Components::Light>::ID);
+            g_pEntityManager->MarkComponentDirty({}, ECS::ComponentID<ECS::Components::Transform>::ID);
+            g_pEntityManager->MarkComponentDirty({}, ECS::ComponentID<ECS::Components::RenderComponent>::ID);
+            g_pEntityManager->MarkComponentDirty({}, ECS::ComponentID<ECS::Components::Light>::ID);
             g_pMaterialManager->MarkMaterialsDirty();
         });
 }
 
 void Scene::CreateTestLights(const mathstl::Vector3& centerPos, u32 gridSize, f32 spacing, ECS::Entity parent)
 {
-    constexpr f32 LIGHT_RANGE = 4.5f;
-    constexpr f32 LIGHT_INTENSITY = 0.1f;
+    constexpr f32 LIGHT_RANGE = 30.5f;
+    constexpr f32 LIGHT_INTENSITY = 5.0f;
 
-    // Use floats explicitly to avoid any integer math confusion, although u32 * f32 results in f32.
-    // This value represents half the total size of the grid side.
-    // e.g., if GridSize = 8, Spacing = 3 -> (7 * 3) / 2 = 10.5
-    const f32 fGridSize = static_cast<f32>(gridSize);
-    const f32 offset = (fGridSize - 1.0f) * spacing * 0.5f;
+    const f32 offset = spacing * 0.5f;
  
     for (u32 x = 0; x < gridSize; ++x)
     {

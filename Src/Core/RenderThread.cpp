@@ -36,10 +36,12 @@ void RenderThread::RenderLoop()
         }
         // First sync game data with renderthread
         {
+
             g_pEntityManager->SyncSystemData(lastFrame);
 
+            g_pQueueHandler->WaitForFences(lastFrame);
             m_passManager->BlockUntilPassesFinished(lastFrame);
-            // Renderer done so we can take care of any deferred deletes
+            // All previous frame's command buffers have finished executing, safe to process deferred deletes
             g_pDeleteQueue->ProcessDeleteQueue();
         }
 
@@ -49,10 +51,10 @@ void RenderThread::RenderLoop()
 
         {
             m_passManager->PreProcessDataForCurrentFrame(lastFrame);
+            g_pQueueHandler->WaitForFences(lastFrame);
         }
 
         {
-            g_pQueueHandler->WaitForFences();
             VkGlobals::GetProfiler()->PublishResults(lastFrame);
             VkGlobals::GetProfiler()->ResetFrame(lastFrame);
             m_passManager->ReadAndPublishTimingResults(lastFrame);

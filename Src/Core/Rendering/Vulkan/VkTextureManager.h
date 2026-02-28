@@ -27,6 +27,17 @@ struct TextureSamplerInfo
     VkBorderColor borderColor{VK_BORDER_COLOR_INT_OPAQUE_WHITE};
 };
 
+enum class TextureSemantic : u8
+{
+    Auto,
+    BaseColor,
+    Emissive,
+    Normal,
+    Data,
+    Sheen,
+    Clearcoat
+};
+
 struct DynamicTextureRequest
 {
     DirectX::XMUINT3 extents;
@@ -37,6 +48,7 @@ struct DynamicTextureRequest
     TextureSamplerInfo samplerInfo;
     bool hasMipMaps{false};
     bool createSampler{true};
+    bool isPersistent{false};
 
     void AddName(const stltype::string& name)
     {
@@ -74,6 +86,8 @@ struct FileTextureRequest
     TextureFileInfo ioInfo;
     TextureHandle handle;
     bool makeBindless{true};
+    bool isPersistent{false};
+    TextureSemantic semantic{TextureSemantic::Auto};
 };
 struct AsyncLayoutTransitionRequest
 {
@@ -122,8 +136,15 @@ public:
     {
         const stltype::string& filePath;
         bool makeBindless{true};
+        bool isPersistent{false};
+        TextureSemantic semantic{TextureSemantic::Auto};
+
+        TexCreateInfo(const stltype::string& filePath, bool makeBindless, TextureSemantic semantic, bool isPersistent = false)
+            : filePath(filePath), makeBindless(makeBindless), isPersistent(isPersistent), semantic(semantic)
+        {
+        }
     };
-    TextureHandle SubmitAsyncTextureCreation(const TexCreateInfo& filePath);
+    TextureHandle SubmitAsyncTextureCreation(const TexCreateInfo& info);
     TextureHandle SubmitAsyncDynamicTextureCreation(const DynamicTextureRequest& info);
 
     void CreateTexture(const FileTextureRequest& fileReq);
@@ -149,8 +170,8 @@ public:
     // Async operations to transfer texture data to the global bindless texture array
     // Immediately returns a handle to the texture, if the texture is not ready yet a placeholder texture will be used
     // Should take one frame max so who cares
-    BindlessTextureHandle MakeTextureBindless(TextureHandle handle);
-    BindlessTextureHandle MakeTextureBindless(TextureVulkan* pTex);
+    BindlessTextureHandle MakeTextureBindless(TextureHandle handle, bool isPersistent = false);
+    BindlessTextureHandle MakeTextureBindless(TextureVulkan* pTex, bool isPersistent = false);
 
     void EnqueueAsyncTextureTransfer(StagingBuffer* pStagingBuffer,
                                      const Texture* pTex,
@@ -159,7 +180,14 @@ public:
                                      const TextureHandle handle,
                                      const VkImageAspectFlagBits flagBit);
 
+    void Flush();
+    
+    void CancelAllRequests();
+    void FinishAllRequests();
+
     void FreeTexture(TextureHandle handle);
+
+    bool ShouldFlipNormalMap(const stltype::string& path) const;
 
     stltype::vector<Texture>& GetSwapChainTextures()
     {
@@ -194,9 +222,10 @@ protected:
     struct LoadedTexInfo
     {
         stltype::string filePath;
+        TextureSemantic semantic{TextureSemantic::Auto};
         TextureHandle handle;
     };
-    const LoadedTexInfo* IsAlreadyRequested(const stltype::string& filePath) const;
+    const LoadedTexInfo* IsAlreadyRequested(const stltype::string& filePath, TextureSemantic semantic) const;
 
     struct BindlessInfo
     {
@@ -212,20 +241,27 @@ protected:
     stltype::vector<CommandBuffer*> m_inflightCommandBuffers;
     stltype::vector<CommandBuffer*> m_availableCommandBuffers;
     stltype::vector<LoadedTexInfo> m_loadedTextureCache;
+    stltype::vector<LoadedTexInfo> m_persistentLoadedTextureCache;
     stltype::vector<BindlessInfo> m_bindlessTextureCache;
+    stltype::vector<BindlessInfo> m_persistentBindlessTextureCache;
     DescriptorPool m_bindlessDescriptorPool;
     DescriptorSet* m_bindlessDescriptorSet{nullptr};
     DescriptorSetLayout m_bindlessDescriptorSetLayout;
     DescriptorSet* m_bindlessImageDescriptorSet{nullptr};
     DescriptorSetLayout m_bindlessImageDescriptorSetLayout;
     stltype::vector<TextureHandle> m_texturesToMakeBindless;
+    stltype::vector<TextureHandle> m_persistentTexturesToMakeBindless;
 
     // Frequently accessed by threads
     stltype::queue<TextureRequest> m_requests{}; // Pending texture requests, mainly handled by manager thread
     stltype::hash_map<TextureHandle, Texture> m_textures;
+    stltype::hash_map<TextureHandle, Texture> m_persistentTextures;
     stltype::deque<StagingBuffer> m_stagingBufferInUse;
     stltype::vector<Texture> m_swapChainTextures;
 
     stltype::atomic<u32> m_baseHandle{0};
     u32 m_lastBindlessTextureWriteIdx{0};
+    u32 m_lastPersistentBindlessTextureWriteIdx{14000}; // Around 15% of 16536 reserved for persistent
+    
+    stltype::atomic<bool> m_processingRequest{false};
 };

@@ -3,6 +3,7 @@
 
 #include "Core/Global/State/ApplicationState.h"
 #include "InfoWindow.h"
+#include "Core/Global/Profiling.h"
 
 class GBufferWindow : public ImGuiWindow
 {
@@ -14,6 +15,7 @@ public:
 
     void DrawWindow(f32 dt)
     {
+        ScopedZone("GBufferWindow");
         if (!m_isOpen)
             return;
 

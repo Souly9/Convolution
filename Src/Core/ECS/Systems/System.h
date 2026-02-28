@@ -35,10 +35,8 @@ public:
     {
     }
 
-    // Main function to update component logic
     virtual void Process() = 0;
 
-    // Main function to sync component data to render data
     virtual void SyncData(u32 currentFrame)
     {
     }

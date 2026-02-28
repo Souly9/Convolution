@@ -1,5 +1,10 @@
 #include "ApplicationState.h"
+#include "Core/Global/GlobalVariables.h"
 #include "Core/Rendering/Core/StaticFunctions.h"
+#include "Core/Rendering/Core/TextureManager.h"
+#include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
+#include "Core/SceneGraph/Mesh.h"
+#include "Core/IO/FileReader.h"
 #include "Core/SceneGraph/Scene.h"
 
 void ApplicationStateManager::ProcessStateUpdates()
@@ -70,5 +75,17 @@ void ApplicationStateManager::UnloadCurrentScene()
 {
     DEBUG_LOGF("Unloading current scene");
     if (m_pCurrentScene)
+    {
+        g_pFileReader->CancelAllRequests();
+        g_pFileReader->FinishAllRequests();
+
+        g_pQueueHandler->DispatchAllRequests();
+        g_pQueueHandler->WaitForFences(~0u);
+        vkDeviceWaitIdle(VK_LOGICAL_DEVICE);
+        
         m_pCurrentScene.reset();
+
+        g_pTexManager->Flush();
+        g_pMeshManager->Flush();
+    }
 }

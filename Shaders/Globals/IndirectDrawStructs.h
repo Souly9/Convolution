@@ -1,3 +1,4 @@
+#include "Types.h"
 struct IndexedIndirectDrawCmd
 {
     uint    indexCount;
@@ -26,10 +27,10 @@ struct InstanceData
 // Standalone functions to access the data
 uint GetTransformIdx(InstanceData data)
 {
-    return uint(data.aabbCenterTransIdx.w + 0.5);
+    return uint(data.aabbCenterTransIdx.w);
 }
 
 uint GetMaterialIdx(InstanceData data)
 {
-    return uint(data.aabbExtentsMatIdx.w + 0.5);
+    return uint(data.aabbExtentsMatIdx.w);
 }

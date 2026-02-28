@@ -4,7 +4,6 @@
 
 VkDevice VkGlobals::s_logicalDevice = nullptr;
 VkProfiler* VkGlobals::s_pProfiler = nullptr;
-VkFormat VkGlobals::s_swapChainImageFormat{};
 VkSwapchainKHR VkGlobals::s_mainSwapChain{};
 VkQueue VkGlobals::s_presentQueue{};
 VkQueue VkGlobals::s_graphicsQueue{};
@@ -29,11 +28,6 @@ VkProfiler* VkGlobals::GetProfiler()
 {
     //DEBUG_ASSERT(s_pProfiler != nullptr);
     return s_pProfiler;
-}
-
-VkFormat VkGlobals::GetSwapChainImageFormat()
-{
-    return s_swapChainImageFormat;
 }
 
 VkSwapchainKHR VkGlobals::GetMainSwapChain()
@@ -120,11 +114,6 @@ void VkGlobals::SetPhysicalDeviceMemoryProperties(const VkPhysicalDeviceMemoryPr
 void VkGlobals::SetLogicalDevice(VkDevice physDevice)
 {
     s_logicalDevice = physDevice;
-}
-
-void VkGlobals::SetSwapChainImageFormat(VkFormat imageFormat)
-{
-    s_swapChainImageFormat = imageFormat;
 }
 
 void VkGlobals::SetMainSwapChain(const VkSwapchainKHR swapChain)

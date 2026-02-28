@@ -4,15 +4,11 @@
 
 #define MAX_REASONABLE_COMMAND_BUFFERS 2048
 
-void CommandPoolVulkan::ReturnCommandBuffer(const CommandBuffer* pBuffer)
+void CommandPoolVulkan::ReturnCommandBuffer(CommandBuffer* pBuffer)
 {
     if (pBuffer == nullptr)
         return;
-    m_commandBuffers.erase(stltype::remove_if(m_commandBuffers.begin(),
-                                              m_commandBuffers.end(),
-                                              [pBuffer](const CommandBuffer& buffer)
-                                              { return buffer.GetRef() == pBuffer->GetRef(); }),
-                           m_commandBuffers.end());
+    m_freeCommandBuffers.push_back(pBuffer);
 }
 
 void CommandPoolVulkan::NamingCallBack(const stltype::string& name)
@@ -58,6 +54,15 @@ void CommandPoolVulkan::CleanUp(){
 CBufferVulkan* CommandPoolVulkan::CreateCommandBuffer(const CommandBufferCreateInfo& createInfo)
 {
     ScopedZone("CommandPoolVulkan::CreateCommandBuffer");
+
+    if (!m_freeCommandBuffers.empty())
+    {
+        CommandBuffer* pBuf = m_freeCommandBuffers.back();
+        m_freeCommandBuffers.pop_back();
+        pBuf->ResetBuffer();
+        return pBuf;
+    }
+
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     allocInfo.commandPool = m_commandPool;
@@ -77,29 +82,40 @@ CBufferVulkan* CommandPoolVulkan::CreateCommandBuffer(const CommandBufferCreateI
 stltype::vector<CommandBuffer*> CommandPoolVulkan::CreateCommandBuffers(const CommandBufferCreateInfo& createInfo,
                                                                         const u32& count)
 {
+    stltype::vector<CommandBuffer*> rsltBuffers;
+    rsltBuffers.reserve(count);
+
+    u32 remainingCount = count;
+    while (remainingCount > 0 && !m_freeCommandBuffers.empty())
+    {
+        CommandBuffer* pBuf = m_freeCommandBuffers.back();
+        m_freeCommandBuffers.pop_back();
+        pBuf->ResetBuffer();
+        rsltBuffers.push_back(pBuf);
+        remainingCount--;
+    }
+
+    if (remainingCount == 0)
+        return rsltBuffers;
+
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     allocInfo.commandPool = m_commandPool;
     allocInfo.level = createInfo.isPrimaryBuffer ? VK_COMMAND_BUFFER_LEVEL_PRIMARY : VK_COMMAND_BUFFER_LEVEL_SECONDARY;
-    allocInfo.commandBufferCount = count;
+    allocInfo.commandBufferCount = remainingCount;
 
     stltype::vector<VkCommandBuffer> buffers;
-    buffers.resize(count);
-    stltype::vector<CommandBuffer*> rsltBuffers;
-    rsltBuffers.reserve(count);
+    buffers.resize(remainingCount);
 
     DEBUG_ASSERT(vkAllocateCommandBuffers(VkGlobals::GetLogicalDevice(), &allocInfo, buffers.data()) == VK_SUCCESS);
 
-    // Store the starting index before adding buffers
     const size_t startIdx = m_commandBuffers.size();
 
-    // First, add all buffers to the vector
     for (auto& buffer : buffers)
     {
         m_commandBuffers.emplace_back(buffer);
     }
 
-    // Now collect pointers - the vector is stable at this point
     for (size_t i = startIdx; i < m_commandBuffers.size(); ++i)
     {
         auto* pBuffer = &m_commandBuffers[i];

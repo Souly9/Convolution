@@ -47,7 +47,7 @@ Application::Application(bool canRender, RenderLayer<RenderAPI>& layer) : m_rend
     StaticBehaviorCollection::RegisterAllBehaviors();
     
     m_applicationState.ProcessStateUpdates();
-    g_pQueueHandler->WaitForFences();
+    g_pQueueHandler->WaitForFences(~0u);
     Update(0);
     Update(1);
 }

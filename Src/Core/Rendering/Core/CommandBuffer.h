@@ -252,6 +252,19 @@ struct GlobalBarrierCmd : public CommandBase
     }
 };
 
+struct BufferFillCmd : public CommandBase
+{
+    StorageBuffer* pBuffer;
+    u64 offset;
+    u64 size;
+    u32 data;
+
+    BufferFillCmd(StorageBuffer* buf, u64 off, u64 sz, u32 d = 0)
+        : pBuffer(buf), offset(off), size(sz), data(d)
+    {
+    }
+};
+
 struct ComputePushConstantCmd : public CommandBase
 {
     ComputePipeline* pPipeline;
@@ -330,6 +343,7 @@ using Command = stltype::variant<CommandBase,
                                  BindComputePipelineCmd,
                                  ComputeDispatchCmd,
                                  GlobalBarrierCmd,
+                                 BufferFillCmd,
                                  ComputePushConstantCmd,
                                  GenericComputeDispatchCmd,
                                  SimpleBufferCopyCmd,

@@ -7,6 +7,7 @@
 #include "Core/Rendering/Vulkan/VkCommandPool.h"
 #include "Core/SceneGraph/Mesh.h"
 #include <EAThread/eathread.h>
+#include "Core/Global/ThreadPool.h"
 
 enum class QueueType
 {
@@ -22,16 +23,20 @@ struct RenderingData;
 class AsyncQueueHandler : public ThreadBase
 {
 public:
+    AsyncQueueHandler() {}
     ~AsyncQueueHandler();
     void Init();
     void DispatchAllRequests();
+    void FlushGraphicsComputeBuffers();
 
     void CheckRequests();
 
     struct CommandBufferRequest
     {
-        CommandBuffer* pBuffer;
-        QueueType queueType;
+        CommandBuffer* pBuffer{nullptr};
+        QueueType queueType{QueueType::Graphics};
+        u32 frameIdx{~0u};
+        stltype::vector<u32> stagingBufferIndices{};
     };
     void SubmitCommandBufferAsync(const CommandBufferRequest& request);
     void SubmitCommandBufferThisFrame(const CommandBufferRequest& request);
@@ -40,6 +45,7 @@ public:
     {
         Semaphore* pWaitSemaphore{nullptr};
         u32 swapChainImageIdx{0};
+        u32 frameIdx{~0u};
     };
     void SubmitSwapchainPresentRequestForThisFrame(const PresentRequest& request);
     void SubmitToSwapchainForPresentation(const stltype::vector<PresentRequest>& request);
@@ -56,6 +62,7 @@ public:
         SyncStages waitStage{0};
         SyncStages signalStage{0};
         stltype::string name{"MeshTransfer"};
+        u32 frameIdx{~0u};
     };
     // Super simple command to upload a mesh to the GPU and set the vertex and index buffers once it's finished
     struct MeshTransfer : SynchronizableCommand
@@ -65,6 +72,7 @@ public:
         u64 vertexOffset{0};
         u64 indexOffset{0};
         BufferData* pBuffersToFill{nullptr};
+        bool allocateBuffers{true};
     };
 
     struct SSBOTransfer : SynchronizableCommand
@@ -87,12 +95,12 @@ public:
 
     void SubmitTransferCommandAsync(const TransferCommand& request);
     // Helper function to submit a mesh transfer command easily
-    void SubmitTransferCommandAsync(const Mesh* pMesh, RenderingData& renderDataToFill);
+    void SubmitTransferCommandAsync(const Mesh* pMesh, RenderingData& renderDataToFill, u32 frameIdx = ~0u);
     void BuildTransferCommandBuffer(const stltype::vector<TransferCommand>& transferCommands);
     void InitStagingBufferPool(u32 initialCount, u64 initialSize);
 
-    void WaitForFences();
-    void ReclaimCompletedResources();
+    void WaitForFences(u32 frameIdx);
+    void ReclaimCompletedResources(u32 frameIdx);
 
 protected:
     template <typename T>
@@ -115,15 +123,17 @@ protected:
     // threadSTL::Futex m_fencesToWaitOnMutex{};
 
     ProfiledLockable(CustomMutex, m_dispatchMutex);
+    ProfiledLockable(CustomMutex, m_stagingMutex);
     struct InFlightRequest
     {
         stltype::vector<CommandBufferRequest> requests;
         stltype::vector<u32> stagingBufferIndices;
         Fence fence;
     };
-    stltype::vector<InFlightRequest> m_fencesToWaitOn;
+    stltype::array<stltype::vector<InFlightRequest>, FRAMES_IN_FLIGHT + 1> m_fencesToWaitOn;
 
     stltype::hash_map<QueueType, CommandPool> m_commandPools{};
+    stltype::vector<CommandPool> m_transferCommandPools{};
 
     // Semaphores used to bridge timeline semaphore waits to binary semaphore waits required for presentation
     stltype::vector<Semaphore> m_presentBridgeSemaphores;
@@ -136,7 +146,7 @@ protected:
     stltype::vector<PresentRequest> m_swapchainPresentRequestsThisFrame{};
     stltype::vector<TransferCommand> m_transferCommands{};
 
-    u32 m_maxTransferCommandsPerFrame{8};
+    u32 m_maxTransferCommandsPerFrame{32};
 
     stltype::deque<StagingBuffer> m_stagingBufferPool;
     stltype::vector<u32> m_freeStagingBufferIndices;

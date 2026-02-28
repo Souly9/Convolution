@@ -2,6 +2,7 @@
 #include "Core/Global/State/ApplicationState.h"
 #include "Core/Global/GlobalVariables.h"
 #include "InfoWindow.h"
+#include "Core/Global/Profiling.h"
 #include <EASTL/sort.h>
 
 class GPUTimingWindow : public ImGuiWindow
@@ -14,6 +15,7 @@ public:
 
     void DrawWindow(f32 dt)
     {
+        ScopedZone("GPUTimingWindow");
         if (!m_isOpen)
             return;
 

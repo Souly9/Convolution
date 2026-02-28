@@ -1,5 +1,6 @@
 #pragma once
 
+#include "eathread/eathread.h"
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -44,7 +45,6 @@ constexpr static inline u32 MAX_BINDLESS_TEXTURES = 16536;
 constexpr static inline u32 MAX_MESHES = 4096;
 
 #define SWAPCHAIN_FORMAT    FrameGlobals::GetSwapChainFormat()
-#define SWAPCHAINFORMAT     SWAPCHAIN_FORMAT
 #define DEPTH_BUFFER_FORMAT TexFormat::D32_SFLOAT
 
 // Definitions
@@ -72,4 +72,5 @@ using CurrentAPI = API_Vulkan;
 static inline constexpr f32 FLOAT_TOLERANCE = 0.00001f;
 static inline constexpr f32 AMBIENT_STRENGTH = 0.03f;
 
+static inline u32 CORE_COUNT_AVAILABLE = threadstl::GetProcessorCount() - 2;
 

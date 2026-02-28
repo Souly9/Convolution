@@ -1,3 +1,4 @@
+#include "Core/Global/FrameGlobals.h"
 #define GLFW_INCLUDE_VULKAN
 #include "VulkanBackend.h"
 #include "Core/Global/State/ApplicationState.h"
@@ -14,6 +15,19 @@
 #include "Utils/VkEnumHelpers.h"
 #include <EASTL/set.h>
 #include <GLFW/glfw3.h>
+
+PFN_vkSetDebugUtilsObjectNameEXT vkSetDebugUtilsObjectName = VK_NULL_HANDLE;
+PFN_vkCmdSetCheckpointNV vkCmdSetCheckpoint = VK_NULL_HANDLE;
+PFN_vkCmdBeginDebugUtilsLabelEXT vkBeginDebugUtilsLabel = VK_NULL_HANDLE;
+PFN_vkCmdEndDebugUtilsLabelEXT vkCmdEndDebugUtilsLabel = VK_NULL_HANDLE;
+
+namespace
+{
+bool IsSrgbSwapchainFormat(VkFormat format)
+{
+    return format == VK_FORMAT_B8G8R8A8_SRGB || format == VK_FORMAT_R8G8B8A8_SRGB;
+}
+} // namespace
 
 bool RenderBackendImpl<Vulkan>::Init(uint32_t screenWidth, uint32_t screenHeight, stltype::string_view title)
 {
@@ -47,6 +61,14 @@ bool RenderBackendImpl<Vulkan>::Init(uint32_t screenWidth, uint32_t screenHeight
     VkGlobals::SetLogicalDevice(m_logicalDevice);
     vkCmdSetCheckpoint =
         reinterpret_cast<PFN_vkCmdSetCheckpointNV>(vkGetDeviceProcAddr(VK_LOGICAL_DEVICE, "vkCmdSetCheckpointNV"));
+    
+    vkSetDebugUtilsObjectName =
+        reinterpret_cast<PFN_vkSetDebugUtilsObjectNameEXT>(vkGetInstanceProcAddr(m_instance, "vkSetDebugUtilsObjectNameEXT"));
+    vkBeginDebugUtilsLabel = reinterpret_cast<PFN_vkCmdBeginDebugUtilsLabelEXT>(
+        vkGetInstanceProcAddr(m_instance, "vkCmdBeginDebugUtilsLabelEXT"));
+    vkCmdEndDebugUtilsLabel = reinterpret_cast<PFN_vkCmdEndDebugUtilsLabelEXT>(
+        vkGetInstanceProcAddr(m_instance, "vkCmdEndDebugUtilsLabelEXT"));
+
     {
         DEBUG_LOG("Creating Swapchain!");
         if (!CreateSwapChain())
@@ -96,13 +118,6 @@ void RenderBackendImpl<Vulkan>::CreateDebugMessenger()
     PFN_vkCreateDebugReportCallbackEXT CreateDebugReportCallback = VK_NULL_HANDLE;
     CreateDebugReportCallback =
         (PFN_vkCreateDebugReportCallbackEXT)vkGetInstanceProcAddr(m_instance, "vkCreateDebugReportCallbackEXT");
-
-    vkSetDebugUtilsObjectName =
-        (PFN_vkSetDebugUtilsObjectNameEXT)vkGetInstanceProcAddr(m_instance, "vkSetDebugUtilsObjectNameEXT");
-    vkBeginDebugUtilsLabel = reinterpret_cast<PFN_vkCmdBeginDebugUtilsLabelEXT>(
-        vkGetInstanceProcAddr(m_instance, "vkCmdBeginDebugUtilsLabelEXT"));
-    vkCmdEndDebugUtilsLabel = reinterpret_cast<PFN_vkCmdEndDebugUtilsLabelEXT>(
-        vkGetInstanceProcAddr(m_instance, "vkCmdEndDebugUtilsLabelEXT"));
 
     VkDebugUtilsMessengerCreateInfoEXT createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
@@ -405,14 +420,23 @@ RenderBackendImpl<Vulkan>::SwapChainSupportDetails RenderBackendImpl<Vulkan>::Qu
 VkSurfaceFormatKHR RenderBackendImpl<Vulkan>::ChooseSwapSurfaceFormat(
     const stltype::vector<VkSurfaceFormatKHR>& availableFormats)
 {
-    for (const auto& availableFormat : availableFormats)
+    DEBUG_ASSERT(!availableFormats.empty());
+
+    // Prefer common sRGB SDR swapchain formats with sRGB nonlinear presentation.
+    VkFormat preferredSrgbFormats[] = {Conv(g_swapChainFormat)};
+
+    for (VkFormat preferredFormat : preferredSrgbFormats)
     {
-        if (availableFormat.format == Conv(SWAPCHAIN_FORMAT) && availableFormat.colorSpace == SWAPCHAINCOLORSPACE)
+        for (const auto& availableFormat : availableFormats)
         {
-            return availableFormat;
+            if (availableFormat.format == preferredFormat && availableFormat.colorSpace == SWAPCHAINCOLORSPACE)
+            {
+                return availableFormat;
+            }
         }
     }
 
+    DEBUG_LOG_ERR("No supported sRGB swapchain format found on this surface.");
     return availableFormats[0];
 }
 
@@ -459,6 +483,7 @@ bool RenderBackendImpl<Vulkan>::CreateSwapChain()
     SwapChainSupportDetails swapChainSupport = QuerySwapChainSupport(m_physicalDevice);
 
     VkSurfaceFormatKHR surfaceFormat = ChooseSwapSurfaceFormat(swapChainSupport.formats);
+
     VkPresentModeKHR presentMode = ChooseSwapPresentMode(swapChainSupport.presentModes);
     DirectX::XMUINT2 extent = ChooseSwapExtent(swapChainSupport.capabilities);
 
@@ -511,7 +536,7 @@ bool RenderBackendImpl<Vulkan>::CreateSwapChain()
     m_swapChainImages.resize(imageCount);
     vkGetSwapchainImagesKHR(m_logicalDevice, m_swapChain, &imageCount, m_swapChainImages.data());
 
-    m_swapChainImageFormat = surfaceFormat.format;
+    FrameGlobals::SetSwapChainFormat(Conv(surfaceFormat.format));
     m_swapChainExtent = mathstl::Vector2(extent.x, extent.y);
     return true;
 }
@@ -523,7 +548,7 @@ void RenderBackendImpl<Vulkan>::CreateSwapChainImages()
     info.extents = ex;
     for (auto& image : m_swapChainImages)
     {
-        g_pTexManager->CreateSwapchainTextures({m_swapChainImageFormat, image}, info);
+        g_pTexManager->CreateSwapchainTextures({Conv(SWAPCHAIN_FORMAT), image}, info);
     }
 }
 
@@ -539,7 +564,6 @@ bool RenderBackendImpl<Vulkan>::CreateGraphicsPipeline()
 
 void RenderBackendImpl<Vulkan>::UpdateGlobals() const
 {
-    VkGlobals::SetSwapChainImageFormat(m_swapChainImageFormat);
     FrameGlobals::SetSwapChainExtent(m_swapChainExtent);
     VkGlobals::SetMainSwapChain(m_swapChain);
     VkGlobals::SetPresentQueue(m_presentQueue);

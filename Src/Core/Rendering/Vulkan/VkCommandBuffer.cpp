@@ -1,20 +1,21 @@
 #include "VkCommandBuffer.h"
-#include "VkCommandBuffer.h"
+#include "Core/Global/State/ApplicationState.h"
 #include "Core/Rendering/Core/RenderDefinitions.h"
-#include "Core/Rendering/Vulkan/VulkanTraits.h"
-#include "Core/Rendering/Vulkan/VkBuffer.h"
 #include "Core/Rendering/Core/TextureManager.h"
 #include "Core/Rendering/Vulkan/VkAttachment.h"
+#include "Core/Rendering/Vulkan/VkBuffer.h"
 #include "Core/Rendering/Vulkan/VkPipeline.h"
+#include "Core/Rendering/Vulkan/VkProfiler.h"
+#include "Core/Rendering/Vulkan/VkQueryPool.h"
 #include "Core/Rendering/Vulkan/VkSynchronization.h"
 #include "Core/Rendering/Vulkan/VkTexture.h"
+#include "Core/Rendering/Vulkan/VulkanTraits.h"
 #include "Utils/VkEnumHelpers.h"
+#include "VkCommandBuffer.h"
 #include "VkGlobals.h"
 #include <backends/imgui_impl_vulkan.h>
 #include <imgui.h>
-#include "Core/Rendering/Vulkan/VkQueryPool.h"
-#include "Core/Rendering/Vulkan/VkProfiler.h"
-#include "Core/Global/State/ApplicationState.h"
+
 
 namespace CommandHelpers
 {
@@ -208,10 +209,10 @@ static void RecordCommand(ImageLayoutTransitionCmd& cmd, CBufferVulkan& buffer)
         memoryBarrier.srcAccessMask = cmd.srcAccessMask;
         memoryBarrier.dstAccessMask = cmd.dstAccessMask;
 
-        memoryBarrier.subresourceRange.aspectMask =
-            (cmd.newLayout == ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL || cmd.oldLayout == ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-                ? VK_IMAGE_ASPECT_DEPTH_BIT
-                : VK_IMAGE_ASPECT_COLOR_BIT;
+        memoryBarrier.subresourceRange.aspectMask = (cmd.newLayout == ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL ||
+                                                     cmd.oldLayout == ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+                                                        ? VK_IMAGE_ASPECT_DEPTH_BIT
+                                                        : VK_IMAGE_ASPECT_COLOR_BIT;
         memoryBarrier.subresourceRange.baseArrayLayer = cmd.baseArrayLayer;
         memoryBarrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
         memoryBarrier.subresourceRange.baseMipLevel = cmd.mipLevel;
@@ -278,7 +279,7 @@ static void RecordCommand(GenericComputeDispatchCmd& cmd, CBufferVulkan& buffer)
                                 sets.data(),
                                 0,
                                 nullptr);
-        
+
         buffer.GetStats().descriptorBinds += sets.size();
     }
 
@@ -311,6 +312,11 @@ static void RecordCommand(GlobalBarrierCmd& cmd, CBufferVulkan& buffer)
     dependencyInfo.pMemoryBarriers = &barrier;
 
     vkCmdPipelineBarrier2(buffer.GetRef(), &dependencyInfo);
+}
+
+static void RecordCommand(BufferFillCmd& cmd, CBufferVulkan& buffer)
+{
+    vkCmdFillBuffer(buffer.GetRef(), cmd.pBuffer->GetRef(), cmd.offset, cmd.size, cmd.data);
 }
 } // namespace CommandHelpers
 
@@ -359,10 +365,19 @@ void CBufferVulkan::Bake()
         }
     }
 
-    // vkCmdSetCheckpoint(GetRef(), (const void*)m_debugName.data());
+    if (vkCmdSetCheckpoint)
+    {
+        vkCmdSetCheckpoint(GetRef(), (const void*)m_debugName.data());
+    }
+
     for (auto& cmd : m_commands)
     {
         stltype::visit([&](auto& c) { CommandHelpers::RecordCommand(c, *this); }, cmd);
+    }
+
+    if (vkCmdSetCheckpoint)
+    {
+        vkCmdSetCheckpoint(GetRef(), (const void*)"CommandBuffer_End");
     }
 
     if (queryIdx != ~0u)
@@ -373,19 +388,21 @@ void CBufferVulkan::Bake()
     EndBuffer();
 
     // Register callback to update stats
-    CommandBufferStats capturedStats = m_stats; 
-    AddExecutionFinishedCallback([=, this]() {
-        RendererState::SceneRenderStats ctx;
-        ctx.numDescriptorBinds = capturedStats.descriptorBinds;
-        ctx.numPipelineBinds = capturedStats.pipelineBinds;
-        ctx.numDrawCalls = capturedStats.drawCalls;
-        ctx.numDrawIndirectCalls = capturedStats.drawIndirectCalls;
-        ctx.numComputeDispatches = capturedStats.computeDispatches;
-        
-        // Capture every commandbuffer for profiling
-        VkGlobals::GetProfiler()->AddCPUStats(ctx, m_frameIdx);
-        VkGlobals::GetProfiler()->AddQuery(queryIdx, m_frameIdx);
-    });
+    CommandBufferStats capturedStats = m_stats;
+    AddExecutionFinishedCallback(
+        [=, this]()
+        {
+            RendererState::SceneRenderStats ctx;
+            ctx.numDescriptorBinds = capturedStats.descriptorBinds;
+            ctx.numPipelineBinds = capturedStats.pipelineBinds;
+            ctx.numDrawCalls = capturedStats.drawCalls;
+            ctx.numDrawIndirectCalls = capturedStats.drawIndirectCalls;
+            ctx.numComputeDispatches = capturedStats.computeDispatches;
+
+            // Capture every commandbuffer for profiling
+            VkGlobals::GetProfiler()->AddCPUStats(ctx, m_frameIdx);
+            VkGlobals::GetProfiler()->AddQuery(queryIdx, m_frameIdx);
+        });
 
     m_commands.clear();
     m_stats = {}; // Reset stats for next use
@@ -485,18 +502,18 @@ void CBufferVulkan::BeginRendering(BeginRenderingBaseCmd& cmd)
         DEBUG_ASSERT(attachment.pTexture != nullptr);
         VkRenderingAttachmentInfo& colorAttachment = colorAttachments.emplace_back();
         colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        
+
         colorAttachment.imageView = attachment.pTexture->GetImageView();
         colorAttachment.imageLayout = Conv(attachment.renderingLayout);
         colorAttachment.loadOp = Conv(attachment.loadOp);
         colorAttachment.storeOp = Conv(attachment.storeOp);
-        
+
         // Clear value conversion
         colorAttachment.clearValue.color.float32[0] = attachment.clearValue.color.float32[0];
         colorAttachment.clearValue.color.float32[1] = attachment.clearValue.color.float32[1];
         colorAttachment.clearValue.color.float32[2] = attachment.clearValue.color.float32[2];
         colorAttachment.clearValue.color.float32[3] = attachment.clearValue.color.float32[3];
-        
+
         colorAttachment.resolveMode = VK_RESOLVE_MODE_NONE;
     }
 
@@ -513,14 +530,15 @@ void CBufferVulkan::BeginRendering(BeginRenderingBaseCmd& cmd)
         const auto& att = cmd.depthAttachment;
         DEBUG_ASSERT(att.pTexture != nullptr);
         auto pVkTex = static_cast<TextureVulkan*>(att.pTexture);
-        
+
         depthAttachment.imageView = pVkTex->GetImageView();
         depthAttachment.imageLayout = Conv(att.renderingLayout);
         depthAttachment.loadOp = Conv(att.loadOp);
         depthAttachment.storeOp = Conv(att.storeOp);
-        depthAttachment.clearValue.depthStencil = {att.clearValue.depthStencil.depth, att.clearValue.depthStencil.stencil};
+        depthAttachment.clearValue.depthStencil = {att.clearValue.depthStencil.depth,
+                                                   att.clearValue.depthStencil.stencil};
         depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        
+
         renderingInfo.viewMask = cmd.depthLayerMask;
         renderingInfo.pDepthAttachment = &depthAttachment;
     }

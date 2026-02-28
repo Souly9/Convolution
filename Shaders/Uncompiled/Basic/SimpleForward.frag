@@ -1,28 +1,41 @@
 #version 450 core
 #extension GL_ARB_shading_language_include : enable
 #extension GL_EXT_nonuniform_qualifier : enable
-#define SharedDataUBOSet     1
-#define TransformSSBOSet 2
-#define PassPerObjectDataSet 3
+#include "../../Globals/GBufferPass.h"
 #include "../../Globals/GBufferOutput.h"
-#include "../../Globals/GlobalBuffers.h"
-#include "../../Globals/PerObjectBuffers.h"
-#include "../../Globals/Textures.h"
 
 layout(location = 0) in VertexOut
 {
-  vec4 worldPos;
-  vec3 normal;
-  vec2 fragTexCoord;
-  flat uint matIdx;
-} IN;
+    mat3 TBN;
+    vec4 worldPos;
+    vec3 worldNormal;
+    vec2 fragTexCoord;
+    flat uint matIdx;
+}
+IN;
 
+void main()
+{
+    Material mat = globalObjectDataSSBO.materials[IN.matIdx];
+    vec4 fragTexSample = IsMaterialFlagSet(mat.flags, MATERIAL_FLAG_DIFFUSE_BIT)
+                             ? vec4(texture(GlobalBindlessTextures[nonuniformEXT(mat.diffuseTexture)], IN.fragTexCoord))
+                             : vec4(1.0);
+    vec3 N = normalize(IN.worldNormal);
+    if (IsMaterialFlagSet(mat.flags, MATERIAL_FLAG_NORMAL_BIT))
+    {
+        vec3 tangentNormal =
+            texture(GlobalBindlessTextures[nonuniformEXT(mat.normalTexture)], IN.fragTexCoord).xyz * 2.0 - 1.0;
+        if (dot(tangentNormal, tangentNormal) > 1e-6)
+        {
+            N = normalize(IN.TBN * tangentNormal);
+            if (IsFlagSet(mat.flags, MATERIAL_FLAG_FLIPPED_NORMAL_BIT))
+            {
+                N.y = -N.y;
+            }
+        }
+    }
 
-void main() {
-   
-  Material mat = globalObjectDataSSBO.materials[IN.matIdx];
-	vec4 fragTexSample = vec4(texture(GlobalBindlessTextures[mat.diffuseTexture], IN.fragTexCoord));
-
-	StoreAlbedoInGBuffer(vec4(fragTexSample.xyz, 1));
-  StoreNormalAndMaterialInGBuffer(IN.normal, IN.matIdx);
+    StoreAlbedoInGBuffer(fragTexSample);
+    StoreNormalAndMaterialInGBuffer(N, IN.matIdx);
+    StoreTexCoordInGBuffer(IN.fragTexCoord);
 }

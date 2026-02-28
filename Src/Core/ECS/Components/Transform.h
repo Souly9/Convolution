@@ -23,6 +23,8 @@ public:
     mathstl::Vector3 worldScale{1.0f, 1.0f, 1.0f};
 
     stltype::string name;
+    bool isDirty{true};
+    ECS::Entity ownerEntity;
 
     ECS::Entity parent;
     stltype::vector<ECS::Entity> children;

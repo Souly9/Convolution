@@ -29,7 +29,6 @@ class VkGlobals
 public:
     static VkDevice GetLogicalDevice();
     static VkProfiler* GetProfiler();
-    static VkFormat GetSwapChainImageFormat();
     static VkSwapchainKHR GetMainSwapChain();
     static VkQueue GetPresentQueue();
     static VkQueue GetGraphicsQueue();
@@ -47,7 +46,6 @@ public:
     static void SetPhysicalDeviceProperties(const VkPhysicalDeviceProperties& physDeviceProps);
     static void SetPhysicalDeviceMemoryProperties(const VkPhysicalDeviceMemoryProperties& memProps);
     static void SetLogicalDevice(VkDevice physDevice);
-    static void SetSwapChainImageFormat(VkFormat physDevice);
     static void SetMainSwapChain(const VkSwapchainKHR swapChain);
     static void SetPresentQueue(const VkQueue presentQueue);
     static void SetGraphicsQueue(const VkQueue graphicsQueue);
@@ -65,7 +63,6 @@ private:
     static Texture* s_pDepthStencilBuffer;
     static QueueFamilyIndices s_indices;
     static VkDevice s_logicalDevice;
-    static VkFormat s_swapChainImageFormat;
     static VkSwapchainKHR s_mainSwapChain;
     static VkQueue s_presentQueue;
     static VkQueue s_graphicsQueue;
