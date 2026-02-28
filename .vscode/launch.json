@@ -11,18 +11,6 @@
             "console": "integratedTerminal",
             "visualizerFile": "${workspaceFolder}/External/EASTL/doc/EASTL.natvis",
             "showDisplayString": true
-        },
-        {
-            "name": "Convolution (LLDB)",
-            "type": "lldb",
-            "request": "launch",
-            "program": "${workspaceFolder}/bin/Convolution.exe",
-            "args": [],
-            "cwd": "${workspaceFolder}/bin",
-            "console": "integratedTerminal",
-            "sourceMap": {
-                "${workspaceFolder}/out/build/RelWithDebInfo": "${workspaceFolder}"
-            }
         }
     ]
 }
