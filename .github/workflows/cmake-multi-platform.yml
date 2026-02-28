@@ -26,13 +26,18 @@ jobs:
         vulkan-use-cache: false
 
     - name: Configure CMake
-      run: |
-        if ("${{ matrix.compiler }}" -eq "Clang") {
-          cmake -B ${{ github.workspace }}/build -S ${{ github.workspace }} -G "Visual Studio 17 2022" -A x64 -T ClangCL -DCONV_USE_CLANG_CL=ON
-        } else {
-          cmake -B ${{ github.workspace }}/build -S ${{ github.workspace }} -G "Visual Studio 17 2022" -A x64
-        }
       shell: pwsh
+      run: |
+        $generator = "Visual Studio 17 2022"
+        if ($env:ImageVersion -like "*2025*") {
+          $generator = "Visual Studio 18 2026"
+        }
+        
+        if ("${{ matrix.compiler }}" -eq "Clang") {
+          cmake -B build -S . -G $generator -A x64 -T ClangCL -DCONV_USE_CLANG_CL=ON
+        } else {
+          cmake -B build -S . -G $generator -A x64 -DCONV_USE_CLANG_CL=OFF
+        }
 
     - name: Build
-      run: cmake --build ${{ github.workspace }}/build --config ${{ matrix.build_type }} --target Convolution
+      run: cmake --build build --config ${{ matrix.build_type }} --target Convolution

@@ -5,8 +5,6 @@
 FindVulkan
 ----------
 
-.. versionadded:: 3.7
-
 Find Vulkan, which is a low-overhead, cross-platform 3D graphics
 and computing API.
 
@@ -17,24 +15,6 @@ This module defines :prop_tgt:`IMPORTED` targets if Vulkan has been found:
 
 ``Vulkan::Vulkan``
   The main Vulkan library.
-
-``Vulkan::glslc``
-  .. versionadded:: 3.19
-
-  The GLSLC SPIR-V compiler, if it has been found.
-
-``Vulkan::Headers``
-  .. versionadded:: 3.21
-
-  Provides just Vulkan headers include paths, if found.  No library is
-  included in this target.  This can be useful for applications that
-  load Vulkan library dynamically.
-
-``Vulkan::glslangValidator``
-  .. versionadded:: 3.21
-
-  The glslangValidator tool, if found.  It is used to compile GLSL and
-  HLSL shaders into SPIR-V.
 
 Result Variables
 ^^^^^^^^^^^^^^^^
@@ -47,54 +27,48 @@ This module defines the following variables:
   include directories for Vulkan
 ``Vulkan_LIBRARIES``
   link against this library to use Vulkan
-``Vulkan_VERSION``
-  .. versionadded:: 3.23
-
-  value from ``vulkan/vulkan_core.h``
-
-The module will also defines these cache variables:
-
-``Vulkan_INCLUDE_DIR``
-  the Vulkan include directory
-``Vulkan_LIBRARY``
-  the path to the Vulkan library
-``Vulkan_GLSLC_EXECUTABLE``
-  the path to the GLSL SPIR-V compiler
-``Vulkan_GLSLANG_VALIDATOR_EXECUTABLE``
-  the path to the glslangValidator tool
-
-Hints
-^^^^^
-
-.. versionadded:: 3.18
-
-The ``VULKAN_SDK`` environment variable optionally specifies the
-location of the Vulkan SDK root directory for the given
-architecture. It is typically set by sourcing the toplevel
-``setup-env.sh`` script of the Vulkan SDK directory into the shell
-environment.
-
 #]=======================================================================]
 
-  set(Vulkan_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/External/VulkanSDK/1.4.309/Include)
-  set(Vulkan_LIBRARY ${CMAKE_SOURCE_DIR}/External/VulkanSDK/1.4.309/Lib/vulkan-1.lib)
-  set(Vulkan_GLSLC_EXECUTABLE ${CMAKE_SOURCE_DIR}/External/VulkanSDK/1.4.309/Bin/glslc.exe)
-  set(Vulkan_GLSLANG_VALIDATOR_EXECUTABLE ${CMAKE_SOURCE_DIR}/External/VulkanSDK/1.4.309/Bin/glslangValidator.exe)
+# Try to find Vulkan headers
+find_path(Vulkan_INCLUDE_DIR
+  NAMES vulkan/vulkan.h
+  HINTS
+    "$ENV{VULKAN_SDK}/Include"
+    "$ENV{VULKAN_SDK}/include"
+    "${CMAKE_SOURCE_DIR}/External/VulkanSDK/1.4.309/Include"
+)
 
+# Try to find Vulkan library
+if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+  set(_Vulkan_library_names vulkan-1)
+  set(_Vulkan_hint_names Lib lib)
+else()
+  set(_Vulkan_library_names vulkan-1)
+  set(_Vulkan_hint_names Lib32 lib32)
+endif()
+
+find_library(Vulkan_LIBRARY
+  NAMES ${_Vulkan_library_names}
+  HINTS
+    "$ENV{VULKAN_SDK}"
+    "${CMAKE_SOURCE_DIR}/External/VulkanSDK/1.4.309"
+  PATH_SUFFIXES ${_Vulkan_hint_names}
+)
+
+# Set result variables
 set(Vulkan_LIBRARIES ${Vulkan_LIBRARY})
 set(Vulkan_INCLUDE_DIRS ${Vulkan_INCLUDE_DIR})
 
-# detect version e.g 1.2.189
+# detect version
 set(Vulkan_VERSION "")
 if(Vulkan_INCLUDE_DIR)
   set(VULKAN_CORE_H ${Vulkan_INCLUDE_DIR}/vulkan/vulkan_core.h)
   if(EXISTS ${VULKAN_CORE_H})
-    file(STRINGS  ${VULKAN_CORE_H} VulkanHeaderVersionLine REGEX "^#define VK_HEADER_VERSION ")
+    file(STRINGS ${VULKAN_CORE_H} VulkanHeaderVersionLine REGEX "^#define VK_HEADER_VERSION ")
     string(REGEX MATCHALL "[0-9]+" VulkanHeaderVersion "${VulkanHeaderVersionLine}")
-    file(STRINGS  ${VULKAN_CORE_H} VulkanHeaderVersionLine2 REGEX "^#define VK_HEADER_VERSION_COMPLETE ")
+    file(STRINGS ${VULKAN_CORE_H} VulkanHeaderVersionLine2 REGEX "^#define VK_HEADER_VERSION_COMPLETE ")
     string(REGEX MATCHALL "[0-9]+" VulkanHeaderVersion2 "${VulkanHeaderVersionLine2}")
     list(LENGTH VulkanHeaderVersion2 _len)
-    #  versions >= 1.2.175 have an additional numbers in front of e.g. '0, 1, 2' instead of '1, 2'
     if(_len EQUAL 3)
         list(REMOVE_AT VulkanHeaderVersion2 0)
     endif()
@@ -112,28 +86,19 @@ find_package_handle_standard_args(Vulkan
     Vulkan_VERSION
 )
 
-mark_as_advanced(Vulkan_INCLUDE_DIR Vulkan_LIBRARY Vulkan_GLSLC_EXECUTABLE
-                 Vulkan_GLSLANG_VALIDATOR_EXECUTABLE)
+if(Vulkan_FOUND)
+  mark_as_advanced(Vulkan_INCLUDE_DIR Vulkan_LIBRARY)
+  
+  if(NOT TARGET Vulkan::Vulkan)
+    add_library(Vulkan::Vulkan UNKNOWN IMPORTED)
+    set_target_properties(Vulkan::Vulkan PROPERTIES
+      IMPORTED_LOCATION "${Vulkan_LIBRARIES}"
+      INTERFACE_INCLUDE_DIRECTORIES "${Vulkan_INCLUDE_DIRS}")
+  endif()
 
-if(Vulkan_FOUND AND NOT TARGET Vulkan::Vulkan)
-  add_library(Vulkan::Vulkan UNKNOWN IMPORTED)
-  set_target_properties(Vulkan::Vulkan PROPERTIES
-    IMPORTED_LOCATION "${Vulkan_LIBRARIES}"
-    INTERFACE_INCLUDE_DIRECTORIES "${Vulkan_INCLUDE_DIRS}")
-endif()
-
-if(Vulkan_FOUND AND NOT TARGET Vulkan::Headers)
-  add_library(Vulkan::Headers INTERFACE IMPORTED)
-  set_target_properties(Vulkan::Headers PROPERTIES
-    INTERFACE_INCLUDE_DIRECTORIES "${Vulkan_INCLUDE_DIRS}")
-endif()
-
-if(Vulkan_FOUND AND Vulkan_GLSLC_EXECUTABLE AND NOT TARGET Vulkan::glslc)
-  add_executable(Vulkan::glslc IMPORTED)
-  set_property(TARGET Vulkan::glslc PROPERTY IMPORTED_LOCATION "${Vulkan_GLSLC_EXECUTABLE}")
-endif()
-
-if(Vulkan_FOUND AND Vulkan_GLSLANG_VALIDATOR_EXECUTABLE AND NOT TARGET Vulkan::glslangValidator)
-  add_executable(Vulkan::glslangValidator IMPORTED)
-  set_property(TARGET Vulkan::glslangValidator PROPERTY IMPORTED_LOCATION "${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE}")
+  if(NOT TARGET Vulkan::Headers)
+    add_library(Vulkan::Headers INTERFACE IMPORTED)
+    set_target_properties(Vulkan::Headers PROPERTIES
+      INTERFACE_INCLUDE_DIRECTORIES "${Vulkan_INCLUDE_DIRS}")
+  endif()
 endif()
