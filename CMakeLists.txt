@@ -392,6 +392,8 @@ set(GLSLANG_COMPONENTS
     glslang-default-resource-limits
     SPIRV 
     SPIRV-Tools-opt
+    SPIRV-Tools-link
+    SPIRV-Tools-reduce
     SPIRV-Tools
     MachineIndependent 
     GenericCodeGen
@@ -401,8 +403,13 @@ foreach(COMPONENT ${GLSLANG_COMPONENTS})
     # Define an IMPORTED library target
     add_library(${COMPONENT} STATIC IMPORTED)
 	
+    set(LIB_NAMES ${COMPONENT})
+    if(${CMAKE_BUILD_TYPE} MATCHES "Debug")
+        set(LIB_NAMES ${COMPONENT}d ${COMPONENT})
+    endif()
+
     find_library(GLSL_LIB_${COMPONENT}
-        NAMES ${COMPONENT} ${COMPONENT}d
+        NAMES ${LIB_NAMES}
         PATHS "${GLSLANG_LIB_DIR}" "$ENV{VULKAN_SDK}/Lib"
         NO_DEFAULT_PATH
     )
@@ -413,7 +420,7 @@ foreach(COMPONENT ${GLSLANG_COMPONENTS})
         )
         set(GLSLANG_LIBS ${GLSLANG_LIBS} ${COMPONENT})
     else()
-        message(WARNING "Glslang component ${COMPONENT} not found in ${GLSLANG_LIB_DIR} or Vulkan SDK")
+        message(STATUS "Optional glslang component ${COMPONENT} not found, skipping...")
     endif()
 endforeach()
 
