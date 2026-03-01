@@ -401,19 +401,20 @@ foreach(COMPONENT ${GLSLANG_COMPONENTS})
     # Define an IMPORTED library target
     add_library(${COMPONENT} STATIC IMPORTED)
 	
-	if(${CMAKE_BUILD_TYPE} MATCHES "Debug")
-    set_target_properties(${COMPONENT} PROPERTIES
-        IMPORTED_LOCATION "${GLSLANG_LIB_DIR}/${COMPONENT}d.lib"
+    find_library(GLSL_LIB_${COMPONENT}
+        NAMES ${COMPONENT} ${COMPONENT}d
+        PATHS "${GLSLANG_LIB_DIR}" "$ENV{VULKAN_SDK}/Lib"
+        NO_DEFAULT_PATH
     )
-	else()
-    set_target_properties(${COMPONENT} PROPERTIES
-        IMPORTED_LOCATION "${GLSLANG_LIB_DIR}/${COMPONENT}.lib"
-    )
-	endif()
 
-
-    # Add the library to your main application's link list
-    set(GLSLANG_LIBS ${GLSLANG_LIBS} ${COMPONENT})
+    if(GLSL_LIB_${COMPONENT})
+        set_target_properties(${COMPONENT} PROPERTIES
+            IMPORTED_LOCATION "${GLSL_LIB_${COMPONENT}}"
+        )
+        set(GLSLANG_LIBS ${GLSLANG_LIBS} ${COMPONENT})
+    else()
+        message(WARNING "Glslang component ${COMPONENT} not found in ${GLSLANG_LIB_DIR} or Vulkan SDK")
+    endif()
 endforeach()
 
 target_link_libraries(${NAME} PRIVATE ${LIBS} GPUOpen::VulkanMemoryAllocator ${GLSLANG_LIBS})
