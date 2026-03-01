@@ -413,7 +413,7 @@ foreach(COMPONENT ${GLSLANG_COMPONENTS})
 
     find_library(GLSL_LIB_${COMPONENT}
         NAMES ${LIB_NAMES}
-        PATHS "${GLSLANG_LIB_DIR}" "$ENV{VULKAN_SDK}/Lib"
+        PATHS "$ENV{VULKAN_SDK}/Lib" "${GLSLANG_LIB_DIR}"
         NO_DEFAULT_PATH
     )
 
