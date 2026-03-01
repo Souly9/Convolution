@@ -389,13 +389,13 @@ set(GLSLANG_LIBS)
 
 set(GLSLANG_COMPONENTS
     glslang 
-    MachineIndependent 
-    OSDependent 
+    glslang-default-resource-limits
     SPIRV 
-	SPIRV-Tools
     SPIRV-Tools-opt
-	GenericCodeGen
-	glslang-default-resource-limits
+    SPIRV-Tools
+    MachineIndependent 
+    GenericCodeGen
+    OSDependent 
 )
 foreach(COMPONENT ${GLSLANG_COMPONENTS})
     # Define an IMPORTED library target
