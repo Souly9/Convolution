@@ -222,8 +222,11 @@ message(STATUS "ImGui found at ${IMGUI_INCLUDE_DIR}")
 file(GLOB_RECURSE ADD_LIBS 
 	"${CMAKE_SOURCE_DIR}/External/additional_libs/*.lib"
 	"${CMAKE_SOURCE_DIR}/External/additional_libs/*.a"
-	${ASSIMP_LIBRARY_SEARCH_DIR}
 )
+# Exclude glslang libraries from the general glob to manage their link order manually
+if(ADD_LIBS)
+    list(FILTER ADD_LIBS EXCLUDE REGEX "additional_libs/glsl/")
+endif()
 
 set(AFTERMATH_SDK_LIB "${CMAKE_SOURCE_DIR}/External/additional_libs/GFSDK_Aftermath_Lib.x64.lib")
 set(AFTERMATH_SDK_DLL "${CMAKE_SOURCE_DIR}/External/additional_libs/GFSDK_Aftermath_Lib.x64.dll")
