@@ -3,7 +3,7 @@
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
 #include "Core/Rendering/Core/Defines/BindingSlots.h"
-#include "Core/Rendering/Core/Utils/DescriptorLayoutUtils.h"
+#include "Core/Rendering/Vulkan/Utils/VkDescriptorLayoutUtils.h"
 #include "Core/Global/Profiling.h"
 
 using namespace RenderPasses;
@@ -53,6 +53,7 @@ void FrustumCullingComputePass::CreateSharedDescriptorLayout()
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::TransformSSBO, 1));
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::GlobalObjectDataSSBOs, 1));
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::InstanceDataSSBO, 1));
+    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::PrevTransformSSBO, 1));
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::SceneAABBsSSBO, 2));
 }
 
@@ -70,7 +71,7 @@ void FrustumCullingComputePass::Render(const MainPassData& data,
     StartRenderPassProfilingScope(pCmdBuffer);
 
     // Get object count from shared resource manager
-    u32 objectCount = (u32)ctx.pResourceManager->GetBufferOffsetData().instanceCount;
+    u32 objectCount = 0;
     if (objectCount == 0)
     {
         EndRenderPassProfilingScope(pCmdBuffer);

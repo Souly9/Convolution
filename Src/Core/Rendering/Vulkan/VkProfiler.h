@@ -37,23 +37,25 @@ public:
     // Called at start of frame to reset query partitioning and clear the generational slot for new recording
     void ResetFrame(u32 frameIdx) override
     {
+        u32 slotIdx = frameIdx % FRAMES_IN_FLIGHT;
         // Partition queries based on frame index to avoid race conditions
         u32 queriesPerFrame = m_queryPool.GetCount() / FRAMES_IN_FLIGHT;
-        m_currentQueryIdx = frameIdx * queriesPerFrame;
+        m_currentQueryIdx = slotIdx * queriesPerFrame;
         m_baseQueryIdx = m_currentQueryIdx;
         m_maxQueryIdx = m_baseQueryIdx + queriesPerFrame;
         
         vkResetQueryPool(VkGlobals::GetLogicalDevice(), m_queryPool.GetRef(), m_baseQueryIdx, queriesPerFrame);
 
         SimpleScopedGuard<CustomMutex> lock(m_statsMutex);
-        m_accumulatedStats[frameIdx] = {};
+        m_accumulatedStats[slotIdx] = {};
     }
 
     // Publishes accumulated results to the application state
     void PublishResults(u32 frameIdx) override
     {
+        u32 slotIdx = frameIdx % FRAMES_IN_FLIGHT;
         SimpleScopedGuard<CustomMutex> lock(m_statsMutex);
-        RendererState::SceneRenderStats gpuStats = m_accumulatedStats[frameIdx];
+        RendererState::SceneRenderStats gpuStats = m_accumulatedStats[slotIdx];
 
         g_pApplicationState->RegisterUpdateFunction([gpuStats](ApplicationState& appState) {
             appState.renderState.stats.numVertices = gpuStats.numVertices;

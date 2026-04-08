@@ -13,12 +13,20 @@ static void SubmitCommandBufferToQueue(const stltype::vector<CommandBuffer*>& co
                                        const Fence& transferFinishedFence,
                                        QueueType queue)
 {
+    size_t totalWaits = 0;
+    size_t totalSignals = 0;
+    for (const auto* pCmdBuffer : commandBuffers)
+    {
+        totalWaits += pCmdBuffer->GetWaitSemaphores().size() + pCmdBuffer->GetTimelineWaits().size();
+        totalSignals += pCmdBuffer->GetSignalSemaphores().size() + pCmdBuffer->GetTimelineSignals().size();
+    }
+
     stltype::vector<VkSubmitInfo2> submitInfos;
     submitInfos.reserve(commandBuffers.size());
     stltype::vector<VkSemaphoreSubmitInfo> waitSemaphoreInfos;
-    waitSemaphoreInfos.reserve(50);
+    waitSemaphoreInfos.reserve(totalWaits);
     stltype::vector<VkSemaphoreSubmitInfo> signalSemaphoreInfos;
-    signalSemaphoreInfos.reserve(50);
+    signalSemaphoreInfos.reserve(totalSignals);
     stltype::vector<VkCommandBufferSubmitInfo> commandBufferInfos;
     commandBufferInfos.reserve(commandBuffers.size());
 
@@ -33,6 +41,7 @@ static void SubmitCommandBufferToQueue(const stltype::vector<CommandBuffer*>& co
             if (semaphores[i] == VK_NULL_HANDLE)
                 continue;
             VkSemaphoreSubmitInfo& waitInfo = infoVector.emplace_back();
+            waitInfo = {};
             waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
             waitInfo.semaphore = semaphores[i];
             waitInfo.stageMask = stageMask;
@@ -67,6 +76,7 @@ static void SubmitCommandBufferToQueue(const stltype::vector<CommandBuffer*>& co
                 if (wait.semaphore == VK_NULL_HANDLE)
                     continue;
                 VkSemaphoreSubmitInfo& waitInfo = waitSemaphoreInfos.emplace_back();
+                waitInfo = {};
                 waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
                 waitInfo.semaphore = wait.semaphore;
                 waitInfo.stageMask = waitStages;
@@ -90,6 +100,7 @@ static void SubmitCommandBufferToQueue(const stltype::vector<CommandBuffer*>& co
                 if (signal.semaphore == VK_NULL_HANDLE)
                     continue;
                 VkSemaphoreSubmitInfo& signalInfo = signalSemaphoreInfos.emplace_back();
+                signalInfo = {};
                 signalInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
                 signalInfo.semaphore = signal.semaphore;
                 signalInfo.stageMask = signalStages;
@@ -106,10 +117,12 @@ static void SubmitCommandBufferToQueue(const stltype::vector<CommandBuffer*>& co
         }
 
         VkCommandBufferSubmitInfo& commandBufferInfo = commandBufferInfos.emplace_back();
+        commandBufferInfo = {};
         commandBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
         commandBufferInfo.commandBuffer = pCmdBuffer->GetRef();
 
         VkSubmitInfo2& submitInfo = submitInfos.emplace_back();
+        submitInfo = {};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
         submitInfo.pNext = nullptr;
 
@@ -158,27 +171,32 @@ static void SubmitCommandBufferToQueue(const stltype::vector<CommandBuffer*>& co
 }
 
 template <>
-static inline void QueryImageForPresentationFromMainSwapchain<Vulkan>(const Semaphore& imageAvailableSemaphore,
-                                                                      const Fence& imageAvailableFence,
-                                                                      u32& imageIndex,
-                                                                      u64 timeout)
+inline bool QueryImageForPresentationFromMainSwapchain<Vulkan>(const Semaphore& imageAvailableSemaphore,
+                                                              const Fence& imageAvailableFence,
+                                                              u32& imageIndex,
+                                                              u64 timeout)
 {
-    VkResult rslt;
-    do
+    while (true)
     {
-        // The timeout should typically be large (e.g., a billion nanoseconds or
-        // UINT64_MAX for infinite)
-        rslt = vkAcquireNextImageKHR(VkGlobals::GetLogicalDevice(),
-                                     VkGlobals::GetMainSwapChain(),
-                                     timeout,
-                                     imageAvailableSemaphore.GetRef(),
-                                     imageAvailableFence.GetRef(),
-                                     &imageIndex);
-    } while (rslt == VK_NOT_READY);
+        const VkResult rslt = vkAcquireNextImageKHR(VkGlobals::GetLogicalDevice(),
+                                                    VkGlobals::GetMainSwapChain(),
+                                                    timeout,
+                                                    imageAvailableSemaphore.GetRef(),
+                                                    imageAvailableFence.GetRef(),
+                                                    &imageIndex);
+
+        if (rslt == VK_SUCCESS || rslt == VK_SUBOPTIMAL_KHR)
+            return true;
+        if (rslt == VK_NOT_READY || rslt == VK_TIMEOUT)
+            continue;
+
+        // Avoid blocking on an unsignaled fence when acquire fails.
+        return false;
+    }
 }
 
 template <>
-static void SubmitForPresentationToMainSwapchain<Vulkan>(Semaphore* pWaitSemaphore, u32 swapChainIdx)
+void SubmitForPresentationToMainSwapchain<Vulkan>(Semaphore* pWaitSemaphore, u32 swapChainIdx)
 {
     VkSemaphore waitSemaphore = VK_NULL_HANDLE;
     u32 waitCount = 0;
@@ -204,7 +222,7 @@ static void SubmitForPresentationToMainSwapchain<Vulkan>(Semaphore* pWaitSemapho
 }
 
 template<>
-static void WaitForDeviceIdle<Vulkan>()
+void WaitForDeviceIdle<Vulkan>()
 {
     vkDeviceWaitIdle(VK_LOGICAL_DEVICE);
 }

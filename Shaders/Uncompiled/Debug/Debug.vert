@@ -2,11 +2,12 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_ARB_shading_language_include : enable
 #define SharedDataUBOSet     1
-#define TransformSSBOSet 2
+#define TransformSSBOSet     2
 #define PassPerObjectDataSet 3
-#include "../../Globals/DrawBuildBuffers.h"
-#include "../../Globals/GlobalBuffers.h"
-#include "../../Globals/PerObjectBuffers.h"
+
+#include "../../Globals/Common.h"
+#include "../../Globals/Scene.h"
+#include "../../Globals/GeometryPassData.h"
 
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;

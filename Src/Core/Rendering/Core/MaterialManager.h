@@ -1,27 +1,16 @@
 #pragma once
+#include "Core/Global/GlobalDefines.h"
 #include "Defines/GlobalBuffers.h"
+#include "Core/Global/ThreadBase.h"
 
 class MaterialManager
 {
 public:
     MaterialManager();
 
-    Material* GetMaterial(const stltype::string& name)
-    {
-        auto it = m_materialNameToBufferPos.find(name);
+    Material* GetMaterial(const stltype::string& name);
 
-        if (it != m_materialNameToBufferPos.end())
-        {
-            return &m_materials.at(it->second);
-        }
-
-        return nullptr;
-    }
-
-    u32 GetMaterialIdx(Material* pMat)
-    {
-        return (u32)m_materialToBufferPosMap[pMat];
-    }
+    u32 GetMaterialIdx(Material* pMat);
 
     Material* AllocateMaterial(const stltype::string& name, const Material& pMaterial);
 
@@ -36,24 +25,29 @@ public:
 
     void MarkMaterialsDirty()
     {
-        m_isBufferDirty = true;
+        m_isBufferDirty.store(true, stltype::memory_order_relaxed);
     }
     void MarkBufferUploaded()
     {
-        m_isBufferDirty = false;
+        m_isBufferDirty.store(false, stltype::memory_order_relaxed);
     }
     bool IsBufferDirty()
     {
-        return m_isBufferDirty;
+        return m_isBufferDirty.load(stltype::memory_order_relaxed);
     }
 
 private:
-    stltype::hash_map<stltype::string, size_t> m_materialNameToBufferPos;
+    void RebuildBufferDataUnlocked();
+
+private:
+    stltype::hash_map<stltype::string, size_t> m_materialNameToBufferPos{};
     // Material manager also manages the buffer hence we need to be able to return the index of a material in the buffer
-    stltype::hash_map<Material*, u32> m_materialToBufferPosMap;
-    stltype::hash_map<const Material*, stltype::string> m_matToNameMap;
+    stltype::hash_map<Material*, u32> m_materialToBufferPosMap{};
+    stltype::hash_map<const Material*, stltype::string> m_matToNameMap{};
     // Don't want to rebuild whole buffer when changing material values so we only upload them
     // stltype::vector<u32> m_dirtyMaterials;
     UBO::MaterialBuffer m_materials;
-    bool m_isBufferDirty{true};
+    u32 m_numAllocatedMaterials{0};
+    stltype::atomic<bool> m_isBufferDirty{true};
+    mutable CustomMutex m_mutex;
 };

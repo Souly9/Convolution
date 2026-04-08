@@ -11,8 +11,11 @@
 class ThreadPool
 {
 public:
+    ThreadPool() = default;
     ThreadPool(u32 numThreads);
     ~ThreadPool();
+
+    void Init(u32 numThreads);
 
     void Submit(stltype::function<void()> job);
     void WaitAll(); 

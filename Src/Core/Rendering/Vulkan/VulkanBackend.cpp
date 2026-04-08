@@ -1,4 +1,5 @@
 #include "Core/Global/FrameGlobals.h"
+#include "vulkan/vulkan_core.h"
 #define GLFW_INCLUDE_VULKAN
 #include "VulkanBackend.h"
 #include "Core/Global/State/ApplicationState.h"
@@ -121,11 +122,12 @@ void RenderBackendImpl<Vulkan>::CreateDebugMessenger()
 
     VkDebugUtilsMessengerCreateInfoEXT createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-    createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+    createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |
                                  VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
                                  VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
     createInfo.messageType =
-        VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT;
+        VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
     createInfo.pfnUserCallback = DebugCallback;
     createInfo.pUserData = nullptr; // Optional
 
@@ -141,6 +143,11 @@ RenderBackendImpl<Vulkan>::DebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT 
                                          const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
                                          void* pUserData)
 {
+    if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT)
+    {
+        DEBUG_LOG(stltype::string(pCallbackData->pMessage));
+        return VK_FALSE;
+    }
     if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT)
     {
         DEBUG_LOG(stltype::string(pCallbackData->pMessage));
@@ -186,14 +193,34 @@ bool RenderBackendImpl<Vulkan>::CreateInstance(uint32_t screenWidth, uint32_t sc
     auto instanceExtensions = stltype::vector<const char*>(glfwExtensions, glfwExtensions + glfwExtensionCount);
     instanceExtensions.insert(instanceExtensions.end(), g_instanceExtensions.begin(), g_instanceExtensions.end());
 
-    createInfo.enabledExtensionCount = instanceExtensions.size();
-    createInfo.ppEnabledExtensionNames = instanceExtensions.data();
-    createInfo.enabledLayerCount = 0;
-
     uint32_t extensionCount = 0;
     vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
     stltype::vector<VkExtensionProperties> extensions(extensionCount);
     vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, extensions.data());
+
+    bool hasValidationFeaturesExt = false;
+    for (const auto& ext : extensions)
+    {
+        if (strcmp(ext.extensionName, VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME) == 0)
+        {
+            hasValidationFeaturesExt = true;
+            break;
+        }
+    }
+
+    if (hasValidationFeaturesExt)
+    {
+        instanceExtensions.push_back(VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME);
+        DEBUG_LOG("VK_EXT_validation_features available.");
+    }
+    else
+    {
+        DEBUG_LOG_WARN("VK_EXT_validation_features not available. Shader debug printf may be unavailable.");
+    }
+
+    createInfo.enabledExtensionCount = instanceExtensions.size();
+    createInfo.ppEnabledExtensionNames = instanceExtensions.data();
+    createInfo.enabledLayerCount = 0;
 
     uint32_t layerCount;
     vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
@@ -211,6 +238,21 @@ bool RenderBackendImpl<Vulkan>::CreateInstance(uint32_t screenWidth, uint32_t sc
         DEBUG_ASSERT(false);
         DEBUG_LOG_ERR("Validation Layers not available!");
     }
+
+#ifdef CONV_DEBUG
+    VkValidationFeatureEnableEXT enabledValidationFeatures[] = {
+        VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT, VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT};
+    VkValidationFeaturesEXT validationFeatures{};
+    validationFeatures.sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT;
+    validationFeatures.enabledValidationFeatureCount = 2;
+    validationFeatures.pEnabledValidationFeatures = enabledValidationFeatures;
+
+    if (hasValidationFeaturesExt)
+    {
+        createInfo.pNext = &validationFeatures;
+        DEBUG_LOG("Validation feature VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT enabled.");
+    }
+#endif
 
     return vkCreateInstance(&createInfo, VulkanAllocator(), &m_instance) == VK_SUCCESS;
 }
@@ -234,14 +276,51 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
         queueCreateInfos.push_back(queueCreateInfo);
     }
 
+    // Check for pageable memory support (NVIDIA recommendation)
+    uint32_t deviceExtensionCount;
+    vkEnumerateDeviceExtensionProperties(m_physicalDevice, nullptr, &deviceExtensionCount, nullptr);
+    stltype::vector<VkExtensionProperties> availableDeviceExtensions(deviceExtensionCount);
+    vkEnumerateDeviceExtensionProperties(m_physicalDevice, nullptr, &deviceExtensionCount, availableDeviceExtensions.data());
+
+    bool hasPageableMemory = false;
+    for (const auto& ext : availableDeviceExtensions)
+    {
+        if (strcmp(ext.extensionName, VK_EXT_PAGEABLE_DEVICE_LOCAL_MEMORY_EXTENSION_NAME) == 0)
+        {
+            hasPageableMemory = true;
+            break;
+        }
+    }
+    auto enabledExtensions = g_deviceExtensions;
+    if (hasPageableMemory)
+    {
+        enabledExtensions.push_back(VK_EXT_PAGEABLE_DEVICE_LOCAL_MEMORY_EXTENSION_NAME);
+    }
+
     // Enabling bindless textures
+    VkPhysicalDeviceMemoryPriorityFeaturesEXT memoryPriorityFeatures{};
+    memoryPriorityFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PRIORITY_FEATURES_EXT;
+    memoryPriorityFeatures.memoryPriority = VK_TRUE;
+
+    VkPhysicalDevicePageableDeviceLocalMemoryFeaturesEXT pageableFeatures{};
+    pageableFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PAGEABLE_DEVICE_LOCAL_MEMORY_FEATURES_EXT;
+    pageableFeatures.pageableDeviceLocalMemory = VK_TRUE;
+    pageableFeatures.pNext = &memoryPriorityFeatures;
+
+    VkPhysicalDeviceVulkan14Features features14{};
+    features14.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES;
+    // Mainly to avoid headache with imgui and dynamic rendering
+    features14.dynamicRenderingLocalRead = VK_TRUE;
+    features14.pNext = hasPageableMemory ? &pageableFeatures : nullptr;
+
     // VK 1.3 features
     VkPhysicalDeviceVulkan13Features features13{};
     features13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
     features13.dynamicRendering = VK_TRUE;
     features13.synchronization2 = VK_TRUE;
     features13.shaderDemoteToHelperInvocation = VK_TRUE;
-    features13.pNext = nullptr;
+    features13.dynamicRendering = VK_TRUE;
+    features13.pNext = &features14;
 
     // VK 1.2 features (timeline semaphore and bindless support)
     VkPhysicalDeviceVulkan12Features features12{};
@@ -257,6 +336,7 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
     features12.descriptorBindingVariableDescriptorCount = VK_TRUE;
     features12.descriptorBindingUniformBufferUpdateAfterBind = VK_TRUE;
     features12.hostQueryReset = VK_TRUE;
+    features12.scalarBlockLayout = VK_TRUE; // Fix for scalar block layout warning
     features12.pNext = &features13;
 
     // VK 1.1 features
@@ -269,8 +349,8 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     createInfo.queueCreateInfoCount = static_cast<u32>(queueCreateInfos.size());
     createInfo.pQueueCreateInfos = queueCreateInfos.data();
-    createInfo.enabledExtensionCount = static_cast<u32>(g_deviceExtensions.size());
-    createInfo.ppEnabledExtensionNames = g_deviceExtensions.data();
+    createInfo.enabledExtensionCount = static_cast<u32>(enabledExtensions.size());
+    createInfo.ppEnabledExtensionNames = enabledExtensions.data();
     createInfo.pEnabledFeatures = nullptr;
 
     VkPhysicalDeviceFeatures2 deviceFeatures2{};
@@ -546,6 +626,9 @@ void RenderBackendImpl<Vulkan>::CreateSwapChainImages()
     const auto ex = DirectX::XMUINT3(FrameGlobals::GetSwapChainExtent().x, FrameGlobals::GetSwapChainExtent().y, 1);
     TextureInfoBase info{};
     info.extents = ex;
+
+    g_pTexManager->GetSwapChainTextures().clear();
+
     for (auto& image : m_swapChainImages)
     {
         g_pTexManager->CreateSwapchainTextures({Conv(SWAPCHAIN_FORMAT), image}, info);

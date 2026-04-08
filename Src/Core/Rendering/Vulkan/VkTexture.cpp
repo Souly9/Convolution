@@ -50,7 +50,28 @@ void TextureVulkan::NamingCallBack(const stltype::string& name)
     nameInfo.objectType = VK_OBJECT_TYPE_IMAGE;
     nameInfo.objectHandle = (uint64_t)GetImage();
     nameInfo.pObjectName = name.c_str();
-
     vkSetDebugUtilsObjectName(VK_LOGICAL_DEVICE, &nameInfo);
+
+    if (m_imageView != VK_NULL_HANDLE)
+    {
+        VkDebugUtilsObjectNameInfoEXT viewNameInfo = {};
+        viewNameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+        viewNameInfo.objectType = VK_OBJECT_TYPE_IMAGE_VIEW;
+        viewNameInfo.objectHandle = (uint64_t)m_imageView;
+        stltype::string viewName = name + "_View";
+        viewNameInfo.pObjectName = viewName.c_str();
+        vkSetDebugUtilsObjectName(VK_LOGICAL_DEVICE, &viewNameInfo);
+    }
+
+    if (m_sampler != VK_NULL_HANDLE)
+    {
+        VkDebugUtilsObjectNameInfoEXT samplerNameInfo = {};
+        samplerNameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+        samplerNameInfo.objectType = VK_OBJECT_TYPE_SAMPLER;
+        samplerNameInfo.objectHandle = (uint64_t)m_sampler;
+        stltype::string samplerName = name + "_Sampler";
+        samplerNameInfo.pObjectName = samplerName.c_str();
+        vkSetDebugUtilsObjectName(VK_LOGICAL_DEVICE, &samplerNameInfo);
+    }
 }
 

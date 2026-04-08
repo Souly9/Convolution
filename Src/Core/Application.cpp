@@ -14,6 +14,7 @@
 #include <imgui/backends/imgui_impl_vulkan.h>
 #include <imgui/imgui.h>
 #include "Core/Rendering/Vulkan/VkProfiler.h"
+#include "dds_formats.hpp"
 #include "vulkan/vulkan_core.h"
 
 
@@ -30,10 +31,16 @@ Application::Application(bool canRender, RenderLayer<RenderAPI>& layer) : m_rend
     m_pProfiler->Init();
     g_pQueueHandler->Init();
     g_pTexManager->Init();
+
+    // Load placeholder first
+    auto placeholderHandle = g_pTexManager->SubmitAsyncTextureCreation({"Resources\\Textures\\placeholder.png", false, TextureSemantic::BaseColor, true});
+    g_pTexManager->WaitFor(placeholderHandle);
+    g_pTexManager->SetPlaceholder(placeholderHandle);
+
     g_pGlobalTimeData->Reset();
 
     FrameGlobals::SetFrameNumber(0);
-    m_applicationState.SetCurrentScene(stltype::make_unique<BistroExteriorScene>());
+    m_applicationState.SetCurrentScene(stltype::make_unique<SponzaScene>());
     g_pShaderManager->ReadAllSourceShaders();
 
     g_pEventSystem->OnBaseInit({});

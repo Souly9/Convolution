@@ -6,7 +6,6 @@
 #include "Core/Rendering/Vulkan/VkGlobals.h"
 #include "Core/Rendering/Vulkan/VkProfiler.h"
 
-
 RenderThread::RenderThread(ImGuiManager* pImGuiManager) : m_pImGuiManager(pImGuiManager)
 {
     m_passManager = stltype::make_unique<RenderPasses::PassManager>();
@@ -28,6 +27,10 @@ void RenderThread::RenderLoop()
     while (KeepRunning())
     {
         WaitForGameThreadAndPreviousFrame();
+        if (!KeepRunning())
+        {
+            break;
+        }
 
         // Start imgui frame, update frame numbers
         {
@@ -35,23 +38,29 @@ void RenderThread::RenderLoop()
             currentFrame = FrameGlobals::GetFrameNumber();
         }
         // First sync game data with renderthread
-        {
 
-            g_pEntityManager->SyncSystemData(lastFrame);
+        g_pEntityManager->SyncSystemData(lastFrame);
 
-            g_pQueueHandler->WaitForFences(lastFrame);
-            m_passManager->BlockUntilPassesFinished(lastFrame);
-            // All previous frame's command buffers have finished executing, safe to process deferred deletes
-            g_pDeleteQueue->ProcessDeleteQueue();
-        }
+        g_pQueueHandler->WaitForFences(~0u);
+        const bool acquiredFrame = m_passManager->BlockUntilPassesFinished(lastFrame);
+        // All previous frame's command buffers have finished executing, safe to process deferred deletes
+        g_pDeleteQueue->ProcessDeleteQueue();
 
         // Sync ended, signal gamethread
         g_renderThreadReadSemaphore.Post();
         g_imguiSemaphore.Wait();
+        if (!KeepRunning())
+        {
+            break;
+        }
 
+        if (!acquiredFrame)
+        {
+            continue;
+        }
         {
             m_passManager->PreProcessDataForCurrentFrame(lastFrame);
-            g_pQueueHandler->WaitForFences(lastFrame);
+            g_pQueueHandler->WaitForFences(~0u);
         }
 
         {

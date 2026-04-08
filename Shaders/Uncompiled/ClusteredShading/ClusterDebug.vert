@@ -6,9 +6,19 @@
 #define SharedDataUBOSet 1
 #define ClusterGridSet 2
 
-#include "../../Globals/BindingSlots.h"
-#include "../../Globals/ClusteredShading/AABBs.h"
-#include "../../Globals/GlobalBuffers.h"
+#include "../../Globals/Common.h"
+#include "../../Globals/Scene.h"
+
+struct ClusterAABB
+{
+    vec4 minBounds;
+    vec4 maxBounds;
+};
+layout(scalar, set = ClusterGridSet, binding = ClusterGridSSBOSlot) buffer ClusterGrid
+{
+    ClusterAABB clusters[];
+}
+clusterGrid;
 
 layout(location = 0) out vec3 outColor;
 // Corners of a unit cube (0..1)

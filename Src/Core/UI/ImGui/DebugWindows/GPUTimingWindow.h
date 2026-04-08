@@ -3,6 +3,7 @@
 #include "Core/Global/GlobalVariables.h"
 #include "InfoWindow.h"
 #include "Core/Global/Profiling.h"
+#include "Core/Rendering/Vulkan/VkGlobals.h"
 #include <EASTL/sort.h>
 
 class GPUTimingWindow : public ImGuiWindow
@@ -136,6 +137,8 @@ private:
         // --- Queue rows ---
         f32 rowsY = rulerY + RULER_HEIGHT;
 
+        auto qIndices = VkGlobals::GetQueueFamilyIndices();
+
         for (u32 qi = 0; qi < queues.size(); ++qi)
         {
             u32 queueIdx = queues[qi];
@@ -146,8 +149,13 @@ private:
             dl->AddRectFilled(ImVec2(origin.x, y), ImVec2(origin.x + windowWidth, y + ROW_HEIGHT), bgCol);
 
             // Queue label
-            const char* queueName = (queueIdx == 0) ? "Graphics" : "Compute";
-            dl->AddText(ImVec2(origin.x + 4.0f, y + 4.0f), IM_COL32(200, 200, 200, 255), queueName);
+            stltype::string queueName = "Unknown";
+            if (qIndices.graphicsFamily.has_value() && queueIdx == qIndices.graphicsFamily.value()) queueName = "Graphics";
+            else if (qIndices.computeFamily.has_value() && queueIdx == qIndices.computeFamily.value()) queueName = "Compute";
+            else if (qIndices.transferFamily.has_value() && queueIdx == qIndices.transferFamily.value()) queueName = "Transfer";
+            else if (qIndices.presentFamily.has_value() && queueIdx == qIndices.presentFamily.value()) queueName = "Present";
+
+            dl->AddText(ImVec2(origin.x + 4.0f, y + 4.0f), IM_COL32(200, 200, 200, 255), queueName.c_str());
 
             // Separator line
             dl->AddLine(ImVec2(tlX, y), ImVec2(tlX, y + ROW_HEIGHT), IM_COL32(60, 60, 60, 255));
@@ -196,7 +204,7 @@ private:
                     ImGui::Text("%s", name.c_str());
                     ImGui::Text("Time: %.3f ms", pass.durationMs);
                     ImGui::Text("Start: %.3f ms", pass.startMs);
-                    ImGui::Text("Queue: %s (%u)", queueName, queueIdx);
+                    ImGui::Text("Queue: %s (%u)", queueName.c_str(), queueIdx);
                     ImGui::EndTooltip();
                 }
             }

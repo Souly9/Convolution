@@ -16,7 +16,7 @@
 
 int main()
 {
-    stltype::string_view title("Vulkan");
+    stltype::string_view title("Convolution");
     u32 screenWidth = 2560, screenHeight = 1440;
 
     g_pWindowManager = stltype::make_unique<WindowManager>(screenWidth, screenHeight, title);

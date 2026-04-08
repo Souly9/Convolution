@@ -7,18 +7,17 @@
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
 #include "Core/Rendering/Passes/PassManager.h"
 #include "Defines/GlobalBuffers.h"
-#include "Utils/DescriptorLayoutUtils.h"
+#include "Core/Rendering/Vulkan/Utils/VkDescriptorLayoutUtils.h"
 #include "Utils/GeometryBufferBuildUtils.h"
 
 void SharedResourceManager::UploadDebugMesh(const Mesh& mesh)
 {
+    ScopedZone("SharedResourceManager::UploadDebugMesh");
     m_bufferUpdateMutex.lock();
-    DEBUG_LOG("Uploaded debug");
+    DEBUG_LOGF("SharedResourceManager: Uploading debug mesh. Vertices: {}, Indices: {}", (u32)mesh.vertices.size(), (u32)mesh.indices.size());
     AsyncQueueHandler::MeshTransfer cmd{};
-    stltype::vector<CompleteVertex>& vertices = cmd.vertices;
-    vertices.reserve(mesh.vertices.size());
-    stltype::vector<u32> indices = cmd.indices;
-    indices.reserve(mesh.indices.size());
+    cmd.vertices.reserve(mesh.vertices.size());
+    cmd.indices.reserve(mesh.indices.size());
     cmd.pBuffersToFill = &m_debugGeometryBuffers;
 
     MeshResourceData meshData{};
@@ -27,7 +26,7 @@ void SharedResourceManager::UploadDebugMesh(const Mesh& mesh)
     meshData.indexCount = mesh.indices.size();
     meshData.vertCount = mesh.vertices.size();
 
-    Utils::GenerateDrawCommandForMesh(mesh, m_debugBufferOffsetData.indexBufferOffset, cmd.vertices, cmd.indices);
+    Utils::GenerateDrawCommandForMesh(mesh, m_debugBufferOffsetData.vertBufferOffset, cmd.vertices, cmd.indices);
 
     cmd.vertexOffset = m_debugBufferOffsetData.vertBufferOffset * sizeof(CompleteVertex);
     cmd.indexOffset = m_debugBufferOffsetData.indexBufferOffset * sizeof(u32);
@@ -37,12 +36,26 @@ void SharedResourceManager::UploadDebugMesh(const Mesh& mesh)
 
     m_debugMeshHandles[&mesh] = meshData;
     cmd.frameIdx = FrameGlobals::GetFrameNumber();
+
+    const Mesh* pMeshPtr = &mesh;
+    cmd.onComplete = [this, pMeshPtr]()
+                     {
+                         DEBUG_LOG("SharedResourceManager: Debug mesh transfer completed. Marking resident.");
+                         SimpleScopedGuard lock(m_pendingVisibilityMutex);
+                         if (m_residentMeshes.insert(pMeshPtr).second)
+                         {
+                             m_pendingVisibleMeshes.push_back(pMeshPtr);
+                         }
+                     };
+
     g_pQueueHandler->SubmitTransferCommandAsync(cmd);
+
     m_bufferUpdateMutex.unlock();
 }
 
 void SharedResourceManager::Init()
 {
+    ScopedZone("SharedResourceManager::Init");
     m_bufferUpdateMutex.lock();
     DescriptorPoolCreateInfo info{};
     info.enableBindlessTextureDescriptors = false;
@@ -51,7 +64,6 @@ void SharedResourceManager::Init()
 
     m_debugBufferOffsetData.vertBufferOffset = 0;
     m_debugBufferOffsetData.indexBufferOffset = 0;
-    m_debugBufferOffsetData.instanceBufferIdx = 0;
 
     u64 transBufferSize = UBO::GlobalTransformSSBOSize;
 
@@ -60,6 +72,7 @@ void SharedResourceManager::Init()
     m_sceneInstanceBuffer = StorageBuffer(UBO::GlobalPerObjectDataSSBOSize, true);
     m_materialBuffer = StorageBuffer(UBO::GlobalMaterialSSBOSize, true);
     m_transformBuffer = StorageBuffer(transBufferSize, true);
+    m_prevTransformBuffer = StorageBuffer(transBufferSize, true);
     m_sceneAABBBuffer = StorageBuffer(UBO::GlobalAABBSSBOSize, true);
     m_viewSpaceLightsSSBO = StorageBuffer(UBO::ViewSpaceLightsSSBOSize, true);
 
@@ -68,20 +81,22 @@ void SharedResourceManager::Init()
     m_sceneInstanceBuffer.SetName("Scene Instance SSBO");
     m_materialBuffer.SetName("Material SSBO");
     m_transformBuffer.SetName("Transform SSBO");
+    m_prevTransformBuffer.SetName("Prev Transform SSBO");
     m_sceneAABBBuffer.SetName("Scene AABB SSBO");
     m_viewSpaceLightsSSBO.SetName("View Space Lights SSBO");
 
-    m_sceneInstanceSSBOLayout = DescriptorLaytoutUtils::CreateOneDescriptorSetForAll(
+    m_sceneInstanceSSBOLayout = DescriptorLayoutUtils::CreateOneDescriptorSetForAll(
         {PipelineDescriptorLayout(UBO::BufferType::TransformSSBO),
+         PipelineDescriptorLayout(UBO::BufferType::PrevTransformSSBO),
          PipelineDescriptorLayout(UBO::BufferType::GlobalObjectDataSSBOs),
          PipelineDescriptorLayout(UBO::BufferType::InstanceDataSSBO)});
     
-    m_sceneAABBLayout = DescriptorLaytoutUtils::CreateOneDescriptorSetForAll(
+    m_sceneAABBLayout = DescriptorLayoutUtils::CreateOneDescriptorSetForAll(
         {PipelineDescriptorLayout(UBO::BufferType::SceneAABBsSSBO)});
     
-    m_viewSpaceLightsLayout = DescriptorLaytoutUtils::CreateOneDescriptorSetForAll(
+    m_viewSpaceLightsLayout = DescriptorLayoutUtils::CreateOneDescriptorSetForAll(
         {PipelineDescriptorLayout(UBO::BufferType::ViewSpaceLightsSSBO)});
-        
+    
     m_frameData.resize(FRAMES_IN_FLIGHT);
     m_currentFrameInstanceData.reserve(MAX_ENTITIES);
     UBO::MaterialBuffer materialBuffer{};
@@ -94,10 +109,10 @@ void SharedResourceManager::Init()
         // Initialize all descriptor bindings directly
         // Binding 1: Transform Matrix
         m_frameData[i].pSceneInstanceSSBOSet->WriteSSBOUpdate(m_transformBuffer, s_modelSSBOBindingSlot);
+        m_frameData[i].pSceneInstanceSSBOSet->WriteSSBOUpdate(m_prevTransformBuffer, s_prevModelSSBOBindingSlot);
         // Binding 2: Material Data
         m_frameData[i].pSceneInstanceSSBOSet->WriteSSBOUpdate(m_materialBuffer, s_globalMaterialBufferSlot);
         // Binding 3: Instance Data
-        m_frameData[i].pSceneInstanceSSBOSet->WriteSSBOUpdate(m_sceneInstanceBuffer, s_globalInstanceDataSSBOSlot);
         m_frameData[i].pSceneInstanceSSBOSet->WriteSSBOUpdate(m_sceneInstanceBuffer, s_globalInstanceDataSSBOSlot);
         
         // AABB Set
@@ -123,12 +138,13 @@ void SharedResourceManager::UploadSceneGeometry(const stltype::vector<stltype::u
     // Just see how much memory we need
     m_bufferOffsetData.vertexCount = 0;
     m_bufferOffsetData.indexCount = 0;
-    m_bufferOffsetData.instanceCount = 0;
     for (const auto& pMesh : meshes)
     {
         m_bufferOffsetData.vertexCount += pMesh->vertices.size();
         m_bufferOffsetData.indexCount += pMesh->indices.size();
     }
+    DEBUG_LOGF("SharedResourceManager: Uploading scene geometry. Total vertices: {}, Total indices: {}, Mesh count: {}", 
+               (u32)m_bufferOffsetData.vertexCount, (u32)m_bufferOffsetData.indexCount, (u32)meshes.size());
 
     AsyncQueueHandler::MeshTransfer cmd{};
     stltype::vector<CompleteVertex>& vertices = cmd.vertices;
@@ -139,11 +155,9 @@ void SharedResourceManager::UploadSceneGeometry(const stltype::vector<stltype::u
 
     m_bufferOffsetData.vertBufferOffset = 0;
     m_bufferOffsetData.indexBufferOffset = 0;
-    m_bufferOffsetData.instanceBufferIdx = 0;
     m_meshHandles.clear();
     m_meshHandles.reserve(meshes.size());
 
-    u32 instanceCount = 0;
     for (const auto& pMesh : meshes)
     {
         if (const auto& it = m_meshHandles.find(pMesh.get()); it != m_meshHandles.end())
@@ -157,13 +171,34 @@ void SharedResourceManager::UploadSceneGeometry(const stltype::vector<stltype::u
         meshData.vertCount = pMesh->vertices.size();
 
         Utils::GenerateDrawCommandForMesh(
-            *pMesh.get(), m_bufferOffsetData.indexBufferOffset, cmd.vertices, cmd.indices);
+            *pMesh.get(), m_bufferOffsetData.vertBufferOffset, cmd.vertices, cmd.indices);
         m_bufferOffsetData.indexBufferOffset += pMesh->indices.size();
         m_bufferOffsetData.vertBufferOffset += pMesh->vertices.size();
 
         m_meshHandles[pMesh.get()] = meshData;
     }
     cmd.frameIdx = FrameGlobals::GetFrameNumber();
+    
+    stltype::vector<const Mesh*> meshPtrs;
+    meshPtrs.reserve(meshes.size());
+    for (const auto& pMesh : meshes)
+    {
+        meshPtrs.push_back(pMesh.get());
+    }
+
+    cmd.onComplete = [this, meshPtrs = stltype::move(meshPtrs)]()
+                     {
+                         DEBUG_LOG("SharedResourceManager: Scene geometry transfer completed. Marking meshes resident.");
+                         SimpleScopedGuard lock(m_pendingVisibilityMutex);
+                         for (const auto* pMesh : meshPtrs)
+                         {
+                             if (m_residentMeshes.insert(pMesh).second)
+                             {
+                                 m_pendingVisibleMeshes.push_back(pMesh);
+                             }
+                         }
+                     };
+
     g_pQueueHandler->SubmitTransferCommandAsync(cmd);
 
     m_bufferUpdateMutex.unlock();
@@ -177,7 +212,12 @@ void SharedResourceManager::UpdateInstanceDataSSBO(stltype::vector<RenderPasses:
 
     auto& instanceData = m_currentFrameInstanceData;
     instanceData.clear();
-    instanceData.reserve(m_bufferOffsetData.instanceCount);
+    instanceData.reserve(meshes.size());
+
+    {
+        SimpleScopedGuard lock(m_pendingVisibilityMutex);
+        m_meshToInstanceIdx.clear();
+    }
 
     for (auto& meshData : meshes)
     {
@@ -210,15 +250,24 @@ void SharedResourceManager::UpdateInstanceDataSSBO(stltype::vector<RenderPasses:
 
         meshData.meshData.meshResourceHandle = data.drawData;
         meshData.meshData.instanceDataIdx = (u32)instanceData.size() - 1;
+
+        // Visibility set from residency
+        {
+            SimpleScopedGuard lock(m_pendingVisibilityMutex);
+            data.SetVisible(m_residentMeshes.count(meshData.meshData.pMesh) > 0);
+            m_meshToInstanceIdx[meshData.meshData.pMesh].push_back(meshData.meshData.instanceDataIdx);
+        }
     }
     AsyncQueueHandler::SSBOTransfer transfer;
-    transfer.data = m_currentFrameInstanceData.data();
-    transfer.size = m_currentFrameInstanceData.size() * sizeof(m_currentFrameInstanceData[0]);
+    transfer.pData = m_currentFrameInstanceData.data();
+    transfer.size = static_cast<u32>(m_currentFrameInstanceData.size() * sizeof(m_currentFrameInstanceData[0]));
     transfer.offset = 0;
-    transfer.pDescriptorSet = nullptr;
-    transfer.pStorageBuffer = &m_sceneInstanceBuffer;
+    transfer.pDescriptor = nullptr;
+    transfer.pSSBO = &m_sceneInstanceBuffer;
     transfer.dstBinding = s_globalInstanceDataSSBOSlot;
     transfer.frameIdx = thisFrameNum;
+    DEBUG_LOGF("SharedResourceManager: Updating instance data SSBO. Entry count: {}, Size: {} bytes", 
+               (u32)m_currentFrameInstanceData.size(), transfer.size);
     g_pQueueHandler->SubmitTransferCommandAsync(transfer);
     g_pQueueHandler->DispatchAllRequests();
     m_bufferUpdateMutex.unlock();
@@ -236,9 +285,10 @@ MeshHandle SharedResourceManager::GetMeshHandle(const Mesh* pMesh) const
 
 void SharedResourceManager::WriteInstanceSSBODescriptorUpdate(u32 targetFrame)
 {
+    ScopedZone("SharedResourceManager::WriteInstanceSSBODescriptorUpdate");
+    targetFrame %= m_frameData.size();
     m_frameData[targetFrame].pSceneInstanceSSBOSet->WriteSSBOUpdate(m_transformBuffer, s_modelSSBOBindingSlot);
-    m_frameData[targetFrame].pSceneInstanceSSBOSet->WriteSSBOUpdate(m_sceneInstanceBuffer,
-                                                                    s_globalInstanceDataSSBOSlot);
+    m_frameData[targetFrame].pSceneInstanceSSBOSet->WriteSSBOUpdate(m_prevTransformBuffer, s_prevModelSSBOBindingSlot);
     m_frameData[targetFrame].pSceneInstanceSSBOSet->WriteSSBOUpdate(m_sceneInstanceBuffer,
                                                                     s_globalInstanceDataSSBOSlot);
     m_frameData[targetFrame].pSceneAABBSet->WriteSSBOUpdate(m_sceneAABBBuffer, s_sceneAABBsSSBOBindingSlot);
@@ -249,15 +299,16 @@ void SharedResourceManager::UpdateTransformBuffer(const stltype::vector<DirectX:
                                                   u32 thisFrame,
                                                   u32 updateCount)
 {
+    ScopedZone("SharedResourceManager::UpdateTransformBuffer");
     u64 transferSize = updateCount > 0 ? updateCount * sizeof(DirectX::XMFLOAT4X4) : transformBuffer.size() * sizeof(DirectX::XMFLOAT4X4);
     if (transferSize == 0) return;
     
     AsyncQueueHandler::SSBOTransfer transfer;
-    transfer.data = (void*)transformBuffer.data();
-    transfer.size = transferSize;
+    transfer.pData = (void*)transformBuffer.data();
+    transfer.size = static_cast<u32>(transferSize);
     transfer.offset = 0;
-    transfer.pDescriptorSet = nullptr;
-    transfer.pStorageBuffer = &m_transformBuffer;
+    transfer.pDescriptor = nullptr;
+    transfer.pSSBO = &m_transformBuffer;
     transfer.dstBinding = s_modelSSBOBindingSlot;
     transfer.frameIdx = thisFrame;
     g_pQueueHandler->SubmitTransferCommandAsync(transfer);
@@ -265,31 +316,50 @@ void SharedResourceManager::UpdateTransformBuffer(const stltype::vector<DirectX:
 
 void SharedResourceManager::UpdateTransformRange(const stltype::vector<DirectX::XMFLOAT4X4>& transformBuffer, u32 startIdx, u32 count)
 {
+    ScopedZone("SharedResourceManager::UpdateTransformRange");
     if (count == 0) return;
     const u64 offset = startIdx * sizeof(DirectX::XMFLOAT4X4);
     const u64 transferSize = count * sizeof(DirectX::XMFLOAT4X4);
     AsyncQueueHandler::SSBOTransfer transfer;
-    transfer.data = (void*)&transformBuffer[startIdx];
-    transfer.size = transferSize;
+    transfer.pData = (void*)&transformBuffer[startIdx];
+    transfer.size = static_cast<u32>(transferSize);
     transfer.offset = offset;
-    transfer.pDescriptorSet = nullptr;
-    transfer.pStorageBuffer = &m_transformBuffer;
+    transfer.pDescriptor = nullptr;
+    transfer.pSSBO = &m_transformBuffer;
     transfer.dstBinding = s_modelSSBOBindingSlot;
+    transfer.frameIdx = FrameGlobals::GetFrameNumber();
+    g_pQueueHandler->SubmitTransferCommandAsync(transfer);
+}
+
+void SharedResourceManager::UpdatePrevTransformRange(const stltype::vector<DirectX::XMFLOAT4X4>& transformBuffer, u32 startIdx, u32 count)
+{
+    ScopedZone("SharedResourceManager::UpdatePrevTransformRange");
+    if (count == 0) return;
+    const u64 offset = startIdx * sizeof(DirectX::XMFLOAT4X4);
+    const u64 transferSize = count * sizeof(DirectX::XMFLOAT4X4);
+    AsyncQueueHandler::SSBOTransfer transfer;
+    transfer.pData = (void*)&transformBuffer[startIdx];
+    transfer.size = static_cast<u32>(transferSize);
+    transfer.offset = offset;
+    transfer.pDescriptor = nullptr;
+    transfer.pSSBO = &m_prevTransformBuffer;
+    transfer.dstBinding = s_prevModelSSBOBindingSlot;
     transfer.frameIdx = FrameGlobals::GetFrameNumber();
     g_pQueueHandler->SubmitTransferCommandAsync(transfer);
 }
 
 void SharedResourceManager::UpdateSceneAABBBuffer(const stltype::vector<AABB>& aabbBuffer, u32 thisFrame, u32 updateCount)
 {
+    ScopedZone("SharedResourceManager::UpdateSceneAABBBuffer");
     u64 transferSize = updateCount > 0 ? updateCount * sizeof(AABB) : aabbBuffer.size() * sizeof(AABB);
     if (transferSize == 0) return;
 
     AsyncQueueHandler::SSBOTransfer transfer;
-    transfer.data = (void*)aabbBuffer.data();
-    transfer.size = transferSize;
+    transfer.pData = (void*)aabbBuffer.data();
+    transfer.size = static_cast<u32>(transferSize);
     transfer.offset = 0;
-    transfer.pDescriptorSet = nullptr;
-    transfer.pStorageBuffer = &m_sceneAABBBuffer;
+    transfer.pDescriptor = nullptr;
+    transfer.pSSBO = &m_sceneAABBBuffer;
     transfer.dstBinding = s_sceneAABBsSSBOBindingSlot;
     transfer.frameIdx = thisFrame;
     g_pQueueHandler->SubmitTransferCommandAsync(transfer);
@@ -297,15 +367,16 @@ void SharedResourceManager::UpdateSceneAABBBuffer(const stltype::vector<AABB>& a
 
 void SharedResourceManager::UpdateSceneAABBRange(const stltype::vector<AABB>& aabbBuffer, u32 startIdx, u32 count)
 {
+    ScopedZone("SharedResourceManager::UpdateSceneAABBRange");
     if (count == 0) return;
     const u64 offset = startIdx * sizeof(AABB);
     const u64 transferSize = count * sizeof(AABB);
     AsyncQueueHandler::SSBOTransfer transfer;
-    transfer.data = (void*)&aabbBuffer[startIdx];
-    transfer.size = transferSize;
+    transfer.pData = (void*)&aabbBuffer[startIdx];
+    transfer.size = static_cast<u32>(transferSize);
     transfer.offset = offset;
-    transfer.pDescriptorSet = nullptr;
-    transfer.pStorageBuffer = &m_sceneAABBBuffer;
+    transfer.pDescriptor = nullptr;
+    transfer.pSSBO = &m_sceneAABBBuffer;
     transfer.dstBinding = s_sceneAABBsSSBOBindingSlot;
     transfer.frameIdx = FrameGlobals::GetFrameNumber();
     g_pQueueHandler->SubmitTransferCommandAsync(transfer);
@@ -313,14 +384,41 @@ void SharedResourceManager::UpdateSceneAABBRange(const stltype::vector<AABB>& aa
 
 void SharedResourceManager::UpdateGlobalMaterialBuffer(const UBO::MaterialBuffer& materialBuffer, u32 thisFrame)
 {
-    auto pDescriptor = m_frameData[thisFrame].pSceneInstanceSSBOSet;
+    ScopedZone("SharedResourceManager::UpdateGlobalMaterialBuffer");
+    u32 materialCount = (u32)materialBuffer.size() > 0 ? (u32)materialBuffer.size() : 1;
+    u32 byteSize = materialCount * sizeof(Material);
+    
     AsyncQueueHandler::SSBOTransfer transfer;
-    transfer.data = (void*)materialBuffer.data();
-    transfer.size = UBO::GlobalMaterialSSBOSize;
+    transfer.pData = (void*)materialBuffer.data();
+    transfer.size = byteSize;
     transfer.offset = 0;
-    transfer.pDescriptorSet = nullptr;
-    transfer.pStorageBuffer = &m_materialBuffer;
+    transfer.pDescriptor = nullptr;
+    transfer.pSSBO = &m_materialBuffer;
     transfer.dstBinding = s_globalMaterialBufferSlot;
     transfer.frameIdx = thisFrame;
     g_pQueueHandler->SubmitTransferCommandAsync(transfer);
+}
+
+stltype::vector<u32> SharedResourceManager::PopPendingVisibleInstanceIndices()
+{
+    ScopedZone("SharedResourceManager::PopPendingVisibleInstanceIndices");
+    SimpleScopedGuard lock(m_pendingVisibilityMutex);
+    stltype::vector<u32> indices;
+    stltype::hash_set<u32> seenInstanceIndices;
+    for (const auto* pMesh : m_pendingVisibleMeshes)
+    {
+        auto it = m_meshToInstanceIdx.find(pMesh);
+        if (it != m_meshToInstanceIdx.end())
+        {
+            for (u32 instanceIdx : it->second)
+            {
+                if (seenInstanceIndices.insert(instanceIdx).second)
+                {
+                    indices.push_back(instanceIdx);
+                }
+            }
+        }
+    }
+    m_pendingVisibleMeshes.clear();
+    return indices;
 }

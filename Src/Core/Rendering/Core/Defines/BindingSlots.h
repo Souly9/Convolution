@@ -1,8 +1,9 @@
 #pragma once
-#include "Core/../../Shaders/Globals/BindingSlots.h"
+#include "../../../../Shaders/Globals/Common.h"
 
 
 static constexpr u32 s_modelSSBOBindingSlot = GlobalTransformDataSSBOSlot;
+static constexpr u32 s_prevModelSSBOBindingSlot = PrevGlobalTransformDataSSBOSlot;
 static constexpr u32 s_tileArrayBindingSlot = GlobalTileArraySSBOSlot;
 static constexpr u32 s_perPassObjectDataBindingSlot = PassPerObjectDataSSBOSlot;
 static constexpr u32 s_globalMaterialBufferSlot = GlobalObjectDataSSBOSlot;

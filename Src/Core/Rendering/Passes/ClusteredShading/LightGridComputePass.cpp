@@ -2,9 +2,10 @@
 #include "../PassManager.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
+#include "Core/Rendering/Core/Shader.h"
 #include "Core/Rendering/Core/Defines/BindingSlots.h"
 #include "Core/Rendering/Core/Defines/GlobalBuffers.h"
-#include "Core/Rendering/Core/Utils/DescriptorLayoutUtils.h"
+#include "Core/Rendering/Vulkan/Utils/VkDescriptorLayoutUtils.h"
 
 
 #define ViewSet             0
@@ -95,7 +96,7 @@ void LightGridComputePass::Render(const MainPassData& data,
     const u32 workgroupsY = (m_pushConstants.clusterCount.y + 7) / 8;
     const u32 workgroupsZ = m_pushConstants.clusterCount.z;
 
-    DescriptorSet* viewSpaceLightsDesc = data.pResourceManager->GetViewSpaceLightsDescriptorSet(ctx.currentFrame);
+    DescriptorSet::Ptr viewSpaceLightsDesc = data.pResourceManager->GetViewSpaceLightsDescriptorSet(ctx.currentFrame);
 
     // Cull lights for each cluster
     {

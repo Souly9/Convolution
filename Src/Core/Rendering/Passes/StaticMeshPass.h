@@ -26,7 +26,5 @@ public:
 protected:
     // Every pass should only have one pipeline as we're working with uber shaders + bindless
     PSO m_mainPSO;
-    IndirectDrawCmdBuf m_indirectCmdBuffer;
-    IndirectDrawCountBuffer m_indirectCountBuffer;
 };
 } // namespace RenderPasses

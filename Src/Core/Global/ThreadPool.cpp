@@ -3,6 +3,11 @@
 
 ThreadPool::ThreadPool(u32 numThreads)
 {
+    Init(numThreads);
+}
+
+void ThreadPool::Init(u32 numThreads)
+{
     m_workers.resize(numThreads);
     for (u32 i = 0; i < numThreads; ++i)
     {

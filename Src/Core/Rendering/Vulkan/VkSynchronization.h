@@ -3,11 +3,10 @@
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Rendering/Core/Synchronization.h"
 
-template <>
-class SemaphoreImpl<Vulkan> : public GPUSyncer
+class SemaphoreVulkan : public SemaphoreBase
 {
 public:
-    ~SemaphoreImpl();
+    ~SemaphoreVulkan();
 
     void Create();
 
@@ -23,11 +22,10 @@ private:
     VkSemaphore m_semaphore{VK_NULL_HANDLE};
 };
 
-template <>
-class FenceImpl<Vulkan> : public CPUSyncer
+class FenceVulkan : public FenceBase
 {
 public:
-    ~FenceImpl();
+    ~FenceVulkan();
 
     void Create(bool signaled = true);
 
@@ -49,11 +47,10 @@ private:
 #endif
 };
 
-template <>
-class TimelineSemaphoreImpl<Vulkan> : public GPUSyncer
+class TimelineSemaphoreVulkan : public TimelineSemaphoreBase
 {
 public:
-    ~TimelineSemaphoreImpl();
+    ~TimelineSemaphoreVulkan();
 
     void Create(u64 initialValue = 0);
 

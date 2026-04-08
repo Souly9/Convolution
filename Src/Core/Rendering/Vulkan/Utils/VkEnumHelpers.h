@@ -339,9 +339,12 @@ inline VkAttachmentStoreOp Conv(const StoreOp& m)
         case StoreOp::DONT_CARE:
             return VK_ATTACHMENT_STORE_OP_DONT_CARE;
             break;
+        case StoreOp::NONE:
+            return VK_ATTACHMENT_STORE_OP_NONE;
+            break;
     }
 
-    return VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    return VK_ATTACHMENT_STORE_OP_NONE;
 }
 
 inline VkImageLayout Conv(const ImageLayout& m)
@@ -534,11 +537,11 @@ static inline u32 Conv(SyncStages stage)
         vkStage = (vkStage | VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
     if ((u32)stage & (u32)SyncStages::BOTTOM_OF_PIPE)
         vkStage = (vkStage | VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT);
-    if ((u32)stage & (u32)SyncStages::ALL_COMMANDS)
-        vkStage = (vkStage | VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT);
     if ((u32)stage & (u32)SyncStages::DEPTH_OUTPUT)
         vkStage =
             (vkStage | VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT);
+    if ((u32)stage & (u32)SyncStages::CLEAR)
+        vkStage = (vkStage | VK_PIPELINE_STAGE_2_CLEAR_BIT);
             
     return vkStage;
 }

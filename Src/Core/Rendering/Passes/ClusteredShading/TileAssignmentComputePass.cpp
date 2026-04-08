@@ -81,7 +81,7 @@ void TileAssignmentComputePass::Render(const MainPassData& data,
     u32 workgroupCount = (numLights + 127) / 128;
     workgroupCount = workgroupCount > 0 ? workgroupCount : 1;
 
-    DescriptorSet* viewSpaceLightsDesc = data.pResourceManager->GetViewSpaceLightsDescriptorSet(ctx.currentFrame);
+    DescriptorSet::Ptr viewSpaceLightsDesc = data.pResourceManager->GetViewSpaceLightsDescriptorSet(ctx.currentFrame);
 
     GenericComputeDispatchCmd cmd(&m_pipeline, workgroupCount, 1, 1);
     cmd.descriptorSets = {ctx.sharedDataUBODescriptor, ctx.tileArraySSBODescriptor, ctx.clusterGridDescriptor, viewSpaceLightsDesc};

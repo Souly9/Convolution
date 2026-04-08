@@ -22,22 +22,28 @@ void ECS::System::SRenderComponent::SyncData(u32 currentFrame)
     RenderPasses::EntityMeshDataMap dataMap;
     dataMap.reserve(renderComps.size());
 
+    stltype::hash_map<ECS::EntityID, u32> subMeshCounters;
     for (const auto& renderComp : renderComps)
     {
+        u32 subIdx = subMeshCounters[renderComp.entity.ID]++;
         RenderPasses::EntityMeshData& data = dataMap[renderComp.entity.ID].emplace_back(
-            renderComp.component.pMesh, renderComp.component.pMaterial, renderComp.component.boundingBox, false);
+            renderComp.entity.ID, subIdx, renderComp.component.pMesh, renderComp.component.pMaterial, renderComp.component.boundingBox, false);
         if (renderComp.component.isSelected || renderComp.component.isWireframe)
         {
             data.SetDebugWireframeMesh();
         }
     }
+    m_pPassManager->SetEntityMeshDataForFrame(std::move(dataMap), currentFrame);
+    return;
+    // TODO: Add debug render components back in
     for (const auto& renderComp : debugRenderComps)
     {
         if (renderComp.component.shouldRender == false)
             continue;
 
+        u32 subIdx = subMeshCounters[renderComp.entity.ID]++;
         RenderPasses::EntityMeshData& data = dataMap[renderComp.entity.ID].emplace_back(
-            renderComp.component.pMesh, renderComp.component.pMaterial, renderComp.component.boundingBox, true);
+            renderComp.entity.ID, subIdx, renderComp.component.pMesh, renderComp.component.pMaterial, renderComp.component.boundingBox, true);
         if (renderComp.component.isSelected || renderComp.component.isWireframe)
         {
             data.SetDebugWireframeMesh();

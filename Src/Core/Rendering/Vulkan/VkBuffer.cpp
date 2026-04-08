@@ -68,7 +68,7 @@ void GenBufferVulkan::FillAndTransfer(
 
     const auto sizeToTransfer = stgBuffer.GetInfo().size;
     MapAndCopyToMemory(stgBuffer.GetMemoryHandle(), data, sizeToTransfer, offset);
-    SimpleBufferCopyCmd copyCmd{stgBuffer, this};
+    SimpleBufferCopyCmd copyCmd{&stgBuffer, this};
     copyCmd.srcOffset = 0;
     copyCmd.dstOffset = offset;
     copyCmd.size = sizeToTransfer;
@@ -133,7 +133,7 @@ VertexBufferVulkan::VertexBufferVulkan(u64 size)
     Create(info);
 }
 
-StagingBuffer::StagingBuffer(u64 size)
+StagingBufferVulkan::StagingBufferVulkan(u64 size)
 {
     BufferCreateInfo info{};
     info.size = size;
@@ -141,7 +141,7 @@ StagingBuffer::StagingBuffer(u64 size)
     Create(info);
 }
 
-void StagingBuffer::CreatePersistentlyMapped(u64 size)
+void StagingBufferVulkan::CreatePersistentlyMapped(u64 size)
 {
     BufferCreateInfo info{};
     info.size = size;
@@ -150,13 +150,13 @@ void StagingBuffer::CreatePersistentlyMapped(u64 size)
     m_persistentMapping = MapMemory();
 }
 
-void StagingBuffer::CopyToMapped(const void* data, u64 size, u64 offset)
+void StagingBufferVulkan::CopyToMapped(const void* data, u64 size, u64 offset)
 {
     DEBUG_ASSERT(m_persistentMapping != nullptr);
     memcpy((char*)m_persistentMapping + offset, data, (size_t)size);
 }
 
-void StagingBuffer::EnsureCapacity(u64 size)
+void StagingBufferVulkan::EnsureCapacity(u64 size)
 {
     if (m_info.size >= size)
         return;
@@ -180,7 +180,7 @@ IndexBufferVulkan::IndexBufferVulkan(u64 size)
     Create(info);
 }
 
-UniformBuffer::UniformBuffer(u64 size)
+UniformBufferVulkan::UniformBufferVulkan(u64 size)
 {
     BufferCreateInfo info{};
     info.size = size;
@@ -188,7 +188,7 @@ UniformBuffer::UniformBuffer(u64 size)
     Create(info);
 }
 
-StorageBuffer::StorageBuffer(u64 size, bool isDevice)
+StorageBufferVulkan::StorageBufferVulkan(u64 size, bool isDevice)
 {
     BufferCreateInfo info{};
     info.size = size;
@@ -207,7 +207,23 @@ IndirectDrawCommandBufferVulkan::IndirectDrawCommandBufferVulkan(u64 numOfComman
     m_mappedMemoryHandle = MapMemory();
 }
 
+void IndirectDrawCommandBufferVulkan::Init(u64 numOfCommands)
+{
+    BufferCreateInfo info{};
+    info.size = sizeof(IndexedIndirectDrawCmd) * numOfCommands;
+    info.usage = BufferUsage::IndirectDrawCmds;
+    Create(info);
+    m_indexedIndirectCmds.reserve(numOfCommands);
+    // Will be reused and filled\mapped every frame so cheaper to just map forever
+    m_mappedMemoryHandle = MapMemory();
+}
+
 IndirectDrawCountBuffer::IndirectDrawCountBuffer(u64 numOfCounts)
+{
+    Init(numOfCounts);
+}
+
+void IndirectDrawCountBuffer::Init(u64 numOfCounts)
 {
     BufferCreateInfo info{};
     info.size = sizeof(u32) * numOfCounts;

@@ -3,11 +3,13 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_EXT_scalar_block_layout : enable
 
-#define SharedDataUBOSet 0
-#define TileArraySet   1
-#define ClusterGridSet 2
-#include "../../Globals/ClusteredShading/AABBs.h"
-#include "../../Globals/GlobalBuffers.h"
+#define SharedDataUBOSet   0
+#define TileArraySet       1
+#define ClusterGridSet     2
+#define ViewSpaceLightsSet 3
+
+#include "../../Globals/ClusteredShading.h"
+#include "../../Globals/ClusterLightData.h"
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 

@@ -1,32 +1,27 @@
 #include "VkSynchronization.h"
 #include "VkGlobals.h"
 
-SemaphoreImpl<Vulkan>::~SemaphoreImpl()
+SemaphoreVulkan::~SemaphoreVulkan()
 {
     TRACKED_DESC_IMPL
 }
 
-void SemaphoreImpl<Vulkan>::Create()
+void SemaphoreVulkan::Create()
 {
-    VkSemaphoreTypeCreateInfo timelineInfo{};
-    timelineInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
-    timelineInfo.semaphoreType = VK_SEMAPHORE_TYPE_BINARY;
-    timelineInfo.initialValue = 0;
     VkSemaphoreCreateInfo semaphoreInfo{};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    semaphoreInfo.pNext = &timelineInfo;
     DEBUG_ASSERT(vkCreateSemaphore(VK_LOGICAL_DEVICE, &semaphoreInfo, VulkanAllocator(), &m_semaphore) == VK_SUCCESS);
 }
 
-void SemaphoreImpl<Vulkan>::CleanUp(){
+void SemaphoreVulkan::CleanUp(){
     VK_FREE_IF(m_semaphore, vkDestroySemaphore(VK_LOGICAL_DEVICE, m_semaphore, VulkanAllocator()))}
 
-VkSemaphore SemaphoreImpl<Vulkan>::GetRef() const
+VkSemaphore SemaphoreVulkan::GetRef() const
 {
     return m_semaphore;
 }
 
-void SemaphoreImpl<Vulkan>::NamingCallBack(const stltype::string& name)
+void SemaphoreVulkan::NamingCallBack(const stltype::string& name)
 {
     VkDebugUtilsObjectNameInfoEXT nameInfo = {};
     nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
@@ -37,12 +32,12 @@ void SemaphoreImpl<Vulkan>::NamingCallBack(const stltype::string& name)
     vkSetDebugUtilsObjectName(VK_LOGICAL_DEVICE, &nameInfo);
 }
 
-FenceImpl<Vulkan>::~FenceImpl()
+FenceVulkan::~FenceVulkan()
 {
     TRACKED_DESC_IMPL
 }
 
-void FenceImpl<Vulkan>::Create(bool signaled)
+void FenceVulkan::Create(bool signaled)
 {
     VkFenceCreateInfo fenceInfo{};
     fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
@@ -53,17 +48,18 @@ void FenceImpl<Vulkan>::Create(bool signaled)
 #endif
 }
 
-void FenceImpl<Vulkan>::CleanUp()
+void FenceVulkan::CleanUp()
 {
     VK_FREE_IF(m_fence, vkDestroyFence(VK_LOGICAL_DEVICE, m_fence, VulkanAllocator()))
 }
 
-void FenceImpl<Vulkan>::WaitFor(const u64& timeout) const
+void FenceVulkan::WaitFor(const u64& timeout) const
 {
-    vkWaitForFences(VK_LOGICAL_DEVICE, 1, &m_fence, VK_TRUE, timeout);
+    const VkResult result = vkWaitForFences(VK_LOGICAL_DEVICE, 1, &m_fence, VK_TRUE, timeout);
+    DEBUG_ASSERT(result == VK_SUCCESS);
 }
 
-bool FenceImpl<Vulkan>::IsSignaled() const
+bool FenceVulkan::IsSignaled() const
 {
     auto rslt = vkGetFenceStatus(VK_LOGICAL_DEVICE, m_fence);
     if (rslt == VK_SUCCESS)
@@ -73,7 +69,7 @@ bool FenceImpl<Vulkan>::IsSignaled() const
     return false;
 }
 
-void FenceImpl<Vulkan>::Reset()
+void FenceVulkan::Reset()
 {
     vkResetFences(VK_LOGICAL_DEVICE, 1, &m_fence);
 #ifdef CONV_DEBUG
@@ -81,12 +77,12 @@ void FenceImpl<Vulkan>::Reset()
 #endif
 }
 
-VkFence FenceImpl<Vulkan>::GetRef() const
+VkFence FenceVulkan::GetRef() const
 {
     return m_fence;
 }
 
-void FenceImpl<Vulkan>::NamingCallBack(const stltype::string& name)
+void FenceVulkan::NamingCallBack(const stltype::string& name)
 {
     VkDebugUtilsObjectNameInfoEXT nameInfo = {};
     nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
@@ -98,12 +94,12 @@ void FenceImpl<Vulkan>::NamingCallBack(const stltype::string& name)
 }
 
 // Timeline Semaphore Implementation
-TimelineSemaphoreImpl<Vulkan>::~TimelineSemaphoreImpl()
+TimelineSemaphoreVulkan::~TimelineSemaphoreVulkan()
 {
     TRACKED_DESC_IMPL
 }
 
-void TimelineSemaphoreImpl<Vulkan>::Create(u64 initialValue)
+void TimelineSemaphoreVulkan::Create(u64 initialValue)
 {
     VkSemaphoreTypeCreateInfo timelineInfo{};
     timelineInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
@@ -117,22 +113,23 @@ void TimelineSemaphoreImpl<Vulkan>::Create(u64 initialValue)
     DEBUG_ASSERT(vkCreateSemaphore(VK_LOGICAL_DEVICE, &semaphoreInfo, VulkanAllocator(), &m_semaphore) == VK_SUCCESS);
 }
 
-void TimelineSemaphoreImpl<Vulkan>::CleanUp(){
+void TimelineSemaphoreVulkan::CleanUp(){
     VK_FREE_IF(m_semaphore, vkDestroySemaphore(VK_LOGICAL_DEVICE, m_semaphore, VulkanAllocator()))}
 
-VkSemaphore TimelineSemaphoreImpl<Vulkan>::GetRef() const
+VkSemaphore TimelineSemaphoreVulkan::GetRef() const
 {
     return m_semaphore;
 }
 
-u64 TimelineSemaphoreImpl<Vulkan>::GetValue() const
+u64 TimelineSemaphoreVulkan::GetValue() const
 {
     u64 value = 0;
-    vkGetSemaphoreCounterValue(VK_LOGICAL_DEVICE, m_semaphore, &value);
+    const VkResult result = vkGetSemaphoreCounterValue(VK_LOGICAL_DEVICE, m_semaphore, &value);
+    DEBUG_ASSERT(result == VK_SUCCESS);
     return value;
 }
 
-void TimelineSemaphoreImpl<Vulkan>::HostSignal(u64 value)
+void TimelineSemaphoreVulkan::HostSignal(u64 value)
 {
     VkSemaphoreSignalInfo signalInfo{};
     signalInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO;
@@ -142,7 +139,7 @@ void TimelineSemaphoreImpl<Vulkan>::HostSignal(u64 value)
     DEBUG_ASSERT(vkSignalSemaphore(VK_LOGICAL_DEVICE, &signalInfo) == VK_SUCCESS);
 }
 
-void TimelineSemaphoreImpl<Vulkan>::Wait(u64 value, u64 timeout) const
+void TimelineSemaphoreVulkan::Wait(u64 value, u64 timeout) const
 {
     VkSemaphoreWaitInfo waitInfo{};
     waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
@@ -150,10 +147,18 @@ void TimelineSemaphoreImpl<Vulkan>::Wait(u64 value, u64 timeout) const
     waitInfo.pSemaphores = &m_semaphore;
     waitInfo.pValues = &value;
 
-    vkWaitSemaphores(VK_LOGICAL_DEVICE, &waitInfo, timeout);
+    const VkResult result = vkWaitSemaphores(VK_LOGICAL_DEVICE, &waitInfo, timeout);
+    if (timeout > 0)
+    {
+        DEBUG_ASSERT(result == VK_SUCCESS || result == VK_ERROR_DEVICE_LOST);
+    }
+    else
+    {
+        DEBUG_ASSERT(result == VK_SUCCESS || result == VK_TIMEOUT || result == VK_ERROR_DEVICE_LOST);
+    }
 }
 
-void TimelineSemaphoreImpl<Vulkan>::NamingCallBack(const stltype::string& name)
+void TimelineSemaphoreVulkan::NamingCallBack(const stltype::string& name)
 {
     VkDebugUtilsObjectNameInfoEXT nameInfo = {};
     nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;

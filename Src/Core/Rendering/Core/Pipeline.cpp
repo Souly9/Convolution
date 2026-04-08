@@ -1,6 +1,6 @@
 #include "Pipeline.h"
-#include "Core/Rendering/Vulkan/VkAttachment.h"
-#include "Core/Rendering/Vulkan/VkTexture.h"
+#include "Attachment.h"
+#include "Texture.h"
 
 
 PipelineAttachmentInfo CreateAttachmentInfo(const stltype::vector<Texture>& colorAttachments,

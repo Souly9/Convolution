@@ -66,6 +66,8 @@ public:
 
         // 2. Create Cube Grid
         Mesh* pCubeMesh = g_pMeshManager->GetPrimitiveMesh(MeshManager::PrimitiveType::Cube);
+        Material defaultMat{};
+        Material* pDefaultMaterial = g_pMaterialManager->AllocateMaterial("ClusteredLighting_Default", defaultMat);
 
         u32 gridDim = 5;
         f32 spacing = 4.0f;
@@ -85,7 +87,7 @@ public:
 
                     ECS::Components::RenderComponent renderComp{};
                     renderComp.pMesh = pCubeMesh;
-                    // Material will be null, renderer should handle default white/error texture
+                    renderComp.pMaterial = pDefaultMaterial;
 
                     g_pEntityManager->AddComponent(ent, renderComp);
 
@@ -105,6 +107,7 @@ public:
             auto floorEnt = g_pEntityManager->CreateEntity(mathstl::Vector3(0.0f, -6.0f, 0.0f), "Floor");
             ECS::Components::RenderComponent renderComp{};
             renderComp.pMesh = pCubeMesh; // Reuse cube mesh
+            renderComp.pMaterial = pDefaultMaterial;
             g_pEntityManager->AddComponent(floorEnt, renderComp);
             
             // Scale it to be a large plane (100x1x100)

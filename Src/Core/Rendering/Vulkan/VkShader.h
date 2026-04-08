@@ -1,8 +1,9 @@
 #pragma once
 #include "BackendDefines.h"
 #include "Core/Global/GlobalDefines.h"
+#include "Core/Rendering/Core/Shader.h"
 
-class ShaderVulkan
+class ShaderVulkan : public ShaderBase
 {
 public:
     ShaderVulkan(const stltype::string_view& filePath, stltype::string&& name);

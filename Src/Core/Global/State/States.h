@@ -20,6 +20,13 @@ enum class DebugFlags : u32
     CullFrustum = 1 << 0,
 };
 MAKE_FLAG_ENUM(DebugFlags)
+enum class AntialiasingType : u32
+{
+    None = 0,
+    TAA = 1,
+    FXAA = 2,
+    DLSS = 3
+};
 
 struct GUIState : public stltype::bitset<32>
 {
@@ -46,6 +53,7 @@ struct RendererState
     u64 depthbufferImGuiID{};
     stltype::vector<u64> csmCascadeImGuiIDs{}; // Per-cascade ImGui texture IDs
     stltype::string physicalRenderDeviceName{};
+    AntialiasingType aaType{AntialiasingType::TAA};
 
     // Tonemapping
     f32 exposure{1.0f};
@@ -94,6 +102,13 @@ struct RendererState
     f32 totalGPUTimeMs{0.f};
     u64 totalVramBytes{0};
     u64 usedVramBytes{0};
+
+    // Camera matrices for UI & Gizmos
+    mathstl::Matrix mainCamViewMatrix{mathstl::Matrix::Identity};
+    mathstl::Matrix mainCamProjectionMatrix{mathstl::Matrix::Identity};
+    mathstl::Matrix mainCamViewProjectionMatrix{mathstl::Matrix::Identity};
+    mathstl::Matrix invMainCamProjectionMatrix{mathstl::Matrix::Identity};
+    mathstl::Matrix invMainCamViewMatrix{mathstl::Matrix::Identity};
 };
 
 struct ApplicationState
@@ -101,9 +116,6 @@ struct ApplicationState
     stltype::vector<ECS::Entity> selectedEntities{};
     GUIState guiState{};
     RendererState renderState{};
-    mathstl::Matrix mainCamViewProjectionMatrix{};
-    mathstl::Matrix invMainCamProjectionMatrix{};
-    mathstl::Matrix invMainCamViewMatrix{};
 
     // We only support one scene at a time for now
     Scene* pCurrentScene;

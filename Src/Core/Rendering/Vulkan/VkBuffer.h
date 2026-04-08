@@ -9,12 +9,6 @@ struct BufferInfo
     u64 size{0};
     BufferUsage usage;
 };
-class VertexBufferVulkan;
-class StagingBuffer;
-
-// Forward declare CommandBuffer because we can't include it circularly
-class CBufferVulkan;
-
 class GenBufferVulkan : public BufferBase
 {
 public:
@@ -30,7 +24,7 @@ public:
 
     // Fill buffer using staging buffer
     void FillAndTransfer(StagingBuffer& stgBuffer,
-                         CBufferVulkan* transferBuffer,
+                         CommandBuffer* transferBuffer,
                          const void* data,
                          bool freeStagingBuffer = false,
                          u64 offset = 0);
@@ -87,20 +81,20 @@ public:
     }
 };
 
-class UniformBuffer : public GenBufferVulkan
+class UniformBufferVulkan : public GenBufferVulkan
 {
 public:
-    UniformBuffer(u64 size);
-    UniformBuffer()
+    UniformBufferVulkan(u64 size);
+    UniformBufferVulkan()
     {
     }
 };
 
-class StagingBuffer : public GenBufferVulkan
+class StagingBufferVulkan : public GenBufferVulkan
 {
 public:
-    StagingBuffer() {}
-    StagingBuffer(u64 size);
+    StagingBufferVulkan() {}
+    StagingBufferVulkan(u64 size);
 
     void CreatePersistentlyMapped(u64 size);
     void CopyToMapped(const void* data, u64 size, u64 offset = 0);
@@ -113,11 +107,11 @@ private:
     GPUMappedMemoryHandle m_persistentMapping{nullptr};
 };
 
-class StorageBuffer : public GenBufferVulkan
+class StorageBufferVulkan : public GenBufferVulkan
 {
 public:
-    StorageBuffer(u64 size, bool isDevice = false);
-    StorageBuffer()
+    StorageBufferVulkan(u64 size, bool isDevice = false);
+    StorageBufferVulkan()
     {
     }
 };
@@ -131,6 +125,7 @@ public:
     {
     }
 
+    void Init(u64 numOfCommands);
     void AddIndexedDrawCmd(u32 indexCount, u32 instanceCount, u32 firstIndex, u32 vertexOffset, u32 firstInstance);
 
     void FillCmds();
@@ -154,4 +149,6 @@ public:
     IndirectDrawCountBuffer()
     {
     }
+
+    void Init(u64 numOfCounts);
 };

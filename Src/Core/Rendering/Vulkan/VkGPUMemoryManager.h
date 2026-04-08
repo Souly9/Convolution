@@ -32,7 +32,10 @@ protected:
     void FreeVMA();
 
 private:
-    Allocator m_allocatorMode;
+    void EnsureInitialized();
+
+    Allocator m_allocatorMode{Allocator::VMA};
+    bool m_isInitialized{false};
     CustomMutex m_mappingMutex;
     CustomMutex m_allocatinggMutex;
     stltype::vector<GPUMemoryHandle> m_mappedMemoryHandles{}; // Mostly just for debugging

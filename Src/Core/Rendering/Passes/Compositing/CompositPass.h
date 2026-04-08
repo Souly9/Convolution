@@ -3,8 +3,7 @@
 
 namespace RenderPasses
 {
-// Renders a full screen quad and composits the gbuffer textures as well as the UI output texture into the swapchain for
-// presentation Want to move this into a compute shader in the future
+// Final composition pass that combines the TAA output (or lighting output) and UI into the swapchain
 class CompositPass : public GenericGeometryPass
 {
 public:
@@ -25,7 +24,5 @@ public:
 
 protected:
     PSO m_mainPSO;
-    IndirectDrawCmdBuf m_indirectCmdBuffer;
-    IndirectDrawCountBuffer m_indirectCountBuffer;
 };
 } // namespace RenderPasses

@@ -1,6 +1,7 @@
 #include "ScreenSpaceShadowPass.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Rendering/Core/SharedResourceManager.h"
+#include "Core/Rendering/Core/Pipeline.h"
 #include "PassManager.h"
 #include "ScreenSpaceShadowsHelper.h"
 

@@ -1,8 +1,6 @@
 #include "ImGuiPass.h"
 #include "Core/Global/GlobalVariables.h"
-#include "Core/Rendering/Core/RenderingTypeDefs.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
-#include "Core/Rendering/Vulkan/Utils/VkEnumHelpers.h"
 #include "Core/Rendering/Vulkan/VkGlobals.h"
 #include "Core/Rendering/Vulkan/VkTextureManager.h"
 #include "Utils/RenderPassUtils.h"
@@ -88,6 +86,7 @@ void ImGuiPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comm
     const auto ex = ctx.pCurrentSwapchainTexture->GetInfo().extents;
     const DirectX::XMINT2 extents(ex.x, ex.y);
     
+    m_mainRenderingData.depthAttachment.SetTexture(data.pMainDepthTexture);
     BeginRenderingBaseCmd cmdBegin(
         ToRenderAttachmentInfos(colorAttachments),
         ToRenderAttachmentInfo(m_mainRenderingData.depthAttachment),

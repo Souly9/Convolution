@@ -1,4 +1,5 @@
 #pragma once
+#include "RenderTraitsMacros.h"
 
 #include "Core/Global/Utils/EnumHelpers.h"
 #include "Core/Rendering/LayerDefines.h"
@@ -17,6 +18,14 @@ struct TextureInfoBase
 struct TextureInfo : TextureInfoBase
 {
     TexFormat format;
+};
+
+enum class TextureStatus : u8
+{
+    Loading,
+    Created,
+    Ready,
+    Failed
 };
 
 // Base class for agnostic data and interfaces
@@ -39,13 +48,22 @@ public:
     {
         return m_info;
     }
+    void SetStatus(TextureStatus status)
+    {
+        m_status = status;
+    }
+
+    TextureStatus GetStatus() const
+    {
+        return m_status;
+    }
 
 protected:
     TextureInfo m_info;
+    TextureStatus m_status{TextureStatus::Loading};
 };
 
-// Template wrapper that inherits from the specific API implementation
-// The Implementation class (e.g. Vk// Template wrapper that inherits from the specific API implementation
+
 #include "APITraits.h"
 #ifdef USE_VULKAN
 #include "Core/Rendering/Vulkan/VulkanTraits.h"
@@ -58,4 +76,5 @@ class TextureT : public APITraits<API>::TextureType
 public:
     // Inherit constructors
     using APITraits<API>::TextureType::TextureType;
+    DECLARE_RENDER_RESOURCE_TRAITS(TextureT, TextureType)
 };

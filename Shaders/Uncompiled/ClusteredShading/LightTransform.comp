@@ -3,12 +3,13 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_EXT_scalar_block_layout : enable
 
-#define SharedDataUBOSet    0
-#define TileArraySet        1
-#define ViewSpaceLightsSet  3
-#include "../../Globals/GlobalBuffers.h"
-#include "../../Globals/LightData.h"
-#include "../../Globals/ClusteredShading/ViewSpaceLights.h"
+#define SharedDataUBOSet   0
+#define TileArraySet       1
+#define ClusterGridSet     2
+#define ViewSpaceLightsSet 3
+
+#include "../../Globals/ClusteredShading.h"
+#include "../../Globals/ClusterLightData.h"
 
 // Best performance on my 5080 for large amount of lights
 #define X_LOCAL_SIZE 256   

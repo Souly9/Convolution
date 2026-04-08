@@ -6,10 +6,10 @@
 #define TransformSSBOSet     2
 #define PassPerObjectDataSet 3
 
-#include "../../Globals/DrawBuildBuffers.h"
-#include "../../Globals/GlobalBuffers.h"
-#include "../../Globals/PerObjectBuffers.h"
-#include "../../Globals/Textures.h"
+#include "../../Globals/Common.h"
+#include "../../Globals/Bindless.h"
+#include "../../Globals/Scene.h"
+#include "../../Globals/GeometryPassData.h"
 
 layout(location = 0) in vec3 fragColor;
 layout(location = 1) in vec2 fragTexCoord;
@@ -24,13 +24,6 @@ void main()
     Material mat = globalObjectDataSSBO.materials[matIdx];
 
     vec4 finalColor = vec4(fragColor, 1.0);
-    
-    if (mat.diffuseTexture != 0)
-    {
-        vec4 texSample = texture(GlobalBindlessTextures[nonuniformEXT(mat.diffuseTexture)], fragTexCoord);
-        finalColor.rgb *= texSample.rgb;
-        if (texSample.a < 0.5) discard;
-    }
 
     outDebug = finalColor;
 }

@@ -3,9 +3,11 @@
 #include "Core/Global/Profiling.h"
 #include "Core/Global/ThreadBase.h"
 #include "Core/Rendering/Core/Defines/GlobalBuffers.h"
-#include "Core/Rendering/Core/RenderingIncludes.h"
-#include "Core/Rendering/Vulkan/VkDescriptorSetLayout.h"
+#include "Core/Rendering/Core/TransferUtils/TransferDefines.h"
 #include "Core/SceneGraph/Mesh.h"
+#include "Core/Rendering/Core/DescriptorSetLayout.h"
+#include "Core/Rendering/Core/DescriptorPool.h"
+#include "Core/Rendering/Passes/PassManagerDefines.h"
 
 namespace RenderPasses
 {
@@ -41,29 +43,31 @@ public:
 
     void UpdateTransformBuffer(const stltype::vector<DirectX::XMFLOAT4X4>& transformBuffer, u32 thisFrame, u32 updateCount = 0);
     void UpdateTransformRange(const stltype::vector<DirectX::XMFLOAT4X4>& transformBuffer, u32 startIdx, u32 count);
+    void UpdatePrevTransformRange(const stltype::vector<DirectX::XMFLOAT4X4>& transformBuffer, u32 startIdx, u32 count);
     void UpdateSceneAABBBuffer(const stltype::vector<AABB>& aabbBuffer, u32 thisFrame, u32 updateCount = 0);
     void UpdateSceneAABBRange(const stltype::vector<AABB>& aabbBuffer, u32 startIdx, u32 count);
     void UpdateGlobalMaterialBuffer(const UBO::MaterialBuffer& materialBuffer, u32 thisFrame);
 
-    DescriptorSet* GetInstanceSSBODescriptorSet(u32 frameIdx)
+    DescriptorSet::Ptr GetInstanceSSBODescriptorSet(u32 frameIdx)
     {
-        return m_frameData[frameIdx].pSceneInstanceSSBOSet;
+        return m_frameData[frameIdx % m_frameData.size()].pSceneInstanceSSBOSet;
     }
 
-    DescriptorSet* GetSceneAABBSSBODescriptorSet(u32 frameIdx)
+    DescriptorSet::Ptr GetSceneAABBSSBODescriptorSet(u32 frameIdx)
     {
-        return m_frameData[frameIdx].pSceneAABBSet;
+        return m_frameData[frameIdx % m_frameData.size()].pSceneAABBSet;
     }
 
-    DescriptorSet* GetViewSpaceLightsDescriptorSet(u32 frameIdx)
+    DescriptorSet::Ptr GetViewSpaceLightsDescriptorSet(u32 frameIdx)
     {
-        return m_frameData[frameIdx].pViewSpaceLightsSet;
+        return m_frameData[frameIdx % m_frameData.size()].pViewSpaceLightsSet;
     }
 
     StorageBuffer& GetViewSpaceLightsSSBO()
     {
         return m_viewSpaceLightsSSBO;
     }
+
 
     const BufferData& GetSceneGeometryBuffers() const
     {
@@ -87,10 +91,8 @@ public:
     {
         u64 vertBufferOffset{0};
         u64 indexBufferOffset{0};
-        u64 instanceBufferIdx{0};
         u64 vertexCount{0};
         u64 indexCount{0};
-        u64 instanceCount{0};
     };
 
     const BufferStats& GetBufferOffsetData() const
@@ -109,20 +111,21 @@ private:
     // though...
     BufferData m_debugGeometryBuffers;
     StorageBuffer m_transformBuffer;
+    StorageBuffer m_prevTransformBuffer;
     StorageBuffer m_sceneInstanceBuffer;
     StorageBuffer m_sceneAABBBuffer;
     StorageBuffer m_materialBuffer;
     StorageBuffer m_viewSpaceLightsSSBO;
 
-    DescriptorSetLayoutVulkan m_sceneInstanceSSBOLayout;
-    DescriptorSetLayoutVulkan m_sceneAABBLayout;
-    DescriptorSetLayoutVulkan m_viewSpaceLightsLayout;
+    DescriptorSetLayout m_sceneInstanceSSBOLayout;
+    DescriptorSetLayout m_sceneAABBLayout;
+    DescriptorSetLayout m_viewSpaceLightsLayout;
     DescriptorPool m_descriptorPool;
     struct FrameData
     {
-        DescriptorSet* pSceneInstanceSSBOSet;
-        DescriptorSet* pSceneAABBSet;
-        DescriptorSet* pViewSpaceLightsSet;
+        DescriptorSet::Ptr pSceneInstanceSSBOSet;
+        DescriptorSet::Ptr pSceneAABBSet;
+        DescriptorSet::Ptr pViewSpaceLightsSet;
     };
     stltype::fixed_vector<FrameData, SWAPCHAIN_IMAGES, false> m_frameData;
 
@@ -135,4 +138,16 @@ private:
 
     stltype::hash_map<const Mesh*, MeshHandle> m_meshHandles;
     stltype::hash_map<const Mesh*, MeshHandle> m_debugMeshHandles;
+
+
+    stltype::hash_set<const Mesh*> m_residentMeshes;
+    stltype::vector<const Mesh*> m_pendingVisibleMeshes;
+    stltype::hash_map<const Mesh*, stltype::vector<u32>> m_meshToInstanceIdx;
+
+    ProfiledLockable(CustomMutex, m_pendingVisibilityMutex);
+    stltype::vector<u32> m_pendingVisibleInstanceIndices;
+
+public:
+    stltype::vector<u32> PopPendingVisibleInstanceIndices();
+    StorageBuffer& GetInstanceBuffer() { return m_sceneInstanceBuffer; }
 };

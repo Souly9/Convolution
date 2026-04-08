@@ -27,7 +27,7 @@ public:
 
 
 protected:
-    stltype::array<mathstl::Matrix, 16> ComputeLightViewProjMatrices(
+    void ComputeLightViewProjMatrices(
         u32 cascades,
         f32 mainCamNear,
         f32 mainCamFar,
@@ -37,14 +37,11 @@ protected:
         const mathstl::Matrix& view,
         const mathstl::Matrix& invViewProj,
         const mathstl::Vector3& lightDir,
-        stltype::array<f32, 16>& splits,
-        stltype::array<mathstl::Matrix, 16>& lightViewProjMatrices,
+        stltype::fixed_vector<f32, 16>& splits,
+        mathstl::Matrix* lightViewProjMatrices,
         u32 shadowMapSize);
 
-    // Every pass should only have one pipeline as we're working with uber shaders + bindless
     PSO m_mainPSO;
-    IndirectDrawCmdBuf m_indirectCmdBuffer;
-    IndirectDrawCountBuffer m_indirectCountBuffer;
     // Current cascade count for viewMask calculation
     u32 m_cascadeCount{3};
 };

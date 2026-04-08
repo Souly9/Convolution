@@ -22,7 +22,7 @@ protected:
     RenderPasses::PassManager* m_pPassManager;
     bool m_renderDebugMeshes;
     bool m_stateChanged{false};
-    Material m_debugMaterial;
+    Material* m_pDebugMaterial{nullptr};
 };
 } // namespace System
 } // namespace ECS

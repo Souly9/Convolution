@@ -37,7 +37,7 @@ void GPUMemManager<Vulkan>::Init(Allocator allocatorMode)
     m_allocatorMode = allocatorMode;
     if (allocatorMode == Allocator::VMA)
     {
-        InitializeVMA();
+        EnsureInitialized();
     }
     else if (allocatorMode == Allocator::Default)
     {
@@ -155,6 +155,8 @@ GPUMemoryHandle GPUMemManager<Vulkan>::AllocateBuffer(BufferUsage usage,
     {
         DEBUG_ASSERT(false);
     }
+    EnsureInitialized();
+    DEBUG_ASSERT(s_vmaAllocator != nullptr && "VMA allocator is null! Allocation early?");
     SimpleScopedGuard<CustomMutex> lock(m_allocatinggMutex);
     VmaAllocationCreateInfo allocInfo = {};
     allocInfo.usage = Conv2VmaMemFlags(usage);
@@ -176,6 +178,8 @@ GPUMemoryHandle GPUMemManager<Vulkan>::AllocateImage(VkImageCreateInfo imageInfo
     {
         DEBUG_ASSERT(false);
     }
+    EnsureInitialized();
+    DEBUG_ASSERT(s_vmaAllocator != nullptr && "VMA allocator is null! Allocation early?");
     SimpleScopedGuard<CustomMutex> lock(m_allocatinggMutex);
     VmaAllocationCreateInfo allocInfo = {};
     allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
@@ -285,4 +289,13 @@ void GPUMemManager<Vulkan>::GetVramStats(u64& total, u64& used)
             used += budgets[i].usage;
         }
     }
+}
+
+void GPUMemManager<Vulkan>::EnsureInitialized()
+{
+    if (m_allocatorMode != Allocator::VMA || m_isInitialized || s_vmaAllocator != nullptr)
+        return;
+
+    InitializeVMA();
+    m_isInitialized = true;
 }

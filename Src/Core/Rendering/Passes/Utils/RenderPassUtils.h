@@ -1,12 +1,12 @@
 #pragma once
-#include "../PassManager.h"
+#include "Core/Rendering/Core/RenderingIncludes.h"
 #include "Core/Rendering/Core/Defines/VertexDefines.h"
-#include "Core/Rendering/Core/CommandBuffer.h"
+#include <cstring>
 
 struct WriteableRTAttachments
 {
-    ColorAttachmentVulkan color;
-    DepthBufferAttachmentVulkan depth;
+    ColorAttachment color;
+    DepthAttachment depth;
 };
 // Helper to create a default ColorAttachment
 static inline ColorAttachment CreateDefaultColorAttachment(TexFormat format, LoadOp loadOp, Texture* pTex)
@@ -51,11 +51,11 @@ static inline DepthAttachment CreateReadOnlyDepthAttachment(LoadOp loadOp, Textu
     info.format = pTex ? (TexFormat)pTex->GetInfo().format : DEPTH_BUFFER_FORMAT;
 
     info.loadOp = loadOp;
-    info.storeOp = StoreOp::DONT_CARE;
+    info.storeOp = StoreOp::NONE;
     info.initialLayout = ImageLayout::UNDEFINED;
     info.finalLayout = ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL;
     info.renderingLayout = ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-    
+
     auto att = DepthAttachment::Create(info, pTex);
     att.SetClearValue(mathstl::Vector4(1.0f, 0.0f, 0.0f, 0.0f)); // Depth 1.0, Stencil 0
     return att;
@@ -88,7 +88,7 @@ static inline RenderAttachmentInfo ToRenderAttachmentInfo(const ColorAttachment&
     info.storeOp = (StoreOp)attachment.GetDesc().storeOp;
     
     auto clear = attachment.GetClearValue();
-    memcpy(&info.clearValue, &clear, sizeof(VkClearValue));
+    memcpy(&info.clearValue, &clear, sizeof(clear));
     
     return info;
 }
@@ -105,7 +105,7 @@ static inline RenderAttachmentInfo ToRenderAttachmentInfo(const DepthAttachment&
     info.storeOp = (StoreOp)attachment.GetDesc().storeOp;
     
     auto clear = attachment.GetClearValue();
-    memcpy(&info.clearValue, &clear, sizeof(VkClearValue));
+    memcpy(&info.clearValue, &clear, sizeof(clear));
     
     return info;
 }

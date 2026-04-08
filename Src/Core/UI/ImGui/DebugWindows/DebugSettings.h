@@ -44,6 +44,13 @@ public:
                                                             { state.renderState.debugViewMode = uiDebugMode; });
             }
         }
+        bool debugCulling = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::CullFrustum);
+        if (ImGui::Checkbox("Debug Culling", &debugCulling))
+        {
+            g_pApplicationState->RegisterUpdateFunction(
+                [debugCulling](ApplicationState& state)
+                { mathstl::setFlag(state.renderState.debugFlags, (u32)DebugFlags::CullFrustum, debugCulling); });
+        }
         ImGui::End();
 
         if (drawDebugMeshes != m_drawDebugMeshes)
@@ -60,5 +67,5 @@ public:
     }
 
 protected:
-    bool m_drawDebugMeshes{true};
+    bool m_drawDebugMeshes{false};
 };

@@ -7,6 +7,7 @@
 #include "Core/Rendering/Core/RenderingForwardDecls.h"
 #include "Core/Rendering/Core/RenderDefinitions.h"
 #include "Core/Rendering/Vulkan/Utils/TextureEnums.h"
+#include "Core/Rendering/Core/TransferUtils/TransferDefines.h"
 #include "Core/Rendering/Vulkan/VkCommandBuffer.h"
 #include "Core/Rendering/Vulkan/VkCommandPool.h"
 #include "Core/Rendering/Vulkan/VkDescriptorPool.h"
@@ -24,6 +25,8 @@ struct TextureSamplerInfo
     TextureWrapMode wrapU{TextureWrapMode::REPEAT};
     TextureWrapMode wrapV{TextureWrapMode::REPEAT};
     TextureWrapMode wrapW{TextureWrapMode::REPEAT};
+    TextureFilter minFilter{TextureFilter::LINEAR};
+    TextureFilter magFilter{TextureFilter::LINEAR};
     VkBorderColor borderColor{VK_BORDER_COLOR_INT_OPAQUE_WHITE};
 };
 
@@ -77,10 +80,11 @@ struct TextureFileInfo
     DirectX::XMINT2 extents;
     unsigned char* pixels;
     s32 texChannels;
-    u64 dataSize = 0;
-    u32 ddsFormat = 0;
+    unsigned long long dataSize = 0;
+    unsigned int ddsFormat = 0;
     bool supportsAlpha = false;
 };
+
 struct FileTextureRequest
 {
     TextureFileInfo ioInfo;
@@ -113,6 +117,11 @@ struct TextureCreationInfoVulkanImage
     VkImage image;
 };
 
+struct Mesh;
+struct RenderingData;
+struct BufferData;
+struct CompleteVertex;
+class StagingBufferVulkan;
 // Texture manager that manages texture creation and uploads to the bindless texture buffers, lives in a seperate thread
 class VkTextureManager : public ThreadBase
 {
@@ -147,6 +156,11 @@ public:
     TextureHandle SubmitAsyncTextureCreation(const TexCreateInfo& info);
     TextureHandle SubmitAsyncDynamicTextureCreation(const DynamicTextureRequest& info);
 
+    bool IsReady(TextureHandle handle);
+    void WaitFor(TextureHandle handle);
+
+    void SetPlaceholder(TextureHandle handle);
+
     void CreateTexture(const FileTextureRequest& fileReq);
     Texture* CreateDynamicTexture(const DynamicTextureRequest& req);
     Texture* CreateTextureImmediate(const DynamicTextureRequest& req);
@@ -173,10 +187,10 @@ public:
     BindlessTextureHandle MakeTextureBindless(TextureHandle handle, bool isPersistent = false);
     BindlessTextureHandle MakeTextureBindless(TextureVulkan* pTex, bool isPersistent = false);
 
-    void EnqueueAsyncTextureTransfer(StagingBuffer* pStagingBuffer,
-                                     const Texture* pTex,
+    void EnqueueAsyncTextureTransfer(StagingBufferVulkan* pStagingBuffer,
+                                     Texture* pTex,
                                      const VkImageAspectFlagBits flagBit);
-    void EnqueueAsyncTextureTransfer(StagingBuffer* pStagingBuffer,
+    void EnqueueAsyncTextureTransfer(StagingBufferVulkan* pStagingBuffer,
                                      const TextureHandle handle,
                                      const VkImageAspectFlagBits flagBit);
 
@@ -189,15 +203,15 @@ public:
 
     bool ShouldFlipNormalMap(const stltype::string& path) const;
 
-    stltype::vector<Texture>& GetSwapChainTextures()
+    stltype::vector<TextureVulkan>& GetSwapChainTextures()
     {
         return m_swapChainTextures;
     }
-    DescriptorSet* GetBindlessDescriptorSet()
+    DescriptorSetVulkan* GetBindlessDescriptorSet()
     {
         return m_bindlessDescriptorSet;
     }
-    DescriptorSet* GetBindlessImageDescriptorSet()
+    DescriptorSetVulkan* GetBindlessImageDescriptorSet()
     {
         return m_bindlessImageDescriptorSet;
     }
@@ -227,37 +241,29 @@ protected:
     };
     const LoadedTexInfo* IsAlreadyRequested(const stltype::string& filePath, TextureSemantic semantic) const;
 
-    struct BindlessInfo
-    {
-        TextureHandle handle;
-        BindlessTextureHandle bindlessHandle;
-    };
-    const BindlessInfo* IsAlreadyBindless(TextureHandle handle) const;
-
 protected:
     // Manager thread data
-    CommandPool m_transferCommandPool;
+    CommandPoolVulkan m_transferCommandPool;
     CommandBuffer* m_transferCommandBuffer{nullptr};
     stltype::vector<CommandBuffer*> m_inflightCommandBuffers;
     stltype::vector<CommandBuffer*> m_availableCommandBuffers;
     stltype::vector<LoadedTexInfo> m_loadedTextureCache;
     stltype::vector<LoadedTexInfo> m_persistentLoadedTextureCache;
-    stltype::vector<BindlessInfo> m_bindlessTextureCache;
-    stltype::vector<BindlessInfo> m_persistentBindlessTextureCache;
-    DescriptorPool m_bindlessDescriptorPool;
-    DescriptorSet* m_bindlessDescriptorSet{nullptr};
-    DescriptorSetLayout m_bindlessDescriptorSetLayout;
-    DescriptorSet* m_bindlessImageDescriptorSet{nullptr};
-    DescriptorSetLayout m_bindlessImageDescriptorSetLayout;
+    stltype::hash_map<TextureHandle, BindlessTextureHandle> m_bindlessTextureHandleMap;
+    DescriptorPoolVulkan m_bindlessDescriptorPool;
+    DescriptorSetVulkan* m_bindlessDescriptorSet{nullptr};
+    DescriptorSetLayoutVulkan m_bindlessDescriptorSetLayout;
+    DescriptorSetVulkan* m_bindlessImageDescriptorSet{nullptr};
+    DescriptorSetLayoutVulkan m_bindlessImageDescriptorSetLayout;
     stltype::vector<TextureHandle> m_texturesToMakeBindless;
     stltype::vector<TextureHandle> m_persistentTexturesToMakeBindless;
 
     // Frequently accessed by threads
     stltype::queue<TextureRequest> m_requests{}; // Pending texture requests, mainly handled by manager thread
-    stltype::hash_map<TextureHandle, Texture> m_textures;
-    stltype::hash_map<TextureHandle, Texture> m_persistentTextures;
-    stltype::deque<StagingBuffer> m_stagingBufferInUse;
-    stltype::vector<Texture> m_swapChainTextures;
+    stltype::hash_map<TextureHandle, TextureVulkan> m_textures;
+    stltype::hash_map<TextureHandle, TextureVulkan> m_persistentTextures;
+    stltype::deque<StagingBufferVulkan> m_stagingBufferInUse;
+    stltype::vector<TextureVulkan> m_swapChainTextures;
 
     stltype::atomic<u32> m_baseHandle{0};
     u32 m_lastBindlessTextureWriteIdx{0};

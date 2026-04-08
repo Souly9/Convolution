@@ -37,9 +37,9 @@ static inline const stltype::vector<const char*> g_deviceExtensions = {"VK_KHR_s
                                                                        "VK_EXT_memory_budget",
                                                                        "VK_NV_device_diagnostic_checkpoints",
                                                                        "VK_NV_device_diagnostics_config",
-                                                                       "VK_EXT_device_address_binding_report",
                                                                        "VK_EXT_device_fault",
-                                                                       "VK_EXT_scalar_block_layout"};
+                                                                       "VK_EXT_memory_priority"
+};
 
 static inline const stltype::vector<VkDynamicState> g_dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT,
                                                                        VK_DYNAMIC_STATE_SCISSOR};

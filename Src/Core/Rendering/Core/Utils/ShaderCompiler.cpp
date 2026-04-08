@@ -1,5 +1,4 @@
 #include "ShaderCompiler.h"
-#include "../ShaderManager.h"
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/IO/FileReader.h"
@@ -30,16 +29,32 @@ public:
         }
 
         stltype::string fileName = headerName;
-        fileName = fileName.substr(fileName.find_last_of('/') + 1);
-        const auto& pathInfo = std::find_if(m_includerPaths.begin(),
-                                            m_includerPaths.end(),
-                                            [&](const IncluderPathInfo& info) { return info.fileName == fileName; });
-        const auto it = m_includerMap.find(pathInfo->absolutePath);
-        DEBUG_ASSERT(it != m_includerMap.end());
+        auto lastSlash = fileName.find_last_of('/');
+        if (lastSlash != stltype::string::npos)
+            fileName = fileName.substr(lastSlash + 1);
 
-        auto& rslt = m_includerResults.emplace_back(it->first.c_str(), it->second.data(), it->second.size(), nullptr);
+        const auto itPath = std::find_if(m_includerPaths.begin(),
+                                         m_includerPaths.end(),
+                                         [&](const IncluderPathInfo& info) { return info.fileName == fileName; });
+        
+        if (itPath == m_includerPaths.end())
+        {
+            DEBUG_LOGF("Shader compile error: Could not find include file '{}' (requested by '{}')", headerName, includerName);
+            return nullptr;
+        }
 
-        return &rslt;
+        const auto it = m_includerMap.find(itPath->absolutePath);
+        if (it == m_includerMap.end())
+        {
+             DEBUG_LOGF("Shader compile error: Include file '{}' found in paths but not in map! (requested by '{}')", headerName, includerName);
+             return nullptr;
+        }
+
+        auto includeResult = stltype::make_unique<IncludeResult>(it->first.c_str(), it->second.data(), it->second.size(), nullptr);
+        IncludeResult* pIncludeResult = includeResult.get();
+        m_includerResults.emplace_back(stltype::move(includeResult));
+
+        return pIncludeResult;
     }
 
     virtual IncludeResult* includeLocal(const char* headerName,
@@ -58,6 +73,14 @@ public:
     void ReadAllFiles(const std::string& rootDir)
     {
         ScopedZone("GlslangIncluder::ReadAllFiles");
+        if (m_readShaderFiles > 0)
+        {
+            g_pFileReader->FinishAllRequests();
+            m_readShaderFiles = 0;
+        }
+
+        m_includerMap.clear();
+        m_includerPaths.clear();
         m_includerResults.clear();
         m_includerResults.reserve(150);
         for (const auto& entry : fs::recursive_directory_iterator(rootDir.c_str()))
@@ -100,7 +123,7 @@ private:
         stltype::string absolutePath;
     };
     stltype::vector<IncluderPathInfo> m_includerPaths;
-    stltype::vector<IncludeResult> m_includerResults;
+    stltype::vector<stltype::unique_ptr<IncludeResult>> m_includerResults;
     threadstl::AtomicUint32 m_readShaderFiles = 0;
 };
 
@@ -121,7 +144,23 @@ static SpirVBinary CompileShader(EShLanguage type, const stltype::vector<char>& 
 
     EShMessages messages = (EShMessages)(EShMsgDefault | EShMsgVulkanRules | EShMsgSpvRules);
 
-    if (shader.parse(GetDefaultResources(), 100, ENoProfile, false, true, messages, s_includer) == false)
+    bool parseSucceeded = false;
+    try
+    {
+        parseSucceeded = shader.parse(GetDefaultResources(), 100, ENoProfile, false, true, messages, s_includer);
+    }
+    catch (const std::exception& ex)
+    {
+        DEBUG_LOGF("Shader compilation exception for '{}': {}", fileName, ex.what());
+        return {};
+    }
+    catch (...)
+    {
+        DEBUG_LOGF("Shader compilation exception for '{}': unknown exception", fileName);
+        return {};
+    }
+
+    if (parseSucceeded == false)
     {
         const auto pLog = shader.getInfoLog();
         DEBUG_LOGF("Shader compilation failed: {}", pLog);

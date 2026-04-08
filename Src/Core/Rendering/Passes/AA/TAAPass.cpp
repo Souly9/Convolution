@@ -1,0 +1,111 @@
+#include "TAAPass.h"
+#include "Core/Global/GlobalVariables.h"
+#include "Core/Global/FrameGlobals.h"
+#include "Core/Rendering/Core/CommandBuffer.h"
+#include "Core/Rendering/Core/SharedResourceManager.h"
+#include "Core/Rendering/Core/ShaderManager.h"
+#include "Core/Rendering/Vulkan/Utils/VkDescriptorLayoutUtils.h"
+#include "Core/Rendering/Vulkan/VkTextureManager.h"
+#include "Core/Rendering/Passes/PassManager.h"
+#include "Core/Global/Profiling.h"
+
+using namespace RenderPasses;
+
+TAAPass::TAAPass() : ConvolutionRenderPass("TAAPass")
+{
+    CreateSharedDescriptorLayout();
+}
+
+TAAPass::~TAAPass()
+{
+}
+
+void TAAPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager)
+{
+    ScopedZone("TAAPass::Init");
+    BuildPipelines();
+}
+
+void TAAPass::BuildPipelines()
+{
+    auto computeShader = Shader("Shaders/TAA.comp.spv", "main");
+
+    ShaderCollection shaders{};
+    shaders.pComputeShader = &computeShader;
+
+    PipelineInfo pipeInfo{};
+    pipeInfo.descriptorSetLayout.sharedDescriptors = m_sharedDescriptors;
+
+    PushConstant pushConst;
+    pushConst.shaderUsage = ShaderTypeBits::Compute;
+    pushConst.offset = 0;
+    pushConst.size = sizeof(TAAPushConstants);
+    pipeInfo.pushConstantInfo.constants.push_back(pushConst);
+
+    m_taaPipeline = ComputePipeline(shaders, pipeInfo);
+}
+
+void TAAPass::BuildBuffers()
+{
+}
+
+bool TAAPass::WantsToRender() const
+{
+    const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+    return renderState.aaType == AntialiasingType::TAA;
+}
+
+void TAAPass::CreateSharedDescriptorLayout()
+{
+    m_sharedDescriptors.clear();
+    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalTextures, 0));
+    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalArrayTextures, 0));
+    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalImages, 1));
+    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::GBufferUBO, 2));
+    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::ShadowmapUBO, 2));
+}
+
+void TAAPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
+                                  FrameRendererContext& previousFrameCtx,
+                                  u32 thisFrameNum)
+{
+}
+
+void TAAPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
+{
+    ScopedZone("TAAPass::Render");
+    StartRenderPassProfilingScope(pCmdBuffer);
+
+    const auto& currentAA = g_pApplicationState->GetCurrentApplicationState().renderState.aaType;
+    if (m_lastAAType != currentAA)
+    {
+        m_pushConstants.resetHistory = 1;
+        m_lastAAType = currentAA;
+    }
+    else
+    {
+        m_pushConstants.resetHistory = 0;
+    }
+
+    m_pushConstants.frameIndex = ctx.currentFrame;
+    m_pushConstants.resolution = mathstl::Vector2((f32)FrameGlobals::GetSwapChainExtent().x, (f32)FrameGlobals::GetSwapChainExtent().y);
+
+    u32 groupCountX = (FrameGlobals::GetSwapChainExtent().x + 7) / 8;
+    u32 groupCountY = (FrameGlobals::GetSwapChainExtent().y + 7) / 8;
+    u32 groupCountZ = 1;
+
+    {
+        GenericComputeDispatchCmd cmd(&m_taaPipeline, groupCountX, groupCountY, groupCountZ);
+        const auto texArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessTextureArray);
+        const auto imageArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessImageArray);
+        const auto gbufferUBO = data.bufferDescriptors.at(UBO::DescriptorContentsType::GBuffer);
+        
+        cmd.descriptorSets = {texArraySet,
+                              imageArraySet,
+                              gbufferUBO};
+        cmd.SetPushConstants(0, m_pushConstants);
+        pCmdBuffer->RecordCommand(cmd);
+    }
+
+    EndRenderPassProfilingScope(pCmdBuffer);
+}

@@ -43,6 +43,10 @@ struct SimpleScopedGuard<tracy::Lockable<T>>
 class CustomMutex
 {
 public:
+    CustomMutex() : m_mutex(nullptr, true)
+    {
+    }
+
     void unlock()
     {
         m_mutex.Unlock();
@@ -79,7 +83,7 @@ public:
         ShutdownThread();
     }
 
-    bool KeepRunning() const
+    bool KeepRunning()
     {
         return m_keepRunning;
     }
@@ -99,6 +103,6 @@ public:
 
 protected:
     threadstl::Thread m_thread;
-    ProfiledLockable(CustomMutex, m_sharedDataMutex);
+    mutable ProfiledLockable(CustomMutex, m_sharedDataMutex);
     bool m_keepRunning{true};
 };

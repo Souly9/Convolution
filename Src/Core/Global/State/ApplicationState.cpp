@@ -1,11 +1,11 @@
 #include "ApplicationState.h"
 #include "Core/Global/GlobalVariables.h"
-#include "Core/Rendering/Core/StaticFunctions.h"
 #include "Core/Rendering/Core/TextureManager.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
 #include "Core/SceneGraph/Mesh.h"
 #include "Core/IO/FileReader.h"
 #include "Core/SceneGraph/Scene.h"
+#include "Core/Rendering/Core/StaticFunctions.h"
 
 void ApplicationStateManager::ProcessStateUpdates()
 {
@@ -39,8 +39,6 @@ void ApplicationStateManager::ProcessStateUpdates()
 void ApplicationStateManager::SwitchSceneInternal()
 {
     DEBUG_LOGF("Setting current scene to: {}", m_pNextScene->GetName().c_str());
-    // Doesn't need to be fast nor do we want to to run into weird sync errors
-    SRF::WaitForDeviceIdle<RenderAPI>();
     UnloadCurrentScene();
     m_pNextScene->Load();
     m_pCurrentScene = std::move(m_pNextScene);
@@ -80,9 +78,9 @@ void ApplicationStateManager::UnloadCurrentScene()
         g_pFileReader->FinishAllRequests();
 
         g_pQueueHandler->DispatchAllRequests();
-        g_pQueueHandler->WaitForFences(~0u);
-        vkDeviceWaitIdle(VK_LOGICAL_DEVICE);
-        
+        // Doesn't need to be fast nor do we want to to run into weird sync errors
+        SRF::WaitForDeviceIdle<RenderAPI>();
+
         m_pCurrentScene.reset();
 
         g_pTexManager->Flush();

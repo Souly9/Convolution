@@ -64,10 +64,10 @@ stltype::vector<DescriptorSetVulkan*> DescriptorPoolVulkan::CreateDescriptorSets
     rslt.reserve(layouts.size());
     for (u32 i = 0; i < descriptorSets.size(); ++i)
     {
-        m_createdDescriptorSets[m_descriptorSetCount + i] = DescriptorSetVulkan(descriptorSets[i]);
-        rslt.push_back(&m_createdDescriptorSets.at(m_descriptorSetCount + i));
+        m_createdDescriptorSets.push_back(DescriptorSetVulkan(descriptorSets[i]));
+        rslt.push_back(&m_createdDescriptorSets.back());
     }
-    m_descriptorSetCount += layouts.size() - 1;
+    m_descriptorSetCount += static_cast<u32>(layouts.size());
 
     return rslt;
 }
@@ -85,7 +85,7 @@ DescriptorSetVulkan* DescriptorPoolVulkan::CreateDescriptorSet(const VkDescripto
     VkDescriptorSet descriptorSet;
     DEBUG_ASSERT(vkAllocateDescriptorSets(VK_LOGICAL_DEVICE, &allocInfo, &descriptorSet) == VK_SUCCESS);
 
-    auto& set = m_createdDescriptorSets[m_descriptorSetCount] = DescriptorSetVulkan(descriptorSet);
+    auto& set = m_createdDescriptorSets.emplace_back(descriptorSet);
 
     ++m_descriptorSetCount;
 
@@ -205,4 +205,26 @@ void DescriptorSetVulkan::WriteBindlessImageUpdate(const TextureVulkan* pTex, u3
     descriptorWrite.pTexelBufferView = nullptr; // Optional
 
     vkUpdateDescriptorSets(VK_LOGICAL_DEVICE, 1, &descriptorWrite, 0, nullptr);
+}
+
+void DescriptorPoolVulkan::NamingCallBack(const stltype::string& name)
+{
+    VkDebugUtilsObjectNameInfoEXT nameInfo = {};
+    nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+    nameInfo.objectType = VK_OBJECT_TYPE_DESCRIPTOR_POOL;
+    nameInfo.objectHandle = (uint64_t)m_descriptorPool;
+    nameInfo.pObjectName = name.c_str();
+
+    vkSetDebugUtilsObjectName(VK_LOGICAL_DEVICE, &nameInfo);
+}
+
+void DescriptorSetVulkan::NamingCallBack(const stltype::string& name)
+{
+    VkDebugUtilsObjectNameInfoEXT nameInfo = {};
+    nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+    nameInfo.objectType = VK_OBJECT_TYPE_DESCRIPTOR_SET;
+    nameInfo.objectHandle = (uint64_t)m_descriptorSet;
+    nameInfo.pObjectName = name.c_str();
+
+    vkSetDebugUtilsObjectName(VK_LOGICAL_DEVICE, &nameInfo);
 }

@@ -3,7 +3,7 @@
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Rendering/Core/Attachment.h"
 
-class AttachmentBaseVulkan
+class AttachmentBaseVulkan : public AttachmentBase
 {
 public:
     AttachmentBaseVulkan()
@@ -61,7 +61,7 @@ protected:
     VkClearValue m_clearValue{g_BlackCLearColor};
 };
 
-class ColorAttachmentVulkan : public AttachmentBaseVulkan
+class ColorAttachmentVulkan : public AttachmentBaseVulkan, public ColorAttachmentBase
 {
 public:
     static ColorAttachmentVulkan Create(const ColorAttachmentInfo& createInfo, Texture* pTexture = nullptr);
@@ -73,17 +73,17 @@ protected:
                           TexFormat format);
 };
 
-class DepthBufferAttachmentVulkan : public AttachmentBaseVulkan
+class DepthAttachmentVulkan : public AttachmentBaseVulkan, public DepthAttachmentBase
 {
 public:
-    DepthBufferAttachmentVulkan()
+    DepthAttachmentVulkan()
     {
     }
 
-    static DepthBufferAttachmentVulkan Create(const DepthBufferAttachmentInfo& createInfo, Texture* pTexture = nullptr);
+    static DepthAttachmentVulkan Create(const DepthBufferAttachmentInfo& createInfo, Texture* pTexture = nullptr);
 
 protected:
-    DepthBufferAttachmentVulkan(const VkAttachmentDescription& attachmentDesc,
+    DepthAttachmentVulkan(const VkAttachmentDescription& attachmentDesc,
                                 Texture* pTexture,
                                 VkImageLayout renderingLayout,
                                 TexFormat format);

@@ -54,22 +54,10 @@ u32 ConvolutionRenderPass::SetVertexAttributes(
 }
 void ConvolutionRenderPass::StartRenderPassProfilingScope(CommandBuffer* pCmdBuffer)
 {
-#if CONV_DEBUG
-    if (m_pTimingQuery && m_pTimingQuery->IsEnabled())
-    {
-        if (m_passTimingIndex == UINT32_MAX)
-            m_passTimingIndex = m_pTimingQuery->RegisterPass(m_passName);
-        m_pTimingQuery->WriteStartTimestamp(pCmdBuffer, m_passTimingIndex);
-    }
-    pCmdBuffer->RecordCommand(StartProfilingScopeCmd{.name = m_passName.c_str(), .color = s_profilingScopeColor});
-#endif
+    Profiling::StartScope(pCmdBuffer, m_pTimingQuery, m_passTimingIndex, m_passName);
 }
 
 void ConvolutionRenderPass::EndRenderPassProfilingScope(CommandBuffer* pCmdBuffer)
 {
-#if CONV_DEBUG
-    if (m_pTimingQuery && m_pTimingQuery->IsEnabled())
-        m_pTimingQuery->WriteEndTimestamp(pCmdBuffer, m_passTimingIndex);
-    pCmdBuffer->RecordCommand(EndProfilingScopeCmd{});
-#endif
+    Profiling::EndScope(pCmdBuffer, m_pTimingQuery, m_passTimingIndex);
 }

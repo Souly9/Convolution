@@ -119,7 +119,8 @@ enum class LoadOp
 enum class StoreOp
 {
     STORE,
-    DONT_CARE
+    DONT_CARE,
+    NONE
 };
 
 enum class DepthCompareOp

@@ -1,8 +1,18 @@
 #pragma once
+#include "RenderTraitsMacros.h"
+#include "Core/Rendering/Core/Defines/DescriptorLayoutDefines.h"
 #include "Core/Rendering/Core/RenderingForwardDecls.h"
-#include "Core/Rendering/Core/RenderDefinitions.h"
+#include "Attachment.h" 
 #include "Core/Rendering/Core/Resource.h"
-#include "Defines/DescriptorLayoutDefines.h"
+#include "RenderDefinitions.h"
+
+
+struct ShaderCollection
+{
+    Shader* pVertShader;
+    Shader* pFragShader;
+    Shader* pComputeShader;
+};
 
 enum class Topology
 {
@@ -84,7 +94,7 @@ struct PipelineInfo
     u32 viewMask{0};
     bool dynamicViewScissor{true};
     bool hasDepth{true};
-    bool depthWriteEnable{true};
+    bool depthWriteEnable{false};
 };
 
 // Function declarations - implementations in Pipeline.cpp
@@ -112,6 +122,7 @@ class ComputePipelineT : public APITraits<API>::ComputePipelineType
 {
 public:
     using APITraits<API>::ComputePipelineType::ComputePipelineType;
+    DECLARE_RENDER_RESOURCE_TRAITS(ComputePipelineT, ComputePipelineType)
 };
 
 template <typename API>
@@ -119,4 +130,5 @@ class GraphicsPipelineT : public APITraits<API>::GraphicsPipelineType
 {
 public:
     using APITraits<API>::GraphicsPipelineType::GraphicsPipelineType;
+    DECLARE_RENDER_RESOURCE_TRAITS(GraphicsPipelineT, GraphicsPipelineType)
 };

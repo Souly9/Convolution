@@ -28,8 +28,6 @@ protected:
     PSO m_wireframeDebugObjectsPSO;
 
     stltype::hash_map<Mesh*, InstancedMeshDataInfo> m_instancedMeshInfoMap;
-    IndirectDrawCmdBuf m_indirectCmdBufferOpaque;
-    IndirectDrawCmdBuf m_indirectCmdBufferWireFrame;
-    IndirectDrawCountBuffer m_indirectCountBuffer;
+    stltype::fixed_vector<IndirectDrawCmdBuf, SWAPCHAIN_IMAGES> m_indirectCmdBuffersWireframe;
 };
 } // namespace RenderPasses

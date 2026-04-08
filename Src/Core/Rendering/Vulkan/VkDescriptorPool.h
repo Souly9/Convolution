@@ -1,11 +1,10 @@
 #pragma once
 #include "BackendDefines.h"
+#include "Core/Rendering/Core/DescriptorPool.h"
 
-class GenBufferVulkan;
+static inline constexpr u32 MAX_DESCRIPTOR_SETS = 128;
 
-static inline constexpr u32 MAX_DESCRIPTOR_SETS = 32;
-
-class DescriptorSetVulkan
+class DescriptorSetVulkan : public DescriptorSetBase
 {
 public:
     DescriptorSetVulkan();
@@ -25,6 +24,8 @@ public:
     void WriteBindlessTextureUpdate(const TextureVulkan* pTex, u32 idx, u32 bindingSlot = 0);
     void WriteBindlessImageUpdate(const TextureVulkan* pTex, u32 idx, u32 bindingSlot = 0);
 
+    virtual void NamingCallBack(const stltype::string& name) override;
+
 private:
     VkDescriptorSet m_descriptorSet{VK_NULL_HANDLE};
     u32 m_bindingSlot{0};
@@ -36,7 +37,7 @@ struct DescriptorPoolCreateInfo
     bool enableStorageBufferDescriptors{false};
     bool freeDescriptorSet{true};
 };
-class DescriptorPoolVulkan
+class DescriptorPoolVulkan : public DescriptorPoolBase
 {
 public:
     DescriptorPoolVulkan();
@@ -59,11 +60,13 @@ public:
         return m_descriptorPool;
     }
 
+    virtual void NamingCallBack(const stltype::string& name) override;
+
 protected:
     VkDescriptorPoolSize CreateNewPoolSizeForType(VkDescriptorType type, u32 count) const;
 
 protected:
-    stltype::array<DescriptorSetVulkan, MAX_DESCRIPTOR_SETS> m_createdDescriptorSets;
+    stltype::fixed_vector<DescriptorSetVulkan, MAX_DESCRIPTOR_SETS> m_createdDescriptorSets{};
     VkDescriptorPool m_descriptorPool{VK_NULL_HANDLE};
     u32 m_descriptorSetCount = 0;
 };

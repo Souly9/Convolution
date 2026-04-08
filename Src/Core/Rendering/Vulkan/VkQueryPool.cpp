@@ -48,12 +48,24 @@ void QueryPoolVulkan::GetPipelineStatistics(u32 index, u32 count, stltype::vecto
         return;
 
     results.resize(count * numStats);
-    DEBUG_ASSERT(vkGetQueryPoolResults(VK_LOGICAL_DEVICE,
-                          m_pool,
-                          index,
-                          count,
-                          results.size() * sizeof(u64),
-                          results.data(),
-                          numStats * sizeof(u64),
-                          VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT) == VK_SUCCESS);
+    const VkResult result = vkGetQueryPoolResults(VK_LOGICAL_DEVICE,
+                                                  m_pool,
+                                                  index,
+                                                  count,
+                                                  results.size() * sizeof(u64),
+                                                  results.data(),
+                                                  numStats * sizeof(u64),
+                                                  VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
+    if (result != VK_SUCCESS)
+    {
+        DEBUG_LOGF("[VkQueryPool] vkGetQueryPoolResults failed (result {}, index {}, count {}, queryType {}).",
+                   static_cast<s32>(result),
+                   index,
+                   count,
+                   static_cast<u32>(m_type));
+        for (auto& value : results)
+        {
+            value = 0;
+        }
+    }
 }

@@ -2,7 +2,6 @@
 #include "../GlobalDefines.h"
 #include "Core/Global/ThreadBase.h"
 #include "Core/SceneGraph/Scene.h"
-#include "EASTL/unique_ptr.h"
 #include "States.h"
 
 struct ApplicationState;

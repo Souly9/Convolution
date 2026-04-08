@@ -1,38 +1,24 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Global/GlobalVariables.h"
-#include "Core/Rendering/Core/AABB.h"
+#include "Core/Global/Typedefs.h"
+#include "Core/Rendering/Core/Attachment.h"
 #include "Core/Rendering/Core/Defines/GlobalBuffers.h"
 #include "Core/Rendering/Core/Defines/LightDefines.h"
-#include "Core/Rendering/Vulkan/VkGPUTimingQuery.h"
-
-
+#include "Core/Rendering/Core/GPUTimingQuery.h"
 #include "Core/Events/EventSystem.h"
-#include "Core/Global/ThreadBase.h"
-#include "Core/Rendering/Core/Material.h"
-#include "Core/Rendering/Core/Pipeline.h"
-#include "Core/Rendering/Passes/FrameResourceManager.h"
-#include "Core/Rendering/Core/RenderingTypeDefs.h"
+#include "Core/Rendering/Core/FrameResourceManager.h"
 #include "Core/Rendering/Core/ShadowMaps.h"
 #include "Core/Rendering/Core/SharedResourceManager.h"
 #include "Core/Rendering/Core/View.h"
-#include "Core/Rendering/Vulkan/VkAttachment.h"
-#include "Core/SceneGraph/Mesh.h"
-#include "Core/WindowManager.h"
-#include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
+#include <SimpleMath/SimpleMath.h>
 #include "EASTL/fixed_vector.h"
 #include "GBuffer.h"
-#include "LightResourceManager.h"
-
 class SharedResourceManager;
 
 namespace RenderPasses
 {
 class ConvolutionRenderPass;
-
-// RenderDataForPreProcessing logic transferred to FrameResourceManager
-
-
 
 // A pass is responsible for rendering a view (aka, main pass renders the main
 // camera view), can also execute solely on CPU side (think culling would be a
@@ -42,6 +28,8 @@ struct MainPassData
 {
     ::SharedResourceManager* pResourceManager{nullptr};
     GBuffer* pGbuffer{nullptr};
+    Texture* pMainDepthTexture{nullptr};
+    Texture* pLastFrameDepthTexture{nullptr};
     RenderView mainView{};
     mathstl::Matrix mainCamViewMatrix{};
     mathstl::Matrix mainCamInvViewProj{};
@@ -49,8 +37,8 @@ struct MainPassData
     stltype::vector<CsmRenderView> csmViews;
     // Views we just render into normal shadowmaps whatever those will end up being
     stltype::vector<RenderView> shadowViews;
-    stltype::vector<DescriptorSet*> viewDescriptorSets;
-    stltype::hash_map<UBO::DescriptorContentsType, DescriptorSet*> bufferDescriptors;
+    stltype::vector<DescriptorSet::Ptr> viewDescriptorSets;
+    stltype::hash_map<UBO::DescriptorContentsType, DescriptorSet::Ptr> bufferDescriptors;
     CascadedShadowMap directionalLightShadowMap{};
     Texture* pScreenSpaceShadowTexture{nullptr};
     BindlessTextureHandle screenSpaceShadows{0};
@@ -68,11 +56,13 @@ enum class PassType
     PreProcess,
     DepthReliantCompute,
     Main,
+    Lighting,    // Full screen lighting pass
+    TAA,         // Temporal Anti-Aliasing
+    Composite,
     UI,
     Debug,
     Shadow,
-    PostProcess,
-    Composite
+    PostProcess, // General post process
 };
 
 // ============================================================================
@@ -87,11 +77,13 @@ struct PassStage
     stltype::fixed_vector<PassType, 8> groups;
 };
 
-inline const stltype::fixed_vector<PassStage, 6> PASS_SCHEDULE = {
+inline const stltype::fixed_vector<PassStage, 8> PASS_SCHEDULE = {
     PassStage{{PassType::EarlyAsyncCompute}},
     PassStage{{PassType::PreProcess}},
     PassStage{{PassType::DepthReliantCompute}},
     PassStage{{PassType::Main, PassType::Debug, PassType::Shadow}},
+    PassStage{{PassType::Lighting}},
+    PassStage{{PassType::TAA}},
     PassStage{{PassType::Composite}},
     PassStage{{PassType::UI}},
 };
@@ -102,7 +94,8 @@ inline bool IsComputePass(PassType type)
     return type == PassType::EarlyAsyncCompute || 
            type == PassType::LightTransformCompute || 
            type == PassType::ClusterGenCompute ||
-           type == PassType::TileAssignmentCompute;
+           type == PassType::TileAssignmentCompute ||
+           type == PassType::TAA;
 }
 
 struct GraphicsFrameContext
@@ -134,7 +127,7 @@ struct RendererAttachmentInfo
     GBufferInfo gbuffer;
     CascadedShadowMap directionalLightShadowMap;
     stltype::hash_map<ColorAttachmentType, stltype::vector<ColorAttachment>> colorAttachments;
-    DepthBufferAttachmentVulkan depthAttachment;
+    DepthAttachment depthAttachment;
     Texture* pScreenSpaceShadowTexture{nullptr};
 };
 
@@ -185,8 +178,8 @@ public:
     void UpdateLightClusterSSBO(const UBO::LightClusterSSBO& data, u32 frameIdx);
 
     void DispatchSSBOTransfer(
-        void* data, DescriptorSet* pDescriptor, u32 size, StorageBuffer* pSSBO, u32 offset = 0, u32 dstBinding = 0);
-    void BlockUntilPassesFinished(u32 frameIdx);
+        void* data, DescriptorSet::Ptr pDescriptor, u32 size, StorageBuffer* pSSBO, u32 offset = 0, u32 dstBinding = 0);
+    bool BlockUntilPassesFinished(u32 frameIdx);
 
     MainPassData& GetMainPassData(u32 idx) { return m_mainPassData[idx]; }
     ::SharedResourceManager& GetResourceManager() { return m_resourceManager; }
@@ -226,14 +219,19 @@ protected:
                              Semaphore& imageAvailableSemaphore);
     void RenderPassGroup(PassType groupType, const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer);
     void InitFrameContexts();
+    void UpdateGBufferUBO();
 
     // Inline layout transition helpers — record directly into pCmdBuffer
     void RecordInitialLayoutTransitions(CommandBuffer* pCmdBuffer,
-                                        const stltype::vector<const Texture*>& allGbufferAndSwapchain);
+                                        const stltype::fixed_vector<const Texture*, 16>& allGbufferAndSwapchain);
     void RecordGBufferToShaderRead(CommandBuffer* pCmdBuffer,
-                                   const stltype::vector<const Texture*>& gbufferTextures);
+                                   const stltype::fixed_vector<const Texture*, 8>& gbufferTextures);
     void RecordUIToShaderRead(CommandBuffer* pCmdBuffer, const Texture* pUITexture);
     void RecordDepthToReadOnly(CommandBuffer* pCmdBuffer);
+    void RecordDepthToAttachment(CommandBuffer* pCmdBuffer);
+    void RecordThisFrameColorToRead(CommandBuffer* pCmdBuffer);
+    void RecordResolveToGeneral(CommandBuffer* pCmdBuffer);
+    void RecordResolveToRead(CommandBuffer* pCmdBuffer);
     void RecordSSSOutputToGeneral(CommandBuffer* pCmdBuffer);
     void RecordSSSOutputToShaderRead(CommandBuffer* pCmdBuffer);
     void RecordSwapchainToPresent(CommandBuffer* pCmdBuffer);
@@ -266,6 +264,7 @@ private:
 
     // Depth texture created during Init and used later for attachments/ImGui
     Texture* m_pDepthTexture{nullptr};
+    Texture* m_pLastFrameDepthTexture{nullptr};
 
     u32 m_currentSwapChainIdx;
 
@@ -280,9 +279,13 @@ private:
     bool m_needsToPropagateMainDataUpdate{false};
     u32 m_frameIdxToPropagate{0};
     BindlessTextureHandle m_depthBindlessHandle{0};
+    BindlessTextureHandle m_lastFrameDepthBindlessHandle{0};
     Texture* m_pScreenSpaceShadowTexture{nullptr};
     TextureHandle m_screenSpaceShadowsTextureHandle{0};
     BindlessTextureHandle m_screenSpaceShadowBindlessHandle{0};
+    u32 m_instanceBufferUpdateTimingIndex;
+    u32 m_clearTileCountersTimingIndex{UINT32_MAX};
+    static inline stltype::atomic<u64> s_globalTimelineCounter{1};
 };
 } // namespace RenderPasses
 

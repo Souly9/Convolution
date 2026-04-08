@@ -1,1 +1,0 @@
-layout(set = 1, binding = GlobalBindlessImageBufferSlot) uniform writeonly image2D GlobalBindlessImages[];

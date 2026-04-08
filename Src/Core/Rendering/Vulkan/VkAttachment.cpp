@@ -24,10 +24,10 @@ ColorAttachmentVulkan::ColorAttachmentVulkan(const VkAttachmentDescription& atta
 {
 }
 
-DepthBufferAttachmentVulkan::DepthBufferAttachmentVulkan(const VkAttachmentDescription& attachmentDesc,
-                                                         Texture* pTexture,
-                                                         VkImageLayout renderingLayout,
-                                                         TexFormat format)
+DepthAttachmentVulkan::DepthAttachmentVulkan(const VkAttachmentDescription& attachmentDesc,
+                                             Texture* pTexture,
+                                             VkImageLayout renderingLayout,
+                                             TexFormat format)
     : AttachmentBaseVulkan(attachmentDesc, pTexture, renderingLayout, format)
 {
 }
@@ -52,8 +52,7 @@ ColorAttachmentVulkan ColorAttachmentVulkan::Create(const ColorAttachmentInfo& c
     return ColorAttachmentVulkan(colorAttachment, pTexture, Conv(createInfo.renderingLayout), createInfo.format);
 }
 
-DepthBufferAttachmentVulkan DepthBufferAttachmentVulkan::Create(const DepthBufferAttachmentInfo& createInfo,
-                                                                Texture* pTexture)
+DepthAttachmentVulkan DepthAttachmentVulkan::Create(const DepthBufferAttachmentInfo& createInfo, Texture* pTexture)
 {
     VkAttachmentDescription depthAttachment{};
     depthAttachment.format = Conv(createInfo.format);
@@ -65,7 +64,7 @@ DepthBufferAttachmentVulkan DepthBufferAttachmentVulkan::Create(const DepthBuffe
     depthAttachment.initialLayout = Conv(createInfo.initialLayout);
     depthAttachment.finalLayout = Conv(createInfo.finalLayout);
 
-    auto att = DepthBufferAttachmentVulkan(depthAttachment, pTexture, Conv(createInfo.renderingLayout), createInfo.format);
+    auto att = DepthAttachmentVulkan(depthAttachment, pTexture, Conv(createInfo.renderingLayout), createInfo.format);
     att.SetClearValue(mathstl::Vector4(1.0f, 0.0f, 0.0f, 0.0f));
     return att;
 }

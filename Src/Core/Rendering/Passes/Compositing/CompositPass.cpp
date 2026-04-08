@@ -1,4 +1,10 @@
 #include "CompositPass.h"
+#include "Core/Global/GlobalVariables.h"
+#include "Core/Rendering/Core/CommandBuffer.h"
+#include "Core/Rendering/Core/SharedResourceManager.h"
+#include "Core/Rendering/Core/ShaderManager.h"
+#include "Core/Rendering/Vulkan/VkTextureManager.h"
+#include "Core/Global/Profiling.h"
 
 using namespace RenderPasses;
 
@@ -12,26 +18,23 @@ void CompositPass::Init(RendererAttachmentInfo& attachmentInfo,
                                       const SharedResourceManager& resourceManager)
 {
     ScopedZone("CompositPass::Init");
-    const auto& gbufferInfo = attachmentInfo.gbuffer;
 
     const auto swapChainAttachment =
         CreateDefaultColorAttachment(SWAPCHAIN_FORMAT, LoadOp::CLEAR, nullptr);
     m_mainRenderingData.colorAttachments = {swapChainAttachment};
 
     InitBaseData(attachmentInfo);
-    m_indirectCmdBuffer = IndirectDrawCmdBuf(10);
-    AsyncQueueHandler::MeshTransfer cmd{};
-    cmd.name = "CompositPass_MeshTransfer";
-    cmd.pBuffersToFill = &m_mainRenderingData;
-
+    for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
+        m_indirectCmdBuffers[i].Init(10);
+        
     BuildPipelines();
 }
 
 void CompositPass::BuildPipelines()
 {
     ScopedZone("CompositPass::BuildPipelines");
-    auto mainVert = Shader("Shaders/Simple.vert.spv", "main");
-    auto mainFrag = Shader("Shaders/Simple.frag.spv", "main");
+    auto mainVert = Shader("Shaders/CompositPass.vert.spv", "main");
+    auto mainFrag = Shader("Shaders/CompositPass.frag.spv", "main");
 
     PipelineInfo info{};
     info.descriptorSetLayout.sharedDescriptors = m_sharedDescriptors;
@@ -42,23 +45,24 @@ void CompositPass::BuildPipelines()
 }
 
 void CompositPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
-                                                     FrameRendererContext& previousFrameCtx,
-                                                     u32 thisFrameNum)
+                                                      FrameRendererContext& previousFrameCtx,
+                                                      u32 thisFrameNum)
 {
-    m_indirectCmdBuffer.EmptyCmds();
+    m_currentFrameIdx = thisFrameNum % SWAPCHAIN_IMAGES;
+    auto& cmdBuf = m_indirectCmdBuffers.at(m_currentFrameIdx);
+    cmdBuf.EmptyCmds();
     const auto pFullScreenQuadMesh = g_pMeshManager->GetPrimitiveMesh(MeshManager::PrimitiveType::Quad);
     const auto meshHandle = previousFrameCtx.pResourceManager->GetMeshHandle(pFullScreenQuadMesh);
-    m_indirectCmdBuffer.AddIndexedDrawCmd(
+    cmdBuf.AddIndexedDrawCmd(
         meshHandle.indexCount, 1, meshHandle.indexBufferOffset, meshHandle.vertBufferOffset, 0);
     RebuildPerObjectBuffer({0});
-    m_indirectCmdBuffer.FillCmds();
+    cmdBuf.FillCmds();
 }
 
 void CompositPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
 {
     const auto currentFrame = ctx.currentFrame;
     UpdateContextForFrame(currentFrame);
-    const auto& passCtx = m_perObjectFrameContexts[currentFrame];
 
     ColorAttachment swapchainAttachment = m_mainRenderingData.colorAttachments[0];
     swapchainAttachment.SetTexture(ctx.pCurrentSwapchainTexture);
@@ -79,23 +83,23 @@ void CompositPass::Render(const MainPassData& data, FrameRendererContext& ctx, C
         return;
     }
     BinRenderDataCmd geomBufferCmd(sceneGeometryBuffers.GetVertexBuffer(), sceneGeometryBuffers.GetIndexBuffer());
-
-    GenericIndirectDrawCmd cmd{&m_mainPSO, m_indirectCmdBuffer};
-    cmd.drawCount = m_indirectCmdBuffer.GetDrawCmdNum();
+    
+    auto& cmdBuf = m_indirectCmdBuffers[m_currentFrameIdx];
+    GenericIndirectDrawCmd cmd{&m_mainPSO, cmdBuf};
+    cmd.drawCount = cmdBuf.GetDrawCmdNum();
 
     if (data.bufferDescriptors.empty() == false)
     {
+        // For now, use same descriptors as lighting, will adjust as needed
         const auto transformSSBOSet = data.bufferDescriptors.at(UBO::DescriptorContentsType::GlobalInstanceData);
         const auto texArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessTextureArray);
-        const auto tileArraySSBOSet = data.bufferDescriptors.at(UBO::DescriptorContentsType::LightData);
-        const auto gbufferUBO = data.bufferDescriptors.at(UBO::DescriptorContentsType::GBuffer);
+        const auto gbufferUBOSet = data.bufferDescriptors.at(UBO::DescriptorContentsType::GBuffer);
         cmd.descriptorSets = {texArraySet,
-                              data.mainView.descriptorSet,
-                              transformSSBOSet,
-                              tileArraySSBOSet,
-                              gbufferUBO,
-                              ctx.shadowViewUBODescriptor};
+                               data.mainView.descriptorSet,
+                               transformSSBOSet,
+                               gbufferUBOSet};
     }
+
     StartRenderPassProfilingScope(pCmdBuffer);
     pCmdBuffer->RecordCommand(cmdBegin);
     pCmdBuffer->RecordCommand(geomBufferCmd);
@@ -112,12 +116,9 @@ void CompositPass::CreateSharedDescriptorLayout()
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::TransformSSBO, 2));
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::GlobalObjectDataSSBOs, 2));
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::InstanceDataSSBO, 2));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::TileArraySSBO, 3));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::LightUniformsUBO, 3));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::GBufferUBO, 4));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::ShadowmapUBO, 4));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::ShadowmapViewUBO, 5));
-    // m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::PerPassObjectSSBO, 4));
+    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::PrevTransformSSBO, 2));
+    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::GBufferUBO, 3));
+    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::ShadowmapUBO, 3));
 }
 
 bool CompositPass::WantsToRender() const

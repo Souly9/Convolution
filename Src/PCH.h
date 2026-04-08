@@ -13,6 +13,7 @@
 #include <EASTL/fixed_vector.h>
 #include <EASTL/functional.h>
 #include <EASTL/hash_map.h>
+#include <EASTL/hash_set.h>
 #include <EASTL/optional.h>
 #include <EASTL/queue.h>
 #include <EASTL/shared_ptr.h>

@@ -1,14 +1,13 @@
 #pragma once
-
-class DescriptorSetVulkan;
-using DescriptorSet = DescriptorSetVulkan;
+#include "Core/Rendering/Core/RenderingForwardDecls.h"
+#include "Core/Rendering/Core/DescriptorPool.h"
 
 struct RenderView
 {
     mathstl::Vector3 position;
     mathstl::Vector3 rotation;
     mathstl::Viewport viewport;
-    DescriptorSet* descriptorSet;
+    DescriptorSet::Ptr descriptorSet;
     f32 fov;
     f32 zNear;
     f32 zFar;

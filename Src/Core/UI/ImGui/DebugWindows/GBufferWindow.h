@@ -23,20 +23,15 @@ public:
         auto& gbufferIDs = renderState.gbufferImGuiIDs;
         auto& csmIDs = renderState.csmCascadeImGuiIDs;
 
-        if (gbufferIDs.size() < 3)
+        if (gbufferIDs.size() < 5)
             return;
 
         ImGui::Begin("GBuffer Viewer", &m_isOpen);
 
-        // Display only Normals, Albedo, and UVs/Mat G-buffers
-        // Note: UI texture is excluded because ImGui renders to it (would cause read-while-write)
-        // Depth and CSM require proper layout transitions before ImGui can sample them
         stltype::vector<stltype::pair<stltype::string, u64>> buffers;
         buffers.push_back({"Normals", gbufferIDs[0]});
         buffers.push_back({"Albedo", gbufferIDs[1]});
-        buffers.push_back({"Debug", gbufferIDs[3]});
-        if (gbufferIDs.size() > 4)
-            buffers.push_back({"Screen Space Shadows", gbufferIDs[4]});
+        buffers.push_back({"SSS", gbufferIDs[2]});
 
         for (u32 i = 0; i < csmIDs.size(); ++i)
         {

@@ -2,10 +2,7 @@
 #undef max
 #undef min
 #include "Core/Events/EventSystem.h"
-#include "Core/Global/GlobalDefines.h"
 #include "Core/Global/GlobalVariables.h"
-#include "Core/SceneGraph/Mesh.h"
-#include "StaticBehaviors/Input/SelectedEntityMover.h"
 
 mathstl::Matrix invProj{};
 mathstl::Matrix invView{};
@@ -19,9 +16,9 @@ void EntitySelector::RegisterCallbacks()
     g_pEventSystem->AddUpdateEventCallback(
         [](const UpdateEventData& d)
         {
-            invProj = d.state.invMainCamProjectionMatrix;
-            invView = d.state.invMainCamViewMatrix;
-            viewProj = d.state.mainCamViewProjectionMatrix;
+            invProj = d.state.renderState.invMainCamProjectionMatrix;
+            invView = d.state.renderState.invMainCamViewMatrix;
+            viewProj = d.state.renderState.mainCamViewProjectionMatrix;
             mainCamEntity = d.state.mainCameraEntity;
         });
 }
@@ -103,6 +100,8 @@ DirectX::XMVECTOR EntitySelector::VectorizedRayAABBIntersection(const DirectX::X
 
 void EntitySelector::OnLeftMouseClick(const LeftMouseClickEventData& data)
 {
+    if (mainCamEntity.IsValid() == false)
+        return;
     using namespace DirectX::SimpleMath;
     const Vector2 mousePos{(f32)data.mousePosX, (f32)data.mousePosY};
     const auto& resolution = FrameGlobals::GetSwapChainExtent();
@@ -110,14 +109,14 @@ void EntitySelector::OnLeftMouseClick(const LeftMouseClickEventData& data)
     const float y = 1.0f - (2.0f * ((mousePos.y) / (resolution.y)));
     const DirectX::XMFLOAT4 deviceCoords = {x, y, 0, 1};
     WorldPosMouseRay ray(CreateRay(deviceCoords));
-    // ray.m_screenPos = mousePos;
 
     f32 overallMinDist = FLT_MAX;
     ECS::Entity rsltEntity;
     const Vector3 rayDir(ray.direction);
     const Vector3 dirInverted = ray.invDirection;
 
-    auto checkIntersections = [&](const auto& comps) {
+    auto checkIntersections = [&](const auto& comps)
+    {
         for (size_t i = 0; i < comps.size(); i++)
         {
             const auto& aabb = comps[i].component.boundingBox;
@@ -143,7 +142,6 @@ void EntitySelector::OnLeftMouseClick(const LeftMouseClickEventData& data)
     checkIntersections(g_pEntityManager->GetComponentVector<ECS::Components::RenderComponent>());
     checkIntersections(g_pEntityManager->GetComponentVector<ECS::Components::DebugRenderComponent>());
 
-
     auto deslectEntity = [](const ECS::Entity& entity, bool select = false)
     {
         auto pRenderComp = g_pEntityManager->GetComponent<ECS::Components::RenderComponent>(entity);
@@ -158,7 +156,6 @@ void EntitySelector::OnLeftMouseClick(const LeftMouseClickEventData& data)
         g_pApplicationState->RegisterUpdateFunction(
             [rsltEntity, deslectEntity](ApplicationState& state)
             {
-                // Clear previous selection
                 for (auto& selectedEntity : state.selectedEntities)
                 {
                     deslectEntity(selectedEntity);
@@ -197,7 +194,6 @@ EntitySelector::WorldPosMouseRay EntitySelector::CreateRay(const mathstl::Vector
     deviceEnd.w = 1.f;
     mathstl::Vector4 tmpEnd = mathstl::Vector4::Transform(deviceEnd, invProj);
 
-    // Homogenize the transformed vectors by dividing by w
     mathstl::Vector4 worldCoordsOrigin = tmpBegin / tmpBegin.w;
     mathstl::Vector4 worldCoordsEnd = tmpEnd / tmpEnd.w;
 

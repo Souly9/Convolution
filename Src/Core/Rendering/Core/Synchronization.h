@@ -1,4 +1,5 @@
 #pragma once
+#include "RenderTraitsMacros.h"
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Global/Utils/EnumHelpers.h"
 #include "Core/Rendering/Core/Resource.h"
@@ -17,8 +18,8 @@ enum class SyncStages
     TRANSFER = 1 << 7,
     COLOR_ATTACHMENT_OUTPUT = 1 << 8,
     BOTTOM_OF_PIPE = 1 << 9,
-    ALL_COMMANDS = 1 << 10,
-    DEPTH_OUTPUT = 1 << 11,
+    DEPTH_OUTPUT = 1 << 10,
+    CLEAR = 1 << 11,
 };
 MAKE_FLAG_ENUM(SyncStages)
 
@@ -28,40 +29,47 @@ class GPUSyncer : public TrackedResource
 
 class CPUSyncer : public TrackedResource
 {
-protected:
-    void* m_fenceEvent{nullptr};
 };
 
-// Define primary templates declaration (defined by macro)
-IMPLEMENT_GRAPHICS_API
-class SemaphoreImpl : public GPUSyncer
+class SemaphoreBase : public GPUSyncer
 {
 };
 
-IMPLEMENT_GRAPHICS_API
-class FenceImpl : public CPUSyncer
+class FenceBase : public CPUSyncer
 {
 };
 
-IMPLEMENT_GRAPHICS_API
-class TimelineSemaphoreImpl : public GPUSyncer
+class TimelineSemaphoreBase : public GPUSyncer
 {
 };
-// Declare specializations for Vulkan
-template <>
-class SemaphoreImpl<Vulkan>;
 
-template <>
-class FenceImpl<Vulkan>;
+#include "APITraits.h"
+#ifdef USE_VULKAN
+#include "Core/Rendering/Vulkan/VkSynchronization.h"
+#include "Core/Rendering/Vulkan/VulkanTraits.h"
+#endif
 
-template <>
-class TimelineSemaphoreImpl<Vulkan>;
-
-using Semaphore = SemaphoreImpl<Vulkan>;
-using Fence = FenceImpl<Vulkan>;
-using CPUSynchObject = FenceImpl<Vulkan>;
-using TimelineSemaphore = TimelineSemaphoreImpl<Vulkan>;
-
-// Note: VkSynchronization.h provides the DEFINITIONS of the specializations.
-// It is NOT included here to avoid circular dependencies.
-// Include "RenderingIncludes.h" or "VkSynchronization.h" in .cpp files where complete types are needed.
+template <typename API>
+class FenceT : public APITraits<API>::FenceType
+{
+public:
+    // Inherit constructors
+    using APITraits<API>::FenceType::FenceType;
+    DECLARE_RENDER_RESOURCE_TRAITS(FenceT, FenceType)
+};
+template <typename API>
+class SemaphoreT : public APITraits<API>::SemaphoreType
+{
+public:
+    // Inherit constructors
+    using APITraits<API>::SemaphoreType::SemaphoreType;
+    DECLARE_RENDER_RESOURCE_TRAITS(SemaphoreT, SemaphoreType)
+};
+template <typename API>
+class TimelineSemaphoreT : public APITraits<API>::TimelineSemaphoreType
+{
+public:
+    // Inherit constructors
+    using APITraits<API>::TimelineSemaphoreType::TimelineSemaphoreType;
+    DECLARE_RENDER_RESOURCE_TRAITS(TimelineSemaphoreT, TimelineSemaphoreType)
+};

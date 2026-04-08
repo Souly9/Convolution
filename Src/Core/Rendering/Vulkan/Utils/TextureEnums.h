@@ -7,3 +7,8 @@ enum class TextureWrapMode
     CLAMP_TO_EDGE,
     CLAMP_TO_BORDER,
 };
+enum class TextureFilter
+{
+    NEAREST,
+    LINEAR
+};

@@ -3,6 +3,7 @@
 #include <imgui/backends/imgui_impl_glfw.h>
 #include <imgui/backends/imgui_impl_vulkan.h>
 #include <imgui/imgui.h>
+#include <ImGuizmo/ImGuizmo.h>
 
 
 stltype::vector<ImGuiRenderFunction> ImGuiManager::s_registeredFunctions{};
@@ -19,6 +20,7 @@ void ImGuiManager::BeginFrame()
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
+    ImGuizmo::BeginFrame();
 }
 
 void ImGuiManager::EndFrame()

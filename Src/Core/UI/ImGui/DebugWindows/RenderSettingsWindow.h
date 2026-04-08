@@ -81,31 +81,6 @@ public:
             }
         }
         ImGui::Separator();
-        ImGui::Text("Debug");
-        const char* debugModes[] = {"None", "CSM Cascades", "Clusters"};
-        int currentDebugMode = mathstl::clamp(renderState.debugViewMode, 0, 2);
-        int uiDebugMode = currentDebugMode;
-
-        if (ImGui::Combo("Debug View Mode", &uiDebugMode, debugModes, IM_ARRAYSIZE(debugModes)))
-        {
-            if (uiDebugMode != currentDebugMode)
-            {
-                g_pApplicationState->RegisterUpdateFunction([uiDebugMode](ApplicationState& state)
-                                                            { state.renderState.debugViewMode = uiDebugMode; });
-                needsUpdate = true;
-            }
-        }
-
-        bool debugCulling = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::CullFrustum);
-        if (ImGui::Checkbox("Debug Culling", &debugCulling))
-        {
-            g_pApplicationState->RegisterUpdateFunction(
-                [debugCulling](ApplicationState& state)
-                { mathstl::setFlag(state.renderState.debugFlags, (u32)DebugFlags::CullFrustum, debugCulling); });
-            needsUpdate = true;
-        }
-
-        ImGui::Separator();
         if (ImGui::CollapsingHeader("Shadow Settings"))
         {
             bool shadowsEnabled = renderState.shadowsEnabled;
@@ -157,6 +132,23 @@ public:
                 g_pApplicationState->RegisterUpdateFunction([csmLambda](ApplicationState& state)
                                                             { state.renderState.csmLambda = csmLambda; });
                 needsUpdate = true;
+            }
+        }
+        ImGui::Separator();
+        if (ImGui::CollapsingHeader("Antialiasing Settings"))
+        {
+            const char* aaTypes[] = {"None", "TAA", "FXAA", "DLSS"};
+            AntialiasingType currentAA = renderState.aaType;
+            int uiAAType = static_cast<int>(currentAA);
+
+            if (ImGui::Combo("AA Method", &uiAAType, aaTypes, IM_ARRAYSIZE(aaTypes)))
+            {
+                if (static_cast<AntialiasingType>(uiAAType) != currentAA)
+                {
+                    g_pApplicationState->RegisterUpdateFunction([uiAAType](ApplicationState& state)
+                                                                { state.renderState.aaType = static_cast<AntialiasingType>(uiAAType); });
+                    needsUpdate = true;
+                }
             }
         }
         ImGui::Separator();

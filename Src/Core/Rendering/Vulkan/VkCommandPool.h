@@ -1,10 +1,10 @@
 #pragma once
-#include "BackendDefines.h"
 #include "Core/Rendering/Core/CommandPool.h"
 #include "VkCommandBuffer.h"
 #include <EASTL/deque.h>
 #include <EASTL/stack.h>
-class CommandPoolVulkan : public TrackedResource
+
+class CommandPoolVulkan : public CommandPoolBase
 {
 public:
     CommandPoolVulkan()
@@ -33,7 +33,7 @@ public:
         return m_queueFamilyIndex;
     }
 
-    void ReturnCommandBuffer(CommandBuffer* commandBuffer);
+    void ReturnCommandBuffer(CBufferVulkan* commandBuffer);
     void ClearAll()
     {
         m_commandBuffers.clear();
@@ -47,7 +47,7 @@ protected:
     CommandPoolVulkan(u32 graphicsFamilyIdx, VkCommandPoolCreateFlagBits flags);
 
     VkCommandPool m_commandPool{VK_NULL_HANDLE};
-    stltype::deque<CBufferVulkan> m_commandBuffers{};
+    stltype::deque<CommandBuffer> m_commandBuffers{};
     stltype::vector<CommandBuffer*> m_freeCommandBuffers{};
     u32 m_queueFamilyIndex{~0u};
 };

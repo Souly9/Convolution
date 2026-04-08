@@ -24,23 +24,11 @@ using MeshHandle = MeshResourceData;
 #include <vulkan/vulkan.h>
 
 // Forward declarations - Vulkan implementations
-class GenBufferVulkan;
-class VertexBufferVulkan;
-class IndexBufferVulkan;
-class CBufferVulkan;
-class CommandPoolVulkan;
 class ColorAttachmentVulkan;
 class DepthBufferAttachmentVulkan;
-class TextureVulkan;
 class GraphicsPipelineVulkan;
 class ComputePipelineVulkan;
 class ShaderVulkan;
-class DescriptorSetVulkan;
-class DescriptorPoolVulkan;
-class DescriptorSetLayoutVulkan;
-class StorageBuffer;             // Direct class
-class StagingBuffer;             // Direct class
-class UniformBuffer;             // Direct class
 
 class VkGPUTimingQuery;
 class QueryPoolVulkan;
@@ -50,43 +38,85 @@ class QueryPoolVulkan;
 // Initial forward decl
 template<typename API>
 class GenBufferT;
-
-// ...
-using GenericBuffer = GenBufferT<CurrentAPI>;
-using VertexBuffer = VertexBufferVulkan;
-using IndexBuffer = IndexBufferVulkan;
-using CommandBuffer = CBufferVulkan;
-using CommandPool = CommandPoolVulkan;
-
+template<typename API>
+class StagingBufferT;
+template<typename API>
+class UniformBufferT;
+template<typename API>
+class StorageBufferT;
+template<typename API>
+class IndirectDrawCommandBufferT;
 template<typename API>
 class IndirectDrawCommandBufferCommon;
-using IndirectDrawCmdBuf = IndirectDrawCommandBufferCommon<CurrentAPI>;
-
+template<typename API>
+class VertexBufferT;
+template<typename API>
+class IndexBufferT;
 template<typename API>
 class TextureT;
-
-// ...
-using Texture = TextureT<CurrentAPI>;
 template<typename API>
+class SemaphoreT;
+template<typename API>
+class FenceT;
+template <typename API>
+class TimelineSemaphoreT;
+template <typename API>
 class ComputePipelineT;
-template<typename API>
+template <typename API>
 class GraphicsPipelineT;
+template <typename API>
+class CommandPoolT;
+template <typename API>
+class CommandBufferT;
+template <typename API>
+class DescriptorPoolT;
+template <typename API>
+class DescriptorSetT;
+template <typename API>
+class DescriptorSetLayoutT;
+template <typename API>
+class AttachmentT;
+template <typename API>
+class ColorAttachmentT;
+template <typename API>
+class DepthAttachmentT;
+template <typename API>
+class GPUTimingQueryT;
+template <typename API>
+class ShaderT;
+
+// Definitions of rendering types
+using Texture = TextureT<CurrentAPI>;
+using Semaphore = SemaphoreT<CurrentAPI>;
+using Fence = FenceT<CurrentAPI>;
+using TimelineSemaphore = TimelineSemaphoreT<CurrentAPI>;
+using IndirectDrawCmdBuf = IndirectDrawCommandBufferCommon<CurrentAPI>;
+using CommandPool = CommandPoolT<CurrentAPI>;
+using CommandBuffer = CommandBufferT<CurrentAPI>;
+using DescriptorPool = DescriptorPoolT<CurrentAPI>;
+using DescriptorSet = DescriptorSetT<CurrentAPI>;
+using DescriptorSetLayout = DescriptorSetLayoutT<CurrentAPI>;
+using Attachment = AttachmentT<CurrentAPI>;
+using ColorAttachment = ColorAttachmentT<CurrentAPI>;
+using DepthAttachment = DepthAttachmentT<CurrentAPI>;
+using GPUTimingQuery = GPUTimingQueryT<CurrentAPI>;
+using Shader = ShaderT<CurrentAPI>;
+
+using GenericBuffer = GenBufferT<CurrentAPI>;
+using StagingBuffer = StagingBufferT<CurrentAPI>;
+using UniformBuffer = UniformBufferT<CurrentAPI>;
+using StorageBuffer = StorageBufferT<CurrentAPI>;
+using IndirectDrawCommandBuffer = IndirectDrawCommandBufferT<CurrentAPI>;
+using VertexBuffer = VertexBufferT<CurrentAPI>;
+using IndexBuffer = IndexBufferT<CurrentAPI>;
 
 using PSO = GraphicsPipelineT<CurrentAPI>;
 using ComputePipeline = ComputePipelineT<CurrentAPI>;
-using Shader = ShaderVulkan;
 using GPUMemoryHandle = VmaAllocation;
 using GPUMappedMemoryHandle = void*;
-using DescriptorPool = DescriptorPoolVulkan;
-using DescriptorSet = DescriptorSetVulkan;
-using DescriptorSetLayout = DescriptorSetLayoutVulkan;
-using ColorAttachment = ColorAttachmentVulkan;
-using DepthAttachment = DepthBufferAttachmentVulkan;
 using RawSemaphoreHandle = VkSemaphore;
 using IndexedIndirectDrawCmd = VkDrawIndexedIndirectCommand;
-using GPUTimingQuery = VkGPUTimingQuery;
 using QueryPool = QueryPoolVulkan;
-
 // Bindless texture handle type
 using BindlessTextureHandle = u32;
 

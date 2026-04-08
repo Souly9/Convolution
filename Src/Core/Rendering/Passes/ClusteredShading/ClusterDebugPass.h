@@ -24,7 +24,8 @@ private:
     void BuildBuffers() override;
 
     PSO m_pipeline;
-    IndirectDrawCmdBuf m_indirectCmdBuffer;
+    stltype::fixed_vector<IndirectDrawCmdBuf, SWAPCHAIN_IMAGES> m_indirectCmdBuffers;
+    u32 m_currentFrameIdx{0};
     IndexBuffer m_indexBuffer; // Used to supply indices 0..23 for the cube lines
     VertexBuffer m_dummyVertexBuffer; // Dummy VB for binding requirement
     RenderingData m_mainRenderingData;

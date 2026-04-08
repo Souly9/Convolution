@@ -1,9 +1,9 @@
 #pragma once
 #include "BackendDefines.h"
-#include "Core/Rendering/Core/Resource.h"
+#include "Core/Rendering/Core/DescriptorSetLayout.h"
 
 // Merely a wrapper for VkDescriptorSetLayout
-class DescriptorSetLayoutVulkan : public TrackedResource
+class DescriptorSetLayoutVulkan : public DescriptorSetLayoutBase
 {
 public:
     DescriptorSetLayoutVulkan()

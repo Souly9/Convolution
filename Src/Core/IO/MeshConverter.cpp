@@ -7,9 +7,9 @@
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Global/State/ApplicationState.h"
 #include "Core/Rendering/Core/AABB.h"
-#include "Core/Rendering/Core/Material.h"
 #include "Core/Rendering/Core/MaterialManager.h"
 #include "Core/Rendering/Core/TextureManager.h"
+#include "Core/Global/LogDefines.h"
 #include "Core/Rendering/Vulkan/VkTextureManager.h"
 #include "Core/SceneGraph/Mesh.h"
 #include <initializer_list>
@@ -231,15 +231,23 @@ Material* ExtractMaterial(const aiMaterial* pMaterial)
 {
     ScopedZone("Convert Assimp material");
     Material mat{};
+    mat.baseColor = mathstl::Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+    mat.emissive = mathstl::Vector4(0.0f, 0.0f, 0.0f, 1.0f);
+    mat.pbr1 = mathstl::Vector4(0.0f, 1.0f, 0.0f, 0.5f); // x: metallic, y: roughness, z: subsurface, w: specular
+    mat.pbr2 = mathstl::Vector4(0.0f, 0.0f, 0.0f, 1.0f); // x: anisotropic, y: specularTint, z: clearcoat, w: clearcoatGloss
+    mat.pbr3 = mathstl::Vector4(0.0f, 0.5f, 0.0f, 1.5f); // x: sheen, y: sheenTint, z: specTrans, w: ior
     mat.flags = 0;
-    mat.anisotropicTintIorClearcoat = mathstl::Vector4(0.0f, 0.0f, 1.5f, 0.0f);
-    mat.glossSheenSTransFlatness = mathstl::Vector4(1.0f, 0.0f, 0.5f, 0.0f);
     stltype::string materialName = pMaterial->GetName().C_Str();
+    if (materialName.empty())
+    {
+        materialName = "AssimpMaterial";
+    }
+    materialName += "_" + stltype::to_string((u64)(size_t)pMaterial);
 
     auto loadTexture = [&](std::initializer_list<aiTextureType> textureTypes,
                            TextureSemantic semantic,
                            BindlessTextureHandle& outHandle,
-                           uint bit) -> bool
+                           u32 bit) -> bool
     {
         aiString texturePath;
         for (const auto textureType : textureTypes)
@@ -286,56 +294,70 @@ Material* ExtractMaterial(const aiMaterial* pMaterial)
         aiColor3D diffuse;
         if (AI_SUCCESS == pMaterial->Get(AI_MATKEY_COLOR_DIFFUSE, diffuse))
         {
-            mat.baseColor = mathstl::Vector4(diffuse.r, diffuse.g, diffuse.b, mat.baseColor.w);
+            mat.baseColor = mathstl::Vector4(diffuse.r, diffuse.g, diffuse.b, 1.0f);
         }
     }
 
     float metallicFactor = 0.0f;
     if (AI_SUCCESS == pMaterial->Get(AI_MATKEY_METALLIC_FACTOR, metallicFactor))
     {
-        mat.metallic = mathstl::Vector4(metallicFactor);
+        mat.pbr1.x = metallicFactor;
     }
 
-    float roughnessFactor = 0.0f;
+    float roughnessFactor = 1.0f;
     if (AI_SUCCESS == pMaterial->Get(AI_MATKEY_ROUGHNESS_FACTOR, roughnessFactor))
     {
-        mat.roughness = mathstl::Vector4(roughnessFactor);
+        mat.pbr1.y = roughnessFactor;
+    }
+
+    float anisotropy = 0.0f;
+    if (AI_SUCCESS == pMaterial->Get(AI_MATKEY_ANISOTROPY_FACTOR, anisotropy) ||
+        AI_SUCCESS == pMaterial->Get("$mat.gltf.pbrAnisotropy.anisotropyFactor", 0, 0, anisotropy))
+    {
+        mat.pbr2.x = anisotropy;
+    }
+
+    float specular = 0.5f;
+    if (AI_SUCCESS == pMaterial->Get(AI_MATKEY_SPECULAR_FACTOR, specular) ||
+        AI_SUCCESS == pMaterial->Get("$mat.gltf.pbrSpecular.specularFactor", 0, 0, specular))
+    {
+        mat.pbr1.w = specular;
     }
 
     aiColor3D emission;
     if (AI_SUCCESS == pMaterial->Get(AI_MATKEY_COLOR_EMISSIVE, emission))
     {
-        mat.emissive = mathstl::Vector4(emission.r, emission.g, emission.b, mat.emissive.w);
+        mat.emissive = mathstl::Vector4(emission.r, emission.g, emission.b, 1.0f);
     }
 
     float clearcoat = 0.0f;
     if (AI_SUCCESS == pMaterial->Get("$mat.gltf.pbrClearcoat.clearcoatFactor", 0, 0, clearcoat))
     {
-        mat.anisotropicTintIorClearcoat.w = clearcoat;
+        mat.pbr2.z = clearcoat;
     }
 
     float ior = 1.5f;
     if (AI_SUCCESS == pMaterial->Get(AI_MATKEY_REFRACTI, ior))
     {
-        mat.anisotropicTintIorClearcoat.z = ior;
+        mat.pbr3.w = ior;
     }
 
     float clearcoatRoughness = 1.0f;
     if (AI_SUCCESS == pMaterial->Get("$mat.gltf.pbrClearcoat.clearcoatRoughnessFactor", 0, 0, clearcoatRoughness))
     {
-        mat.glossSheenSTransFlatness.x = 1.0f - clearcoatRoughness;
+        mat.pbr2.w = 1.0f - clearcoatRoughness;
     }
 
     float transmission = 0.0f;
     if (AI_SUCCESS == pMaterial->Get("$mat.gltf.pbrTransmission.transmissionFactor", 0, 0, transmission))
     {
-        mat.glossSheenSTransFlatness.w = transmission;
+        mat.pbr3.z = transmission;
     }
 
     float sheen = 0.0f;
     if (AI_SUCCESS == pMaterial->Get("$mat.gltf.pbrSheen.sheenColorFactor", 0, 0, sheen))
     {
-        mat.glossSheenSTransFlatness.y = sheen;
+        mat.pbr3.x = sheen;
     }
 
     return g_pMaterialManager->AllocateMaterial(materialName, mat);

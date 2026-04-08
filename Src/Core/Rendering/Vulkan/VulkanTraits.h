@@ -3,25 +3,29 @@
 
 // Forward Declarations
 class GenBufferVulkan;
-class VertexBufferVulkan;
-class IndexBufferVulkan;
 class CBufferVulkan;
 class CommandPoolVulkan;
-class ColorAttachmentVulkan;
-class DepthBufferAttachmentVulkan;
 class TextureVulkan;
 class GraphicsPipelineVulkan;
 class ComputePipelineVulkan;
-class ShaderVulkan;
 class DescriptorSetVulkan;
 class DescriptorPoolVulkan;
 class DescriptorSetLayoutVulkan;
-class IndirectDrawCommandBufferVulkan;
-class StorageBuffer;
-class StagingBuffer;
-class UniformBuffer;
-class VkGPUTimingQuery;
 class QueryPoolVulkan;
+class SemaphoreVulkan;
+class FenceVulkan;
+class TimelineSemaphoreVulkan;
+class StagingBufferVulkan;
+class UniformBufferVulkan;
+class StorageBufferVulkan;
+class IndirectDrawCommandBufferVulkan;
+class VertexBufferVulkan;
+class IndexBufferVulkan;
+class AttachmentBaseVulkan;
+class ColorAttachmentVulkan;
+class DepthAttachmentVulkan;
+class GPUTimingQueryVulkan;
+class ShaderVulkan;
 
 template<>
 struct APITraits<API_Vulkan>
@@ -32,5 +36,23 @@ struct APITraits<API_Vulkan>
     using GraphicsPipelineType = GraphicsPipelineVulkan;
     using ComputePipelineType = ComputePipelineVulkan;
     using IndirectDrawCommandBufferType = IndirectDrawCommandBufferVulkan;
+    using SemaphoreType = SemaphoreVulkan;
+    using FenceType = FenceVulkan;
+    using TimelineSemaphoreType = TimelineSemaphoreVulkan;
+    using CommandPoolType = CommandPoolVulkan;
+    using StagingBufferType = StagingBufferVulkan;
+    using UniformBufferType = UniformBufferVulkan;
+    using StorageBufferType = StorageBufferVulkan;
+    using IndirectDrawCommandBufferType = IndirectDrawCommandBufferVulkan;
+    using VertexBufferType = VertexBufferVulkan;
+    using IndexBufferType = IndexBufferVulkan;
+    using DescriptorSetType = DescriptorSetVulkan;
+    using DescriptorPoolType = DescriptorPoolVulkan;
+    using DescriptorSetLayoutType = DescriptorSetLayoutVulkan;
+    using AttachmentType = AttachmentBaseVulkan;
+    using ColorAttachmentType = ColorAttachmentVulkan;
+    using DepthAttachmentType = DepthAttachmentVulkan;
+    using GPUTimingQueryType = GPUTimingQueryVulkan;
+    using ShaderType = ShaderVulkan;
     // Add other types as we migrate them...
 };

@@ -20,6 +20,7 @@ enum class BufferType : u32
     // SSBOs only below here
     GlobalObjectDataSSBOs,
     TransformSSBO,
+    PrevTransformSSBO,
     PerPassObjectSSBO,
     TileArraySSBO,
     ClusterAABBsSSBO,
@@ -54,6 +55,7 @@ static inline stltype::hash_map<BufferType, u32> s_UBOTypeToBindingSlot = {
     {BufferType::PerPassObjectSSBO, s_perPassObjectDataBindingSlot},
     {BufferType::InstanceDataSSBO, s_globalInstanceDataSSBOSlot},
     {BufferType::TransformSSBO, s_modelSSBOBindingSlot},
+    {BufferType::PrevTransformSSBO, s_prevModelSSBOBindingSlot},
     {BufferType::SceneAABBsSSBO, s_sceneAABBsSSBOBindingSlot},
     {BufferType::ViewSpaceLightsSSBO, s_viewSpaceLightsSSBOBindingSlot},
     {BufferType::LightUniformsUBO, s_globalLightUniformsBindingSlot},
@@ -73,6 +75,7 @@ static inline stltype::hash_map<BufferType, ShaderTypeBits> s_UBOTypeToShaderSta
     {BufferType::InstanceDataSSBO, ShaderTypeBits::All},
     {BufferType::SceneAABBsSSBO, ShaderTypeBits::All},
     {BufferType::TransformSSBO, ShaderTypeBits::All},
+    {BufferType::PrevTransformSSBO, ShaderTypeBits::All},
     {BufferType::ViewSpaceLightsSSBO, ShaderTypeBits::All},
     {BufferType::LightUniformsUBO, ShaderTypeBits::All},
     {BufferType::GBufferUBO, ShaderTypeBits::All},

@@ -87,7 +87,8 @@ void SelectedEntityMover::OnUpdate(const UpdateEventData& data)
     const bool hasRotate = (abs)(s_mouseRotateDelta.x) > FLOAT_TOLERANCE || (abs)(s_mouseRotateDelta.y) > FLOAT_TOLERANCE;
 
     auto* pCamTransform = g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(data.state.mainCameraEntity);
-    DEBUG_ASSERT(pCamTransform);
+    if (pCamTransform == nullptr)
+        return;
 
     if (!s_orientationInitialized || s_orientationEntity != data.state.mainCameraEntity)
     {

@@ -12,8 +12,6 @@ public:
 
 protected:
     PSO m_mainPSO;
-    IndirectDrawCmdBuf m_indirectCmdBuffer;
-    IndirectDrawCountBuffer m_indirectCountBuffer;
 
     // Inherited via GenericGeometryPass
     void BuildBuffers() override;

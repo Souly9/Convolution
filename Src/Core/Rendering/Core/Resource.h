@@ -95,12 +95,14 @@ public:
 
     void SetName(stltype::string&& name)
     {
+        NamingCallBack(name);
 #ifdef CONV_DEBUG
-        m_debugName = name;
+        m_debugName = std::move(name);
 #endif
     }
     void SetName(const stltype::string& name)
     {
+        NamingCallBack(name);
 #ifdef CONV_DEBUG
         m_debugName = name;
 #endif
@@ -118,6 +120,11 @@ public:
 #else
         return "";
 #endif
+    }
+
+    stltype::string GetName() const
+    {
+        return GetDebugName();
     }
 
 protected:

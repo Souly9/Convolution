@@ -1,12 +1,9 @@
 #include "ShadowPass.h"
 #include "Core/Global/GlobalVariables.h"
-#include "Core/Global/LogDefines.h"
 #include "Core/Global/Profiling.h"
 #include "Core/Global/State/ApplicationState.h"
 #include "Core/Global/Utils/MathFunctions.h"
-#include "Core/Rendering/Core/RenderingTypeDefs.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
-#include "Core/Rendering/Vulkan/VkGlobals.h"
 #include "EASTL/algorithm.h"
 #include "SimpleMath/SimpleMath.h"
 #include "Utils/RenderPassUtils.h"
@@ -41,7 +38,8 @@ void CSMPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceM
     m_mainRenderingData.depthAttachment = cascadeAttachment;
 
     InitBaseData(attachmentInfo);
-    m_indirectCmdBuffer = IndirectDrawCmdBuf(1000000);
+    for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
+        m_indirectCmdBuffers[i].Init(1000000);
 
     BuildPipelines();
 }
@@ -50,7 +48,7 @@ void CSMPass::BuildPipelines()
 {
     ScopedZone("ShadowPass::BuildPipelines");
 
-    auto mainVert = Shader("Shaders/DirLightCSM.vert.spv", "main");
+    auto mainVert = Shader("Shaders/CSM.vert.spv", "main");
 
     PipelineInfo info{};
     info.descriptorSetLayout.sharedDescriptors = m_sharedDescriptors;
@@ -59,6 +57,7 @@ void CSMPass::BuildPipelines()
     // Compute viewMask from cascade count: (1 << cascades) - 1 gives bitmask for all layers
     info.viewMask = (1 << m_cascadeCount) - 1;
     info.depthCompareOp = DepthCompareOp::LESS_OR_EQUAL;
+    info.depthWriteEnable = true;
     info.rasterizerInfo.cullmode = CullMode::FRONT;
     m_mainPSO = PSO(
         ShaderCollection{&mainVert, nullptr}, PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions}, info);
@@ -70,7 +69,9 @@ void CSMPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
 {
     ScopedZone("ShadowPass::Rebuild");
 
-    m_indirectCmdBuffer.EmptyCmds();
+    m_currentFrameIdx = thisFrameNum % SWAPCHAIN_IMAGES;
+    auto& cmdBuf = m_indirectCmdBuffers[m_currentFrameIdx];
+    cmdBuf.EmptyCmds();
     u32 instanceOffset = 0;
     stltype::vector<u32> instanceDataIndices;
     instanceDataIndices.reserve(meshes.size());
@@ -80,7 +81,7 @@ void CSMPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
             continue;
         const auto& meshHandle = mesh.meshData.meshResourceHandle;
 
-        m_indirectCmdBuffer.AddIndexedDrawCmd(meshHandle.indexCount,
+        cmdBuf.AddIndexedDrawCmd(meshHandle.indexCount,
                                               1, // TODO: instanced rendering
                                               meshHandle.indexBufferOffset,
                                               meshHandle.vertBufferOffset,
@@ -89,7 +90,7 @@ void CSMPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
         ++instanceOffset;
     }
     RebuildPerObjectBuffer(instanceDataIndices);
-    m_indirectCmdBuffer.FillCmds();
+    cmdBuf.FillCmds();
 }
 
 void CSMPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
@@ -111,22 +112,23 @@ void CSMPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comman
     cmdBegin.depthLayerMask = (1 << m_cascadeCount) - 1;
     cmdBegin.extents = extents;
 
-    GenericIndirectDrawCmd cmd{&m_mainPSO, m_indirectCmdBuffer};
-    cmd.drawCount = m_indirectCmdBuffer.GetDrawCmdNum();
+    auto& cmdBuf = m_indirectCmdBuffers[currentFrame];
+    GenericIndirectDrawCmd cmd{&m_mainPSO, cmdBuf};
+    cmd.drawCount = cmdBuf.GetDrawCmdNum();
 
     if (data.bufferDescriptors.empty())
-        cmd.descriptorSets = {g_pTexManager->GetBindlessDescriptorSet()};
+        cmd.descriptorSets = {DescriptorSet::Cast(g_pTexManager->GetBindlessDescriptorSet())};
     else
     {
         const auto transformSSBOSet = data.bufferDescriptors.at(UBO::DescriptorContentsType::GlobalInstanceData);
         const auto texArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessTextureArray);
         cmd.descriptorSets = {texArraySet,
                               ctx.sharedDataUBODescriptor,
-                              transformSSBOSet,
-                              passCtx.m_perObjectDescriptor,
-                              ctx.shadowViewUBODescriptor};
+                               transformSSBOSet,
+                               passCtx.m_perObjectDescriptor,
+                               ctx.shadowViewUBODescriptor};
     }
-    cmdBegin.drawCmdBuffer = &m_indirectCmdBuffer;
+    cmdBegin.drawCmdBuffer = &cmdBuf;
     StartRenderPassProfilingScope(pCmdBuffer);
     if (data.csmViews.empty() == false)
     {
@@ -135,9 +137,9 @@ void CSMPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comman
         pCmdBuffer->RecordCommand(geomBufferCmd);
 
         const auto& csmView = data.csmViews[0];
-        stltype::array<f32, 16> splits{};
+        stltype::fixed_vector<f32, 16> splits{};
 
-        UBO::ShadowmapViewUBO uboData;
+        UBO::ShadowmapViewUBO uboData{};
         const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
         f32 aspectRatio = data.mainView.viewport.width / data.mainView.viewport.height;
         ComputeLightViewProjMatrices(data.cascades,
@@ -161,7 +163,8 @@ void CSMPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comman
                 mathstl::Vector4(splits[i * 4 + 0], splits[i * 4 + 1], splits[i * 4 + 2], splits[i * 4 + 3]);
         }
 
-        memcpy(ctx.pMappedShadowViewUBO, &uboData, sizeof(UBO::ShadowmapViewUBO));
+        *static_cast<UBO::ShadowmapViewUBO*>(ctx.pMappedShadowViewUBO) = uboData;
+
         ctx.shadowViewUBODescriptor->WriteBufferUpdate(*ctx.pShadowViewUBO, s_shadowmapViewUBOBindingSlot);
         pCmdBuffer->RecordCommand(cmd);
 
@@ -180,13 +183,14 @@ void CSMPass::CreateSharedDescriptorLayout()
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::TransformSSBO, 2));
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::GlobalObjectDataSSBOs, 2));
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::InstanceDataSSBO, 2));
+    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::PrevTransformSSBO, 2));
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::PerPassObjectSSBO, 3));
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::ShadowmapViewUBO, 4));
 }
 
 bool CSMPass::WantsToRender() const
 {
-    return NeedToRender(m_indirectCmdBuffer) && g_pApplicationState->GetCurrentApplicationState().renderState.shadowsEnabled;
+    return NeedToRender(m_indirectCmdBuffers[m_currentFrameIdx]) && g_pApplicationState->GetCurrentApplicationState().renderState.shadowsEnabled;
 }
 
 void CSMPass::SetCascadeCount(u32 cascades)
@@ -194,11 +198,12 @@ void CSMPass::SetCascadeCount(u32 cascades)
     if (m_cascadeCount != cascades)
     {
         m_cascadeCount = cascades;
+        // Needed for multiview rendering
         BuildPipelines();
     }
 }
 
-stltype::array<mathstl::Matrix, 16> CSMPass::ComputeLightViewProjMatrices(
+void CSMPass::ComputeLightViewProjMatrices(
     u32 cascades,
     f32 mainCamNear,
     f32 mainCamFar,
@@ -208,8 +213,8 @@ stltype::array<mathstl::Matrix, 16> CSMPass::ComputeLightViewProjMatrices(
     const mathstl::Matrix& view,
     const mathstl::Matrix& invViewProj,
     const mathstl::Vector3& lightDir,
-    stltype::array<f32, 16>& splits,
-    stltype::array<mathstl::Matrix, 16>& lightViewProjMatrices,
+    stltype::fixed_vector<f32, 16>& splits,
+    mathstl::Matrix* lightViewProjMatrices,
     u32 shadowMapSize)
 {
     ScopedZone("ShadowPass::Construct LightViewProjMatrices");
@@ -300,14 +305,10 @@ stltype::array<mathstl::Matrix, 16> CSMPass::ComputeLightViewProjMatrices(
     // Fill split depths for the shader (absolute view-space distances)
     for (u32 i = 0; i < cascades; ++i)
     {
-        splits[i] = cascadeSplits[i];
+        splits.push_back(cascadeSplits[i]);
     }
     for (u32 i = cascades; i < 16; ++i)
     {
-        splits[i] = FLT_MAX;
+        splits.push_back(FLT_MAX);
     }
-
-    return lightViewProjMatrices;
 }
-
-

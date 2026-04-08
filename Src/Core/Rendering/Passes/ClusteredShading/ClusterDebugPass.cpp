@@ -1,7 +1,7 @@
 #include "ClusterDebugPass.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
-#include "Core/Rendering/Core/Utils/DescriptorLayoutUtils.h"
+#include "Core/Rendering/Vulkan/Utils/VkDescriptorLayoutUtils.h"
 #include "Core/Rendering/Core/Pipeline.h"
 #include "Core/Rendering/Passes/Utils/RenderPassUtils.h"
 #include "Core/Rendering/Vulkan/VkShader.h"
@@ -10,6 +10,7 @@
 using namespace RenderPasses;
 ClusterDebugPass::ClusterDebugPass() : ConvolutionRenderPass("ClusterDebugPass")
 {
+    m_indirectCmdBuffers.resize(SWAPCHAIN_IMAGES);
     CreateSharedDescriptorLayout();
 }
 
@@ -52,9 +53,9 @@ void ClusterDebugPass::BuildBuffers()
     u32 dummyData = 0;
     m_dummyVertexBuffer.FillImmediate(&dummyData);
     
-    // Create indirect command buffer
-    // Start with 1 command capacity
-    m_indirectCmdBuffer = IndirectDrawCmdBuf(1);
+    // Create indirect command buffers
+    for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
+        m_indirectCmdBuffers[i].Init(1);
 }
 
 void ClusterDebugPass::BuildPipelines()
@@ -109,11 +110,13 @@ void ClusterDebugPass::Render(const MainPassData& data, FrameRendererContext& ct
     u32 totalClusters = renderState.totalClusterCount;
     if (totalClusters == 0) return;
 
+    m_currentFrameIdx = ctx.imageIdx;
+    auto& cmdBuf = m_indirectCmdBuffers[m_currentFrameIdx];
     // Update Indirect Command
-    m_indirectCmdBuffer.EmptyCmds();
+    cmdBuf.EmptyCmds();
     // indexCount = 24, instanceCount = totalClusters, firstIndex = 0, vertexOffset = 0, firstInstance = 0
-    m_indirectCmdBuffer.AddIndexedDrawCmd(24, totalClusters, 0, 0, 0); 
-    m_indirectCmdBuffer.FillCmds();
+    cmdBuf.AddIndexedDrawCmd(24, totalClusters, 0, 0, 0); 
+    cmdBuf.FillCmds();
     
     // Begin Rendering
     const auto ex = ctx.pCurrentSwapchainTexture->GetInfo().extents;
@@ -124,15 +127,16 @@ void ClusterDebugPass::Render(const MainPassData& data, FrameRendererContext& ct
     
     stltype::vector<ColorAttachment> colorAttachments = {gbufferDebug};
     
+    m_mainRenderingData.depthAttachment.SetTexture(data.pMainDepthTexture);
     BeginRenderingCmd cmdBegin{&m_pipeline, ToRenderAttachmentInfos(colorAttachments), ToRenderAttachmentInfo(m_mainRenderingData.depthAttachment)};
     cmdBegin.extents = extents;
     cmdBegin.viewport = data.mainView.viewport;
     
-    GenericIndirectDrawCmd cmd{&m_pipeline, m_indirectCmdBuffer};
+    GenericIndirectDrawCmd cmd{&m_pipeline, cmdBuf};
     cmd.drawCount = 1;
     
     if (data.bufferDescriptors.empty())
-        cmd.descriptorSets = {g_pTexManager->GetBindlessDescriptorSet(), data.mainView.descriptorSet, ctx.clusterGridDescriptor};
+        cmd.descriptorSets = {DescriptorSet::Cast(g_pTexManager->GetBindlessDescriptorSet()), data.mainView.descriptorSet, ctx.clusterGridDescriptor};
     else
     {
         const auto texArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessTextureArray);

@@ -1,7 +1,7 @@
 #pragma once
 #include "Core/Rendering/Core/RenderingForwardDecls.h"
-#include "Core/Rendering/Vulkan/VkAttachment.h"
-#include "Core/Rendering/Vulkan/VkBuffer.h"
+#include "Buffer.h"
+#include "Attachment.h"
 
 // Just a simple struct to hold rendering data and make it less annoying to pass around
 struct BufferData
@@ -11,14 +11,14 @@ struct BufferData
         return m_indexBuffer.GetInfo().size;
     }
 
-    void SetVertexBuffer(const VertexBufferVulkan& buffer)
+    void SetVertexBuffer(const VertexBuffer& buffer)
     {
         if (m_vertexBuffer.GetRef() != buffer.GetRef())
             m_vertexBuffer.CleanUp();
         m_vertexBuffer = buffer;
     }
 
-    void SetIndexBuffer(const IndexBufferVulkan& buffer)
+    void SetIndexBuffer(const IndexBuffer& buffer)
     {
         if (m_indexBuffer.GetRef() != buffer.GetRef())
             m_indexBuffer.CleanUp();

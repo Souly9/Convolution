@@ -1,4 +1,5 @@
 #pragma once
+#include "RenderTraitsMacros.h"
 #include "Core/Rendering/Core/Texture.h"
 #include "RenderingForwardDecls.h"
 #include "Core/Rendering/Core/Synchronization.h"
@@ -6,6 +7,8 @@
 #include "Core/Rendering/Core/Buffer.h"
 #include <EASTL/fixed_function.h>
 #include <EASTL/variant.h>
+#include "Core/Rendering/Core/DescriptorPool.h"
+#include "Core/Rendering/Core/Pipeline.h"
 
 using ExecutionFinishedCallback = stltype::fixed_function<128, void(void)>;
 
@@ -28,13 +31,13 @@ struct BeginRenderingBaseCmd : public CommandBase
     DirectX::XMINT2 extents = {0, 0};
     
     // Use agnostic info struct instead of API-specific class
-    stltype::vector<RenderAttachmentInfo> colorAttachments;
-    RenderAttachmentInfo depthAttachment;
+    stltype::vector<RenderAttachmentInfo> colorAttachments{};
+    RenderAttachmentInfo depthAttachment{};
     bool hasDepthAttachment{false};
     
     u32 depthLayerMask = 0x0;
 
-    mathstl::Viewport viewport;
+    mathstl::Viewport viewport{};
 
     BeginRenderingBaseCmd(const stltype::vector<RenderAttachmentInfo>& cs, const RenderAttachmentInfo& depth, bool hasDepth)
         : colorAttachments(cs), depthAttachment(depth), hasDepthAttachment(hasDepth)
@@ -47,13 +50,19 @@ struct BeginRenderingBaseCmd : public CommandBase
     }
 };
 
-// Forward declaration
+
+// Initial forward decl for pointers
 template<typename API>
 class IndirectDrawCommandBufferCommon;
+template <typename API>
+class CommandBufferT;
+
+using IndirectDrawCmdBuf = IndirectDrawCommandBufferCommon<CurrentAPI>;
+using CommandBuffer = CommandBufferT<CurrentAPI>;
 
 struct BeginRenderingCmd : public BeginRenderingBaseCmd
 {
-    PSO* pso;
+    PSO* pso{nullptr};
 
     IndexBuffer* pIndexBuffer{nullptr};
     VertexBuffer* pVertexBuffer{nullptr};
@@ -73,8 +82,8 @@ struct BeginRenderingCmd : public BeginRenderingBaseCmd
 
 struct BinRenderDataCmd : public CommandBase
 {
-    VertexBuffer* vertexBuffer;
-    IndexBuffer* indexBuffer;
+    VertexBuffer* vertexBuffer{nullptr};
+    IndexBuffer* indexBuffer{nullptr};
 
     BinRenderDataCmd(VertexBuffer& vB, IndexBuffer& iB) : vertexBuffer(&vB), indexBuffer(&iB)
     {
@@ -87,8 +96,8 @@ struct EndRenderingCmd : public CommandBase
 
 struct StartProfilingScopeCmd : public CommandBase
 {
-    const char* name;
-    mathstl::Vector4 color;
+    const char* name{nullptr};
+    mathstl::Vector4 color{};
 };
 
 struct EndProfilingScopeCmd : public CommandBase
@@ -97,22 +106,21 @@ struct EndProfilingScopeCmd : public CommandBase
 
 struct GenericDrawCmd : public CommandBase
 {
-    // ShaderID shaderID;
-    PSO* pso;
-    stltype::vector<DescriptorSet*> descriptorSets{};
+    PSO::Ptr pso{};
+    stltype::vector<DescriptorSet::Ptr> descriptorSets{};
 
-    GenericDrawCmd(PSO* ps) : pso(ps)
+    GenericDrawCmd(PSO::Ptr ps) : pso(ps)
     {
     }
 };
 
 struct GenericIndirectDrawCmd : public GenericDrawCmd
 {
-    const IndirectDrawCmdBuf* drawCmdBuffer;
+    const IndirectDrawCmdBuf* drawCmdBuffer{nullptr};
     u32 drawCount = 5;
     u32 bufferOffst = 0;
 
-    GenericIndirectDrawCmd(PSO* ps, const IndirectDrawCmdBuf& dB) : GenericDrawCmd(ps), drawCmdBuffer(&dB)
+    GenericIndirectDrawCmd(PSO::Ptr ps, const IndirectDrawCmdBuf& dB) : GenericDrawCmd(ps), drawCmdBuffer(&dB)
     {
     }
 };
@@ -124,7 +132,7 @@ struct GenericIndexedDrawCmd : public GenericDrawCmd
     u32 firstVert{0};
     u32 firstInstance{0};
 
-    GenericIndexedDrawCmd(PSO* ps) : GenericDrawCmd(ps)
+    GenericIndexedDrawCmd(PSO::Ptr ps) : GenericDrawCmd(ps)
     {
     }
 };
@@ -133,7 +141,7 @@ struct GenericInstancedDrawCmd : public GenericIndexedDrawCmd
 {
     u32 indexOffset{0};
 
-    GenericInstancedDrawCmd(PSO* ps) : GenericIndexedDrawCmd(ps)
+    GenericInstancedDrawCmd(PSO::Ptr ps) : GenericIndexedDrawCmd(ps)
     {
     }
 };
@@ -141,12 +149,12 @@ struct GenericInstancedDrawCmd : public GenericIndexedDrawCmd
 struct CopyBaseCmd : public CommandBase
 {
     u64 srcOffset{0};
-    ExecutionFinishedCallback optionalCallback;
-    APITraits<CurrentAPI>::BufferType* srcBuffer;
+    ExecutionFinishedCallback optionalCallback{};
+    GenericBuffer::Ptr srcBuffer{};
 
-    CopyBaseCmd(APITraits<CurrentAPI>::BufferType& src) : srcBuffer(&src)
+    CopyBaseCmd(GenericBuffer::Ptr src) : srcBuffer(src)
     {
-        src.Grab();
+        if (src) src->Grab();
     }
 };
 
@@ -154,28 +162,35 @@ struct PushConstantCmd : public CommandBase
 {
     u32 size;
     u32 offset;
-    void* data;
-    PSO* pPSO;
-    // ShaderTypeBits shaderStage;
+    stltype::fixed_vector<u8, 128> data{};
+    PSO::Ptr pPSO;
+
+    PushConstantCmd() = default;
+
+    template <typename T>
+    PushConstantCmd(PSO::Ptr p, u32 off, const T& d) : pPSO(p), offset(off), size(sizeof(T))
+    {
+        data.assign((u8*)&d, (u8*)&d + sizeof(T));
+    }
 };
 
 struct SimpleBufferCopyCmd : public CopyBaseCmd
 {
     u64 dstOffset{0};
     u64 size{0};
-    const APITraits<CurrentAPI>::BufferType* dstBuffer;
+    GenericBuffer::Ptr dstBuffer{};
 
-    SimpleBufferCopyCmd(APITraits<CurrentAPI>::BufferType& src, const APITraits<CurrentAPI>::BufferType* dst) : CopyBaseCmd(src), dstBuffer(dst)
+    SimpleBufferCopyCmd(GenericBuffer::Ptr src, GenericBuffer::Ptr dst) : CopyBaseCmd(src), dstBuffer(dst)
     {
     }
 };
 
-struct ImageBuffyCopyCmd : public CopyBaseCmd
+struct ImageBufferCopyCmd : public CopyBaseCmd
 {
     DirectX::XMINT3 imageOffset{0, 0, 0};
-    DirectX::XMUINT3 imageExtent;
+    DirectX::XMUINT3 imageExtent{};
 
-    const Texture* dstImage;
+    Texture::Ptr dstImage{};
 
     u64 bufferRowLength{0};
     u64 bufferImageHeight{0};
@@ -184,16 +199,33 @@ struct ImageBuffyCopyCmd : public CopyBaseCmd
     u32 baseArrayLayer{0};
     u32 layerCount{1};
 
-    ImageBuffyCopyCmd(APITraits<CurrentAPI>::BufferType& src, const Texture* dst) : CopyBaseCmd(src), dstImage(dst)
+    ImageBufferCopyCmd(GenericBuffer::Ptr src, Texture::Ptr dst) : CopyBaseCmd(src), dstImage(dst)
+    {
+    }
+};
+
+struct ImageToImageCopyCmd : public CommandBase
+{
+    Texture::Ptr srcImage{};
+    Texture::Ptr dstImage{};
+
+    u32 aspectFlagBits{0x00000001};
+    u32 srcMipLevel{0};
+    u32 dstMipLevel{0};
+    u32 srcBaseLayer{0};
+    u32 dstBaseLayer{0};
+    u32 layerCount{1};
+
+    ImageToImageCopyCmd(Texture::Ptr src, Texture::Ptr dst) : srcImage(src), dstImage(dst)
     {
     }
 };
 
 struct ImageLayoutTransitionCmd : public CommandBase
 {
-    stltype::vector<const Texture*> images;
-    ImageLayout oldLayout;
-    ImageLayout newLayout;
+    stltype::vector<Texture::Ptr> images;
+    ImageLayout oldLayout{};
+    ImageLayout newLayout{};
 
     s32 srcQueueFamilyIdx{-1}; // only for transferring queue ownership
     s32 dstQueueFamilyIdx{-1}; // only for transferring queue ownership
@@ -203,17 +235,26 @@ struct ImageLayoutTransitionCmd : public CommandBase
     u32 baseArrayLayer{0};
     u32 layerCount{1};
 
-    u64 srcAccessMask;
-    u64 dstAccessMask;
+    u64 srcAccessMask{0};
+    u64 dstAccessMask{0};
 
-    u32 srcStage;
-    u32 dstStage;
+    u32 srcStage{0};
+    u32 dstStage{0};
 
-    ImageLayoutTransitionCmd(const Texture* pI) : images{pI}
+    ImageLayoutTransitionCmd(const Texture* pI) : images{const_cast<Texture*>(pI)}
     {
     }
-    ImageLayoutTransitionCmd(const stltype::vector<const Texture*>& imgs) : images(imgs)
+    ImageLayoutTransitionCmd(Texture::Ptr pI) : images{pI}
     {
+    }
+    ImageLayoutTransitionCmd(const stltype::vector<Texture::Ptr>& imgs) : images(imgs)
+    {
+    }
+    ImageLayoutTransitionCmd(const stltype::vector<const Texture*>& imgs)
+    {
+        images.reserve(imgs.size());
+        for (const auto* p : imgs)
+            images.push_back(const_cast<Texture*>(p));
     }
 };
 
@@ -223,17 +264,17 @@ struct DrawMeshCmd : public GenericDrawCmd
 
 struct BindComputePipelineCmd : public CommandBase
 {
-    ComputePipeline* pPipeline;
-    BindComputePipelineCmd(ComputePipeline* p) : pPipeline(p)
+    ComputePipeline::Ptr pPipeline{};
+    BindComputePipelineCmd(ComputePipeline::Ptr p) : pPipeline(p)
     {
     }
 };
 
 struct ComputeDispatchCmd : public CommandBase
 {
-    u32 groupCountX;
-    u32 groupCountY;
-    u32 groupCountZ;
+    u32 groupCountX{0};
+    u32 groupCountY{0};
+    u32 groupCountZ{0};
     ComputeDispatchCmd(u32 x, u32 y, u32 z) : groupCountX(x), groupCountY(y), groupCountZ(z)
     {
     }
@@ -241,10 +282,10 @@ struct ComputeDispatchCmd : public CommandBase
 
 struct GlobalBarrierCmd : public CommandBase
 {
-    SyncStages srcStage;
-    SyncStages dstStage;
-    u32 srcAccessMask;
-    u32 dstAccessMask;
+    SyncStages srcStage{SyncStages::NONE};
+    SyncStages dstStage{SyncStages::NONE};
+    u32 srcAccessMask{0};
+    u32 dstAccessMask{0};
 
     GlobalBarrierCmd(SyncStages sStage, SyncStages dStage, u32 sAccess, u32 dAccess)
         : srcStage(sStage), dstStage(dStage), srcAccessMask(sAccess), dstAccessMask(dAccess)
@@ -254,47 +295,57 @@ struct GlobalBarrierCmd : public CommandBase
 
 struct BufferFillCmd : public CommandBase
 {
-    StorageBuffer* pBuffer;
-    u64 offset;
-    u64 size;
-    u32 data;
+    StorageBuffer::Ptr pBuffer{};
+    u64 offset{0};
+    u64 size{0};
+    u32 data{0};
 
-    BufferFillCmd(StorageBuffer* buf, u64 off, u64 sz, u32 d = 0)
+    BufferFillCmd(StorageBuffer::Ptr buf, u64 off, u64 sz, u32 d = 0)
         : pBuffer(buf), offset(off), size(sz), data(d)
+    {
+    }
+};
+
+struct BufferUpdateCmd : public CommandBase
+{
+    StorageBuffer::Ptr pBuffer{};
+    u64 offset{0};
+    u32 data{0};
+
+    BufferUpdateCmd(StorageBuffer::Ptr buf, u64 off, u32 d) : pBuffer(buf), offset(off), data(d)
     {
     }
 };
 
 struct ComputePushConstantCmd : public CommandBase
 {
-    ComputePipeline* pPipeline;
-    u32 offset;
-    u32 size;
-    stltype::array<u8, 128> data; // Fixed-size storage for push constant data
+    ComputePipeline::Ptr pPipeline{};
+    u32 offset{0};
+    u32 size{0};
+    stltype::fixed_vector<u8, 128> data{}; // Fixed-size storage for push constant data
     template <typename T>
-    ComputePushConstantCmd(ComputePipeline* p, u32 off, const T& d) : pPipeline(p), offset(off), size(sizeof(T))
+    ComputePushConstantCmd(ComputePipeline::Ptr p, u32 off, const T& d) : pPipeline(p), offset(off), size(sizeof(T))
     {
-        static_assert(sizeof(T) <= 128, "Push constant data too large");
-        memcpy(data.data(), &d, sizeof(T));
+        data.assign((u8*)&d, (u8*)&d + sizeof(T));
     }
 };
 
 struct GenericComputeDispatchCmd : public CommandBase
 {
-    ComputePipeline* pPipeline;
-    stltype::vector<DescriptorSet*> descriptorSets{};
+    ComputePipeline::Ptr pPipeline{};
+    stltype::vector<DescriptorSet::Ptr> descriptorSets{};
     u32 groupCountX{1};
     u32 groupCountY{1};
     u32 groupCountZ{1};
     u32 pushConstantOffset{0};
     u32 pushConstantSize{0};
-    stltype::array<u8, 128> pushConstantData{};
+    stltype::fixed_vector<u8, 128> pushConstantData{};
 
-    GenericComputeDispatchCmd(ComputePipeline* p) : pPipeline(p)
+    GenericComputeDispatchCmd(ComputePipeline::Ptr p) : pPipeline(p)
     {
     }
 
-    GenericComputeDispatchCmd(ComputePipeline* p, u32 x, u32 y, u32 z)
+    GenericComputeDispatchCmd(ComputePipeline::Ptr p, u32 x, u32 y, u32 z)
         : pPipeline(p), groupCountX(x), groupCountY(y), groupCountZ(z)
     {
     }
@@ -302,10 +353,9 @@ struct GenericComputeDispatchCmd : public CommandBase
     template <typename T>
     void SetPushConstants(u32 offset, const T& data)
     {
-        static_assert(sizeof(T) <= 128, "Push constant data too large");
         pushConstantOffset = offset;
         pushConstantSize = sizeof(T);
-        memcpy(pushConstantData.data(), &data, sizeof(T));
+        pushConstantData.assign((u8*)&data, (u8*)&data + sizeof(T));
     }
 };
 
@@ -314,7 +364,7 @@ struct ImDrawData;
 
 struct ImGuiDrawCmd : public CommandBase
 {
-    ImDrawData* drawData;
+    ImDrawData* drawData{nullptr};
     ImGuiDrawCmd(ImDrawData* d) : drawData(d)
     {
     }
@@ -322,16 +372,19 @@ struct ImGuiDrawCmd : public CommandBase
 
 struct ResetQueryPoolCmd : public CommandBase
 {
-    QueryPool* queryPool;
-    u32 firstQuery;
-    u32 queryCount;
+    QueryPool* queryPool{nullptr};
+    u32 firstQuery{0};
+    u32 queryCount{0};
+
+    ResetQueryPoolCmd(QueryPool* pool, u32 first, u32 count)
+        : queryPool(pool), firstQuery(first), queryCount(count) {}
 };
 
 struct WriteTimestampCmd : public CommandBase
 {
-    QueryPool* queryPool; // VkQueryPool
-    u32 query;
-    bool isStart;
+    QueryPool* queryPool{nullptr}; 
+    u32 query{0};
+    bool isStart{false};
 };
 
 using Command = stltype::variant<CommandBase,
@@ -347,7 +400,8 @@ using Command = stltype::variant<CommandBase,
                                  ComputePushConstantCmd,
                                  GenericComputeDispatchCmd,
                                  SimpleBufferCopyCmd,
-                                 ImageBuffyCopyCmd,
+                                 ImageBufferCopyCmd,
+                                 ImageToImageCopyCmd,
                                  ImageLayoutTransitionCmd,
                                  BeginRenderingBaseCmd,
                                  BeginRenderingCmd,
@@ -358,7 +412,8 @@ using Command = stltype::variant<CommandBase,
                                  PushConstantCmd,
                                  ImGuiDrawCmd,
                                  ResetQueryPoolCmd,
-                                 WriteTimestampCmd>;
+                                 WriteTimestampCmd,
+                                 BufferUpdateCmd>;
 
 // Generic command buffer, basically collects all commands as generic structs first so we can reason about them
 struct CommandBufferStats
@@ -408,12 +463,11 @@ public:
 
 protected:
     u32 m_frameIdx{0};
-    stltype::vector<Command> m_commands;
+    stltype::vector<Command> m_commands{};
     CommandBufferStats m_stats{};
     // Gets called when buffer gets destroyed or reset indirectly guaranteeing execution has finished
-    stltype::vector<ExecutionFinishedCallback> m_executionFinishedCallbacks;
+    stltype::vector<ExecutionFinishedCallback> m_executionFinishedCallbacks{};
 };
-
 #include "APITraits.h"
 #ifdef USE_VULKAN
 #include "Core/Rendering/Vulkan/VulkanTraits.h"
@@ -425,6 +479,7 @@ class IndirectDrawCommandBufferCommon : public APITraits<API>::IndirectDrawComma
 {
 public:
     using APITraits<API>::IndirectDrawCommandBufferType::IndirectDrawCommandBufferType;
+    DECLARE_RENDER_RESOURCE_TRAITS(IndirectDrawCommandBufferCommon, IndirectDrawCommandBufferType)
 };
 
 template <typename API>
@@ -432,4 +487,5 @@ class CommandBufferT : public APITraits<API>::CommandBufferType
 {
 public:
     using APITraits<API>::CommandBufferType::CommandBufferType;
+    DECLARE_RENDER_RESOURCE_TRAITS(CommandBufferT, CommandBufferType)
 };

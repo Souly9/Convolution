@@ -1,17 +1,11 @@
 #include "VkCommandBuffer.h"
-#include "Core/Global/State/ApplicationState.h"
+#include "Core/Rendering/Core/CommandBuffer.h"
 #include "Core/Rendering/Core/RenderDefinitions.h"
-#include "Core/Rendering/Core/TextureManager.h"
-#include "Core/Rendering/Vulkan/VkAttachment.h"
-#include "Core/Rendering/Vulkan/VkBuffer.h"
-#include "Core/Rendering/Vulkan/VkPipeline.h"
 #include "Core/Rendering/Vulkan/VkProfiler.h"
 #include "Core/Rendering/Vulkan/VkQueryPool.h"
-#include "Core/Rendering/Vulkan/VkSynchronization.h"
 #include "Core/Rendering/Vulkan/VkTexture.h"
 #include "Core/Rendering/Vulkan/VulkanTraits.h"
 #include "Utils/VkEnumHelpers.h"
-#include "VkCommandBuffer.h"
 #include "VkGlobals.h"
 #include <backends/imgui_impl_vulkan.h>
 #include <imgui.h>
@@ -85,7 +79,7 @@ static void RecordCommand(BinRenderDataCmd& cmd, CBufferVulkan& buffer)
 static void RecordCommand(PushConstantCmd& cmd, CBufferVulkan& buffer)
 {
     vkCmdPushConstants(
-        buffer.GetRef(), cmd.pPSO->GetLayout(), VK_SHADER_STAGE_VERTEX_BIT, cmd.offset, cmd.size, cmd.data);
+        buffer.GetRef(), cmd.pPSO->GetLayout(), VK_SHADER_STAGE_VERTEX_BIT, cmd.offset, cmd.size, cmd.data.data());
 }
 
 static void RecordCommand(EndRenderingCmd& cmd, CBufferVulkan& buffer)
@@ -160,7 +154,7 @@ static void RecordCommand(SimpleBufferCopyCmd& cmd, CBufferVulkan& buffer)
         buffer.AddExecutionFinishedCallback(std::move(cmd.optionalCallback));
 }
 
-static void RecordCommand(ImageBuffyCopyCmd& cmd, CBufferVulkan& buffer)
+static void RecordCommand(ImageBufferCopyCmd& cmd, CBufferVulkan& buffer)
 {
     DEBUG_ASSERT(cmd.srcBuffer->GetRef() != VK_NULL_HANDLE && cmd.dstImage->GetImage() != VK_NULL_HANDLE);
 
@@ -187,6 +181,35 @@ static void RecordCommand(ImageBuffyCopyCmd& cmd, CBufferVulkan& buffer)
         buffer.AddExecutionFinishedCallback(std::move(cmd.optionalCallback));
 }
 
+static void RecordCommand(ImageToImageCopyCmd& cmd, CBufferVulkan& buffer)
+{
+    DEBUG_ASSERT(cmd.srcImage->GetImage() != VK_NULL_HANDLE && cmd.dstImage->GetImage() != VK_NULL_HANDLE);
+
+    VkImageCopy copyRegion{};
+    copyRegion.srcSubresource.aspectMask = cmd.aspectFlagBits;
+    copyRegion.srcSubresource.mipLevel = cmd.srcMipLevel;
+    copyRegion.srcSubresource.baseArrayLayer = cmd.srcBaseLayer;
+    copyRegion.srcSubresource.layerCount = cmd.layerCount;
+
+    copyRegion.dstSubresource.aspectMask = cmd.aspectFlagBits;
+    copyRegion.dstSubresource.mipLevel = cmd.dstMipLevel;
+    copyRegion.dstSubresource.baseArrayLayer = cmd.dstBaseLayer;
+    copyRegion.dstSubresource.layerCount = cmd.layerCount;
+
+    copyRegion.srcOffset = {0, 0, 0};
+    copyRegion.dstOffset = {0, 0, 0};
+    const auto& extents = cmd.srcImage->GetInfo().extents;
+    copyRegion.extent = {extents.x, extents.y, extents.z};
+
+    vkCmdCopyImage(buffer.GetRef(),
+                   cmd.srcImage->GetImage(),
+                   VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                   cmd.dstImage->GetImage(),
+                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                   1,
+                   &copyRegion);
+}
+
 static void RecordCommand(ImageLayoutTransitionCmd& cmd, CBufferVulkan& buffer)
 {
     // Create a new VkImageMemoryBarrier2 for the transition.
@@ -197,6 +220,7 @@ static void RecordCommand(ImageLayoutTransitionCmd& cmd, CBufferVulkan& buffer)
     {
         DEBUG_ASSERT(image->GetImage() != VK_NULL_HANDLE);
         VkImageMemoryBarrier2& memoryBarrier = barriers.emplace_back();
+        memoryBarrier = {};
         memoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
         memoryBarrier.oldLayout = Conv(cmd.oldLayout);
         memoryBarrier.newLayout = Conv(cmd.newLayout);
@@ -209,10 +233,27 @@ static void RecordCommand(ImageLayoutTransitionCmd& cmd, CBufferVulkan& buffer)
         memoryBarrier.srcAccessMask = cmd.srcAccessMask;
         memoryBarrier.dstAccessMask = cmd.dstAccessMask;
 
-        memoryBarrier.subresourceRange.aspectMask = (cmd.newLayout == ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL ||
-                                                     cmd.oldLayout == ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-                                                        ? VK_IMAGE_ASPECT_DEPTH_BIT
-                                                        : VK_IMAGE_ASPECT_COLOR_BIT;
+        const TexFormat format = image->GetInfo().format;
+        const bool isDepthFormat = (format == TexFormat::D16_UNORM || format == TexFormat::X8_D24_UNORM_PACK32 ||
+                                    format == TexFormat::D32_SFLOAT || format == TexFormat::D16_UNORM_S8_UINT ||
+                                    format == TexFormat::D24_UNORM_S8_UINT || format == TexFormat::D32_SFLOAT_S8_UINT);
+        const bool hasStencil = (format == TexFormat::D16_UNORM_S8_UINT || format == TexFormat::D24_UNORM_S8_UINT ||
+                                 format == TexFormat::D32_SFLOAT_S8_UINT);
+        const bool usesDepthLayout = (cmd.newLayout == ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL ||
+                                      cmd.oldLayout == ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL ||
+                                      cmd.newLayout == ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL ||
+                                      cmd.oldLayout == ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+
+        if (isDepthFormat || usesDepthLayout)
+        {
+            memoryBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+            if (hasStencil)
+                memoryBarrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+        }
+        else
+        {
+            memoryBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        }
         memoryBarrier.subresourceRange.baseArrayLayer = cmd.baseArrayLayer;
         memoryBarrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
         memoryBarrier.subresourceRange.baseMipLevel = cmd.mipLevel;
@@ -318,11 +359,15 @@ static void RecordCommand(BufferFillCmd& cmd, CBufferVulkan& buffer)
 {
     vkCmdFillBuffer(buffer.GetRef(), cmd.pBuffer->GetRef(), cmd.offset, cmd.size, cmd.data);
 }
+static void RecordCommand(BufferUpdateCmd& cmd, CBufferVulkan& buffer)
+{
+    vkCmdUpdateBuffer(buffer.GetRef(), cmd.pBuffer->GetRef(), cmd.offset, sizeof(u32), &cmd.data);
+}
 } // namespace CommandHelpers
 
 CBufferVulkan::CBufferVulkan(VkCommandBuffer commandBuffer)
     : m_commandBuffer(commandBuffer), m_waitStages{Conv(SyncStages::TOP_OF_PIPE)},
-      m_signalStages{Conv(SyncStages::ALL_COMMANDS)}
+      m_signalStages{Conv(SyncStages::BOTTOM_OF_PIPE)}
 {
     m_commands.reserve(24);
 }
@@ -496,11 +541,12 @@ void CBufferVulkan::BeginRendering(BeginRenderingBaseCmd& cmd)
 {
     const auto renderExtent = VkExtent2D(cmd.extents.x, cmd.extents.y);
 
-    stltype::vector<VkRenderingAttachmentInfo> colorAttachments;
+    stltype::vector<VkRenderingAttachmentInfo> colorAttachments{};
     for (const RenderAttachmentInfo& attachment : cmd.colorAttachments)
     {
         DEBUG_ASSERT(attachment.pTexture != nullptr);
         VkRenderingAttachmentInfo& colorAttachment = colorAttachments.emplace_back();
+        colorAttachment = {};
         colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
 
         colorAttachment.imageView = attachment.pTexture->GetImageView();

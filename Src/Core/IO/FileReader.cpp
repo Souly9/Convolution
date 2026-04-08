@@ -213,7 +213,7 @@ void FileReader::ReadMeshFile(const IORequest& request)
         path.data(),
         aiProcess_Triangulate | aiProcess_JoinIdenticalVertices | aiProcess_FlipUVs | aiProcess_RemoveComponent |
             aiProcess_RemoveRedundantMaterials | aiProcess_GenUVCoords | aiProcess_GenBoundingBoxes |
-            aiProcess_GenSmoothNormals | aiProcess_CalcTangentSpace | aiProcess_FixInfacingNormals);
+            aiProcess_GenSmoothNormals | aiProcess_CalcTangentSpace);
 
     DEBUG_ASSERT(pMeshScene);
     auto scene = MeshConversion::Convert(pMeshScene);

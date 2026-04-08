@@ -1,19 +1,14 @@
 #pragma once
-
 #include "eathread/eathread.h"
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
-
-// Note: External libraries and common system headers are now in PCH.h
 #include "Typedefs.h"
-#include <cassert>
 
 // Configuration Macros
 #ifdef CONV_DEBUG
 #define ASSERT(x) assert(x)
 #else
-#undef CONV_DEBUG
 #define ASSERT(x) x
 #endif
 #define DEBUG_ASSERT(x) ASSERT(x)
@@ -28,13 +23,12 @@ inline VkAllocationCallbacks* VulkanAllocator()
 class AvailableRenderBackends
 {
 };
-class Vulkan : AvailableRenderBackends
+class Vulkan : public AvailableRenderBackends
 {
 };
 using RenderAPI = Vulkan;
 
 // Constants
-#include "../../../Shaders/Globals/Constants.h"
 
 const static inline stltype::string ENGINE_NAME = "Convolution";
 constexpr static inline u32 FRAMES_IN_FLIGHT = 2u;
@@ -48,10 +42,6 @@ constexpr static inline u32 MAX_MESHES = 4096;
 #define DEPTH_BUFFER_FORMAT TexFormat::D32_SFLOAT
 
 // Definitions
-#ifndef USE_VULKAN
-#define USE_VULKAN
-#endif
-
 #ifdef USE_VULKAN
 #include "Core/Rendering/Core/APITraits.h"
 using CurrentAPI = API_Vulkan;
@@ -72,5 +62,5 @@ using CurrentAPI = API_Vulkan;
 static inline constexpr f32 FLOAT_TOLERANCE = 0.00001f;
 static inline constexpr f32 AMBIENT_STRENGTH = 0.03f;
 
-static inline u32 CORE_COUNT_AVAILABLE = threadstl::GetProcessorCount() - 2;
+static inline u32 CORE_COUNT_AVAILABLE = 8;
 

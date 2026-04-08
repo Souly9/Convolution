@@ -5,7 +5,7 @@
 namespace SRF
 {
 IMPLEMENT_GRAPHICS_API
-static inline void QueryImageForPresentationFromMainSwapchain(const Semaphore& imageAvailableSemaphore,
+static inline bool QueryImageForPresentationFromMainSwapchain(const Semaphore& imageAvailableSemaphore,
                                                               const Fence& imageAvailableFence,
                                                               u32& imageIndex,
                                                               u64 timeout = UINT64_MAX);

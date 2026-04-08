@@ -1,42 +1,56 @@
 #include "TransferQueueHandler.h"
 #include "../StaticFunctions.h"
 #include "Core/Events/EventSystem.h"
-#include "Core/Global/CommonGlobals.h"
-#include "Core/Rendering/Core/Nvidia/AftermathManager.h"
-#include "Core/Rendering/Vulkan/VkGlobals.h"
+#include "Core/Global/GlobalVariables.h"
+#include "Core/Global/LogDefines.h"
+#include "Core/Global/Utils/MathFunctions.h"
 #include "Core/SceneGraph/Mesh.h"
+#include "eathread/eathread.h"
 #include <EASTL/algorithm.h>
 #include <EASTL/utility.h>
 
+
+#define PREALLOC_STAGING_BUFFERS 512
+
 static void SetBufferSyncInfo(const AsyncQueueHandler::SynchronizableCommand& cmd, CommandBuffer* pCmdBuffer)
 {
-    pCmdBuffer->AddWaitSemaphores(cmd.waitSemaphores);
-    pCmdBuffer->AddSignalSemaphores(cmd.signalSemaphores);
     pCmdBuffer->SetWaitStages(cmd.waitStage);
-    auto signalStage = cmd.signalStage;
-    if (signalStage == SyncStages::NONE)
-        signalStage = SyncStages::TRANSFER;
-    pCmdBuffer->SetSignalStages(signalStage);
+    pCmdBuffer->SetSignalStages(cmd.signalStage);
     pCmdBuffer->SetName(cmd.name);
+}
+
+// Specializations for variant members to use with SetBufferSyncInfo if needed
+static void SetBufferSyncInfo(const AsyncQueueHandler::MeshTransfer& cmd, CommandBuffer* pCmdBuffer)
+{
+    pCmdBuffer->SetWaitStages(SyncStages::TRANSFER);
+    // Completion tracking timeline must signal after full command buffer execution.
+    pCmdBuffer->SetSignalStages(SyncStages::BOTTOM_OF_PIPE);
+    pCmdBuffer->SetName("MeshTransfer");
+}
+
+static void SetBufferSyncInfo(const AsyncQueueHandler::SSBOTransfer& cmd, CommandBuffer* pCmdBuffer)
+{
+    pCmdBuffer->SetWaitStages(SyncStages::TRANSFER);
+    // Completion tracking timeline must signal after full command buffer execution.
+    pCmdBuffer->SetSignalStages(SyncStages::BOTTOM_OF_PIPE);
+    pCmdBuffer->SetName("SSBOTransfer");
 }
 
 AsyncQueueHandler::~AsyncQueueHandler()
 {
     ShutdownThread();
-    for (auto& frameFences : m_fencesToWaitOn)
+    // ThreadPool is cleaned up by its own destructor
+
+    for (auto& pair : m_queueTimelines)
     {
-        for (auto& req : frameFences)
-        {
-            req.fence.WaitFor();
-            for (auto& cmdBufReq : req.requests)
-            {
-                if (cmdBufReq.pBuffer)
-                    cmdBufReq.pBuffer->CallCallbacks();
-            }
-        }
+        pair.second.timeline.CleanUp();
     }
-    for (auto& frameFences : m_fencesToWaitOn)
-        frameFences.clear();
+
+    for (auto& ctx : m_recorderContexts)
+    {
+        ctx->pool.ClearAll();
+    }
+
     for (auto& poolPair : m_commandPools)
     {
         poolPair.second.ClearAll();
@@ -45,14 +59,48 @@ AsyncQueueHandler::~AsyncQueueHandler()
 
 void AsyncQueueHandler::Init()
 {
+    auto indices = VkGlobals::GetQueueFamilyIndices();
     m_commandPools.emplace(QueueType::Transfer, TransferCommandPoolVulkan::Create());
-    m_commandPools.emplace(QueueType::Compute,
-                           CommandPool::Create(VkGlobals::GetQueueFamilyIndices().computeFamily.value()));
-    m_commandPools.emplace(QueueType::Graphics,
-                           CommandPool::Create(VkGlobals::GetQueueFamilyIndices().graphicsFamily.value()));
+    m_commandPools[QueueType::Transfer].SetName("AsyncQueueHandler Transfer Pool");
+    
+    m_commandPools.emplace(QueueType::Compute, CommandPool::Create(indices.computeFamily.value()));
+    m_commandPools[QueueType::Compute].SetName("AsyncQueueHandler Compute Pool");
+    
+    m_commandPools.emplace(QueueType::Graphics, CommandPool::Create(indices.graphicsFamily.value()));
+    m_commandPools[QueueType::Graphics].SetName("AsyncQueueHandler Graphics Pool");
+
+    // Initialize timelines
+    m_queueTimelines[QueueType::Transfer].timeline.Create(0);
+    m_queueTimelines[QueueType::Compute].timeline.Create(0);
+    m_queueTimelines[QueueType::Graphics].timeline.Create(0);
+
+    m_queueTimelines[QueueType::Transfer].timeline.SetName("Transfer Queue Timeline");
+    m_queueTimelines[QueueType::Compute].timeline.SetName("Compute Queue Timeline");
+    m_queueTimelines[QueueType::Graphics].timeline.SetName("Graphics Queue Timeline");
+
+    // Initialize recorder contexts for threadpool
+    u32 workerCount = CORE_COUNT_AVAILABLE;
+    for (u32 i = 0; i < workerCount; ++i)
+    {
+        auto ctx = stltype::make_unique<RecorderContext>();
+        ctx->pool = CommandPool::Create(indices.transferFamily.value());
+        ctx->pool.SetName("AsyncQueueHandler Recorder Pool " + stltype::to_string(i));
+        // Preallocate some buffers
+        for (u32 j = 0; j < PREALLOC_STAGING_BUFFERS; ++j)
+        {
+            auto* pBuf = ctx->pool.CreateCommandBuffer(CommandBufferCreateInfo{});
+            pBuf->SetName("AsyncQueueHandler_RecorderBuffer_" + stltype::to_string(i) + "_" + stltype::to_string(j));
+            ctx->freeBuffers.push_back(pBuf);
+        }
+        m_recorderContexts.push_back(stltype::move(ctx));
+        m_freeRecorderContextIndices.push_back(i);
+    }
+
+    m_recordingPool.Init(workerCount);
+
     g_pEventSystem->AddPostFrameEventCallback([this](const PostFrameEventData& d) { DispatchAllRequests(); });
 
-    InitStagingBufferPool(16, 256 * 1024);
+    InitStagingBufferPool(PREALLOC_STAGING_BUFFERS, 256 * 1024);
 
     m_keepRunning = true;
     m_thread = threadstl::MakeThread([this] { CheckRequests(); });
@@ -70,7 +118,13 @@ void AsyncQueueHandler::InitStagingBufferPool(u32 initialCount, u64 initialSize)
     }
 }
 
-StagingBuffer& AsyncQueueHandler::AcquireStagingBuffer(u64 requiredSize)
+StagingBuffer& AsyncQueueHandler::AcquireStagingBuffer(u64 requiredSize, u32& outIdx)
+{
+    SimpleScopedGuard<decltype(m_stagingBufferMutex)> lock(m_stagingBufferMutex);
+    return AcquireStagingBufferLocked(requiredSize, outIdx);
+}
+
+StagingBuffer& AsyncQueueHandler::AcquireStagingBufferLocked(u64 requiredSize, u32& outIdx)
 {
     for (u32 i = 0; i < m_freeStagingBufferIndices.size(); ++i)
     {
@@ -78,7 +132,7 @@ StagingBuffer& AsyncQueueHandler::AcquireStagingBuffer(u64 requiredSize)
         if (m_stagingBufferPool[idx].GetInfo().size >= requiredSize)
         {
             m_freeStagingBufferIndices.erase(m_freeStagingBufferIndices.begin() + i);
-            m_currentBatchStagingIndices.push_back(idx);
+            outIdx = idx;
             return m_stagingBufferPool[idx];
         }
     }
@@ -89,15 +143,16 @@ StagingBuffer& AsyncQueueHandler::AcquireStagingBuffer(u64 requiredSize)
         u32 idx = m_freeStagingBufferIndices.back();
         m_freeStagingBufferIndices.pop_back();
         m_stagingBufferPool[idx].EnsureCapacity(requiredSize);
-        m_currentBatchStagingIndices.push_back(idx);
+        outIdx = idx;
         return m_stagingBufferPool[idx];
     }
 
     // Pool exhausted, grow it
     u32 newIdx = (u32)m_stagingBufferPool.size();
-    auto& newBuffer = m_stagingBufferPool.emplace_back();
+    m_stagingBufferPool.emplace_back();
+    auto& newBuffer = m_stagingBufferPool.back();
     newBuffer.CreatePersistentlyMapped(requiredSize);
-    m_currentBatchStagingIndices.push_back(newIdx);
+    outIdx = newIdx;
     return newBuffer;
 }
 
@@ -115,10 +170,9 @@ void AsyncQueueHandler::DispatchAllRequests()
 
     ScopedZone("AsyncQueueHandler::DispatchAllRequests");
 
-    m_sharedDataMutex.lock();
+    SimpleScopedGuard lock(m_sharedDataMutex);
 
-    u32 transferCmdsToProcessCount =
-        (stltype::min)((u32)m_transferCommands.size(), m_maxTransferCommandsPerFrame);
+    u32 transferCmdsToProcessCount = (stltype::min)((u32)m_transferCommands.size(), m_maxTransferCommandsPerFrame);
     stltype::vector<TransferCommand> transferCmdsToProcess;
     if (transferCmdsToProcessCount > 0)
     {
@@ -130,70 +184,48 @@ void AsyncQueueHandler::DispatchAllRequests()
             ++it;
         }
 
-        m_transferCommands.erase(m_transferCommands.begin(),
-                                 m_transferCommands.begin() + transferCmdsToProcessCount);
+        m_transferCommands.erase(m_transferCommands.begin(), m_transferCommands.begin() + transferCmdsToProcessCount);
     }
 
-    BuildTransferCommandBuffer(transferCmdsToProcess);
+    if (!transferCmdsToProcess.empty())
+    {
+        BuildTransferCommandBuffer(transferCmdsToProcess);
+    }
+
     SubmitCommandBuffers(m_commandBufferRequests);
+    m_commandBufferRequests.clear();
 
     SubmitCommandBuffers(m_thisFrameCommandBufferRequests);
+    m_thisFrameCommandBufferRequests.clear();
+
     SubmitToSwapchainForPresentation(m_swapchainPresentRequestsThisFrame);
     m_swapchainPresentRequestsThisFrame.clear();
-    m_thisFrameCommandBufferRequests.clear();
-    // m_transferCommands.clear(); // Removing this as we want to keep the remaining commands
-    m_commandBufferRequests.clear();
-    m_sharedDataMutex.unlock();
 }
 
 void AsyncQueueHandler::FlushGraphicsComputeBuffers()
 {
-    m_sharedDataMutex.lock();
+    SimpleScopedGuard lock(m_sharedDataMutex);
     SubmitCommandBuffers(m_thisFrameCommandBufferRequests);
     SubmitToSwapchainForPresentation(m_swapchainPresentRequestsThisFrame);
     m_swapchainPresentRequestsThisFrame.clear();
     m_thisFrameCommandBufferRequests.clear();
-    m_sharedDataMutex.unlock();
+    // lock dtor handles unlock
 }
 
 void AsyncQueueHandler::CheckRequests()
 {
     while (KeepRunning())
     {
-        m_sharedDataMutex.lock();
-
-        u32 transferCmdsToProcessCount =
-            (stltype::min)((u32)m_transferCommands.size(), m_maxTransferCommandsPerFrame);
-
-        stltype::vector<TransferCommand> transferCmdsToProcess;
-        if (transferCmdsToProcessCount > 0)
         {
-            transferCmdsToProcess.reserve(transferCmdsToProcessCount);
-            auto it = m_transferCommands.begin();
-            for (u32 i = 0; i < transferCmdsToProcessCount; ++i)
+            SimpleScopedGuard lock(m_sharedDataMutex);
+
+            bool hasBufferRequests = !m_commandBufferRequests.empty();
+            if (hasBufferRequests)
             {
-                transferCmdsToProcess.push_back(stltype::move(*it));
-                ++it;
+                SubmitCommandBuffers(m_commandBufferRequests);
+                m_commandBufferRequests.clear();
             }
-
-            m_transferCommands.erase(m_transferCommands.begin(),
-                                     m_transferCommands.begin() + transferCmdsToProcessCount);
         }
-
-        if (!transferCmdsToProcess.empty())
-        {
-            BuildTransferCommandBuffer(transferCmdsToProcess);
-        }
-
-        bool hasBufferRequests = !m_commandBufferRequests.empty();
-        if (hasBufferRequests)
-        {
-            SubmitCommandBuffers(m_commandBufferRequests);
-            m_commandBufferRequests.clear();
-        }
-
-        bool moreTransferWork = !m_transferCommands.empty();
-        m_sharedDataMutex.unlock();
 
         Suspend();
     }
@@ -201,23 +233,20 @@ void AsyncQueueHandler::CheckRequests()
 
 void AsyncQueueHandler::SubmitCommandBufferAsync(const CommandBufferRequest& request)
 {
-    m_sharedDataMutex.lock();
+    SimpleScopedGuard lock(m_sharedDataMutex);
     m_commandBufferRequests.push_back(request);
-    m_sharedDataMutex.unlock();
 }
 
 void AsyncQueueHandler::SubmitCommandBufferThisFrame(const CommandBufferRequest& request)
 {
-    m_sharedDataMutex.lock();
+    SimpleScopedGuard lock(m_sharedDataMutex);
     m_thisFrameCommandBufferRequests.push_back(request);
-    m_sharedDataMutex.unlock();
 }
 
 void AsyncQueueHandler::SubmitSwapchainPresentRequestForThisFrame(const PresentRequest& request)
 {
-    m_sharedDataMutex.lock();
+    SimpleScopedGuard lock(m_sharedDataMutex);
     m_swapchainPresentRequestsThisFrame.push_back(request);
-    m_sharedDataMutex.unlock();
 }
 
 void AsyncQueueHandler::SubmitToSwapchainForPresentation(const stltype::vector<PresentRequest>& requests)
@@ -230,191 +259,301 @@ void AsyncQueueHandler::SubmitToSwapchainForPresentation(const stltype::vector<P
 
 void AsyncQueueHandler::SubmitTransferCommandAsync(const TransferCommand& request)
 {
-    m_sharedDataMutex.lock();
+    SimpleScopedGuard lock(m_sharedDataMutex);
     m_transferCommands.push_back(request);
-    m_sharedDataMutex.unlock();
 }
 
-void AsyncQueueHandler::SubmitTransferCommandAsync(const Mesh* pMesh, RenderingData& renderDataToFill, u32 frameIdx)
+void AsyncQueueHandler::SubmitTransferCommandAsync(const Mesh* pMesh,
+                                               BufferData& renderDataToFill,
+                                               u32 frameIdx,
+                                               stltype::function<void()>&& callback)
 {
     MeshTransfer transfer;
     transfer.vertices = pMesh->vertices;
     transfer.indices = pMesh->indices;
     transfer.pBuffersToFill = &renderDataToFill;
     transfer.frameIdx = frameIdx;
+    transfer.onComplete = stltype::move(callback);
     SubmitTransferCommandAsync(transfer);
 }
 
 void AsyncQueueHandler::BuildTransferCommandBuffer(const stltype::vector<TransferCommand>& transferCommands)
 {
-    ScopedZone("AsyncQueueHandler::Building transfer command buffers");
-
     if (transferCommands.empty())
         return;
 
-    m_currentBatchStagingIndices.clear();
 
-    stltype::hash_map<u32, stltype::vector<const TransferCommand*>> commandsByFrame;
-    for (const auto& cmd : transferCommands)
+    u32 workerCount = (u32)m_recorderContexts.size();
+    u32 commandsPerWorker = mathstl::max(1u, (u32)transferCommands.size() / workerCount);
+
+    struct WorkerResult {
+        CommandBuffer* pBuffer;
+        u32 contextIdx;
+    };
+    stltype::vector<WorkerResult> recordedBuffers;
+    recordedBuffers.resize(workerCount, {nullptr, (u32)~0u});
+
+    m_recordingPool.WaitAll();
+
+    for (u32 i = 0; i < workerCount; ++i)
     {
-        u32 frameIdx = ~0u;
-        stltype::visit([&frameIdx](const auto& c) { frameIdx = c.frameIdx; }, cmd);
-        commandsByFrame[frameIdx].push_back(&cmd);
+        u32 start = i * commandsPerWorker;
+        if (start >= (u32)transferCommands.size())
+            break;
+
+        u32 end = (i == workerCount - 1) ? (u32)transferCommands.size() : (i + 1) * commandsPerWorker;
+        end = (stltype::min)(end, (u32)transferCommands.size());
+
+        if (start >= end)
+            continue;
+
+        m_recordingPool.Submit(
+            [this, i, start, end, &transferCommands, &recordedBuffers]()
+            {
+                u32 ctxIdx = ~0u;
+                {
+                    SimpleScopedGuard lock(m_recorderContextMutex);
+                    if (!m_freeRecorderContextIndices.empty())
+                    {
+                        ctxIdx = m_freeRecorderContextIndices.back();
+                        m_freeRecorderContextIndices.pop_back();
+                    }
+                }
+                
+                if (ctxIdx == ~0u) return;
+
+                auto& ctx = *m_recorderContexts[ctxIdx];
+                CommandBuffer* pCmdBuffer = nullptr;
+                {
+                    SimpleScopedGuard<decltype(ctx.mutex)> lock(ctx.mutex);
+                    if (ctx.freeBuffers.empty())
+                    {
+                        pCmdBuffer = ctx.pool.CreateCommandBuffer(CommandBufferCreateInfo{});
+                    }
+                    else
+                    {
+                        pCmdBuffer = ctx.freeBuffers.back();
+                        ctx.freeBuffers.pop_back();
+                    }
+                }
+
+                for (u32 j = start; j < end; ++j)
+                {
+                    stltype::visit([this, pCmdBuffer, &ctx](auto&& arg)
+                                   { BuildTransferCommand(arg, pCmdBuffer, ctx.assignedStagingBuffers, ctx.pendingMeshResults); },
+                                   transferCommands[j]);
+                }
+                pCmdBuffer->Bake();
+                recordedBuffers[i] = {pCmdBuffer, ctxIdx};
+            });
     }
 
-    for (const auto& pair : commandsByFrame)
+    m_recordingPool.WaitAll();
+
+    stltype::vector<CommandBufferRequest> requests;
+    stltype::vector<stltype::function<void()>> batchCallbacks;
+
+    for (u32 i = 0; i < workerCount; ++i)
     {
-        CommandBuffer* pTransferCmdBuffer =
-            m_commandPools[QueueType::Transfer].CreateCommandBuffer(CommandBufferCreateInfo{});
+        auto [pBuf, ctxIdx] = recordedBuffers[i];
+        if (!pBuf) continue;
 
-        for (const auto* pCmd : pair.second)
+        auto& ctx = *m_recorderContexts[ctxIdx];
+        
+        // Apply mesh results on main thread
+        for (const auto& res : ctx.pendingMeshResults)
         {
-            ScopedZone("AsyncQueueHandler::Building transfer command");
-            stltype::visit([pTransferCmdBuffer, this](const auto& c) { BuildTransferCommand(c, pTransferCmdBuffer); },
-                           *pCmd);
+            res.pBuffersToFill->SetVertexBuffer(res.vertexBuffer);
+            res.pBuffersToFill->SetIndexBuffer(res.indexBuffer);
         }
+        ctx.pendingMeshResults.clear();
 
-        pTransferCmdBuffer->Bake();
-        m_commandBufferRequests.emplace_back(pTransferCmdBuffer, QueueType::Transfer, pair.first);
+        CommandBufferRequest req;
+        req.pBuffer = pBuf;
+        req.queueType = QueueType::Transfer;
+        req.frameIdx = ~0u;
+        req.requiredStagingBuffers = stltype::move(ctx.assignedStagingBuffers);
+        ctx.assignedStagingBuffers.clear();
+        requests.push_back(stltype::move(req));
+
+        // Return context to free list
+        {
+            SimpleScopedGuard lock(m_recorderContextMutex);
+            m_freeRecorderContextIndices.push_back(ctxIdx);
+        }
+    }
+
+    // Collect callbacks from the batch to trigger after submission
+    for (const auto& cmd : transferCommands)
+    {
+        stltype::visit([&batchCallbacks](auto&& arg) {
+            if (arg.onComplete) batchCallbacks.push_back(stltype::move(arg.onComplete));
+        }, cmd);
+    }
+
+    if (!requests.empty())
+    {
+        SubmitCommandBuffers(requests);
+        
+        // If we have callbacks, associate them with the last submitted signal value
+        if (!batchCallbacks.empty())
+        {
+            u64 signalValue = m_queueTimelines[QueueType::Transfer].lastSubmittedValue;
+            auto& queueCallbacks = m_timelineCallbacks[QueueType::Transfer][signalValue];
+            for (auto& cb : batchCallbacks) queueCallbacks.push_back(stltype::move(cb));
+        }
     }
 }
 
 void AsyncQueueHandler::ReclaimCompletedResources(u32 frameIdx)
 {
-    stltype::vector<InFlightRequest> completed;
-    
-    m_sharedDataMutex.lock();
+    stltype::vector<InFlightBatch> completed;
 
-    auto gatherCompleted = [this, &completed](u32 fIdx)
     {
-        if (m_fencesToWaitOn[fIdx].empty())
-            return;
-
-        stltype::vector<InFlightRequest> stillPending;
-
-        for (auto& request : m_fencesToWaitOn[fIdx])
+        SimpleScopedGuard lock(m_sharedDataMutex);
+        for (auto it = m_inFlightBatches.begin(); it != m_inFlightBatches.end();)
         {
-            if (request.fence.IsSignaled())
-                completed.push_back(stltype::move(request));
-            else
-                stillPending.push_back(stltype::move(request));
-        }
-        m_fencesToWaitOn[fIdx] = stltype::move(stillPending);
-    };
+            auto& timelineData = m_queueTimelines[it->queue];
+            timelineData.lastCompletedValue = timelineData.timeline.GetValue();
 
-    if (frameIdx == ~0u)
-    {
-        for (u32 i = 0; i < FRAMES_IN_FLIGHT + 1; ++i)
-        {
-            gatherCompleted(i);
-        }
-    }
-    else if (frameIdx < FRAMES_IN_FLIGHT)
-    {
-        gatherCompleted(frameIdx);
-    }
-    
-    m_sharedDataMutex.unlock();
-
-    for (auto& req : completed)
-    {
-        for (auto& cmdBufferRequest : req.requests)
-        {
-            if (cmdBufferRequest.pBuffer != nullptr)
+            if (timelineData.lastCompletedValue >= it->signalValue)
             {
-                cmdBufferRequest.pBuffer->CallCallbacks();
-                for (auto& poolPair : m_commandPools)
+                completed.push_back(stltype::move(*it));
+                it = m_inFlightBatches.erase(it);
+            }
+            else
+            {
+                ++it;
+            }
+        }
+    } // Release lock before blocking GPU waits
+
+    for (auto& batch : completed)
+    {
+        // Seems like we need this here as we get errros otherwise, probably a way to sync cpu/gpu since GetValue is
+        // speculative
+        m_queueTimelines[batch.queue].timeline.Wait(batch.signalValue, 0);
+
+        for (auto& req : batch.requests)
+        {
+            if (req.pBuffer != nullptr)
+            {
+                req.pBuffer->CallCallbacks();
+
+                bool returned = false;
+                for (auto& ctx : m_recorderContexts)
                 {
-                    auto& pool = poolPair.second;
-                    if (cmdBufferRequest.pBuffer->GetPool() == &pool)
+                    if (req.pBuffer->GetPool() == &ctx->pool)
                     {
-                        pool.ReturnCommandBuffer(cmdBufferRequest.pBuffer);
+                        SimpleScopedGuard<decltype(ctx->mutex)> lock(ctx->mutex);
+                        req.pBuffer->ResetBuffer();
+                        ctx->freeBuffers.push_back(req.pBuffer);
+                        returned = true;
                         break;
                     }
                 }
+
+                if (!returned)
+                {
+                    for (auto& poolPair : m_commandPools)
+                    {
+                        if (req.pBuffer->GetPool() == &poolPair.second)
+                        {
+                            poolPair.second.ReturnCommandBuffer(req.pBuffer);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (!req.requiredStagingBuffers.empty())
+            {
+                SimpleScopedGuard<decltype(m_stagingBufferMutex)> lockSTG(m_stagingBufferMutex);
+                ReleaseStagingBuffers(req.requiredStagingBuffers);
             }
         }
-        ReleaseStagingBuffers(req.stagingBufferIndices);
+
+        if (!batch.stagingIndices.empty())
+        {
+            SimpleScopedGuard<decltype(m_stagingBufferMutex)> lockSTG(m_stagingBufferMutex);
+            ReleaseStagingBuffers(batch.stagingIndices);
+        }
+
+        // Trigger timeline callbacks
+        auto qIt = m_timelineCallbacks.find(batch.queue);
+        if (qIt != m_timelineCallbacks.end())
+        {
+            auto& queueCallbacks = qIt->second;
+            for (auto itCB = queueCallbacks.begin(); itCB != queueCallbacks.end();)
+            {
+                if (batch.signalValue >= itCB->first)
+                {
+                    DEBUG_LOGF("AsyncQueueHandler: Triggering {} timeline callbacks for queue {} at value {}", (u32)itCB->second.size(), (u32)batch.queue, itCB->first);
+                    for (auto& cb : itCB->second)
+                    {
+                        cb();
+                    }
+                    itCB = queueCallbacks.erase(itCB);
+                }
+                else
+                {
+                    ++itCB;
+                }
+            }
+        }
     }
+}
+
+u64 AsyncQueueHandler::GetCompletedValue(QueueType queue) const
+{
+    auto it = m_queueTimelines.find(queue);
+    if (it != m_queueTimelines.end())
+        return it->second.timeline.GetValue();
+    return 0;
 }
 
 void AsyncQueueHandler::WaitForFences(u32 frameIdx)
 {
-    ScopedZone("AsyncQueueHandler::Waiting on fences");
+    ScopedZone("AsyncQueueHandler::Waiting on frame completion");
 
-    if (frameIdx >= FRAMES_IN_FLIGHT && frameIdx != ~0u)
-        return;
+    u64 maxTransfer = 0;
+    u64 maxCompute = 0;
+    u64 maxGraphics = 0;
 
-    stltype::vector<InFlightRequest> fences;
-
-    m_sharedDataMutex.lock();
-    if (frameIdx == ~0u)
     {
-        for (u32 i = 0; i < FRAMES_IN_FLIGHT + 1; ++i)
+        SimpleScopedGuard lock(m_sharedDataMutex);
+
+        for (const auto& batch : m_inFlightBatches)
         {
-            fences.insert(fences.end(), m_fencesToWaitOn[i].begin(), m_fencesToWaitOn[i].end());
-            m_fencesToWaitOn[i].clear();
-        }
-    }
-    else
-    {
-        fences = m_fencesToWaitOn[frameIdx];
-        m_fencesToWaitOn[frameIdx].clear();
-        
-        // Also always collect the un-associated ones directly queued by DispatchAllRequests (~0u submits)
-        fences.insert(fences.end(), m_fencesToWaitOn[FRAMES_IN_FLIGHT].begin(), m_fencesToWaitOn[FRAMES_IN_FLIGHT].end());
-        m_fencesToWaitOn[FRAMES_IN_FLIGHT].clear();
-    }
-    m_sharedDataMutex.unlock();
-
-    if (fences.empty())
-        return;
-
-    for (const auto& fenceToWaitOn : fences)
-    {
-        fenceToWaitOn.fence.WaitFor();
-
-        if (!fenceToWaitOn.fence.IsSignaled())
-        {
-            Nvidia::AftermathManager::LogFenceTimeoutDiagnostics();
-        }
-        DEBUG_ASSERT(fenceToWaitOn.fence.IsSignaled());
-
-        for (auto& cmdBufferRequest : fenceToWaitOn.requests)
-        {
-            if (cmdBufferRequest.pBuffer != nullptr)
+            if (batch.frameIdx == frameIdx || frameIdx == ~0u)
             {
-                cmdBufferRequest.pBuffer->CallCallbacks();
+                if (batch.queue == QueueType::Transfer)
+                    maxTransfer = mathstl::max(maxTransfer, batch.signalValue);
+                else if (batch.queue == QueueType::Compute)
+                    maxCompute = mathstl::max(maxCompute, batch.signalValue);
+                else if (batch.queue == QueueType::Graphics)
+                    maxGraphics = mathstl::max(maxGraphics, batch.signalValue);
             }
         }
-        ReleaseStagingBuffers(fenceToWaitOn.stagingBufferIndices);
+        // lock dtor handles unlock
     }
 
-    m_sharedDataMutex.lock();
+    if (maxTransfer > 0)
+        m_queueTimelines.at(QueueType::Transfer).timeline.Wait(maxTransfer);
+    if (maxCompute > 0)
+        m_queueTimelines.at(QueueType::Compute).timeline.Wait(maxCompute);
+    if (maxGraphics > 0)
+        m_queueTimelines.at(QueueType::Graphics).timeline.Wait(maxGraphics);
 
-    for (const auto& fenceToWaitOn : fences)
-    {
-        for (auto& cmdBufferRequest : fenceToWaitOn.requests)
-        {
-            if (cmdBufferRequest.pBuffer != nullptr)
-            {
-                for (auto& poolPair : m_commandPools)
-                {
-                    auto& pool = poolPair.second;
-                    if (cmdBufferRequest.pBuffer->GetPool() == &pool)
-                    {
-                        pool.ReturnCommandBuffer(cmdBufferRequest.pBuffer);
-                        break;
-                    }
-                }
-            }
-        }
-    }
-    m_sharedDataMutex.unlock();
+    ReclaimCompletedResources(frameIdx);
 }
 
-void AsyncQueueHandler::BuildTransferCommand(const MeshTransfer& request, CommandBuffer* pCmdBuffer)
+void AsyncQueueHandler::BuildTransferCommand(const MeshTransfer& request,
+                                             CommandBuffer* pCmdBuffer,
+                                             stltype::vector<u32>& stagingIndices,
+                                             stltype::vector<PendingMeshResult>& meshResults)
 {
+    ScopedZone("AsyncQueueHandler::Building MeshTransfer command");
     const auto& vertexData = request.vertices;
     const auto& indices = request.indices;
 
@@ -424,132 +563,103 @@ void AsyncQueueHandler::BuildTransferCommand(const MeshTransfer& request, Comman
 
     const u64 vertDataSize = vertexData.size() * sizeof(vertexData[0]);
     const u64 idxDataSize = indices.size() * sizeof(indices[0]);
+    meshResults.emplace_back(PendingMeshResult{
+        request.pBuffersToFill,
+        VertexBuffer(vertDataSize),
+        IndexBuffer(idxDataSize)});
+    auto& pendingResult = meshResults.back();
 
-    // Create and transfer ownership to pBuffersToFill first so the VkBuffer handles
-    // stay alive when Bake() reads them from the recorded copy commands
-    request.pBuffersToFill->SetVertexBuffer(VertexBuffer(vertDataSize));
-    request.pBuffersToFill->SetIndexBuffer(IndexBuffer(idxDataSize));
+    u32 vertStagingIdx, idxStagingIdx;
+    {
+        SimpleScopedGuard<decltype(m_stagingBufferMutex)> lock(m_stagingBufferMutex);
+        AcquireStagingBufferLocked(vertDataSize, vertStagingIdx);
+        AcquireStagingBufferLocked(idxDataSize, idxStagingIdx);
 
-    StagingBuffer& vertStaging = AcquireStagingBuffer(vertDataSize);
-    vertStaging.CopyToMapped(vertexData.data(), vertDataSize);
-    SimpleBufferCopyCmd vertCopy{vertStaging, &request.pBuffersToFill->GetVertexBuffer()};
-    vertCopy.dstOffset = request.vertexOffset;
-    vertCopy.size = vertDataSize;
-    pCmdBuffer->RecordCommand(vertCopy);
+        stagingIndices.push_back(vertStagingIdx);
+        stagingIndices.push_back(idxStagingIdx);
 
-    StagingBuffer& idxStaging = AcquireStagingBuffer(idxDataSize);
-    idxStaging.CopyToMapped(indices.data(), idxDataSize);
-    SimpleBufferCopyCmd idxCopy{idxStaging, &request.pBuffersToFill->GetIndexBuffer()};
-    idxCopy.dstOffset = request.indexOffset;
-    idxCopy.size = idxDataSize;
-    pCmdBuffer->RecordCommand(idxCopy);
+        StagingBuffer& vertStaging = m_stagingBufferPool[vertStagingIdx];
+        StagingBuffer& idxStaging = m_stagingBufferPool[idxStagingIdx];
+
+        vertStaging.CopyToMapped(vertexData.data(), vertDataSize);
+        SimpleBufferCopyCmd vertCopy{&vertStaging, &pendingResult.vertexBuffer};
+        vertCopy.dstOffset = request.vertexOffset;
+        vertCopy.size = vertDataSize;
+        pCmdBuffer->RecordCommand(vertCopy);
+
+        idxStaging.CopyToMapped(indices.data(), idxDataSize);
+        SimpleBufferCopyCmd idxCopy{&idxStaging, &pendingResult.indexBuffer};
+        idxCopy.dstOffset = request.indexOffset;
+        idxCopy.size = idxDataSize;
+        pCmdBuffer->RecordCommand(idxCopy);
+    }
 }
 
-void AsyncQueueHandler::BuildTransferCommand(const SSBOTransfer& request, CommandBuffer* pCmdBuffer)
+void AsyncQueueHandler::BuildTransferCommand(const SSBOTransfer& request,
+                                             CommandBuffer* pCmdBuffer,
+                                             stltype::vector<u32>& stagingIndices,
+                                             stltype::vector<PendingMeshResult>& /*unused*/)
 {
-    auto pStorageBuffer = request.pStorageBuffer;
-    auto pDescriptorSet = request.pDescriptorSet;
+    ScopedZone("AsyncQueueHandler::Building SSBOTransfer command");
+    auto pSSBO = request.pSSBO;
+    auto pDescriptor = request.pDescriptor;
     auto requestSize = request.size;
     auto dstBinding = request.dstBinding;
     auto offset = request.offset;
 
-    StagingBuffer& stgBuffer = AcquireStagingBuffer(request.size);
-    stgBuffer.CopyToMapped(request.data, request.size);
+    {
+        SimpleScopedGuard<decltype(m_stagingBufferMutex)> lock(m_stagingBufferMutex);
+        u32 stgIdx;
+        StagingBuffer& stgBuffer = AcquireStagingBufferLocked(request.size, stgIdx);
+        stagingIndices.push_back(stgIdx);
+        stgBuffer.CopyToMapped(request.pData, request.size);
 
-    SimpleBufferCopyCmd copyCmd{stgBuffer, pStorageBuffer};
-    copyCmd.dstOffset = offset;
-    copyCmd.size = request.size;
-    pCmdBuffer->RecordCommand(copyCmd);
+        SimpleBufferCopyCmd copyCmd{&stgBuffer, pSSBO};
+        copyCmd.dstOffset = offset;
+        copyCmd.size = request.size; pCmdBuffer->RecordCommand(copyCmd);
+    }
 
-    if (pDescriptorSet)
+    if (pDescriptor)
     {
         pCmdBuffer->AddExecutionFinishedCallback(
-            [pStorageBuffer, pDescriptorSet, requestSize, dstBinding]()
-            { pDescriptorSet->WriteBufferUpdate(*pStorageBuffer, false, requestSize, dstBinding, 0); });
+            [pSSBO, pDescriptor, requestSize, dstBinding]()
+            { pDescriptor->WriteBufferUpdate(*pSSBO, false, requestSize, dstBinding, 0); });
     }
-    SetBufferSyncInfo(request, pCmdBuffer);
-}
-
-void AsyncQueueHandler::BuildTransferCommand(const SSBODeviceBufferTransfer& request, CommandBuffer* pCmdBuffer)
-{
-    SimpleBufferCopyCmd copyCmd{*request.pSrc, request.pDst};
-    copyCmd.srcOffset = 0;
-    copyCmd.dstOffset = 0;
-    copyCmd.size = request.pSrc->GetInfo().size;
-
-    pCmdBuffer->RecordCommand(copyCmd);
-    pCmdBuffer->AddExecutionFinishedCallback([request]() { request.pDescriptorSet->WriteSSBOUpdate(*request.pDst); });
     SetBufferSyncInfo(request, pCmdBuffer);
 }
 
 void AsyncQueueHandler::SubmitCommandBuffers(stltype::vector<CommandBufferRequest>& commandBuffers)
 {
+    ScopedZone("AsyncQueueHandler::Submitting command buffers");
     if (commandBuffers.empty())
         return;
 
-    stltype::hash_map<u32, stltype::hash_map<QueueType, stltype::vector<CommandBuffer*>>> buffersByFrameAndQueue;
-    stltype::hash_map<u32, stltype::hash_map<QueueType, stltype::vector<CommandBufferRequest>>> requestsByFrameAndQueue;
-
-    for (const auto& cmdBufferRequest : commandBuffers)
+    for (auto& req : commandBuffers)
     {
-        u32 frame = cmdBufferRequest.frameIdx;
-        requestsByFrameAndQueue[frame][cmdBufferRequest.queueType].push_back(cmdBufferRequest);
-        buffersByFrameAndQueue[frame][cmdBufferRequest.queueType].push_back(cmdBufferRequest.pBuffer);
-    }
-
-    for (const auto& framePair : buffersByFrameAndQueue)
-    {
-        u32 frame = framePair.first;
-        for (const auto& pair : framePair.second)
+        auto& timelineData = m_queueTimelines[req.queueType];
+        u64 signalValue = 0;
+        if (req.queueType == QueueType::Transfer)
         {
-            QueueType queueType = pair.first;
-            const stltype::vector<CommandBuffer*>& buffers = pair.second;
-            const stltype::vector<CommandBufferRequest>& requests = requestsByFrameAndQueue.at(frame).at(queueType);
-
-            if (buffers.empty())
-                continue;
-
-            Fence submissionFence;
-            submissionFence.Create(false);
-
-            SRF::SubmitCommandBufferToQueue(buffers, submissionFence, queueType);
-            
-            // Only attach staging indices once per batch of submissions that needed them
-            stltype::vector<u32> stagingIndicesToAttach;
-            if (!m_currentBatchStagingIndices.empty())
-            {
-                stagingIndicesToAttach = stltype::move(m_currentBatchStagingIndices);
-                m_currentBatchStagingIndices.clear();
-            }
-
-            if (frame != ~0u && frame < FRAMES_IN_FLIGHT)
-            {
-                m_fencesToWaitOn[frame].push_back({requests, stltype::move(stagingIndicesToAttach), submissionFence});
-            }
-            else
-            {
-                // Note: ~0u frame requests are immediate or one-offs that could be tracked differently,
-                // but for now we put them into the last bucket (FRAMES_IN_FLIGHT).
-                m_fencesToWaitOn[FRAMES_IN_FLIGHT].push_back({requests, stltype::move(stagingIndicesToAttach), submissionFence});
-            }
+            signalValue = m_pendingTransferSignalValue.fetch_add(1);
+            timelineData.lastSubmittedValue = signalValue;
         }
-    }
+        else
+        {
+            signalValue = ++timelineData.lastSubmittedValue;
+        }
 
-    m_currentBatchStagingIndices.clear();
+        if (req.waitStage != SyncStages::NONE)
+            req.pBuffer->SetWaitStages(req.waitStage);
+        if (req.signalStage != SyncStages::NONE)
+            req.pBuffer->SetSignalStages(req.signalStage);
 
-    for (auto& cmdBufferRequest : commandBuffers)
-    {
-        if (cmdBufferRequest.pBuffer != nullptr)
-            cmdBufferRequest.pBuffer->ClearSemaphores();
-    }
-}
+        // Every buffer gets its own tracking timeline signal
+        req.pBuffer->AddTimelineSignal(&timelineData.timeline, signalValue);
 
-void AsyncQueueHandler::FreeInFlightCommandBuffers()
-{
-    for (auto& poolPair : m_commandPools)
-    {
-        poolPair.second.ClearAll();
+        SRF::SubmitCommandBufferToQueue({req.pBuffer}, Fence{}, req.queueType);
+
+        stltype::vector<u32> stagingIndices;
+        m_inFlightBatches.push_back(
+            {req.queueType, signalValue, {req}, stltype::move(stagingIndices), req.frameIdx});
     }
-    for (auto& frameFences : m_fencesToWaitOn)
-        frameFences.clear();
 }

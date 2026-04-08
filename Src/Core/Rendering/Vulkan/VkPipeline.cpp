@@ -1,13 +1,11 @@
 #include "VkPipeline.h"
-#include "Core/ECS/Components/Transform.h"
+#include "VkShader.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/IO/FileReader.h"
 #include "Core/Rendering/Core/Utils/DeleteQueue.h"
-#include "Utils/DescriptorSetLayoutConverters.h"
+#include "Core/Rendering/Vulkan/Utils/VkDescriptorLayoutUtils.h"
 #include "Utils/VkEnumHelpers.h"
 #include "VkGlobals.h"
-#include "VkShader.h"
-#include "VkTextureManager.h"
 
 void PipelineVulkanBase::PrepareGraphicsBase(const ShaderCollection& shaders,
                                              const PipeVertInfo& vertexInputs,
@@ -61,9 +59,8 @@ void PipelineVulkanBase::PrepareGraphicsBase(const ShaderCollection& shaders,
     outRasterizer = CreateRasterizerInfo(pipeInfo.viewPortExtents, pipeInfo.rasterizerInfo);
     outMultisampling = CreateMultisampleInfo(pipeInfo.multisampleInfo);
     const auto colorAttachmentInfo = CreateColorBlendAttachmentInfo(pipeInfo.colorBlendInfo);
-    stltype::vector<VkPipelineColorBlendAttachmentState> blendAttachments;
-    blendAttachments.assign(attachmentCount, colorAttachmentInfo);
-    outColorBlending = CreateColorBlendInfo(pipeInfo.colorInfo, blendAttachments);
+    m_colorBlendAttachments.assign(attachmentCount, colorAttachmentInfo);
+    outColorBlending = CreateColorBlendInfo(pipeInfo.colorInfo, m_colorBlendAttachments);
     m_pipelineLayout = CreatePipelineLayout(pipeInfo.descriptorSetLayout, pipeInfo.pushConstantInfo);
 
     outPipelineRenderingCreateInfo = {};
@@ -130,7 +127,7 @@ GraphicsPipelineVulkan::GraphicsPipelineVulkan(const ShaderCollection& shaders,
     // shader
     DEBUG_ASSERT(shaders.pComputeShader == nullptr);
 
-    stltype::vector<VkPipelineShaderStageCreateInfo> shaderStages;
+    stltype::vector<VkPipelineShaderStageCreateInfo> shaderStages{};
     VkPipelineDynamicStateCreateInfo dymState{};
     VkPipelineVertexInputStateCreateInfo vertexInput{};
     VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
@@ -231,14 +228,14 @@ VkPipelineDynamicStateCreateInfo PipelineVulkanBase::CreateDynamicPipelineInfo(
 
 VkPipelineVertexInputStateCreateInfo PipelineVulkanBase::CreateVertexInputInfo(const PipeVertInfo& vertexInputs)
 {
+    m_vertexInfo = vertexInputs;
+
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertexInputInfo.vertexBindingDescriptionCount = vertexInputs.bindingDescriptionCount;
-    vertexInputInfo.pVertexBindingDescriptions = &vertexInputs.m_vertexInputDescription;
-    vertexInputInfo.vertexAttributeDescriptionCount = vertexInputs.m_attributeDescriptions.size();
-    vertexInputInfo.pVertexAttributeDescriptions = vertexInputs.m_attributeDescriptions.data();
-
-    m_vertexInfo = vertexInputs;
+    vertexInputInfo.vertexBindingDescriptionCount = m_vertexInfo.bindingDescriptionCount;
+    vertexInputInfo.pVertexBindingDescriptions = &m_vertexInfo.m_vertexInputDescription;
+    vertexInputInfo.vertexAttributeDescriptionCount = m_vertexInfo.m_attributeDescriptions.size();
+    vertexInputInfo.pVertexAttributeDescriptions = m_vertexInfo.m_attributeDescriptions.data();
 
     return vertexInputInfo;
 }
@@ -355,10 +352,10 @@ VkPipelineLayout PipelineVulkanBase::CreatePipelineLayout(const DescriptorSetLay
                                                           const PushConstantInfo& pushConstantInfo)
 {
     m_sharedDescriptorSetLayouts =
-        DescriptorLaytoutUtils::CreateOneDescriptorSetLayoutPerSet(layoutInfo.sharedDescriptors);
+        DescriptorLayoutUtils::CreateOneDescriptorSetLayoutPerSet(layoutInfo.sharedDescriptors);
 
     m_descriptorSetLayout =
-        DescriptorLaytoutUtils::CreateOneDescriptorSetForAll(layoutInfo.pipelineSpecificDescriptors);
+        DescriptorLayoutUtils::CreateOneDescriptorSetForAll(layoutInfo.pipelineSpecificDescriptors);
 
     stltype::vector<VkDescriptorSetLayout> descriptorSetLayouts;
     descriptorSetLayouts.reserve(m_sharedDescriptorSetLayouts.size());
@@ -381,7 +378,7 @@ VkPipelineLayout PipelineVulkanBase::CreatePipelineLayout(const DescriptorSetLay
         pushConstants.size = constant.size;
     }
 
-    VkPipelineLayout pipelineLayout;
+    VkPipelineLayout pipelineLayout{};
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutInfo.setLayoutCount = descriptorSetLayouts.size();
@@ -400,3 +397,44 @@ VkPipelineLayout PipelineVulkanBase::CreatePipelineLayout(const DescriptorSetLay
                  VK_SUCCESS);
     return pipelineLayout;
 }
+
+void GraphicsPipelineVulkan::NamingCallBack(const stltype::string& name)
+{
+    VkDebugUtilsObjectNameInfoEXT nameInfo = {};
+    nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+    nameInfo.objectType = VK_OBJECT_TYPE_PIPELINE;
+    nameInfo.objectHandle = (uint64_t)m_pipeline;
+    nameInfo.pObjectName = name.c_str();
+
+    vkSetDebugUtilsObjectName(VK_LOGICAL_DEVICE, &nameInfo);
+
+    VkDebugUtilsObjectNameInfoEXT layoutNameInfo = {};
+    layoutNameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+    layoutNameInfo.objectType = VK_OBJECT_TYPE_PIPELINE_LAYOUT;
+    layoutNameInfo.objectHandle = (uint64_t)m_pipelineLayout;
+    stltype::string layoutName = name + "_Layout";
+    layoutNameInfo.pObjectName = layoutName.c_str();
+
+    vkSetDebugUtilsObjectName(VK_LOGICAL_DEVICE, &layoutNameInfo);
+}
+
+void ComputePipelineVulkan::NamingCallBack(const stltype::string& name)
+{
+    VkDebugUtilsObjectNameInfoEXT nameInfo = {};
+    nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+    nameInfo.objectType = VK_OBJECT_TYPE_PIPELINE;
+    nameInfo.objectHandle = (uint64_t)m_pipeline;
+    nameInfo.pObjectName = name.c_str();
+
+    vkSetDebugUtilsObjectName(VK_LOGICAL_DEVICE, &nameInfo);
+
+    VkDebugUtilsObjectNameInfoEXT layoutNameInfo = {};
+    layoutNameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+    layoutNameInfo.objectType = VK_OBJECT_TYPE_PIPELINE_LAYOUT;
+    layoutNameInfo.objectHandle = (uint64_t)m_pipelineLayout;
+    stltype::string layoutName = name + "_Layout";
+    layoutNameInfo.pObjectName = layoutName.c_str();
+
+    vkSetDebugUtilsObjectName(VK_LOGICAL_DEVICE, &layoutNameInfo);
+}
+

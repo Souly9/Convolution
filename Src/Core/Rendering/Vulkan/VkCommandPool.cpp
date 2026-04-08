@@ -4,11 +4,11 @@
 
 #define MAX_REASONABLE_COMMAND_BUFFERS 2048
 
-void CommandPoolVulkan::ReturnCommandBuffer(CommandBuffer* pBuffer)
+void CommandPoolVulkan::ReturnCommandBuffer(CBufferVulkan* pBuffer)
 {
     if (pBuffer == nullptr)
         return;
-    m_freeCommandBuffers.push_back(pBuffer);
+    m_freeCommandBuffers.push_back(static_cast<CommandBuffer*>(pBuffer));
 }
 
 void CommandPoolVulkan::NamingCallBack(const stltype::string& name)
@@ -51,7 +51,7 @@ CommandPoolVulkan::~CommandPoolVulkan()
 void CommandPoolVulkan::CleanUp(){
     VK_FREE_IF(m_commandPool, vkDestroyCommandPool(VkGlobals::GetLogicalDevice(), m_commandPool, VulkanAllocator()))}
 
-CBufferVulkan* CommandPoolVulkan::CreateCommandBuffer(const CommandBufferCreateInfo& createInfo)
+CommandBuffer* CommandPoolVulkan::CreateCommandBuffer(const CommandBufferCreateInfo& createInfo)
 {
     ScopedZone("CommandPoolVulkan::CreateCommandBuffer");
 

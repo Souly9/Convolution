@@ -6,8 +6,11 @@
 // TODO: Define correct sets
 #define SharedDataUBOSet 0
 #define TransformSSBOSet 1
+#define TileArraySet 2
+#define PassPerObjectDataSet 3
 
-#include "../../Globals/GlobalBuffers.h"
+#include "../../Globals/Common.h"
+#include "../../Globals/Scene.h"
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 

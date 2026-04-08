@@ -39,9 +39,12 @@ protected:
 
     struct PerObjectFrameContext
     {
-        DescriptorSet* m_perObjectDescriptor;
+        DescriptorSet::Ptr m_perObjectDescriptor;
     };
-    stltype::fixed_vector<PerObjectFrameContext, SWAPCHAIN_IMAGES, false> m_perObjectFrameContexts{SWAPCHAIN_IMAGES};
+    stltype::fixed_vector<PerObjectFrameContext, SWAPCHAIN_IMAGES> m_perObjectFrameContexts{};
+    stltype::fixed_vector<IndirectDrawCmdBuf, SWAPCHAIN_IMAGES> m_indirectCmdBuffers;
+    stltype::fixed_vector<IndirectDrawCountBuffer, SWAPCHAIN_IMAGES> m_indirectCountBuffers;
+
     stltype::vector<u32> m_dirtyFrames;
     bool m_needsBufferSync{false};
 };

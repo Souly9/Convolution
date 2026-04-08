@@ -26,7 +26,7 @@ static inline void FillVertices(const Mesh& mesh, stltype::vector<MinVertex>& ve
 
 template <typename T>
 static inline void GenerateDrawCommandForMesh(const Mesh& mesh,
-                                              u64 idxOffset,
+                                              u64 vertexOffset,
                                               stltype::vector<T>& vertices,
                                               stltype::vector<u32>& indices)
 {

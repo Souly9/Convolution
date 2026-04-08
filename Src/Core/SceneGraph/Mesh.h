@@ -49,7 +49,8 @@ public:
     enum class PrimitiveType
     {
         Quad,
-        Cube
+        Cube,
+        FullscreenTriangle
     };
     Mesh* GetPrimitiveMesh(PrimitiveType type);
 
@@ -63,6 +64,7 @@ private:
     stltype::hash_map<const Mesh*, AABB> m_meshAABBs;
     Mesh* m_pPlanePrimitive;
     Mesh* m_pCubePrimitive;
+    Mesh* m_pFullscreenTrianglePrimitive;
 };
 
 extern stltype::unique_ptr<MeshManager> g_pMeshManager;

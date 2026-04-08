@@ -4,7 +4,7 @@
 #include "Core/Rendering/Core/CommandBuffer.h"
 #include "Core/Rendering/Core/Defines/BindingSlots.h"
 #include "Core/Rendering/Core/Defines/GlobalBuffers.h"
-#include "Core/Rendering/Core/Utils/DescriptorLayoutUtils.h"
+#include "Core/Rendering/Vulkan/Utils/VkDescriptorLayoutUtils.h"
 
 #define ViewSet             0
 #define LightClusterSet     1
@@ -83,7 +83,7 @@ void LightTransformComputePass::Render(const MainPassData& data,
     workgroupCount = workgroupCount > 0 ? workgroupCount : 1;
     GenericComputeDispatchCmd cmd(&m_pipeline, workgroupCount, 1, 1);
 
-    DescriptorSet* viewSpaceLightsDesc = data.pResourceManager->GetViewSpaceLightsDescriptorSet(ctx.currentFrame);
+    DescriptorSet::Ptr viewSpaceLightsDesc = data.pResourceManager->GetViewSpaceLightsDescriptorSet(ctx.currentFrame);
     
     cmd.descriptorSets = {ctx.sharedDataUBODescriptor, ctx.tileArraySSBODescriptor, ctx.clusterGridDescriptor, viewSpaceLightsDesc};
     cmd.SetPushConstants(0, m_pushConstants);

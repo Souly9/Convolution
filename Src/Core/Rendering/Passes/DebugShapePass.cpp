@@ -6,6 +6,7 @@ using namespace RenderPasses;
 DebugShapePass::DebugShapePass() : GenericGeometryPass("DebugShapePass")
 {
     SetVertexInputDescriptions(VertexInputDefines::VertexAttributeTemplates::Complete);
+    m_indirectCmdBuffersWireframe.resize(SWAPCHAIN_IMAGES);
     CreateSharedDescriptorLayout();
 }
 
@@ -28,8 +29,11 @@ void DebugShapePass::Init(RendererAttachmentInfo& attachmentInfo,
     m_mainRenderingData.colorAttachments = {debugAttachment};
 
     InitBaseData(attachmentInfo);
-    m_indirectCmdBufferWireFrame = IndirectDrawCmdBuf(250000);
-    m_indirectCmdBufferOpaque = IndirectDrawCmdBuf(250000);
+    for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
+    {
+        m_indirectCmdBuffersWireframe[i].Init(250000);
+        m_indirectCmdBuffers[i].Init(250000);
+    }
 
     BuildPipelines();
 }
@@ -61,11 +65,11 @@ void DebugShapePass::RebuildInternalData(const stltype::vector<PassMeshData>& me
                                                        u32 thisFrameNum)
 {
     ScopedZone("DebugShapePass::Rebuild");
-    return;
+    m_currentFrameIdx = thisFrameNum % SWAPCHAIN_IMAGES;
     m_instancedMeshInfoMap.clear();
     bool areAnyDebug = false;
-    m_indirectCmdBufferOpaque.EmptyCmds();
-    m_indirectCmdBufferWireFrame.EmptyCmds();
+    m_indirectCmdBuffers[m_currentFrameIdx].EmptyCmds();
+    m_indirectCmdBuffersWireframe[m_currentFrameIdx].EmptyCmds();
     for (const auto& meshData : meshes)
     {
         if (meshData.meshData.IsDebugMesh())
@@ -80,8 +84,8 @@ void DebugShapePass::RebuildInternalData(const stltype::vector<PassMeshData>& me
         return;
     }
 
-    m_indirectCmdBufferOpaque.EmptyCmds();
-    m_indirectCmdBufferWireFrame.EmptyCmds();
+    m_indirectCmdBuffers[m_currentFrameIdx].EmptyCmds();
+    m_indirectCmdBuffersWireframe[m_currentFrameIdx].EmptyCmds();
     u32 instanceOffset = 0;
     stltype::vector<u32> instanceDataIndices;
     instanceDataIndices.reserve(meshes.size());
@@ -93,7 +97,7 @@ void DebugShapePass::RebuildInternalData(const stltype::vector<PassMeshData>& me
 
         if (mesh.meshData.IsDebugWireframeMesh())
         {
-            m_indirectCmdBufferWireFrame.AddIndexedDrawCmd(meshHandle.indexCount,
+            m_indirectCmdBuffersWireframe[m_currentFrameIdx].AddIndexedDrawCmd(meshHandle.indexCount,
                                                            1, // TODO: instanced rendering
                                                            meshHandle.indexBufferOffset,
                                                            meshHandle.vertBufferOffset,
@@ -101,7 +105,7 @@ void DebugShapePass::RebuildInternalData(const stltype::vector<PassMeshData>& me
         }
         else
         {
-            m_indirectCmdBufferOpaque.AddIndexedDrawCmd(meshHandle.indexCount,
+            m_indirectCmdBuffers[m_currentFrameIdx].AddIndexedDrawCmd(meshHandle.indexCount,
                                                          1, // TODO: instanced rendering
                                                          meshHandle.indexBufferOffset,
                                                          meshHandle.vertBufferOffset,
@@ -111,8 +115,8 @@ void DebugShapePass::RebuildInternalData(const stltype::vector<PassMeshData>& me
         ++instanceOffset;
     }
     RebuildPerObjectBuffer(instanceDataIndices);
-    m_indirectCmdBufferOpaque.FillCmds();
-    m_indirectCmdBufferWireFrame.FillCmds();
+    m_indirectCmdBuffers[m_currentFrameIdx].FillCmds();
+    m_indirectCmdBuffersWireframe[m_currentFrameIdx].FillCmds();
 }
 
 void DebugShapePass::Render(const MainPassData& data,
@@ -146,12 +150,16 @@ void DebugShapePass::Render(const MainPassData& data,
         const auto transformSSBOSet = data.bufferDescriptors.at(UBO::DescriptorContentsType::GlobalInstanceData);
         const auto texArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessTextureArray);
 
-        if (m_indirectCmdBufferOpaque.GetDrawCmdNum() > 0)
-        {
-            GenericIndirectDrawCmd cmd{&m_solidDebugObjectsPSO, m_indirectCmdBufferOpaque};
-            cmd.descriptorSets = {texArraySet, data.mainView.descriptorSet, transformSSBOSet, passCtx.m_perObjectDescriptor};
-            cmd.drawCount = m_indirectCmdBufferOpaque.GetDrawCmdNum();
+        auto& opaqueBuffer = m_indirectCmdBuffers[m_currentFrameIdx];
+        auto& wireframeBuffer = m_indirectCmdBuffersWireframe[m_currentFrameIdx];
 
+        if (opaqueBuffer.GetDrawCmdNum() > 0)
+        {
+            GenericIndirectDrawCmd cmd{&m_solidDebugObjectsPSO, opaqueBuffer};
+            cmd.descriptorSets = {texArraySet, data.mainView.descriptorSet, transformSSBOSet, passCtx.m_perObjectDescriptor};
+            cmd.drawCount = opaqueBuffer.GetDrawCmdNum();
+
+            m_mainRenderingData.depthAttachment.SetTexture(data.pMainDepthTexture);
             BeginRenderingCmd cmdBegin{&m_solidDebugObjectsPSO, ToRenderAttachmentInfos(colorAttachments), ToRenderAttachmentInfo(m_mainRenderingData.depthAttachment)};
             cmdBegin.extents = extents;
             cmdBegin.viewport = data.mainView.viewport;
@@ -160,12 +168,13 @@ void DebugShapePass::Render(const MainPassData& data,
             pCmdBuffer->RecordCommand(cmd);
             pCmdBuffer->RecordCommand(EndRenderingCmd{});
         }
-        if (m_indirectCmdBufferWireFrame.GetDrawCmdNum() > 0)
+        if (wireframeBuffer.GetDrawCmdNum() > 0)
         {
-            GenericIndirectDrawCmd cmd{&m_wireframeDebugObjectsPSO, m_indirectCmdBufferWireFrame};
+            GenericIndirectDrawCmd cmd{&m_wireframeDebugObjectsPSO, wireframeBuffer};
             cmd.descriptorSets = {texArraySet, data.mainView.descriptorSet, transformSSBOSet, passCtx.m_perObjectDescriptor};
-            cmd.drawCount = m_indirectCmdBufferWireFrame.GetDrawCmdNum();
+            cmd.drawCount = wireframeBuffer.GetDrawCmdNum();
 
+            m_mainRenderingData.depthAttachment.SetTexture(data.pMainDepthTexture);
             BeginRenderingCmd cmdBegin{
                 &m_wireframeDebugObjectsPSO, ToRenderAttachmentInfos(colorAttachments), ToRenderAttachmentInfo(m_mainRenderingData.depthAttachment)};
             cmdBegin.extents = extents;
@@ -188,10 +197,11 @@ void DebugShapePass::CreateSharedDescriptorLayout()
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::TransformSSBO, 2));
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::GlobalObjectDataSSBOs, 2));
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::InstanceDataSSBO, 2));
+    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::PrevTransformSSBO, 2));
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::PerPassObjectSSBO, 3));
 }
 
 bool DebugShapePass::WantsToRender() const
 {
-    return false;// NeedToRender(m_indirectCmdBufferOpaque) || NeedToRender(m_indirectCmdBufferWireFrame);
+    return false;// NeedToRender(m_indirectCmdBuffers[m_currentFrameIdx]) || NeedToRender(m_indirectCmdBuffersWireframe[m_currentFrameIdx]);
 }

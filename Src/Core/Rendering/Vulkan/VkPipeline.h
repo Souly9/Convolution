@@ -13,13 +13,6 @@ struct PipeVertInfo
     u32 bindingDescriptionCount{1};
 };
 
-struct ShaderCollection
-{
-    Shader* pVertShader;
-    Shader* pFragShader;
-    Shader* pComputeShader;
-};
-
 // Base class that holds shared members and helpers for Vulkan pipelines
 class PipelineVulkanBase : public PipelineBase
 {
@@ -65,12 +58,13 @@ protected:
 protected:
     VkPipelineLayout m_pipelineLayout{VK_NULL_HANDLE};
 
-    stltype::vector<DescriptorSetLayout> m_sharedDescriptorSetLayouts;
-    DescriptorSetLayout m_descriptorSetLayout;
-    stltype::vector<VkFormat> m_colorAttachmentFormats;
+    stltype::vector<DescriptorSetLayout> m_sharedDescriptorSetLayouts{};
+    DescriptorSetLayout m_descriptorSetLayout{};
+    stltype::vector<VkFormat> m_colorAttachmentFormats{};
 
-    PipelineInfo m_info;
-    PipeVertInfo m_vertexInfo;
+    PipelineInfo m_info{};
+    PipeVertInfo m_vertexInfo{};
+    stltype::vector<VkPipelineColorBlendAttachmentState> m_colorBlendAttachments{};
 };
 
 class ComputePipelineVulkan : public PipelineVulkanBase
@@ -80,7 +74,7 @@ public:
     ComputePipelineVulkan() = default;
     ~ComputePipelineVulkan();
 
-    void CleanUp();
+    virtual void CleanUp() override;
 
     VkPipeline GetRef() const
     {
@@ -90,6 +84,8 @@ public:
     {
         return m_pipelineLayout;
     }
+
+    virtual void NamingCallBack(const stltype::string& name) override;
 
 private:
     VkPipeline m_pipeline{VK_NULL_HANDLE};
@@ -107,7 +103,7 @@ public:
     GraphicsPipelineVulkan() = default;
     ~GraphicsPipelineVulkan();
 
-    void CleanUp();
+    virtual void CleanUp() override;
 
     bool HasDynamicViewScissorState() const;
     bool NeedsVertexBuffers() const;
@@ -121,6 +117,8 @@ public:
     {
         return m_descriptorSetLayout.GetRef();
     }
+
+    virtual void NamingCallBack(const stltype::string& name) override;
 
 private:
     VkPipelineDepthStencilStateCreateInfo CreateDepthStencilLayout(bool depthWriteEnable);

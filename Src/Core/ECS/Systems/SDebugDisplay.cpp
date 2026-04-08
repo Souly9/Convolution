@@ -1,11 +1,14 @@
 #include "SDebugDisplay.h"
 #include "Core/ECS/EntityManager.h"
 #include "Core/SceneGraph/Mesh.h"
+#include "Core/Rendering/Core/MaterialManager.h"
 
 void ECS::System::SDebugDisplay::Init(const SystemInitData& data)
 {
     m_pPassManager = data.pPassManager;
-    m_debugMaterial = {};
+    Material debugMaterial{};
+    debugMaterial.baseColor = mathstl::Vector4(1.0f, 0.95f, 0.4f, 1.0f);
+    m_pDebugMaterial = g_pMaterialManager->AllocateMaterial("DebugLightProxy", debugMaterial);
 
     g_pEventSystem->AddUpdateEventCallback(
         [this](const UpdateEventData& updateData)
@@ -35,7 +38,7 @@ void ECS::System::SDebugDisplay::Process()
         {
             Components::DebugRenderComponent lightDebugComp;
             lightDebugComp.pMesh = g_pMeshManager->GetPrimitiveMesh(MeshManager::PrimitiveType::Cube);
-            lightDebugComp.pMaterial = &m_debugMaterial;
+            lightDebugComp.pMaterial = m_pDebugMaterial;
             g_pEntityManager->AddComponent(entity, lightDebugComp);
             g_pEntityManager->MarkComponentDirty({}, ECS::ComponentID<ECS::Components::RenderComponent>::ID);
             g_pEntityManager->MarkComponentDirty({}, ECS::ComponentID<ECS::Components::Transform>::ID);
