@@ -22,6 +22,7 @@
 #include "ShadowPass.h"
 #include "StaticMeshPass.h"
 #include "AA/TAAPass.h"
+#include "AA/SMAAPass.h"
 #include "Compositing/LightingPass.h"
 #include "Core/Rendering/Core/ProfilingUtils.h"
 #include "vulkan/vulkan_core.h"
@@ -49,9 +50,11 @@ void PassManager::InitResourceManagerAndCallbacks()
     AddPass(PassType::Main, stltype::make_unique<RenderPasses::DebugShapePass>());
     AddPass(PassType::Shadow, stltype::make_unique<RenderPasses::CSMPass>());
     AddPass(PassType::Debug, stltype::make_unique<RenderPasses::ClusterDebugPass>());
+    AddPass(PassType::Debug, stltype::make_unique<RenderPasses::ClusterDebugPass>());
     AddPass(PassType::UI, stltype::make_unique<RenderPasses::ImGuiPass>());
     AddPass(PassType::Lighting, stltype::make_unique<RenderPasses::LightingPass>());
     AddPass(PassType::TAA, stltype::make_unique<RenderPasses::TAAPass>());
+    AddPass(PassType::SMAA, stltype::make_unique<RenderPasses::SMAAPass>());
     AddPass(PassType::Composite, stltype::make_unique<RenderPasses::CompositPass>());
 }
 
@@ -189,6 +192,11 @@ void PassManager::PrepareMainPassDataForFrame(MainPassData& mainPassData, FrameR
     mainPassData.bufferDescriptors[UBO::DescriptorContentsType::BindlessTextureArray] =
         g_pTexManager->GetBindlessDescriptorSet();
     mainPassData.bufferDescriptors[UBO::DescriptorContentsType::ClusterGrid] = ctx.clusterGridDescriptor;
+
+    mainPassData.pSMAAEdgesTexture = m_pSMAAEdgesTexture;
+    mainPassData.pSMAABlendTexture = m_pSMAABlendTexture;
+    mainPassData.smaaEdges = m_smaaEdgesBindlessHandle;
+    mainPassData.smaaBlend = m_smaaBlendBindlessHandle;
 }
 
 void PassManager::InitFrameContexts()
@@ -256,10 +264,6 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
 
     // Flip gbuffer history buffers before starting the frame
     m_gbuffer.FlipHistoryBuffers();
-
-    stltype::swap(m_pDepthTexture, m_pLastFrameDepthTexture);
-    stltype::swap(m_depthBindlessHandle, m_lastFrameDepthBindlessHandle);
-    m_globalRendererAttachments.depthAttachment.SetTexture(m_pDepthTexture);
 
     UpdateGBufferUBO();
 
@@ -439,8 +443,10 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
 
         RenderPassGroup(PassType::TAA, mainPassData, ctx, pFinalWorkBuffer);
 
-        // Resolve to SHADER_READ for UI
+        // We prepare Resolve for SHADER_READ since SMAA will sample it
         RecordResolveToRead(pFinalWorkBuffer);
+
+        RenderPassGroup(PassType::SMAA, mainPassData, ctx, pFinalWorkBuffer);
 
         RenderPassGroup(PassType::Composite, mainPassData, ctx, pFinalWorkBuffer);
         RenderPassGroup(PassType::UI, mainPassData, ctx, pFinalWorkBuffer);
@@ -615,6 +621,10 @@ void PassManager::Init()
 
 void PassManager::ExecutePasses(u32 frameIdx)
 {
+
+    stltype::swap(m_pDepthTexture, m_pLastFrameDepthTexture);
+    stltype::swap(m_depthBindlessHandle, m_lastFrameDepthBindlessHandle);
+    m_globalRendererAttachments.depthAttachment.SetTexture(m_pDepthTexture);
     auto& ctx = m_frameResourceManager.GetFrameRendererContext(m_currentSwapChainIdx);
     auto& mainPassData = m_mainPassData.at(m_currentSwapChainIdx);
     auto& imageAvailableSemaphore = m_imageAvailableSemaphores.at(frameIdx);
@@ -730,9 +740,36 @@ void PassManager::RecreateGbuffers(const mathstl::Vector2& resolution)
     m_screenSpaceShadowBindlessHandle = g_pTexManager->MakeTextureBindless(sssRequest.handle, true);
     m_globalRendererAttachments.pScreenSpaceShadowTexture = m_pScreenSpaceShadowTexture;
 
+    DynamicTextureRequest smaaEdgeReq = baseRequest;
+    smaaEdgeReq.format = TexFormat::R8G8_UNORM;
+    smaaEdgeReq.handle = g_pTexManager->GenerateHandle();
+    smaaEdgeReq.AddName("SMAA Edges");
+    smaaEdgeReq.usage = Usage::GBuffer | Usage::Storage | Usage::Sampled;
+    if (m_pSMAAEdgesTexture) g_pTexManager->FreeTexture(m_smaaEdgesTextureHandle);
+    m_pSMAAEdgesTexture = static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(smaaEdgeReq));
+    m_smaaEdgesTextureHandle = smaaEdgeReq.handle;
+    m_smaaEdgesBindlessHandle = g_pTexManager->MakeTextureBindless(smaaEdgeReq.handle, true);
+
+    DynamicTextureRequest smaaBlendReq = baseRequest;
+    smaaBlendReq.format = TexFormat::R8G8B8A8_UNORM;
+    smaaBlendReq.handle = g_pTexManager->GenerateHandle();
+    smaaBlendReq.AddName("SMAA Blend Weights");
+    smaaBlendReq.usage = Usage::GBuffer | Usage::Storage | Usage::Sampled;
+    if (m_pSMAABlendTexture) g_pTexManager->FreeTexture(m_smaaBlendTextureHandle);
+    m_pSMAABlendTexture = static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(smaaBlendReq));
+    m_smaaBlendTextureHandle = smaaBlendReq.handle;
+    m_smaaBlendBindlessHandle = g_pTexManager->MakeTextureBindless(smaaBlendReq.handle, true);
+
+    m_globalRendererAttachments.pSMAAEdgesTexture = m_pSMAAEdgesTexture;
+    m_globalRendererAttachments.pSMAABlendTexture = m_pSMAABlendTexture;
+
     for (auto& passData : m_mainPassData) {
         passData.pScreenSpaceShadowTexture = m_pScreenSpaceShadowTexture;
         passData.screenSpaceShadows = m_screenSpaceShadowBindlessHandle;
+        passData.pSMAAEdgesTexture = m_pSMAAEdgesTexture;
+        passData.pSMAABlendTexture = m_pSMAABlendTexture;
+        passData.smaaEdges = m_smaaEdgesBindlessHandle;
+        passData.smaaBlend = m_smaaBlendBindlessHandle;
     }
 
     UpdateGBufferUBO();
@@ -826,7 +863,11 @@ void PassManager::RecreateShadowMaps(u32 cascades, const mathstl::Vector2& exten
         viewInfo.image = csm.pTexture->GetImage();
         viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
         viewInfo.format = Conv(csm.format);
-        viewInfo.subresourceRange = { VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, i, 1 };
+        viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        viewInfo.subresourceRange.baseMipLevel = 0;
+        viewInfo.subresourceRange.levelCount = 1;
+        viewInfo.subresourceRange.baseArrayLayer = i;
+        viewInfo.subresourceRange.layerCount = 1;
         vkCreateImageView(VkGlobals::GetLogicalDevice(), &viewInfo, nullptr, &csm.cascadeViews[i]);
     }
 

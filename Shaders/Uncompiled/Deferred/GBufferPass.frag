@@ -45,7 +45,7 @@ void main()
             texture(GlobalBindlessTextures[nonuniformEXT(mat.normalTexture)], IN.fragTexCoord).xyz * 2.0 - 1.0;
         if (dot(tangentNormal, tangentNormal) > 1e-6)
         {
-           // N = normalize(IN.TBN * tangentNormal);
+           N = normalize(IN.TBN * tangentNormal);
             if (IsMaterialFlagSet(mat.flags, MATERIAL_FLAG_FLIPPED_NORMAL_BIT))
         {
                 N.y = -N.y;

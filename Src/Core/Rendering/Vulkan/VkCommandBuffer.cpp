@@ -79,7 +79,7 @@ static void RecordCommand(BinRenderDataCmd& cmd, CBufferVulkan& buffer)
 static void RecordCommand(PushConstantCmd& cmd, CBufferVulkan& buffer)
 {
     vkCmdPushConstants(
-        buffer.GetRef(), cmd.pPSO->GetLayout(), VK_SHADER_STAGE_VERTEX_BIT, cmd.offset, cmd.size, cmd.data.data());
+        buffer.GetRef(), cmd.pPSO->GetLayout(), Conv(cmd.shaderUsage), cmd.offset, cmd.size, cmd.data.data());
 }
 
 static void RecordCommand(EndRenderingCmd& cmd, CBufferVulkan& buffer)
@@ -105,9 +105,17 @@ static void RecordCommand(GenericIndirectDrawCmd& cmd, CBufferVulkan& buffer)
                                 nullptr);
         buffer.GetStats().descriptorBinds += cmd.descriptorSets.size();
     }
-    // vkCmdDrawIndexed(buffer.GetRef(), 4, 1, 0, 0, 0);
 
-    // vkCmdDraw(buffer.GetRef(), 3, 1, 0, 0);
+    if (cmd.pushConstantSize > 0)
+    {
+        vkCmdPushConstants(buffer.GetRef(),
+                           cmd.pso->GetLayout(),
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                           cmd.pushConstantOffset,
+                           cmd.pushConstantSize,
+                           cmd.pushConstantData.data());
+    }
+
     vkCmdDrawIndexedIndirect(buffer.GetRef(),
                              cmd.drawCmdBuffer->GetRef(),
                              cmd.bufferOffst,
@@ -116,6 +124,7 @@ static void RecordCommand(GenericIndirectDrawCmd& cmd, CBufferVulkan& buffer)
     buffer.GetStats().drawCalls += cmd.drawCount; // Just estimating the amount of draw calls here
     ++buffer.GetStats().drawIndirectCalls;
 }
+
 static void RecordCommand(GenericInstancedDrawCmd& cmd, CBufferVulkan& buffer)
 {
     if (cmd.descriptorSets.empty() == false)
@@ -136,10 +145,21 @@ static void RecordCommand(GenericInstancedDrawCmd& cmd, CBufferVulkan& buffer)
         buffer.GetStats().descriptorBinds += cmd.descriptorSets.size();
     }
 
+    if (cmd.pushConstantSize > 0)
+    {
+        vkCmdPushConstants(buffer.GetRef(),
+                           cmd.pso->GetLayout(),
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                           cmd.pushConstantOffset,
+                           cmd.pushConstantSize,
+                           cmd.pushConstantData.data());
+    }
+
     vkCmdDrawIndexed(
         buffer.GetRef(), cmd.vertCount, cmd.instanceCount, cmd.indexOffset, cmd.firstVert, cmd.firstInstance);
     buffer.GetStats().drawCalls++;
 }
+
 static void RecordCommand(SimpleBufferCopyCmd& cmd, CBufferVulkan& buffer)
 {
     DEBUG_ASSERT(cmd.srcBuffer->GetRef() != VK_NULL_HANDLE && cmd.dstBuffer->GetRef() != VK_NULL_HANDLE);
@@ -328,7 +348,7 @@ static void RecordCommand(GenericComputeDispatchCmd& cmd, CBufferVulkan& buffer)
     {
         vkCmdPushConstants(buffer.GetRef(),
                            cmd.pPipeline->GetLayout(),
-                           VK_SHADER_STAGE_COMPUTE_BIT,
+                           Conv(cmd.pushConstantUsage),
                            cmd.pushConstantOffset,
                            cmd.pushConstantSize,
                            cmd.pushConstantData.data());

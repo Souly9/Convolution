@@ -3,7 +3,6 @@
 #include "Core/Global/Profiling.h"
 #include "Core/Global/State/ApplicationState.h"
 #include "Core/Global/Utils/MathFunctions.h"
-#include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
 #include "EASTL/algorithm.h"
 #include "SimpleMath/SimpleMath.h"
 #include "Utils/RenderPassUtils.h"
@@ -137,7 +136,7 @@ void CSMPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comman
         pCmdBuffer->RecordCommand(geomBufferCmd);
 
         const auto& csmView = data.csmViews[0];
-        stltype::fixed_vector<f32, 16> splits{};
+        stltype::array<f32, 16> splits{};
 
         UBO::ShadowmapViewUBO uboData{};
         const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
@@ -162,8 +161,7 @@ void CSMPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comman
             uboData.cascadeSplits[i] =
                 mathstl::Vector4(splits[i * 4 + 0], splits[i * 4 + 1], splits[i * 4 + 2], splits[i * 4 + 3]);
         }
-
-        *static_cast<UBO::ShadowmapViewUBO*>(ctx.pMappedShadowViewUBO) = uboData;
+        memcpy(ctx.pMappedShadowViewUBO, &uboData, sizeof(UBO::ShadowmapViewUBO));
 
         ctx.shadowViewUBODescriptor->WriteBufferUpdate(*ctx.pShadowViewUBO, s_shadowmapViewUBOBindingSlot);
         pCmdBuffer->RecordCommand(cmd);
@@ -213,7 +211,7 @@ void CSMPass::ComputeLightViewProjMatrices(
     const mathstl::Matrix& view,
     const mathstl::Matrix& invViewProj,
     const mathstl::Vector3& lightDir,
-    stltype::fixed_vector<f32, 16>& splits,
+    stltype::array<f32, 16>& splits,
     mathstl::Matrix* lightViewProjMatrices,
     u32 shadowMapSize)
 {
@@ -305,10 +303,10 @@ void CSMPass::ComputeLightViewProjMatrices(
     // Fill split depths for the shader (absolute view-space distances)
     for (u32 i = 0; i < cascades; ++i)
     {
-        splits.push_back(cascadeSplits[i]);
+        splits[i] = cascadeSplits[i];
     }
     for (u32 i = cascades; i < 16; ++i)
     {
-        splits.push_back(FLT_MAX);
+        splits[i] = FLT_MAX;
     }
 }

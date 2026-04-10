@@ -54,12 +54,18 @@ float sampleShadowCascade(int cascadeIndex, vec4 fragWorldPos, vec3 normal, vec3
         return 1.0;
     }
     // Bias logic
+    float scale = exp2(-float(cascadeIndex));
+
+    // 1. Scaled Bias
     float cosTheta = clamp(dot(normal, lightDir), 0.0, 1.0);
-    float bias = max(0.005 * (1.0 - cosTheta), 0.0005);
+    float baseBias = max(0.005 * (1.0 - cosTheta), 0.0005);
+    float bias = baseBias * scale; 
 
     float currentDepth = (projCoords.z - bias);
     float shadow = 0.0;
-    float diskRadius = 0.0005;
+    // 2. Scaled PCF Radius
+    float baseRadius = 0.0005;
+    float diskRadius = baseRadius * scale;
     int samples = 16;
     for (int i = 0; i < samples; i++)
     {
@@ -75,6 +81,7 @@ float sampleShadowCascade(int cascadeIndex, vec4 fragWorldPos, vec3 normal, vec3
 
 float computeShadow(vec4 fragWorldPos, float fragViewDepth, vec3 normal, vec3 lightDir)
 {
+
     int cascadeIndex = getCascadeIndex(fragViewDepth);
     int cascadeCount = shadowmapViewUBO.cascadeCount;
     if (cascadeIndex < 0 || cascadeIndex >= cascadeCount)
@@ -89,7 +96,7 @@ float computeShadow(vec4 fragWorldPos, float fragViewDepth, vec3 normal, vec3 li
         float currentSplit = getCascadeSplit(cascadeIndex);
         float nextSplit = getCascadeSplit(nextCascade);
 
-        float transitionRange = (nextSplit - currentSplit) * 0.05;
+        float transitionRange = 0.5;
         float distanceToEdge = currentSplit - fragViewDepth;
 
         if (distanceToEdge < transitionRange)

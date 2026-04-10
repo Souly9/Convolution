@@ -137,7 +137,7 @@ public:
         ImGui::Separator();
         if (ImGui::CollapsingHeader("Antialiasing Settings"))
         {
-            const char* aaTypes[] = {"None", "TAA", "FXAA", "DLSS"};
+            const char* aaTypes[] = {"None", "TAA + SMAA", "FXAA", "DLSS"};
             AntialiasingType currentAA = renderState.aaType;
             int uiAAType = static_cast<int>(currentAA);
 

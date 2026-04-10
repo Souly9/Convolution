@@ -38,7 +38,6 @@ bool ShaderManager::ReadAllSourceShaders()
     {
         if (entry.is_regular_file())
         {
-            ++m_totalShaderFiles;
 
             stltype::string path(entry.path().string().c_str());
             const stltype::string extension = entry.path().extension().string().c_str();
@@ -61,8 +60,9 @@ bool ShaderManager::ReadAllSourceShaders()
             }
             else
             {
-                DEBUG_ASSERT(false);
+                continue;
             }
+            ++m_totalShaderFiles;
             IORequest req{.filePath = path,
                           .callback =
                               [this, shaderType](ReadBytesInfo& data)

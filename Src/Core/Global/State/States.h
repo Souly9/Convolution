@@ -23,7 +23,7 @@ MAKE_FLAG_ENUM(DebugFlags)
 enum class AntialiasingType : u32
 {
     None = 0,
-    TAA = 1,
+    TAA_SMAA = 1,
     FXAA = 2,
     DLSS = 3
 };
@@ -53,7 +53,7 @@ struct RendererState
     u64 depthbufferImGuiID{};
     stltype::vector<u64> csmCascadeImGuiIDs{}; // Per-cascade ImGui texture IDs
     stltype::string physicalRenderDeviceName{};
-    AntialiasingType aaType{AntialiasingType::TAA};
+    AntialiasingType aaType{AntialiasingType::TAA_SMAA};
 
     // Tonemapping
     f32 exposure{1.0f};

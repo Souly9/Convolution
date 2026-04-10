@@ -83,6 +83,7 @@ struct TextureFileInfo
     unsigned long long dataSize = 0;
     unsigned int ddsFormat = 0;
     bool supportsAlpha = false;
+    bool autoFree{true};
 };
 
 struct FileTextureRequest
@@ -92,6 +93,7 @@ struct FileTextureRequest
     bool makeBindless{true};
     bool isPersistent{false};
     TextureSemantic semantic{TextureSemantic::Auto};
+    TexFormat format{TexFormat::UNDEFINED};
 };
 struct AsyncLayoutTransitionRequest
 {

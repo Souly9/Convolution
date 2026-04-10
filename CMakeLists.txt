@@ -96,6 +96,9 @@ set(EXTERNAL_HEADERS
     "Aftermath/include/GFSDK_Aftermath_Defines.h|https://raw.githubusercontent.com/NVIDIA/nsight-aftermath-samples/master/include/GFSDK_Aftermath_Defines.h"
     "Aftermath/include/GFSDK_Aftermath_GpuCrashDump.h|https://raw.githubusercontent.com/NVIDIA/nsight-aftermath-samples/master/include/GFSDK_Aftermath_GpuCrashDump.h"
     "Aftermath/include/GFSDK_Aftermath_GpuCrashDumpDecoding.h|https://raw.githubusercontent.com/NVIDIA/nsight-aftermath-samples/master/include/GFSDK_Aftermath_GpuCrashDumpDecoding.h"
+    "smaa/SMAA.hlsl|https://raw.githubusercontent.com/iryoku/smaa/master/SMAA.hlsl"
+    "smaa/SearchTex.h|https://raw.githubusercontent.com/iryoku/smaa/master/Textures/SearchTex.h"
+    "smaa/AreaTex.h|https://raw.githubusercontent.com/iryoku/smaa/master/Textures/AreaTex.h"
 )
 foreach(ENTRY IN LISTS EXTERNAL_HEADERS)
     string(REPLACE "|" ";" ENTRY_PARTS "${ENTRY}")
@@ -305,6 +308,7 @@ SYSTEM
     "${CMAKE_SOURCE_DIR}/External/dds"
     "${CMAKE_SOURCE_DIR}/External/imgui"
     "${CMAKE_SOURCE_DIR}/External/Aftermath/include"
+    "${CMAKE_SOURCE_DIR}/External/smaa"
 )
 
 target_compile_definitions(${NAME} PRIVATE 

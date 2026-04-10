@@ -25,11 +25,8 @@ void main()
     vec2 texCoords = IN.fragTexCoord;
     
     vec3 finalHDRColor = vec3(0.0);
-    // 1 = TAA
-    if (GET_AA_TYPE(ubo.debugFlags) == 1)
-        finalHDRColor = texture(GlobalBindlessTextures[gbufferUBO.gbufferResolveIdx], texCoords).xyz;
-    else
-        finalHDRColor = texture(GlobalBindlessTextures[gbufferUBO.thisFrameColorBufferIdx], texCoords).xyz;
+    // If TAA+SMAA is active, SMAA will write the AA'd frame into thisFrameColor so it's transparent.
+    finalHDRColor = texture(GlobalBindlessTextures[gbufferUBO.thisFrameColorBufferIdx], texCoords).xyz;
 
     // Tone Mapping
     int toneMapperType = ubo.toneMapperType;

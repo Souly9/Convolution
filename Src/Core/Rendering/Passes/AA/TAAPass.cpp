@@ -52,7 +52,7 @@ void TAAPass::BuildBuffers()
 bool TAAPass::WantsToRender() const
 {
     const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
-    return renderState.aaType == AntialiasingType::TAA;
+    return renderState.aaType == AntialiasingType::TAA_SMAA;
 }
 
 void TAAPass::CreateSharedDescriptorLayout()

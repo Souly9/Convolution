@@ -33,12 +33,16 @@ static inline const stltype::vector<const char*> g_instanceExtensions = {
     "VK_EXT_swapchain_colorspace", // hdr rendering,
     "VK_EXT_debug_utils"};
 
-static inline const stltype::vector<const char*> g_deviceExtensions = {"VK_KHR_swapchain",
-                                                                       "VK_EXT_memory_budget",
-                                                                       "VK_NV_device_diagnostic_checkpoints",
-                                                                       "VK_NV_device_diagnostics_config",
-                                                                       "VK_EXT_device_fault",
-                                                                       "VK_EXT_memory_priority"
+static inline const stltype::vector<const char*> g_requiredDeviceExtensions = {
+    "VK_KHR_swapchain",
+    "VK_EXT_memory_budget"
+};
+
+static inline const stltype::vector<const char*> g_optionalDeviceExtensions = {
+    "VK_NV_device_diagnostic_checkpoints",
+    "VK_NV_device_diagnostics_config",
+    "VK_EXT_device_fault",
+    "VK_EXT_memory_priority"
 };
 
 static inline const stltype::vector<VkDynamicState> g_dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT,

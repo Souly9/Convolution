@@ -45,6 +45,12 @@ struct MainPassData
     BindlessTextureHandle depthBufferBindlessHandle{0};
     u32 cascades{0};
     f32 csmStepSize{0.0f};
+
+    // SMAA Intermediates
+    Texture* pSMAAEdgesTexture{nullptr};
+    Texture* pSMAABlendTexture{nullptr};
+    BindlessTextureHandle smaaEdges{0};
+    BindlessTextureHandle smaaBlend{0};
 };
 
 enum class PassType
@@ -58,6 +64,7 @@ enum class PassType
     Main,
     Lighting,    // Full screen lighting pass
     TAA,         // Temporal Anti-Aliasing
+    SMAA,        // Subpixel Morphological Anti-Aliasing
     Composite,
     UI,
     Debug,
@@ -84,6 +91,7 @@ inline const stltype::fixed_vector<PassStage, 8> PASS_SCHEDULE = {
     PassStage{{PassType::Main, PassType::Debug, PassType::Shadow}},
     PassStage{{PassType::Lighting}},
     PassStage{{PassType::TAA}},
+    PassStage{{PassType::SMAA}},
     PassStage{{PassType::Composite}},
     PassStage{{PassType::UI}},
 };
@@ -129,6 +137,8 @@ struct RendererAttachmentInfo
     stltype::hash_map<ColorAttachmentType, stltype::vector<ColorAttachment>> colorAttachments;
     DepthAttachment depthAttachment;
     Texture* pScreenSpaceShadowTexture{nullptr};
+    Texture* pSMAAEdgesTexture{nullptr};
+    Texture* pSMAABlendTexture{nullptr};
 };
 
 struct InstancedMeshDataInfo
@@ -283,6 +293,15 @@ private:
     Texture* m_pScreenSpaceShadowTexture{nullptr};
     TextureHandle m_screenSpaceShadowsTextureHandle{0};
     BindlessTextureHandle m_screenSpaceShadowBindlessHandle{0};
+
+    Texture* m_pSMAAEdgesTexture{nullptr};
+    TextureHandle m_smaaEdgesTextureHandle{0};
+    BindlessTextureHandle m_smaaEdgesBindlessHandle{0};
+
+    Texture* m_pSMAABlendTexture{nullptr};
+    TextureHandle m_smaaBlendTextureHandle{0};
+    BindlessTextureHandle m_smaaBlendBindlessHandle{0};
+
     u32 m_instanceBufferUpdateTimingIndex;
     u32 m_clearTileCountersTimingIndex{UINT32_MAX};
     static inline stltype::atomic<u64> s_globalTimelineCounter{1};

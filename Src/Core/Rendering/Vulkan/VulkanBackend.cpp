@@ -276,104 +276,51 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
         queueCreateInfos.push_back(queueCreateInfo);
     }
 
-    // Check for pageable memory support (NVIDIA recommendation)
     uint32_t deviceExtensionCount;
     vkEnumerateDeviceExtensionProperties(m_physicalDevice, nullptr, &deviceExtensionCount, nullptr);
     stltype::vector<VkExtensionProperties> availableDeviceExtensions(deviceExtensionCount);
     vkEnumerateDeviceExtensionProperties(m_physicalDevice, nullptr, &deviceExtensionCount, availableDeviceExtensions.data());
 
-    bool hasPageableMemory = false;
-    for (const auto& ext : availableDeviceExtensions)
+    bool hasPageableMemory = false, hasMemoryPriority = false, hasAftermath = false;
+    stltype::vector<const char*> enabledExtensions = g_requiredDeviceExtensions;
+    for (const auto& avail : availableDeviceExtensions)
     {
-        if (strcmp(ext.extensionName, VK_EXT_PAGEABLE_DEVICE_LOCAL_MEMORY_EXTENSION_NAME) == 0)
+        if (strcmp(avail.extensionName, VK_EXT_PAGEABLE_DEVICE_LOCAL_MEMORY_EXTENSION_NAME) == 0) hasPageableMemory = true;
+        for (const char* opt : g_optionalDeviceExtensions)
         {
-            hasPageableMemory = true;
-            break;
+            if (strcmp(opt, avail.extensionName) == 0)
+            {
+                enabledExtensions.push_back(opt);
+                if (strcmp(opt, VK_NV_DEVICE_DIAGNOSTICS_CONFIG_EXTENSION_NAME) == 0) hasAftermath = true;
+                if (strcmp(opt, VK_EXT_MEMORY_PRIORITY_EXTENSION_NAME) == 0) hasMemoryPriority = true;
+            }
         }
     }
-    auto enabledExtensions = g_deviceExtensions;
-    if (hasPageableMemory)
-    {
-        enabledExtensions.push_back(VK_EXT_PAGEABLE_DEVICE_LOCAL_MEMORY_EXTENSION_NAME);
-    }
+    if (hasPageableMemory) enabledExtensions.push_back(VK_EXT_PAGEABLE_DEVICE_LOCAL_MEMORY_EXTENSION_NAME);
 
-    // Enabling bindless textures
-    VkPhysicalDeviceMemoryPriorityFeaturesEXT memoryPriorityFeatures{};
-    memoryPriorityFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PRIORITY_FEATURES_EXT;
-    memoryPriorityFeatures.memoryPriority = VK_TRUE;
+    // Feature structs
+    VkPhysicalDeviceMemoryPriorityFeaturesEXT memFeat{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PRIORITY_FEATURES_EXT, nullptr, VK_TRUE};
+    VkPhysicalDevicePageableDeviceLocalMemoryFeaturesEXT pageFeat{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PAGEABLE_DEVICE_LOCAL_MEMORY_FEATURES_EXT, 
+                                                                  hasMemoryPriority ? &memFeat : nullptr, VK_TRUE};
+    VkPhysicalDeviceVulkan14Features features14{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES, hasPageableMemory ? (void*)&pageFeat : (hasMemoryPriority ? (void*)&memFeat : nullptr), VK_TRUE};
+    VkPhysicalDeviceVulkan13Features features13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, &features14, VK_TRUE, VK_TRUE, VK_TRUE, VK_TRUE};
+    VkPhysicalDeviceVulkan12Features features12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, &features13, VK_TRUE, VK_TRUE, 0, VK_TRUE, VK_TRUE, VK_TRUE, VK_TRUE, VK_TRUE, VK_TRUE, VK_TRUE, VK_TRUE, 0, 0, VK_TRUE, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, VK_TRUE};
+    VkPhysicalDeviceVulkan11Features features11{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES, &features12, VK_TRUE};
+    VkPhysicalDeviceFeatures2 deviceFeatures2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &features11};
+    vkGetPhysicalDeviceFeatures2(m_physicalDevice, &deviceFeatures2);
+    deviceFeatures2.features.samplerAnisotropy = VK_TRUE;
 
-    VkPhysicalDevicePageableDeviceLocalMemoryFeaturesEXT pageableFeatures{};
-    pageableFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PAGEABLE_DEVICE_LOCAL_MEMORY_FEATURES_EXT;
-    pageableFeatures.pageableDeviceLocalMemory = VK_TRUE;
-    pageableFeatures.pNext = &memoryPriorityFeatures;
-
-    VkPhysicalDeviceVulkan14Features features14{};
-    features14.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES;
-    // Mainly to avoid headache with imgui and dynamic rendering
-    features14.dynamicRenderingLocalRead = VK_TRUE;
-    features14.pNext = hasPageableMemory ? &pageableFeatures : nullptr;
-
-    // VK 1.3 features
-    VkPhysicalDeviceVulkan13Features features13{};
-    features13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
-    features13.dynamicRendering = VK_TRUE;
-    features13.synchronization2 = VK_TRUE;
-    features13.shaderDemoteToHelperInvocation = VK_TRUE;
-    features13.dynamicRendering = VK_TRUE;
-    features13.pNext = &features14;
-
-    // VK 1.2 features (timeline semaphore and bindless support)
-    VkPhysicalDeviceVulkan12Features features12{};
-    features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
-    features12.timelineSemaphore = VK_TRUE;
-    // Descriptor indexing features promoted to 1.2
-    features12.descriptorBindingPartiallyBound = VK_TRUE;
-    features12.runtimeDescriptorArray = VK_TRUE;
-    features12.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
-    features12.descriptorBindingStorageImageUpdateAfterBind = VK_TRUE;
-    features12.shaderStorageImageArrayNonUniformIndexing = VK_TRUE;
-    features12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
-    features12.descriptorBindingVariableDescriptorCount = VK_TRUE;
-    features12.descriptorBindingUniformBufferUpdateAfterBind = VK_TRUE;
-    features12.hostQueryReset = VK_TRUE;
-    features12.scalarBlockLayout = VK_TRUE; // Fix for scalar block layout warning
-    features12.pNext = &features13;
-
-    // VK 1.1 features
-    VkPhysicalDeviceVulkan11Features features11{};
-    features11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
-    features11.multiview = VK_TRUE;
-    features11.pNext = &features12;
-
-    VkDeviceCreateInfo createInfo{};
-    createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    VkDeviceCreateInfo createInfo{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
     createInfo.queueCreateInfoCount = static_cast<u32>(queueCreateInfos.size());
     createInfo.pQueueCreateInfos = queueCreateInfos.data();
     createInfo.enabledExtensionCount = static_cast<u32>(enabledExtensions.size());
     createInfo.ppEnabledExtensionNames = enabledExtensions.data();
-    createInfo.pEnabledFeatures = nullptr;
 
-    VkPhysicalDeviceFeatures2 deviceFeatures2{};
-    deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-    vkGetPhysicalDeviceFeatures2(m_physicalDevice, &deviceFeatures2);
-    deviceFeatures2.pNext = &features11;
+    VkDeviceDiagnosticsConfigCreateInfoNV aftermathInfo{VK_STRUCTURE_TYPE_DEVICE_DIAGNOSTICS_CONFIG_CREATE_INFO_NV, &deviceFeatures2, 
+        VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_AUTOMATIC_CHECKPOINTS_BIT_NV | VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_RESOURCE_TRACKING_BIT_NV | 
+        VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_SHADER_DEBUG_INFO_BIT_NV | VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_SHADER_ERROR_REPORTING_BIT_NV};
 
-    // Set up device creation info for Aftermath feature flag configuration.
-    VkDeviceDiagnosticsConfigFlagsNV aftermathFlags =
-        VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_AUTOMATIC_CHECKPOINTS_BIT_NV | // Enable automatic call stack checkpoints.
-        VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_RESOURCE_TRACKING_BIT_NV |     // Enable tracking of resources.
-        VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_SHADER_DEBUG_INFO_BIT_NV |     // Generate debug information for shaders.
-        VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_SHADER_ERROR_REPORTING_BIT_NV; // Enable additional runtime shader error
-                                                                           // reporting.
-
-    VkDeviceDiagnosticsConfigCreateInfoNV aftermathInfo = {};
-    aftermathInfo.sType = VK_STRUCTURE_TYPE_DEVICE_DIAGNOSTICS_CONFIG_CREATE_INFO_NV;
-    aftermathInfo.flags = aftermathFlags;
-    aftermathInfo.pNext = &deviceFeatures2;
-
-    createInfo.pNext = &aftermathInfo;
-
-    createInfo.enabledLayerCount = 0; // No old vulkan versions here mister
+    createInfo.pNext = hasAftermath ? (void*)&aftermathInfo : (void*)&deviceFeatures2;
 
     if (vkCreateDevice(m_physicalDevice, &createInfo, VulkanAllocator(), &m_logicalDevice) != VK_SUCCESS)
         return false;
@@ -383,7 +330,6 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
     vkGetDeviceQueue(m_logicalDevice, m_indices.transferFamily.value(), 0, &m_transferQueue);
     vkGetDeviceQueue(m_logicalDevice, m_indices.computeFamily.value(), 0, &m_computeQueue);
 
-    // DEBUG_ASSERT(vkCmdSetCheckpoint != VK_NULL_HANDLE);
     return true;
 }
 
@@ -400,27 +346,49 @@ bool RenderBackendImpl<Vulkan>::PickPhysicalDevice()
     stltype::vector<VkPhysicalDevice> devices(deviceCount);
     vkEnumeratePhysicalDevices(m_instance, &deviceCount, devices.data());
 
+    // First pass: look for a discrete GPU
     for (const auto& device : devices)
     {
-        if (IsDeviceSuitable(device))
+        VkPhysicalDeviceProperties deviceProperties;
+        vkGetPhysicalDeviceProperties(device, &deviceProperties);
+        if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU && IsDeviceSuitable(device))
         {
-            DEBUG_LOG("Picked this device");
-            DEBUG_ASSERT(g_pApplicationState != nullptr);
-
             m_physicalDevice = device;
-            VkPhysicalDeviceProperties deviceProperties;
-            vkGetPhysicalDeviceProperties(m_physicalDevice, &deviceProperties);
-
-            VkPhysicalDeviceMemoryProperties memProperties;
-            vkGetPhysicalDeviceMemoryProperties(m_physicalDevice, &memProperties);
-            VkGlobals::SetPhysicalDeviceMemoryProperties(memProperties);
-
-            stltype::string deviceName(deviceProperties.deviceName);
-            g_pApplicationState->RegisterUpdateFunction([deviceName](ApplicationState& state)
-                                                        { state.renderState.physicalRenderDeviceName = deviceName; });
-            return true;
+            break;
         }
     }
+
+    // Second pass: fallback to any suitable device if no discrete found
+    if (m_physicalDevice == VK_NULL_HANDLE)
+    {
+        for (const auto& device : devices)
+        {
+            if (IsDeviceSuitable(device))
+            {
+                m_physicalDevice = device;
+                break;
+            }
+        }
+    }
+
+    if (m_physicalDevice != VK_NULL_HANDLE)
+    {
+        DEBUG_LOG("Picked this device");
+        DEBUG_ASSERT(g_pApplicationState != nullptr);
+
+        VkPhysicalDeviceProperties deviceProperties;
+        vkGetPhysicalDeviceProperties(m_physicalDevice, &deviceProperties);
+
+        VkPhysicalDeviceMemoryProperties memProperties;
+        vkGetPhysicalDeviceMemoryProperties(m_physicalDevice, &memProperties);
+        VkGlobals::SetPhysicalDeviceMemoryProperties(memProperties);
+
+        stltype::string deviceName(deviceProperties.deviceName);
+        g_pApplicationState->RegisterUpdateFunction([deviceName](ApplicationState& state)
+                                                    { state.renderState.physicalRenderDeviceName = deviceName; });
+        return true;
+    }
+
     return false;
 }
 
@@ -444,8 +412,17 @@ bool RenderBackendImpl<Vulkan>::IsDeviceSuitable(VkPhysicalDevice device)
         swapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
     }
 
-    bool isSuitable = deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU && m_indices.IsComplete() &&
-                      swapChainAdequate && deviceFeatures.samplerAnisotropy;
+    // Fallback for missing families (unified queues/RenderDoc)
+    if (!m_indices.transferFamily.has_value()) m_indices.transferFamily = m_indices.graphicsFamily;
+    if (!m_indices.computeFamily.has_value()) m_indices.computeFamily = m_indices.graphicsFamily;
+
+    bool isSuitable = m_indices.IsComplete() && swapChainAdequate && deviceFeatures.samplerAnisotropy;
+    // Prioritize discrete GPUs in the suitability loop
+    if (deviceProperties.deviceType != VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
+    {
+        bool hasOtherDiscrete = false; // We can't easily check other devices here, but we can return true only for discrete first
+        // Simple heuristic: if it's not discrete, only allow it if it's the only option or special environment
+    }
 
     if (!isSuitable)
         return false;
@@ -462,11 +439,10 @@ bool RenderBackendImpl<Vulkan>::AreExtensionsSupported(VkPhysicalDevice device)
     stltype::vector<VkExtensionProperties> availableExtensions(extensionCount);
     vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, availableExtensions.data());
 
-    stltype::set<stltype::string> requiredExtensions(g_deviceExtensions.begin(), g_deviceExtensions.end());
+    stltype::set<stltype::string> requiredExtensions(g_requiredDeviceExtensions.begin(), g_requiredDeviceExtensions.end());
 
     for (const auto& extension : availableExtensions)
     {
-        stltype::string extensionName(extension.extensionName);
         requiredExtensions.erase(extension.extensionName);
     }
 
@@ -675,28 +651,27 @@ QueueFamilyIndices RenderBackendImpl<Vulkan>::FindQueueFamilies(VkPhysicalDevice
     s32 i = 0;
     for (const auto& queueFamily : queueFamilies)
     {
-        if (m_indices.graphicsFamily.has_value() == false && queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
+        if (!m_indices.graphicsFamily.has_value() && (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT))
         {
             m_indices.graphicsFamily = i;
         }
-        else if (m_indices.transferFamily.has_value() == false && queueFamily.queueFlags & VK_QUEUE_TRANSFER_BIT)
+        else if (!m_indices.transferFamily.has_value() && (queueFamily.queueFlags & VK_QUEUE_TRANSFER_BIT))
         {
             m_indices.transferFamily = i;
         }
-        else if (m_indices.computeFamily.has_value() == false && queueFamily.queueFlags & VK_QUEUE_COMPUTE_BIT)
+        else if (!m_indices.computeFamily.has_value() && (queueFamily.queueFlags & VK_QUEUE_COMPUTE_BIT))
         {
             m_indices.computeFamily = i;
         }
+
         VkBool32 presentSupport = false;
         vkGetPhysicalDeviceSurfaceSupportKHR(device, i, m_surface, &presentSupport);
-        if (presentSupport)
+        if (presentSupport && !m_indices.presentFamily.has_value())
         {
             m_indices.presentFamily = i;
         }
-        if (m_indices.IsComplete())
-        {
-            break;
-        }
+
+        if (m_indices.IsComplete()) break;
         ++i;
     }
     return m_indices;

@@ -37,7 +37,7 @@ protected:
         const mathstl::Matrix& view,
         const mathstl::Matrix& invViewProj,
         const mathstl::Vector3& lightDir,
-        stltype::fixed_vector<f32, 16>& splits,
+        stltype::array<f32, 16>& splits,
         mathstl::Matrix* lightViewProjMatrices,
         u32 shadowMapSize);
 

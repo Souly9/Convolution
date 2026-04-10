@@ -58,7 +58,7 @@ void FrameResourceManager::BuildSharedDataForView(const RenderView& mainView,
     ubo.viewPos = Vector4(viewPos.x, viewPos.y, viewPos.z, 1.0f);
 
     // Jittered projection for TAA
-    if (renderState.aaType == AntialiasingType::TAA)
+    if (renderState.aaType == AntialiasingType::TAA_SMAA)
     {
         mathstl::Vector2 jitter = GenerateR2Jitter(FrameGlobals::GetFrameNumber());
         const auto extents = FrameGlobals::GetSwapChainExtent();

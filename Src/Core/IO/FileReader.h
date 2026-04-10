@@ -17,6 +17,7 @@ struct ReadTextureInfo
     u64 dataSize = 0;
     u32 ddsFormat = 0;
     bool supportsAlpha = false;
+    bool autoFree = true;
 };
 
 struct ReadBytesInfo

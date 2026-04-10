@@ -109,8 +109,22 @@ struct GenericDrawCmd : public CommandBase
     PSO::Ptr pso{};
     stltype::vector<DescriptorSet::Ptr> descriptorSets{};
 
+    u32 pushConstantOffset{0};
+    u32 pushConstantSize{0};
+    ShaderTypeBits pushConstantUsage{ShaderTypeBits::Vertex};
+    stltype::fixed_vector<u8, 128> pushConstantData{};
+
     GenericDrawCmd(PSO::Ptr ps) : pso(ps)
     {
+    }
+
+    template <typename T>
+    void SetPushConstants(u32 offset, const T& data, ShaderTypeBits usage = ShaderTypeBits::Vertex)
+    {
+        pushConstantOffset = offset;
+        pushConstantSize = sizeof(T);
+        pushConstantUsage = usage;
+        pushConstantData.assign((u8*)&data, (u8*)&data + sizeof(T));
     }
 };
 
@@ -162,13 +176,15 @@ struct PushConstantCmd : public CommandBase
 {
     u32 size;
     u32 offset;
+    ShaderTypeBits shaderUsage{ShaderTypeBits::Vertex};
     stltype::fixed_vector<u8, 128> data{};
     PSO::Ptr pPSO;
 
     PushConstantCmd() = default;
 
     template <typename T>
-    PushConstantCmd(PSO::Ptr p, u32 off, const T& d) : pPSO(p), offset(off), size(sizeof(T))
+    PushConstantCmd(PSO::Ptr p, u32 off, const T& d, ShaderTypeBits usage = ShaderTypeBits::Vertex) 
+        : pPSO(p), offset(off), size(sizeof(T)), shaderUsage(usage)
     {
         data.assign((u8*)&d, (u8*)&d + sizeof(T));
     }
@@ -339,6 +355,7 @@ struct GenericComputeDispatchCmd : public CommandBase
     u32 groupCountZ{1};
     u32 pushConstantOffset{0};
     u32 pushConstantSize{0};
+    ShaderTypeBits pushConstantUsage{ShaderTypeBits::Compute};
     stltype::fixed_vector<u8, 128> pushConstantData{};
 
     GenericComputeDispatchCmd(ComputePipeline::Ptr p) : pPipeline(p)
@@ -351,10 +368,11 @@ struct GenericComputeDispatchCmd : public CommandBase
     }
 
     template <typename T>
-    void SetPushConstants(u32 offset, const T& data)
+    void SetPushConstants(u32 offset, const T& data, ShaderTypeBits usage = ShaderTypeBits::Compute)
     {
         pushConstantOffset = offset;
         pushConstantSize = sizeof(T);
+        pushConstantUsage = usage;
         pushConstantData.assign((u8*)&data, (u8*)&data + sizeof(T));
     }
 };
