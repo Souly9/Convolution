@@ -42,33 +42,12 @@ void SMAAPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResource
         
     // Upload SMAA textures
 
-    FileTextureRequest searchReq{};
-    searchReq.ioInfo.extents = DirectX::XMINT2(SEARCHTEX_WIDTH, SEARCHTEX_HEIGHT);
-    searchReq.ioInfo.pixels = const_cast<unsigned char*>(searchTexBytes);
-    searchReq.ioInfo.texChannels = 1;
-    searchReq.ioInfo.dataSize = sizeof(searchTexBytes);
-    searchReq.format = TexFormat::R8_UNORM;
-    searchReq.handle = g_pTexManager->GenerateHandle();
-    searchReq.makeBindless = true;
-    searchReq.semantic = TextureSemantic::Data;
-    searchReq.ioInfo.autoFree = false;
-    g_pTexManager->CreateTexture(searchReq);
-    m_searchTexHandle = searchReq.handle;
-    m_searchTexBindless = g_pTexManager->MakeTextureBindless(searchReq.handle, true);
-
-    FileTextureRequest areaReq{};
-    areaReq.ioInfo.extents = DirectX::XMINT2(AREATEX_WIDTH, AREATEX_HEIGHT);
-    areaReq.ioInfo.pixels = const_cast<unsigned char*>(areaTexBytes);
-    areaReq.ioInfo.texChannels = 2; // R8G8
-    areaReq.ioInfo.dataSize = sizeof(areaTexBytes);
-    areaReq.format = TexFormat::R8G8_UNORM;
-    areaReq.handle = g_pTexManager->GenerateHandle();
-    areaReq.makeBindless = true;
-    areaReq.semantic = TextureSemantic::Data;
-    areaReq.ioInfo.autoFree = false;
-    g_pTexManager->CreateTexture(areaReq);
-    m_areaTexHandle = areaReq.handle;
-    m_areaTexBindless = g_pTexManager->MakeTextureBindless(areaReq.handle, true);
+    auto searchHandle = g_pTexManager->SubmitAsyncTextureCreation(
+        {"Resources/Textures/SearchTex.dds", false, TextureSemantic::Data, true});
+    auto placeholderHandle = g_pTexManager->SubmitAsyncTextureCreation(
+        {"Resources/Textures/AreaTexDX10.dds", false, TextureSemantic::Data, true});
+    m_searchTexBindless = g_pTexManager->MakeTextureBindless(searchHandle, true);
+    m_areaTexBindless = g_pTexManager->MakeTextureBindless(placeholderHandle, true);
 
     BuildPipelines();
 }
@@ -107,7 +86,7 @@ void SMAAPass::BuildPipelines()
     PipelineInfo neighborInfo{};
     neighborInfo.descriptorSetLayout.sharedDescriptors = m_sharedDescriptors;
     neighborInfo.attachmentInfos = CreateAttachmentInfo({
-        CreateDefaultColorAttachment(SWAPCHAIN_FORMAT, LoadOp::LOAD, nullptr)
+        CreateDefaultColorAttachment(TexFormat::R16G16B16A16_FLOAT, LoadOp::LOAD, nullptr)
     });
     neighborInfo.pushConstantInfo.constants = {{ShaderTypeBits::Vertex | ShaderTypeBits::Fragment, 0, (u32)sizeof(PushConsts)}};
     neighborInfo.hasDepth = false;
@@ -125,6 +104,7 @@ void SMAAPass::CreateSharedDescriptorLayout()
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalTextures, 0));
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalArrayTextures, 0));
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::GBufferUBO, 1));
+    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::ShadowmapUBO, 1));
 }
 
 void SMAAPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
@@ -152,8 +132,14 @@ void SMAAPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     const auto extentsXY = FrameGlobals::GetSwapChainExtent();
     const DirectX::XMINT2 extents(extentsXY.x, extentsXY.y);
     auto& sceneGeometryBuffers = data.pResourceManager->GetSceneGeometryBuffers();
+    if (sceneGeometryBuffers.GetVertexBuffer().GetRef() == VK_NULL_HANDLE ||
+        sceneGeometryBuffers.GetIndexBuffer().GetRef() == VK_NULL_HANDLE)
+    {
+        return;
+    }
+    
     BinRenderDataCmd geomBufferCmd(sceneGeometryBuffers.GetVertexBuffer(), sceneGeometryBuffers.GetIndexBuffer());
-
+    
     auto gbufferUBOSet = data.bufferDescriptors.at(UBO::DescriptorContentsType::GBuffer);
     auto texArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessTextureArray);
 
@@ -169,11 +155,13 @@ void SMAAPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
         
         GenericIndirectDrawCmd cmdEdge{&m_edgePSO, cmdBuf};
         cmdEdge.drawCount = cmdBuf.GetDrawCmdNum();
+        cmdEdge.descriptorSets = { texArraySet, gbufferUBOSet };
         pc.tex1 = data.pGbuffer->GetHandle(GBufferTextureType::GBufferResolve); // Input color (TAA result)
         cmdEdge.SetPushConstants(0, pc, ShaderTypeBits::Vertex | ShaderTypeBits::Fragment);
 
         pCmdBuffer->RecordCommand(beginEdge);
-        pCmdBuffer->RecordCommand(geomBufferCmd);
+        if (geomBufferCmd.vertexBuffer != nullptr)
+            pCmdBuffer->RecordCommand(geomBufferCmd);
         pCmdBuffer->RecordCommand(cmdEdge);
         pCmdBuffer->RecordCommand(EndRenderingCmd{});
     }
@@ -196,14 +184,15 @@ void SMAAPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
 
         GenericIndirectDrawCmd cmdBlend{&m_blendPSO, cmdBuf};
         cmdBlend.drawCount = cmdBuf.GetDrawCmdNum();
-        cmdBlend.descriptorSets = { texArraySet, texArraySet, gbufferUBOSet };
+        cmdBlend.descriptorSets = { texArraySet, gbufferUBOSet };
         pc.tex1 = data.smaaEdges; // Edges
         pc.tex2 = m_areaTexBindless;
         pc.tex3 = m_searchTexBindless;
         cmdBlend.SetPushConstants(0, pc, ShaderTypeBits::Vertex | ShaderTypeBits::Fragment);
 
         pCmdBuffer->RecordCommand(beginBlend);
-        pCmdBuffer->RecordCommand(geomBufferCmd);
+        if (geomBufferCmd.vertexBuffer != nullptr)
+            pCmdBuffer->RecordCommand(geomBufferCmd);
         pCmdBuffer->RecordCommand(cmdBlend);
         pCmdBuffer->RecordCommand(EndRenderingCmd{});
     }
@@ -233,13 +222,14 @@ void SMAAPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
 
         GenericIndirectDrawCmd cmdNeighbor{&m_neighborhoodPSO, cmdBuf};
         cmdNeighbor.drawCount = cmdBuf.GetDrawCmdNum();
-        cmdNeighbor.descriptorSets = { texArraySet, texArraySet, gbufferUBOSet };
+        cmdNeighbor.descriptorSets = { texArraySet, gbufferUBOSet };
         pc.tex1 = data.pGbuffer->GetHandle(GBufferTextureType::GBufferResolve); // Un-AA color (TAA result)
         pc.tex2 = data.smaaBlend; // Blending weights
         cmdNeighbor.SetPushConstants(0, pc, ShaderTypeBits::Vertex | ShaderTypeBits::Fragment);
 
         pCmdBuffer->RecordCommand(beginNeighbor);
-        pCmdBuffer->RecordCommand(geomBufferCmd);
+        if (geomBufferCmd.vertexBuffer != nullptr)
+            pCmdBuffer->RecordCommand(geomBufferCmd);
         pCmdBuffer->RecordCommand(cmdNeighbor);
         pCmdBuffer->RecordCommand(EndRenderingCmd{});
         

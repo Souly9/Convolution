@@ -12,7 +12,7 @@ struct TextureInfoBase
     ImageLayout layout{ImageLayout::UNDEFINED};
     u64 size{0};
     Usage usage{Usage::Sampled};
-    bool hasMipMaps{false};
+    u32 mipLevels;
 };
 
 struct TextureInfo : TextureInfoBase

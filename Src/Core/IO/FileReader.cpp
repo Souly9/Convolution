@@ -163,14 +163,20 @@ void FileReader::ReadImageFile(const IORequest& request)
 
         info.extents.x = img.width;
         info.extents.y = img.height;
-        info.dataSize = img.mipmaps[0].size_bytes();
         info.ddsFormat = (u32)img.format;
+        info.mipmapPixels.reserve(img.mipmaps.size());
+        u64 imageSize = 0;
+        for (u32 i = 0; i < img.mipmaps.size(); ++i)
+        {
+            auto& mipData =  info.mipmapPixels.emplace_back();
+            auto& pMipData = mipData.pData;
+            mipData.size = img.mipmaps[i].size_bytes();
+            pMipData = (unsigned char*)malloc(mipData.size);
+            memcpy(pMipData, img.mipmaps[i].data(), mipData.size);
+            imageSize = imageSize + mipData.size;
+        }
         info.supportsAlpha = img.supportsAlpha;
-
-        // Copy the first mipmap data as we need it to outlive this scope
-        // and be freed by FreeImageData
-        info.pixels = (unsigned char*)malloc(info.dataSize);
-        memcpy(info.pixels, img.mipmaps[0].data(), info.dataSize);
+        info.dataSize = imageSize;
     }
     else
     {
@@ -179,9 +185,9 @@ void FileReader::ReadImageFile(const IORequest& request)
         info.dataSize = (u64)info.extents.x * info.extents.y * 4;
         info.ddsFormat = 0; // Standard RGBA8
         info.supportsAlpha = true;
+        DEBUG_ASSERT(info.pixels);
     }
 
-    DEBUG_ASSERT(info.pixels);
 
     const IOImageReadCallback* callback = stltype::get_if<IOImageReadCallback>(&request.callback);
     if (callback)
@@ -191,10 +197,10 @@ void FileReader::ReadImageFile(const IORequest& request)
     }
 }
 
-void FileReader::FreeImageData(unsigned char* pixels)
+void FileReader::FreeImageData(const unsigned char* pixels)
 {
     // stbi_image_free usually just calls free, and we use malloc for DDS
-    free(pixels);
+    free((void*)pixels);
 }
 
 void FileReader::ReadMeshFile(const IORequest& request)

@@ -3,18 +3,18 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_EXT_scalar_block_layout : enable
 
+#define SMAA_INCLUDE_VS 1
+#include "SMAA_Common.h"
+#include "SMAA.hlsl"
+
 layout(location = 0) in vec3 inPosition;
-layout(location = 1) in vec2 inTexCoord;
-layout(location = 2) in vec3 inNormal;
+layout(location = 1) in vec3 inNormal;
+layout(location = 2) in vec2 inTexCoord;
 layout(location = 3) in vec3 inTangent;
 
 layout(location = 0) out vec2 texCoord;
 layout(location = 1) out vec2 pixCoord;
 layout(location = 2) out vec4 offset[3];
-
-#define SMAA_INCLUDE_VS 1
-#include "SMAA_Common.h"
-#include "SMAA.hlsl"
 
 void main()
 {

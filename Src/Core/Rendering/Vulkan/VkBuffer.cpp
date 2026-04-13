@@ -1,5 +1,6 @@
 #include "VkBuffer.h"
 #include "Core/Global/GlobalVariables.h"
+#include "Core/Global/Typedefs.h"
 #include "Core/Rendering/Core/Utils/DeleteQueue.h"
 #include "Utils/VkEnumHelpers.h"
 #include "VkGlobals.h"
@@ -58,6 +59,12 @@ void GenBufferVulkan::FillImmediate(const void* data)
 {
     CheckCopyArgs(data, UINT64_MAX, 0);
     MapAndCopyToMemory(GetMemoryHandle(), data, GetInfo().size, 0);
+}
+
+void GenBufferVulkan::FillImmediate(const void* data, u64 size, u64 offset)
+{
+    CheckCopyArgs(data, UINT64_MAX, 0);
+    MapAndCopyToMemory(GetMemoryHandle(), data, size, offset);
 }
 
 void GenBufferVulkan::FillAndTransfer(

@@ -278,6 +278,8 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
     stltype::fixed_vector<const Texture*, 16> allColorTextures;
     allColorTextures.assign(gbufferTextures.begin(), gbufferTextures.end());
     allColorTextures.push_back(m_gbuffer.Get(GBufferTextureType::GBufferThisFrameColor));
+    allColorTextures.push_back(m_pSMAAEdgesTexture);
+    allColorTextures.push_back(m_pSMAABlendTexture);
     allColorTextures.push_back(ctx.pCurrentSwapchainTexture);
 
     CommandBuffer* pMainGraphicsWorkBuffer = m_graphicsFrameCtx.cmdBuffers[ctx.imageIdx];

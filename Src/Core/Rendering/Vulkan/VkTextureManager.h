@@ -3,6 +3,8 @@
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Global/Profiling.h"
 #include "Core/Global/ThreadBase.h"
+#include "Core/Global/Typedefs.h"
+#include "Core/IO/FileReader.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
 #include "Core/Rendering/Core/RenderingForwardDecls.h"
 #include "Core/Rendering/Core/RenderDefinitions.h"
@@ -52,6 +54,7 @@ struct DynamicTextureRequest
     bool hasMipMaps{false};
     bool createSampler{true};
     bool isPersistent{false};
+    u32 mipLevels;
 
     void AddName(const stltype::string& name)
     {
@@ -74,21 +77,10 @@ private:
     stltype::string m_debugName;
 #endif
 };
-struct TextureFileInfo
-{
-    stltype::string filePath;
-    DirectX::XMINT2 extents;
-    unsigned char* pixels;
-    s32 texChannels;
-    unsigned long long dataSize = 0;
-    unsigned int ddsFormat = 0;
-    bool supportsAlpha = false;
-    bool autoFree{true};
-};
 
 struct FileTextureRequest
 {
-    TextureFileInfo ioInfo;
+    ReadTextureInfo ioInfo;
     TextureHandle handle;
     bool makeBindless{true};
     bool isPersistent{false};
@@ -100,6 +92,7 @@ struct AsyncLayoutTransitionRequest
     stltype::vector<const Texture*> textures;
     ImageLayout oldLayout;
     ImageLayout newLayout;
+    u32 mipLevels;
     // Optional semaphores to wait on and signal
     Semaphore* pWaitSemaphore{nullptr};
     Semaphore* pSignalSemaphore{nullptr};
@@ -191,7 +184,8 @@ public:
 
     void EnqueueAsyncTextureTransfer(StagingBufferVulkan* pStagingBuffer,
                                      Texture* pTex,
-                                     const VkImageAspectFlagBits flagBit);
+                                     const VkImageAspectFlagBits flagBit,
+                                    const stltype::vector<u32>& mips);
     void EnqueueAsyncTextureTransfer(StagingBufferVulkan* pStagingBuffer,
                                      const TextureHandle handle,
                                      const VkImageAspectFlagBits flagBit);
@@ -223,7 +217,7 @@ public:
                                       const ImageLayout newLayout);
 
 protected:
-    VkImageViewCreateInfo GenerateImageViewInfo(VkFormat format, VkImage image, bool isArray);
+    VkImageViewCreateInfo GenerateImageViewInfo(VkFormat format, VkImage image, bool isArray, u32 mips = 0);
 
     static void SetNoMipMap(VkImageViewCreateInfo& createInfo, u32 layerCount = 1);
     static void SetMipMap(VkImageViewCreateInfo& createInfo);

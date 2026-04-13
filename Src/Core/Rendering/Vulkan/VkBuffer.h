@@ -1,6 +1,7 @@
 #pragma once
 #include "BackendDefines.h"
 #include "Core/Global/GlobalDefines.h"
+#include "Core/Global/Typedefs.h"
 #include "Core/Rendering/Core/Buffer.h"
 #include "VkGPUMemoryManager.h"
 
@@ -21,6 +22,7 @@ public:
 
     // Fill buffer without trying to copy memory into device memory using staging buffer
     void FillImmediate(const void* data);
+    void FillImmediate(const void* data, u64 size, u64 offset);
 
     // Fill buffer using staging buffer
     void FillAndTransfer(StagingBuffer& stgBuffer,

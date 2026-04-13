@@ -3,18 +3,18 @@
 #include "Core/Global/FrameGlobals.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/IO/FileReader.h"
+#include "Core/Rendering/Core/MaterialManager.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
 #include "Core/Rendering/Vulkan/Utils/VkDescriptorLayoutUtils.h"
 #include "Utils/DescriptorSetLayoutConverters.h"
 #include "Utils/VkEnumHelpers.h"
 #include "VkBuffer.h"
 #include "VkGlobals.h"
-#include "Core/Rendering/Core/MaterialManager.h"
 
-#include <vulkan/vulkan.h>
-#include <dds/dds.hpp>
 #include "Core/Rendering/Core/Utils/DeleteQueue.h"
 #include <cctype>
+#include <dds/dds.hpp>
+#include <vulkan/vulkan.h>
 
 static constexpr u32 MIPMAP_NUM = 4;
 static constexpr u32 MAX_BINDLESS_UPLOADS = 1;
@@ -25,7 +25,7 @@ static TextureInfo RequestToTexInfo(const DynamicTextureRequest& info)
 {
     TextureInfo genericInfo{};
     genericInfo.extents = info.extents;
-    genericInfo.hasMipMaps = info.hasMipMaps;
+    genericInfo.mipLevels = info.mipLevels;
     genericInfo.format = info.format;
     genericInfo.layout = ImageLayout::UNDEFINED;
     genericInfo.usage = info.usage;
@@ -50,7 +50,7 @@ static TexFormat ChooseTextureFormatForSemantic(TextureSemantic semantic)
 VkTextureManager::VkTextureManager()
 {
     m_textures.reserve(MAX_TEXTURES);
-    m_swapChainTextures.reserve(SWAPCHAIN_IMAGES); 
+    m_swapChainTextures.reserve(SWAPCHAIN_IMAGES);
     m_availableCommandBuffers.reserve(MAX_CACHE_BUFFERS);
 }
 
@@ -62,7 +62,7 @@ void VkTextureManager::Init()
     m_thread = threadstl::MakeThread([this] { CheckRequests(); });
     InitializeThread("Convolution_TextureManager");
     CreateBindlessDescriptorSet();
-    
+
     // Reserve slot 0 for placeholder / default sampling paths.
     m_lastBindlessTextureWriteIdx = 1;
     m_lastPersistentBindlessTextureWriteIdx = 14000;
@@ -82,11 +82,11 @@ void VkTextureManager::SetPlaceholder(TextureHandle handle)
             m_bindlessDescriptorSet->WriteBindlessTextureUpdate(pTex, i, s_globalBindlessArrayTextureBufferBindingSlot);
         else
             m_bindlessDescriptorSet->WriteBindlessTextureUpdate(pTex, i);
-        
+
         if ((u32)pTex->GetInfo().usage & (u32)Usage::Storage)
             m_bindlessImageDescriptorSet->WriteBindlessImageUpdate(pTex, i, s_globalBindlessImageBufferBindingSlot);
     }
-    
+
     m_lastBindlessTextureWriteIdx = 1;
 }
 
@@ -146,7 +146,7 @@ void VkTextureManager::PostRender()
     auto processTextures = [this](stltype::vector<TextureHandle>& handles) -> bool
     {
         bool wroteAny = false;
-        for (auto it = handles.begin(); it != handles.end(); )
+        for (auto it = handles.begin(); it != handles.end();)
         {
             TextureVulkan* pTex = nullptr;
             if (auto mapIt = m_textures.find(*it); mapIt != m_textures.end())
@@ -157,7 +157,7 @@ void VkTextureManager::PostRender()
             {
                 pTex = &persistentIt->second;
             }
-            if (pTex == nullptr || pTex->GetImageView() == VK_NULL_HANDLE)
+            if (pTex == nullptr || pTex->GetImageView() == VK_NULL_HANDLE || pTex->GetSampler() == VK_NULL_HANDLE)
             {
                 ++it;
                 continue;
@@ -173,12 +173,14 @@ void VkTextureManager::PostRender()
 
             const u32 targetIdx = mappedIt->second;
             if (pTex->GetInfo().extents.z > 1)
-                m_bindlessDescriptorSet->WriteBindlessTextureUpdate(pTex, targetIdx, s_globalBindlessArrayTextureBufferBindingSlot);
+                m_bindlessDescriptorSet->WriteBindlessTextureUpdate(
+                    pTex, targetIdx, s_globalBindlessArrayTextureBufferBindingSlot);
             else
                 m_bindlessDescriptorSet->WriteBindlessTextureUpdate(pTex, targetIdx);
-            
+
             if ((u32)pTex->GetInfo().usage & (u32)Usage::Storage)
-                m_bindlessImageDescriptorSet->WriteBindlessImageUpdate(pTex, targetIdx, s_globalBindlessImageBufferBindingSlot);
+                m_bindlessImageDescriptorSet->WriteBindlessImageUpdate(
+                    pTex, targetIdx, s_globalBindlessImageBufferBindingSlot);
 
             pTex->SetStatus(TextureStatus::Ready);
             wroteAny = true;
@@ -191,13 +193,13 @@ void VkTextureManager::PostRender()
     if (!m_texturesToMakeBindless.empty() || !m_persistentTexturesToMakeBindless.empty())
     {
         bool didWrite = false;
-        
+
         if (!m_texturesToMakeBindless.empty())
             didWrite |= processTextures(m_texturesToMakeBindless);
-        
+
         if (!m_persistentTexturesToMakeBindless.empty())
             didWrite |= processTextures(m_persistentTexturesToMakeBindless);
-            
+
         if (didWrite)
         {
             g_pMaterialManager->MarkMaterialsDirty();
@@ -222,19 +224,39 @@ void VkTextureManager::CreateSwapchainTextures(const TextureCreationInfoVulkanIm
 
 void VkTextureManager::CreateTexture(const FileTextureRequest& req)
 {
-    const auto& readInfo = req.ioInfo;
-    ASSERT(readInfo.pixels);
-
+    auto readInfo = req.ioInfo;
+    u32 mips = req.ioInfo.mipmapPixels.size();
     u64 imageSize = readInfo.dataSize > 0 ? readInfo.dataSize : (u64)readInfo.extents.x * readInfo.extents.y * 4;
 
     m_sharedDataMutex.lock();
+
     StagingBufferVulkan& pStgBuffer = m_stagingBufferInUse.emplace_back(imageSize);
-    pStgBuffer.FillImmediate(readInfo.pixels);
+    if (mips != 0)
+    {
+        u64 offset = 0;
+        for (auto& mipPixels : readInfo.mipmapPixels)
+        {
+            pStgBuffer.FillImmediate(mipPixels.pData, mipPixels.size, offset);
+            offset = offset + mipPixels.size;
+        }
+    }
+    else
+    {
+        ASSERT(readInfo.pixels);
+        pStgBuffer.FillImmediate(readInfo.pixels);
+    }
+
     pStgBuffer.SetName(readInfo.filePath + "_StagingBuffer");
     m_sharedDataMutex.unlock();
-    
+
     if (readInfo.autoFree)
+    {
         FileReader::FreeImageData(readInfo.pixels);
+        for (auto& mipmap : readInfo.mipmapPixels)
+        {
+            FileReader::FreeImageData(mipmap.pData);
+        }
+    }
 
     DynamicTextureRequest info{};
     info.extents.x = readInfo.extents.x;
@@ -250,14 +272,18 @@ void VkTextureManager::CreateTexture(const FileTextureRequest& req)
     info.usage = Usage::Sampled | Usage::TransferDst;
     info.handle = req.handle;
     info.isPersistent = req.isPersistent;
+    info.hasMipMaps = mips != 0;
+    info.mipLevels = mips;
 
     Texture* pTex = CreateTextureImmediate(info);
 
     pTex->SetName(readInfo.filePath);
 
-    EnqueueAsyncImageLayoutTransition(static_cast<Texture*>(pTex), ImageLayout::UNDEFINED, ImageLayout::TRANSFER_DST_OPTIMAL);
+    EnqueueAsyncImageLayoutTransition(
+        static_cast<Texture*>(pTex), ImageLayout::UNDEFINED, ImageLayout::TRANSFER_DST_OPTIMAL);
     EnqueueAsyncTextureTransfer(&pStgBuffer, static_cast<Texture*>(pTex), VK_IMAGE_ASPECT_COLOR_BIT);
-    EnqueueAsyncImageLayoutTransition(static_cast<Texture*>(pTex), ImageLayout::TRANSFER_DST_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    EnqueueAsyncImageLayoutTransition(
+        static_cast<Texture*>(pTex), ImageLayout::TRANSFER_DST_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
     // Note: ImageView and Sampler are already created by CreateTextureImmediate
 
@@ -284,7 +310,8 @@ Texture* VkTextureManager::CreateTextureImmediate(const DynamicTextureRequest& r
     Texture* pTex = nullptr;
     if (req.isPersistent)
     {
-        auto& mapEntry = m_persistentTextures.emplace(req.handle, Texture(vulkanTexCreateInfo, genericInfo)).first->second;
+        auto& mapEntry =
+            m_persistentTextures.emplace(req.handle, Texture(vulkanTexCreateInfo, genericInfo)).first->second;
         pTex = static_cast<Texture*>(&mapEntry);
     }
     else
@@ -293,7 +320,7 @@ Texture* VkTextureManager::CreateTextureImmediate(const DynamicTextureRequest& r
         pTex = static_cast<Texture*>(&mapEntry);
     }
     m_sharedDataMutex.unlock();
-    
+
     pTex->SetName(req.GetName());
 
     CreateImageViewForTexture(pTex, req.hasMipMaps);
@@ -326,9 +353,10 @@ TextureHandle VkTextureManager::SubmitAsyncTextureCreation(const TexCreateInfo& 
     }
 
     // Handle Resources/Models/textures relocation
-    static const stltype::string searchTargets[] = {
-        "Resources\\Models\\textures", "Resources\\Models\\Textures", "Resources/Models/textures",
-        "Resources/Models/Textures"};
+    static const stltype::string searchTargets[] = {"Resources\\Models\\textures",
+                                                    "Resources\\Models\\Textures",
+                                                    "Resources/Models/textures",
+                                                    "Resources/Models/Textures"};
 
     for (const auto& target : searchTargets)
     {
@@ -361,14 +389,7 @@ TextureHandle VkTextureManager::SubmitAsyncTextureCreation(const TexCreateInfo& 
     req.callback = [this, handle, makeBindless, semantic, isPersistent](const ReadTextureInfo& result)
     {
         FileTextureRequest texReq{};
-        texReq.ioInfo.filePath = result.filePath;
-        texReq.ioInfo.pixels = result.pixels;
-        texReq.ioInfo.extents = result.extents;
-        texReq.ioInfo.texChannels = result.texChannels;
-        texReq.ioInfo.dataSize = result.dataSize;
-        texReq.ioInfo.ddsFormat = result.ddsFormat;
-        texReq.ioInfo.supportsAlpha = result.supportsAlpha;
-        texReq.ioInfo.autoFree = result.autoFree;
+        texReq.ioInfo = result;
 
         texReq.handle = handle;
         texReq.makeBindless = makeBindless;
@@ -425,7 +446,12 @@ void VkTextureManager::CreateSamplerForTexture(TextureVulkan* pTex, bool useMipM
         samplerInfo.maxLod = 0.0f;
     }
     else
-        DEBUG_ASSERT(false);
+    {
+        samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        samplerInfo.mipLodBias = 0.0f;
+        samplerInfo.minLod = 0.0f;
+        samplerInfo.maxLod = VK_LOD_CLAMP_NONE;
+    }
 
     VkSampler sampler = VK_NULL_HANDLE;
     DEBUG_ASSERT(vkCreateSampler(VK_LOGICAL_DEVICE, &samplerInfo, VulkanAllocator(), &sampler) == VK_SUCCESS);
@@ -441,11 +467,12 @@ void VkTextureManager::CreateImageViewForTexture(TextureHandle handle, bool useM
 
 void VkTextureManager::CreateImageViewForTexture(TextureVulkan* pTex, bool useMipMaps)
 {
-    auto createInfo = GenerateImageViewInfo(Conv(pTex->GetInfo().format), pTex->GetImage(), (pTex->GetInfo().extents.z > 1));
+    auto createInfo = GenerateImageViewInfo(
+        Conv(pTex->GetInfo().format), pTex->GetImage(), (pTex->GetInfo().extents.z > 1), pTex->GetInfo().mipLevels);
     if (useMipMaps == false)
         SetNoMipMap(createInfo, pTex->GetInfo().extents.z);
     else
-        DEBUG_ASSERT(false);
+        SetMipMap(createInfo);
 
     SetNoSwizzle(createInfo);
 
@@ -480,6 +507,7 @@ void VkTextureManager::EnqueueAsyncImageLayoutTransition(const AsyncLayoutTransi
     ImageLayoutTransitionCmd cmd(request.textures);
     cmd.oldLayout = request.oldLayout;
     cmd.newLayout = request.newLayout;
+    cmd.mipLevel = request.textures.at(0)->GetInfo().mipLevels;
 
     SetLayoutBarrierMasks(cmd, request.oldLayout, request.newLayout);
 
@@ -540,9 +568,10 @@ void VkTextureManager::DispatchAsyncOps(stltype::string cbufferName)
                         pBuffer->ResetBuffer();
                         m_availableCommandBuffers.push_back(pBuffer);
                         // If this throws there is a problem with the command buffers in general
-                        auto it = stltype::find_if(m_inflightCommandBuffers.begin(),
-                                                   m_inflightCommandBuffers.end(),
-                                                   [pBuffer](const auto& pB) { return pB->GetRef() == pBuffer->GetRef(); });
+                        auto it =
+                            stltype::find_if(m_inflightCommandBuffers.begin(),
+                                             m_inflightCommandBuffers.end(),
+                                             [pBuffer](const auto& pB) { return pB->GetRef() == pBuffer->GetRef(); });
                         if (it != m_inflightCommandBuffers.end())
                             m_inflightCommandBuffers.erase(it);
                         m_sharedDataMutex.unlock();
@@ -565,7 +594,7 @@ void VkTextureManager::DispatchAsyncOps(stltype::string cbufferName)
 TextureVulkan* VkTextureManager::GetTexture(TextureHandle handle)
 {
     SimpleScopedGuard<tracy::Lockable<CustomMutex>> lock(m_sharedDataMutex);
-    
+
     auto it = m_textures.find(handle);
     if (it != m_textures.end())
         return &(it->second);
@@ -628,9 +657,12 @@ VkTextureManager::~VkTextureManager()
 {
     ThreadBase::ShutdownThread();
 
-    for (auto& tex : m_swapChainTextures) tex.CleanUp();
-    for (auto& pair : m_textures) pair.second.CleanUp();
-    for (auto& pair : m_persistentTextures) pair.second.CleanUp();
+    for (auto& tex : m_swapChainTextures)
+        tex.CleanUp();
+    for (auto& pair : m_textures)
+        pair.second.CleanUp();
+    for (auto& pair : m_persistentTextures)
+        pair.second.CleanUp();
 
     m_swapChainTextures.clear();
     m_textures.clear();
@@ -639,35 +671,39 @@ VkTextureManager::~VkTextureManager()
 
 void VkTextureManager::EnqueueAsyncTextureTransfer(StagingBufferVulkan* pStagingBuffer,
                                                    Texture* pTex,
-                                                   const VkImageAspectFlagBits flagBit)
+                                                   const VkImageAspectFlagBits flagBit,
+                                                   const stltype::vector<u32>& mips)
 {
     ScopedZone("VkTextureManager::Enqueue Async Texture Transfer");
 
     m_sharedDataMutex.lock();
     pStagingBuffer->Grab();
-    ImageBufferCopyCmd cmd{pStagingBuffer, pTex};
-    cmd.aspectFlagBits = (u32)flagBit;
-    cmd.imageExtent = pTex->m_info.extents;
-
-    auto callback = [this, pStagingBuffer]()
+    for (auto mip : mips)
     {
-        ScopedZone("VkTextureManager::Async Transfer Callback");
-        m_sharedDataMutex.lock();
-        pStagingBuffer->CleanUp();
-        auto it = stltype::find_if(m_stagingBufferInUse.begin(),
-                                   m_stagingBufferInUse.end(),
-                                   [pStagingBuffer](const auto& cb) { return &cb == pStagingBuffer; });
-        if (it == m_stagingBufferInUse.end())
-        {
-            m_stagingBufferInUse.clear();
-        }
-        m_sharedDataMutex.unlock();
-    };
-    cmd.optionalCallback = std::bind(callback);
+        ImageBufferCopyCmd cmd{pStagingBuffer, pTex};
+        cmd.aspectFlagBits = (u32)flagBit;
+        cmd.imageExtent = pTex->m_info.extents;
 
-    CreateTransferCommandBuffer();
-    m_transferCommandBuffer->RecordCommand(cmd);
-    m_sharedDataMutex.unlock();
+        auto callback = [this, pStagingBuffer]()
+        {
+            ScopedZone("VkTextureManager::Async Transfer Callback");
+            m_sharedDataMutex.lock();
+            pStagingBuffer->CleanUp();
+            auto it = stltype::find_if(m_stagingBufferInUse.begin(),
+                                       m_stagingBufferInUse.end(),
+                                       [pStagingBuffer](const auto& cb) { return &cb == pStagingBuffer; });
+            if (it == m_stagingBufferInUse.end())
+            {
+                m_stagingBufferInUse.clear();
+            }
+            m_sharedDataMutex.unlock();
+        };
+        cmd.optionalCallback = std::bind(callback);
+
+        CreateTransferCommandBuffer();
+        m_transferCommandBuffer->RecordCommand(cmd);
+        m_sharedDataMutex.unlock();
+    }
 }
 
 void VkTextureManager::EnqueueAsyncTextureTransfer(StagingBufferVulkan* pStagingBuffer,
@@ -680,7 +716,8 @@ void VkTextureManager::EnqueueAsyncTextureTransfer(StagingBufferVulkan* pStaging
 void VkTextureManager::CancelAllRequests()
 {
     m_sharedDataMutex.lock();
-    while (!m_requests.empty()) m_requests.pop();
+    while (!m_requests.empty())
+        m_requests.pop();
     m_sharedDataMutex.unlock();
 }
 
@@ -696,8 +733,9 @@ void VkTextureManager::FinishAllRequests()
             processing = m_processingRequest;
         }
 
-        if (!hasRequests && !processing) break;
-        
+        if (!hasRequests && !processing)
+            break;
+
         g_pQueueHandler->DispatchAllRequests();
         Sleep(1);
     }
@@ -719,7 +757,7 @@ void VkTextureManager::Flush()
         it->second.CleanUp();
         it = m_textures.erase(it);
     }
-    
+
     m_texturesToMakeBindless.clear();
     m_loadedTextureCache.clear();
     m_bindlessTextureHandleMap.clear();
@@ -744,7 +782,9 @@ void VkTextureManager::FreeTexture(TextureHandle handle)
     }
     else if (itPersistent != m_persistentTextures.end())
     {
-        DEBUG_LOGF("[VkTextureManager] Freeing persistent texture \"{}\" handle {}", itPersistent->second.GetName().c_str(), handle);
+        DEBUG_LOGF("[VkTextureManager] Freeing persistent texture \"{}\" handle {}",
+                   itPersistent->second.GetName().c_str(),
+                   handle);
         itPersistent->second.CleanUp();
         m_persistentTextures.erase(itPersistent);
     }
@@ -787,15 +827,16 @@ bool VkTextureManager::ShouldFlipNormalMap(const stltype::string& path) const
     return pathLower.find(".dds") != stltype::string::npos || pathLower.find(".dd") != stltype::string::npos;
 }
 
-VkImageViewCreateInfo VkTextureManager::GenerateImageViewInfo(VkFormat format, VkImage image, bool isArray)
+VkImageViewCreateInfo VkTextureManager::GenerateImageViewInfo(VkFormat format, VkImage image, bool isArray, u32 mips)
 {
     VkImageViewCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     createInfo.image = image;
-     createInfo.viewType = isArray ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
+    createInfo.viewType = isArray ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
     createInfo.format = format;
     createInfo.subresourceRange.aspectMask =
         format == Conv(DEPTH_BUFFER_FORMAT) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+    createInfo.subresourceRange.levelCount = mips;
     return createInfo;
 }
 
@@ -809,6 +850,10 @@ void VkTextureManager::SetNoMipMap(VkImageViewCreateInfo& createInfo, u32 layerC
 
 void VkTextureManager::SetMipMap(VkImageViewCreateInfo& createInfo)
 {
+    createInfo.subresourceRange.baseMipLevel = 0;
+    createInfo.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+    createInfo.subresourceRange.baseArrayLayer = 0;
+    createInfo.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
 }
 
 void VkTextureManager::SetNoSwizzle(VkImageViewCreateInfo& createInfo)
@@ -823,36 +868,50 @@ static VkImageTiling ConvTiling(Tiling tiling)
 {
     switch (tiling)
     {
-    case Tiling::OPTIMAL:
-        return VK_IMAGE_TILING_OPTIMAL;
-    case Tiling::LINEAR:
-        return VK_IMAGE_TILING_LINEAR;
-    default:
-        return VK_IMAGE_TILING_OPTIMAL;
+        case Tiling::OPTIMAL:
+            return VK_IMAGE_TILING_OPTIMAL;
+        case Tiling::LINEAR:
+            return VK_IMAGE_TILING_LINEAR;
+        default:
+            return VK_IMAGE_TILING_OPTIMAL;
     }
 }
 
 static VkImageUsageFlags Conv(Usage usage)
 {
     VkImageUsageFlags flags = 0;
-    if ((usage & Usage::TransferSrc) != Usage::None) flags |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-    if ((usage & Usage::TransferDst) != Usage::None) flags |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    if ((usage & Usage::Sampled) != Usage::None) flags |= VK_IMAGE_USAGE_SAMPLED_BIT;
-    if ((usage & Usage::Storage) != Usage::None) flags |= VK_IMAGE_USAGE_STORAGE_BIT;
-    if ((usage & Usage::ColorAttachment) != Usage::None) flags |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-    if ((usage & Usage::DepthAttachment) != Usage::None) flags |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    if ((usage & Usage::StencilAttachment) != Usage::None) flags |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    if ((usage & Usage::TransientAttachment) != Usage::None) flags |= VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
-    if ((usage & Usage::InputAttachment) != Usage::None) flags |= VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
-    
+    if ((usage & Usage::TransferSrc) != Usage::None)
+        flags |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    if ((usage & Usage::TransferDst) != Usage::None)
+        flags |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    if ((usage & Usage::Sampled) != Usage::None)
+        flags |= VK_IMAGE_USAGE_SAMPLED_BIT;
+    if ((usage & Usage::Storage) != Usage::None)
+        flags |= VK_IMAGE_USAGE_STORAGE_BIT;
+    if ((usage & Usage::ColorAttachment) != Usage::None)
+        flags |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    if ((usage & Usage::DepthAttachment) != Usage::None)
+        flags |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    if ((usage & Usage::StencilAttachment) != Usage::None)
+        flags |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    if ((usage & Usage::TransientAttachment) != Usage::None)
+        flags |= VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
+    if ((usage & Usage::InputAttachment) != Usage::None)
+        flags |= VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
+
     // Composite usages
-    if ((usage & Usage::GBuffer) != Usage::None) flags |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    if ((usage & Usage::ShadowMap) != Usage::None) flags |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    if ((usage & Usage::AttachmentReadWrite) != Usage::None) flags |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    if ((usage & Usage::GBuffer) != Usage::None)
+        flags |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                 VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    if ((usage & Usage::ShadowMap) != Usage::None)
+        flags |=
+            VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    if ((usage & Usage::AttachmentReadWrite) != Usage::None)
+        flags |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
+                 VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 
     return flags;
 }
-
 
 void VkTextureManager::SetLayoutBarrierMasks(ImageLayoutTransitionCmd& transitionCmd,
                                              const ImageLayout oldLayout,
@@ -903,12 +962,15 @@ void VkTextureManager::SetLayoutBarrierMasks(ImageLayoutTransitionCmd& transitio
         transitionCmd.srcStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
         transitionCmd.dstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
     }
-    else if (oldLayout == ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL && newLayout == ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+    else if (oldLayout == ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL &&
+             newLayout == ImageLayout::SHADER_READ_ONLY_OPTIMAL)
     {
-        transitionCmd.srcAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        transitionCmd.srcAccessMask =
+            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
         transitionCmd.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
 
-        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+        transitionCmd.srcStage =
+            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
         transitionCmd.dstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
     }
     else if (oldLayout == ImageLayout::UNDEFINED && newLayout == ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
@@ -926,21 +988,29 @@ void VkTextureManager::SetLayoutBarrierMasks(ImageLayoutTransitionCmd& transitio
         transitionCmd.srcStage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
         transitionCmd.dstStage = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
     }
-    else if (oldLayout == ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL && newLayout == ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL)
+    else if (oldLayout == ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL &&
+             newLayout == ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL)
     {
-        transitionCmd.srcAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        transitionCmd.srcAccessMask =
+            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
         transitionCmd.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
-        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
-        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        transitionCmd.srcStage =
+            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT |
+                                 VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
+                                 VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
     }
     else if (oldLayout == ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL &&
              newLayout == ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
     {
         transitionCmd.srcAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
-        transitionCmd.dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        transitionCmd.dstAccessMask =
+            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
         transitionCmd.srcStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT |
-                                 VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
-        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+                                 VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
+                                 VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+        transitionCmd.dstStage =
+            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
     }
     // Not strictly great but mainly used for compute shaders
     else if (oldLayout == ImageLayout::GENERAL && newLayout == ImageLayout::SHADER_READ_ONLY_OPTIMAL)
@@ -963,7 +1033,8 @@ void VkTextureManager::SetLayoutBarrierMasks(ImageLayoutTransitionCmd& transitio
         transitionCmd.srcAccessMask = 0;
         transitionCmd.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
         transitionCmd.srcStage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
-        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
+        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT |
+                                 VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
                                  VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
     }
     // Not strictly great but mainly used for compute shaders
@@ -995,19 +1066,23 @@ void VkTextureManager::SetLayoutBarrierMasks(ImageLayoutTransitionCmd& transitio
         transitionCmd.srcStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
         transitionCmd.dstStage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
     }
-    else if (oldLayout == ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL && newLayout == ImageLayout::TRANSFER_SRC_OPTIMAL)
+    else if (oldLayout == ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL &&
+             newLayout == ImageLayout::TRANSFER_SRC_OPTIMAL)
     {
         transitionCmd.srcAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
         transitionCmd.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
         transitionCmd.srcStage = VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
         transitionCmd.dstStage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
     }
-    else if (oldLayout == ImageLayout::TRANSFER_SRC_OPTIMAL && newLayout == ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+    else if (oldLayout == ImageLayout::TRANSFER_SRC_OPTIMAL &&
+             newLayout == ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
     {
         transitionCmd.srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
-        transitionCmd.dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+        transitionCmd.dstAccessMask =
+            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
         transitionCmd.srcStage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+        transitionCmd.dstStage =
+            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
     }
     else if (oldLayout == ImageLayout::SHADER_READ_ONLY_OPTIMAL && newLayout == ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
     {
@@ -1030,21 +1105,25 @@ VkImageCreateInfo VkTextureManager::FillImageCreateInfoFlat2D(const DynamicTextu
     imageInfo.extent.width = info.extents.x;
     imageInfo.extent.height = info.extents.y;
     imageInfo.extent.depth = 1;
-    imageInfo.mipLevels = info.hasMipMaps ? MIPMAP_NUM : 1;
+    imageInfo.mipLevels = info.hasMipMaps ? info.mipLevels : 1;
     imageInfo.arrayLayers = info.extents.z;
     imageInfo.format = Conv(info.format);
     imageInfo.tiling = ConvTiling(info.tiling);
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     imageInfo.usage = Conv(info.usage);
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-    
+
     const auto& indices = VkGlobals::GetQueueFamilyIndices();
     static u32 families[3];
     u32 count = 0;
-    
-    auto addFamily = [&](stltype::optional<u32> family) {
-        if (family.has_value()) {
-            for (u32 i = 0; i < count; ++i) if (families[i] == family.value()) return;
+
+    auto addFamily = [&](stltype::optional<u32> family)
+    {
+        if (family.has_value())
+        {
+            for (u32 i = 0; i < count; ++i)
+                if (families[i] == family.value())
+                    return;
             families[count++] = family.value();
         }
     };
@@ -1065,7 +1144,7 @@ VkImageCreateInfo VkTextureManager::FillImageCreateInfoFlat2D(const DynamicTextu
         imageInfo.queueFamilyIndexCount = 0;
         imageInfo.pQueueFamilyIndices = nullptr;
     }
-    
+
     return imageInfo;
 }
 
@@ -1120,14 +1199,15 @@ void VkTextureManager::CreateBindlessDescriptorSet()
             {PipelineDescriptorLayout(Bindless::BindlessType::GlobalImages)});
         m_bindlessImageDescriptorSetLayout.SetName("Bindless Image Layout");
 
-        m_bindlessImageDescriptorSet = m_bindlessDescriptorPool.CreateDescriptorSet(m_bindlessImageDescriptorSetLayout.GetRef());
+        m_bindlessImageDescriptorSet =
+            m_bindlessDescriptorPool.CreateDescriptorSet(m_bindlessImageDescriptorSetLayout.GetRef());
         m_bindlessImageDescriptorSet->SetBindingSlot(s_globalBindlessImageBufferBindingSlot);
         m_bindlessImageDescriptorSet->SetName("Global Bindless Image Descriptor Set");
     }
 }
 
 const VkTextureManager::LoadedTexInfo* VkTextureManager::IsAlreadyRequested(const stltype::string& filePath,
-                                                                             TextureSemantic semantic) const
+                                                                            TextureSemantic semantic) const
 {
     SimpleScopedGuard<tracy::Lockable<CustomMutex>> lock(m_sharedDataMutex);
     if (const auto it = stltype::find_if(m_loadedTextureCache.cbegin(),
@@ -1148,4 +1228,3 @@ const VkTextureManager::LoadedTexInfo* VkTextureManager::IsAlreadyRequested(cons
     }
     return nullptr;
 }
-

@@ -3,16 +3,23 @@ struct ReadTextureInfo;
 struct SceneNode;
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Global/ThreadBase.h"
-#include "Core/SceneGraph/Scene.h"
 #include "Core/Global/ThreadPool.h"
+#include "Core/SceneGraph/Scene.h"
 #include <EASTL/fixed_function.h>
 #include <EASTL/queue.h>
+
+struct ReadMipmapInfo
+{
+    unsigned char* pData;
+    u64 size;
+};
 
 struct ReadTextureInfo
 {
     stltype::string filePath;
     DirectX::XMINT2 extents;
     unsigned char* pixels;
+    stltype::vector<ReadMipmapInfo> mipmapPixels;
     s32 texChannels;
     u64 dataSize = 0;
     u32 ddsFormat = 0;
@@ -65,7 +72,7 @@ public:
 
     void CheckIORequests();
 
-    static void FreeImageData(unsigned char* pixels);
+    static void FreeImageData(const unsigned char* pixels);
 
     void ReadImageFile(const IORequest& request);
 

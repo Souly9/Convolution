@@ -76,8 +76,6 @@ void main()
 
     // Sample depth and normal for rejection
     float currentDepth = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.depthBufferIdx)], uv).r;
-    vec3 currentNormal = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.gbufferNormalIdx)], uv).rgb;
-    
     float historyDepth = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.lastFrameDepthIdx)], prevUV).r;
 
     // Sample neighborhood to calculate mean and variance
@@ -113,11 +111,10 @@ void main()
     historyColor.rgb = YCoCgToRGB(historyYCoCg);
 
     // Simplified Depth rejection
-    // We dampen the history if the depth doesn't match our current frame
     float rejection = clamp(1.0 - abs(currentDepth - historyDepth) * 1000.0, 0.0, 1.0);
 
     // Blend history and current
-    float historyWeight = 0.95 * rejection; 
+    float historyWeight = 0.85 * rejection; 
     if (pushConstants.resetHistory > 0 || prevUV.x < 0.0 || prevUV.x > 1.0 || prevUV.y < 0.0 || prevUV.y > 1.0)
     {
         historyWeight = 0.0;
