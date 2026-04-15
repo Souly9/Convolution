@@ -157,8 +157,8 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
 
     const mathstl::Vector2 jitter =
         GenerateR2Jitter(static_cast<int>(FrameGlobals::GetJitterFrameNumber()));
-    slConst.jitterOffset = {jitter.x, jitter.y};
-    slConst.mvecScale = {1.0f, 1.0f};
+    slConst.jitterOffset = {jitter.x, -jitter.y};
+    slConst.mvecScale = {2.0f, 2.0f};
     slConst.cameraPinholeOffset = {0.0f, 0.0f};
     slConst.cameraPos = {data.mainView.position.x, data.mainView.position.y, data.mainView.position.z};
     const mathstl::Vector3 rotation = mathstl::Vector3(data.mainView.rotation.x * kDegToRad,
