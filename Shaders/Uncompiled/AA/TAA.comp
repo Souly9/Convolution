@@ -14,6 +14,8 @@ layout(push_constant) uniform PushConstants
     uint frameIndex;
     uint resetHistory;
     vec2 resolution;
+    float zNear;
+    float zFar;
 }
 pushConstants;
 
@@ -120,17 +122,15 @@ void main()
     float currentDepthRaw = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.depthBufferIdx)], uv).r;
     float historyDepthRaw = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.lastFrameDepthIdx)], prevUV).r;
 
-    // Convert to linear depth (assuming near and far are passed in pushConstants)
-    float currentDepth = LinearizeDepth(currentDepthRaw,0.01, 150.0);
-    float historyDepth = LinearizeDepth(historyDepthRaw, 0.01, 150.0);
+    // Convert to linear depth using the active camera range from the CPU side.
+    float currentDepth = LinearizeDepth(currentDepthRaw, pushConstants.zNear, pushConstants.zFar);
+    float historyDepth = LinearizeDepth(historyDepthRaw, pushConstants.zNear, pushConstants.zFar);
 
-    // Calculate rejection threshold relative to the current depth 
-    // (e.g., tolerate a 1% difference in distance)
+    // Use both an absolute floor and a relative term so close geometry does not
+    // over-reject from small reprojection/depth quantization differences.
     float depthDiff = abs(currentDepth - historyDepth);
-    float rejectionThreshold = currentDepth * 0.01; 
-    
-    // Smooth falloff for rejection
-    float rejection = 1.0 - clamp(depthDiff / max(rejectionThreshold, 1e-6), 0.0, 1.0);
+    float rejectionThreshold = max(0.05, currentDepth * 0.05);
+    float rejection = 1.0 - smoothstep(rejectionThreshold, rejectionThreshold * 2.0, depthDiff);
 
     // Blend history and current
     float historyWeight = 0.9 * rejection;

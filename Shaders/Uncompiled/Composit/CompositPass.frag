@@ -9,6 +9,7 @@
 
 #include "../../Globals/Scene.h"
 #include "../../Globals/Bindless.h"
+#include "../../Globals/Common.h"
 #include "../../Globals/GBuffer/GBufferSampling.h"
 #include "../../Globals/Tonemapping.h"
 
@@ -25,8 +26,16 @@ void main()
     vec2 texCoords = IN.fragTexCoord;
     
     vec3 finalHDRColor = vec3(0.0);
-    // If TAA+SMAA is active, SMAA will write the AA'd frame into thisFrameColor so it's transparent.
-    finalHDRColor = texture(GlobalBindlessTextures[gbufferUBO.thisFrameColorBufferIdx], texCoords).xyz;
+    uint aaType = GET_AA_TYPE(ubo.debugFlags);
+    if (aaType == 3u) // AntialiasingType::DLSS
+    {
+        finalHDRColor = texture(GlobalBindlessTextures[gbufferUBO.gbufferResolveIdx], texCoords).xyz;
+    }
+    else
+    {
+        // TAA+SMAA path writes final AA to thisFrameColor.
+        finalHDRColor = texture(GlobalBindlessTextures[gbufferUBO.thisFrameColorBufferIdx], texCoords).xyz;
+    }
 
     // Tone Mapping
     int toneMapperType = ubo.toneMapperType;

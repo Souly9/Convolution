@@ -12,6 +12,8 @@ struct TAAPushConstants
     u32 frameIndex;
     u32 resetHistory;
     mathstl::Vector2 resolution;
+    f32 zNear;
+    f32 zFar;
 };
 
 class TAAPass : public ConvolutionRenderPass

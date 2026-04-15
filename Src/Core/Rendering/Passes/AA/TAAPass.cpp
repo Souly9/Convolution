@@ -89,6 +89,8 @@ void TAAPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comman
 
     m_pushConstants.frameIndex = ctx.currentFrame;
     m_pushConstants.resolution = mathstl::Vector2((f32)FrameGlobals::GetSwapChainExtent().x, (f32)FrameGlobals::GetSwapChainExtent().y);
+    m_pushConstants.zNear = ctx.zNear;
+    m_pushConstants.zFar = ctx.zFar;
 
     u32 groupCountX = (FrameGlobals::GetSwapChainExtent().x + 7) / 8;
     u32 groupCountY = (FrameGlobals::GetSwapChainExtent().y + 7) / 8;

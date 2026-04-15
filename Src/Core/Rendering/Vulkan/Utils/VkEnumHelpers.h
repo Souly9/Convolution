@@ -575,6 +575,41 @@ inline VkSampleCountFlagBits Conv(const u32& m)
     return VK_SAMPLE_COUNT_1_BIT;
 }
 
+inline VkImageUsageFlags Conv(Usage usage)
+{
+    VkImageUsageFlags flags = 0;
+    if ((usage & Usage::TransferSrc) != Usage::None)
+        flags |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    if ((usage & Usage::TransferDst) != Usage::None)
+        flags |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    if ((usage & Usage::Sampled) != Usage::None)
+        flags |= VK_IMAGE_USAGE_SAMPLED_BIT;
+    if ((usage & Usage::Storage) != Usage::None)
+        flags |= VK_IMAGE_USAGE_STORAGE_BIT;
+    if ((usage & Usage::ColorAttachment) != Usage::None)
+        flags |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    if ((usage & Usage::DepthAttachment) != Usage::None)
+        flags |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    if ((usage & Usage::StencilAttachment) != Usage::None)
+        flags |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    if ((usage & Usage::TransientAttachment) != Usage::None)
+        flags |= VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
+    if ((usage & Usage::InputAttachment) != Usage::None)
+        flags |= VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
+
+    if ((usage & Usage::GBuffer) != Usage::None)
+        flags |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                 VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    if ((usage & Usage::ShadowMap) != Usage::None)
+        flags |=
+            VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    if ((usage & Usage::AttachmentReadWrite) != Usage::None)
+        flags |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
+                 VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+
+    return flags;
+}
+
 inline VkBufferUsageFlags Conv(const BufferUsage& m)
 {
     switch (m)

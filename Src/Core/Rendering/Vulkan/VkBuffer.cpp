@@ -246,7 +246,7 @@ void IndirectDrawCommandBufferVulkan::AddIndexedDrawCmd(
         // Allocate enough space for all commands from the get go please
         DEBUG_ASSERT(false);
     }
-    m_indexedIndirectCmds.emplace_back(indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
+    m_indexedIndirectCmds.push_back({ indexCount, instanceCount, firstIndex, (i32)vertexOffset, firstInstance });
 }
 
 void IndirectDrawCommandBufferVulkan::FillCmds()

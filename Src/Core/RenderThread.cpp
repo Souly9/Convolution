@@ -23,6 +23,7 @@ void RenderThread::RenderLoop()
 {
     auto currentFrame = FrameGlobals::GetFrameNumber();
     auto lastFrame = FrameGlobals::GetPreviousFrameNumber(currentFrame);
+    u64 jitterFrameNumber = 0;
 
     while (KeepRunning())
     {
@@ -58,6 +59,7 @@ void RenderThread::RenderLoop()
         {
             continue;
         }
+        FrameGlobals::SetJitterFrameNumber(jitterFrameNumber++);
         {
             m_passManager->PreProcessDataForCurrentFrame(lastFrame);
             g_pQueueHandler->WaitForFences(~0u);

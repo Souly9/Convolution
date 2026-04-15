@@ -333,6 +333,11 @@ struct BufferUpdateCmd : public CommandBase
     }
 };
 
+struct ExecuteNativeCmd : public CommandBase
+{
+    stltype::fixed_function<960, void(void*)> callback{};
+};
+
 struct ComputePushConstantCmd : public CommandBase
 {
     ComputePipeline::Ptr pPipeline{};
@@ -431,7 +436,8 @@ using Command = stltype::variant<CommandBase,
                                  ImGuiDrawCmd,
                                  ResetQueryPoolCmd,
                                  WriteTimestampCmd,
-                                 BufferUpdateCmd>;
+                                 BufferUpdateCmd,
+                                 ExecuteNativeCmd>;
 
 // Generic command buffer, basically collects all commands as generic structs first so we can reason about them
 struct CommandBufferStats

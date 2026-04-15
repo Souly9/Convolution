@@ -13,9 +13,16 @@ public:
     static bool Init();
     static void Shutdown();
 
+    static bool GetFrameToken(u32 frameIdx, sl::FrameToken*& pFrameToken);
+    static bool GetDLSSFeatureRequirements(sl::FeatureRequirements& requirements);
+    static void SetVulkanQueueStartIndices(u32 graphicsQueueIndex, u32 computeQueueIndex);
+    static bool EnsureDLSSConfigured(u32 width, u32 height, sl::DLSSMode mode);
+    static bool ConsumeDLSSResetFlag();
     static bool SetDLSSOptions(u32 width, u32 height, sl::DLSSMode mode);
-    static void EvaluateDLSS(VkCommandBuffer cmdBuf, u32 frameIdx);
-    static void AllocateResources(VkCommandBuffer cmdBuf, sl::Feature feature);
+    static bool FreeResources(sl::Feature feature);
+    static bool EvaluateDLSS(VkCommandBuffer cmdBuf, const sl::FrameToken& frameToken);
+    static bool AllocateResources(VkCommandBuffer cmdBuf, sl::Feature feature);
+    static bool IsDLSSEvaluateBlocked();
 
     static bool IsAvailable() { return s_initialized; }
 

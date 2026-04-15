@@ -384,6 +384,12 @@ static void RecordCommand(BufferUpdateCmd& cmd, CBufferVulkan& buffer)
 {
     vkCmdUpdateBuffer(buffer.GetRef(), cmd.pBuffer->GetRef(), cmd.offset, sizeof(u32), &cmd.data);
 }
+
+static void RecordCommand(ExecuteNativeCmd& cmd, CBufferVulkan& buffer)
+{
+    if (cmd.callback)
+        cmd.callback(reinterpret_cast<void*>(buffer.GetRef()));
+}
 } // namespace CommandHelpers
 
 CBufferVulkan::CBufferVulkan(VkCommandBuffer commandBuffer)

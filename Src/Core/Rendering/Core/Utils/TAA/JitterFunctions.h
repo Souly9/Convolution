@@ -2,7 +2,7 @@
 #include "Core/Global/GlobalVariables.h"
 
 // Basic R2 jitter function for TAA
-mathstl::Vector2 GenerateR2Jitter(int frameIndex, int numSamples = 16)
+inline mathstl::Vector2 GenerateR2Jitter(int frameIndex, int numSamples = 16)
 {
     const float g = 1.32471795724474602596f;
     const float a1 = 1.0f / g;

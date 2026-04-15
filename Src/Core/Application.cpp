@@ -34,8 +34,6 @@ Application::Application(bool canRender, RenderLayer<RenderAPI>& layer) : m_rend
     g_pQueueHandler->Init();
     g_pTexManager->Init();
 
-    Nvidia::StreamlineManager::Init();
-
     // Load placeholder first
     auto placeholderHandle = g_pTexManager->SubmitAsyncTextureCreation({"Resources\\Textures\\placeholder.png", false, TextureSemantic::BaseColor, true});
     g_pTexManager->WaitFor(placeholderHandle);

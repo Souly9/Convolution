@@ -3,6 +3,7 @@
 #include "Core/Rendering/Core/RenderDefinitions.h"
 
 extern u32 g_currentFrameNumber;
+extern u64 g_jitterFrameNumber;
 extern mathstl::Vector2 g_swapChainExtent;
 extern TexFormat g_swapChainFormat;
 
@@ -15,6 +16,14 @@ static inline u32 GetFrameNumber()
 static inline void SetFrameNumber(u32 frameNumber)
 {
     g_currentFrameNumber = frameNumber;
+}
+static inline u64 GetJitterFrameNumber()
+{
+    return g_jitterFrameNumber;
+}
+static inline void SetJitterFrameNumber(u64 frameNumber)
+{
+    g_jitterFrameNumber = frameNumber;
 }
 static inline u32 GetPreviousFrameNumber(u32 frameNumber)
 {

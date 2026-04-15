@@ -89,8 +89,7 @@ FetchContent_Declare(ImGuizmo GIT_REPOSITORY "https://github.com/CedricGuillemet
 set(EXTERNAL_HEADERS 
     "SimpleMath/SimpleMath.h|https://raw.githubusercontent.com/microsoft/DirectXTK/main/Inc/SimpleMath.h"
     "SimpleMath/SimpleMath.inl|https://raw.githubusercontent.com/microsoft/DirectXTK/main/Inc/SimpleMath.inl"
-    "dds/dds.hpp|https://raw.githubusercontent.com/spnda/dds_image/main/include/dds.hpp"
-    "dds/dds_formats.hpp|https://raw.githubusercontent.com/spnda/dds_image/main/include/dds_formats.hpp"
+    "tinyddsloader/tinyddsloader.h|https://raw.githubusercontent.com/benikabocha/tinyddsloader/master/tinyddsloader.h"
     "stb/stb_image.h|https://raw.githubusercontent.com/nothings/stb/master/stb_image.h"
     "Aftermath/include/GFSDK_Aftermath.h|https://raw.githubusercontent.com/NVIDIA/nsight-aftermath-samples/master/include/GFSDK_Aftermath.h"
     "Aftermath/include/GFSDK_Aftermath_Defines.h|https://raw.githubusercontent.com/NVIDIA/nsight-aftermath-samples/master/include/GFSDK_Aftermath_Defines.h"
@@ -279,6 +278,18 @@ add_custom_command(TARGET ${NAME} POST_BUILD
 )
 endif()
 
+# Copy Streamline DLLs and other dependencies (licenses, etc.)
+file(GLOB STREAMLINE_FILES "${CMAKE_SOURCE_DIR}/External/additional_libs/NVStreamline/*.*")
+foreach(FILE IN LISTS STREAMLINE_FILES)
+    get_filename_component(FILE_NAME "${FILE}" NAME)
+    add_custom_command(TARGET ${NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${FILE}"
+            "$<TARGET_FILE_DIR:${NAME}>/${FILE_NAME}"
+        COMMENT "Copying Streamline file ${FILE_NAME} to output directory"
+    )
+endforeach()
+
 add_custom_target(
     CopyResources
     COMMAND ${CMAKE_COMMAND} -E copy_directory
@@ -305,10 +316,11 @@ SYSTEM
     "${CMAKE_SOURCE_DIR}/External/EAThread/include"
     "${CMAKE_SOURCE_DIR}/External/EAAssert/include"
     "${CMAKE_SOURCE_DIR}/External/Assimp/include"
-    "${CMAKE_SOURCE_DIR}/External/dds"
+    "${CMAKE_SOURCE_DIR}/External/tinyddsloader"
     "${CMAKE_SOURCE_DIR}/External/imgui"
     "${CMAKE_SOURCE_DIR}/External/Aftermath/include"
     "${CMAKE_SOURCE_DIR}/External/smaa"
+    "${CMAKE_SOURCE_DIR}/External/additional_libs/NVStreamline"
 )
 
 target_compile_definitions(${NAME} PRIVATE 

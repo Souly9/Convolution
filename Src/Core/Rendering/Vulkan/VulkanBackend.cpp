@@ -8,6 +8,7 @@
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Global/LogDefines.h"
 #include "Core/Rendering/Core/Attachment.h"
+#include "Core/Rendering/Core/Nvidia/StreamlineManager.h"
 #include "Core/Rendering/Core/TextureManager.h"
 #include "Core/Rendering/RenderLayer.h"
 #include "Core/Rendering/Vulkan/BackendDefines.h"
@@ -27,6 +28,35 @@ namespace
 bool IsSrgbSwapchainFormat(VkFormat format)
 {
     return format == VK_FORMAT_B8G8R8A8_SRGB || format == VK_FORMAT_R8G8B8A8_SRGB;
+}
+
+bool HasExtension(const stltype::vector<const char*>& extensions, const char* name)
+{
+    for (const char* existing : extensions)
+    {
+        if (strcmp(existing, name) == 0)
+            return true;
+    }
+    return false;
+}
+
+void RemoveExtension(stltype::vector<const char*>& extensions, const char* name)
+{
+    auto it = extensions.begin();
+    while (it != extensions.end())
+    {
+        if (strcmp(*it, name) == 0)
+            it = extensions.erase(it);
+        else
+            ++it;
+    }
+}
+
+void NormalizeBufferDeviceAddressExtensions(stltype::vector<const char*>& extensions)
+{
+    // We use VkPhysicalDeviceVulkan12Features::bufferDeviceAddress, so EXT/KHR BDA extensions
+    // must not be enabled together (and EXT must not be enabled at all in this path).
+    RemoveExtension(extensions, VK_EXT_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
 }
 } // namespace
 
@@ -69,6 +99,9 @@ bool RenderBackendImpl<Vulkan>::Init(uint32_t screenWidth, uint32_t screenHeight
         vkGetInstanceProcAddr(m_instance, "vkCmdBeginDebugUtilsLabelEXT"));
     vkCmdEndDebugUtilsLabel = reinterpret_cast<PFN_vkCmdEndDebugUtilsLabelEXT>(
         vkGetInstanceProcAddr(m_instance, "vkCmdEndDebugUtilsLabelEXT"));
+
+    UpdateGlobals();
+    Nvidia::StreamlineManager::Init();
 
     {
         DEBUG_LOG("Creating Swapchain!");
@@ -193,6 +226,17 @@ bool RenderBackendImpl<Vulkan>::CreateInstance(uint32_t screenWidth, uint32_t sc
     auto instanceExtensions = stltype::vector<const char*>(glfwExtensions, glfwExtensions + glfwExtensionCount);
     instanceExtensions.insert(instanceExtensions.end(), g_instanceExtensions.begin(), g_instanceExtensions.end());
 
+    sl::FeatureRequirements dlssRequirements{};
+    if (Nvidia::StreamlineManager::GetDLSSFeatureRequirements(dlssRequirements))
+    {
+        for (u32 i = 0; i < dlssRequirements.vkNumInstanceExtensions; ++i)
+        {
+            const char* ext = dlssRequirements.vkInstanceExtensions[i];
+            if (!HasExtension(instanceExtensions, ext))
+                instanceExtensions.push_back(ext);
+        }
+    }
+
     uint32_t extensionCount = 0;
     vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
     stltype::vector<VkExtensionProperties> extensions(extensionCount);
@@ -259,22 +303,76 @@ bool RenderBackendImpl<Vulkan>::CreateInstance(uint32_t screenWidth, uint32_t sc
 
 bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
 {
+    sl::FeatureRequirements dlssRequirements{};
+    const bool hasDLSSRequirements = Nvidia::StreamlineManager::GetDLSSFeatureRequirements(dlssRequirements);
+
+    const u32 hostGraphicsQueueCount = 1;
+    const u32 hostComputeQueueCount = 1;
+    const u32 slGraphicsQueueCount = hasDLSSRequirements ? dlssRequirements.vkNumGraphicsQueuesRequired : 0;
+    const u32 slComputeQueueCount = hasDLSSRequirements ? dlssRequirements.vkNumComputeQueuesRequired : 0;
+    u32 finalGraphicsQueueCount = hostGraphicsQueueCount;
+    u32 finalComputeQueueCount = hostComputeQueueCount;
+
     stltype::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
+    stltype::vector<stltype::vector<float>> queuePriorities;
     stltype::set<u32> uniqueQueueFamilies = {m_indices.graphicsFamily.value(),
                                              m_indices.presentFamily.value(),
                                              m_indices.transferFamily.value(),
                                              m_indices.computeFamily.value()};
+    uint32_t queueFamilyCount = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(m_physicalDevice, &queueFamilyCount, nullptr);
+    stltype::vector<VkQueueFamilyProperties> queueFamilyProperties(queueFamilyCount);
+    vkGetPhysicalDeviceQueueFamilyProperties(m_physicalDevice, &queueFamilyCount, queueFamilyProperties.data());
+    queueCreateInfos.reserve(uniqueQueueFamilies.size());
+    queuePriorities.reserve(uniqueQueueFamilies.size());
 
-    float queuePriority = 1.0f;
     for (u32 queueFamily : uniqueQueueFamilies)
     {
+        u32 queueCount = 1;
+        if (queueFamily == m_indices.graphicsFamily.value())
+        {
+            const u32 requiredGraphicsQueues = hostGraphicsQueueCount + slGraphicsQueueCount;
+            queueCount = queueCount > requiredGraphicsQueues ? queueCount : requiredGraphicsQueues;
+        }
+        if (queueFamily == m_indices.computeFamily.value())
+        {
+            const u32 requiredComputeQueues = hostComputeQueueCount + slComputeQueueCount;
+            queueCount = queueCount > requiredComputeQueues ? queueCount : requiredComputeQueues;
+        }
+
+        if (queueFamily < queueFamilyProperties.size())
+        {
+            const u32 availableQueueCount = queueFamilyProperties[queueFamily].queueCount;
+            if (queueCount > availableQueueCount)
+            {
+                DEBUG_LOG_WARN("Vulkan queue family has fewer queues than requested by host/SL requirements");
+                queueCount = availableQueueCount;
+            }
+        }
+
+        queuePriorities.emplace_back(queueCount, 1.0f);
         VkDeviceQueueCreateInfo queueCreateInfo{};
         queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
         queueCreateInfo.queueFamilyIndex = queueFamily;
-        queueCreateInfo.queueCount = 1;
-        queueCreateInfo.pQueuePriorities = &queuePriority;
+        queueCreateInfo.queueCount = queueCount;
+        queueCreateInfo.pQueuePriorities = queuePriorities.back().data();
         queueCreateInfos.push_back(queueCreateInfo);
+
+        if (queueFamily == m_indices.graphicsFamily.value())
+            finalGraphicsQueueCount = queueCount;
+        if (queueFamily == m_indices.computeFamily.value())
+            finalComputeQueueCount = queueCount;
     }
+
+    if (finalGraphicsQueueCount < hostGraphicsQueueCount + slGraphicsQueueCount ||
+        finalComputeQueueCount < hostComputeQueueCount + slComputeQueueCount)
+    {
+        DEBUG_LOG_WARN("Insufficient Vulkan queues for full Streamline DLSS queue requirements");
+    }
+
+    Nvidia::StreamlineManager::SetVulkanQueueStartIndices(
+        finalGraphicsQueueCount > hostGraphicsQueueCount ? hostGraphicsQueueCount : 0,
+        finalComputeQueueCount > hostComputeQueueCount ? hostComputeQueueCount : 0);
 
     uint32_t deviceExtensionCount;
     vkEnumerateDeviceExtensionProperties(m_physicalDevice, nullptr, &deviceExtensionCount, nullptr);
@@ -283,6 +381,15 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
 
     bool hasPageableMemory = false, hasMemoryPriority = false, hasAftermath = false;
     stltype::vector<const char*> enabledExtensions = g_requiredDeviceExtensions;
+    if (hasDLSSRequirements)
+    {
+        for (u32 i = 0; i < dlssRequirements.vkNumDeviceExtensions; ++i)
+        {
+            const char* ext = dlssRequirements.vkDeviceExtensions[i];
+            if (!HasExtension(enabledExtensions, ext))
+                enabledExtensions.push_back(ext);
+        }
+    }
     for (const auto& avail : availableDeviceExtensions)
     {
         if (strcmp(avail.extensionName, VK_EXT_PAGEABLE_DEVICE_LOCAL_MEMORY_EXTENSION_NAME) == 0) hasPageableMemory = true;
@@ -290,13 +397,15 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
         {
             if (strcmp(opt, avail.extensionName) == 0)
             {
-                enabledExtensions.push_back(opt);
+                if (!HasExtension(enabledExtensions, opt))
+                    enabledExtensions.push_back(opt);
                 if (strcmp(opt, VK_NV_DEVICE_DIAGNOSTICS_CONFIG_EXTENSION_NAME) == 0) hasAftermath = true;
                 if (strcmp(opt, VK_EXT_MEMORY_PRIORITY_EXTENSION_NAME) == 0) hasMemoryPriority = true;
             }
         }
     }
     if (hasPageableMemory) enabledExtensions.push_back(VK_EXT_PAGEABLE_DEVICE_LOCAL_MEMORY_EXTENSION_NAME);
+    NormalizeBufferDeviceAddressExtensions(enabledExtensions);
 
     // Feature structs
     VkPhysicalDeviceMemoryPriorityFeaturesEXT memFeat{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PRIORITY_FEATURES_EXT, nullptr, VK_TRUE};
@@ -440,6 +549,17 @@ bool RenderBackendImpl<Vulkan>::AreExtensionsSupported(VkPhysicalDevice device)
     vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, availableExtensions.data());
 
     stltype::set<stltype::string> requiredExtensions(g_requiredDeviceExtensions.begin(), g_requiredDeviceExtensions.end());
+    sl::FeatureRequirements dlssRequirements{};
+    if (Nvidia::StreamlineManager::GetDLSSFeatureRequirements(dlssRequirements))
+    {
+        for (u32 i = 0; i < dlssRequirements.vkNumDeviceExtensions; ++i)
+        {
+            requiredExtensions.insert(dlssRequirements.vkDeviceExtensions[i]);
+        }
+    }
+    // BDA is provided via Vulkan 1.2 features in this renderer; don't require extension variants.
+    requiredExtensions.erase(VK_EXT_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
+    requiredExtensions.erase(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
 
     for (const auto& extension : availableExtensions)
     {
