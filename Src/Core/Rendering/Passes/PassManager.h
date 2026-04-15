@@ -65,6 +65,7 @@ enum class PassType
     Lighting,    // Full screen lighting pass
     TAA,         // Temporal Anti-Aliasing
     SMAA,        // Subpixel Morphological Anti-Aliasing
+    DLSS,        // Deep Learning Super Sampling
     Composite,
     UI,
     Debug,
@@ -90,8 +91,7 @@ inline const stltype::fixed_vector<PassStage, 8> PASS_SCHEDULE = {
     PassStage{{PassType::DepthReliantCompute}},
     PassStage{{PassType::Main, PassType::Debug, PassType::Shadow}},
     PassStage{{PassType::Lighting}},
-    PassStage{{PassType::TAA}},
-    PassStage{{PassType::SMAA}},
+    PassStage{{PassType::TAA, PassType::SMAA, PassType::DLSS}},
     PassStage{{PassType::Composite}},
     PassStage{{PassType::UI}},
 };
@@ -103,7 +103,8 @@ inline bool IsComputePass(PassType type)
            type == PassType::LightTransformCompute || 
            type == PassType::ClusterGenCompute ||
            type == PassType::TileAssignmentCompute ||
-           type == PassType::TAA;
+           type == PassType::TAA ||
+           type == PassType::DLSS;
 }
 
 struct GraphicsFrameContext

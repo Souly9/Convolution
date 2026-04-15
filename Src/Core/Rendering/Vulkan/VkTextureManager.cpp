@@ -13,7 +13,7 @@
 
 #include "Core/Rendering/Core/Utils/DeleteQueue.h"
 #include <cctype>
-#include <dds/dds.hpp>
+#include <tinyddsloader.h>
 #include <vulkan/vulkan.h>
 
 static constexpr u32 MIPMAP_NUM = 4;
@@ -265,7 +265,7 @@ void VkTextureManager::CreateTexture(const FileTextureRequest& req)
     info.format = req.format != TexFormat::UNDEFINED
                       ? req.format
                       : (readInfo.ddsFormat != 0
-                             ? Conv(dds::getVulkanFormat((DXGI_FORMAT)readInfo.ddsFormat, readInfo.supportsAlpha))
+                             ? Conv(GetVkFormatFromDXGI(readInfo.ddsFormat))
                              : ChooseTextureFormatForSemantic(req.semantic));
 
     info.tiling = Tiling::OPTIMAL;
@@ -273,7 +273,7 @@ void VkTextureManager::CreateTexture(const FileTextureRequest& req)
     info.handle = req.handle;
     info.isPersistent = req.isPersistent;
     info.hasMipMaps = mips != 0;
-    info.mipLevels = mips;
+    info.mipLevels = mips > 0 ? mips : 1;
 
     Texture* pTex = CreateTextureImmediate(info);
 
@@ -281,7 +281,26 @@ void VkTextureManager::CreateTexture(const FileTextureRequest& req)
 
     EnqueueAsyncImageLayoutTransition(
         static_cast<Texture*>(pTex), ImageLayout::UNDEFINED, ImageLayout::TRANSFER_DST_OPTIMAL);
-    EnqueueAsyncTextureTransfer(&pStgBuffer, static_cast<Texture*>(pTex), VK_IMAGE_ASPECT_COLOR_BIT);
+    
+    stltype::vector<u32> mipLevels;
+    stltype::vector<u64> mipOffsets;
+    u64 currentOffset = 0;
+    if (mips > 0)
+    {
+        for (u32 i = 0; i < mips; ++i)
+        {
+            mipLevels.push_back(i);
+            mipOffsets.push_back(currentOffset);
+            currentOffset += readInfo.mipmapPixels[i].size;
+        }
+    }
+    else
+    {
+        mipLevels.push_back(0);
+        mipOffsets.push_back(0);
+    }
+
+    EnqueueAsyncTextureTransfer(&pStgBuffer, static_cast<Texture*>(pTex), VK_IMAGE_ASPECT_COLOR_BIT, mipLevels, mipOffsets);
     EnqueueAsyncImageLayoutTransition(
         static_cast<Texture*>(pTex), ImageLayout::TRANSFER_DST_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
@@ -448,7 +467,7 @@ void VkTextureManager::CreateSamplerForTexture(TextureVulkan* pTex, bool useMipM
     else
     {
         samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-        samplerInfo.mipLodBias = 0.0f;
+        samplerInfo.mipLodBias = -0.5f;
         samplerInfo.minLod = 0.0f;
         samplerInfo.maxLod = VK_LOD_CLAMP_NONE;
     }
@@ -507,7 +526,8 @@ void VkTextureManager::EnqueueAsyncImageLayoutTransition(const AsyncLayoutTransi
     ImageLayoutTransitionCmd cmd(request.textures);
     cmd.oldLayout = request.oldLayout;
     cmd.newLayout = request.newLayout;
-    cmd.mipLevel = request.textures.at(0)->GetInfo().mipLevels;
+    cmd.mipLevel = 0;
+    
 
     SetLayoutBarrierMasks(cmd, request.oldLayout, request.newLayout);
 
@@ -672,38 +692,64 @@ VkTextureManager::~VkTextureManager()
 void VkTextureManager::EnqueueAsyncTextureTransfer(StagingBufferVulkan* pStagingBuffer,
                                                    Texture* pTex,
                                                    const VkImageAspectFlagBits flagBit,
-                                                   const stltype::vector<u32>& mips)
+                                                   const stltype::vector<u32>& mips,
+                                                   const stltype::vector<u64>& offsets)
 {
     ScopedZone("VkTextureManager::Enqueue Async Texture Transfer");
 
+
     m_sharedDataMutex.lock();
     pStagingBuffer->Grab();
-    for (auto mip : mips)
+
+    stltype::vector<u32> levels = mips;
+    if (levels.empty())
     {
+        levels.push_back(0);
+    }
+
+    auto callback = [this, pStagingBuffer]()
+    {
+        ScopedZone("VkTextureManager::Async Transfer Callback");
+        m_sharedDataMutex.lock();
+        pStagingBuffer->CleanUp();
+        auto it = stltype::find_if(m_stagingBufferInUse.begin(),
+                                   m_stagingBufferInUse.end(),
+                                   [pStagingBuffer](const auto& cb) { return &cb == pStagingBuffer; });
+        if (it == m_stagingBufferInUse.end())
+        {
+            m_stagingBufferInUse.clear();
+        }
+        m_sharedDataMutex.unlock();
+    };
+
+    for (u32 i = 0; i < levels.size(); ++i)
+    {
+        u32 mip = levels[i];
         ImageBufferCopyCmd cmd{pStagingBuffer, pTex};
         cmd.aspectFlagBits = (u32)flagBit;
-        cmd.imageExtent = pTex->m_info.extents;
+        cmd.mipLevel = mip;
 
-        auto callback = [this, pStagingBuffer]()
+        u32 width = std::max(1u, pTex->m_info.extents.x >> mip);
+        u32 height = std::max(1u, pTex->m_info.extents.y >> mip);
+
+        cmd.imageExtent.x = width;
+        cmd.imageExtent.y = height;
+        cmd.imageExtent.z = 1;
+
+        if (i < offsets.size())
         {
-            ScopedZone("VkTextureManager::Async Transfer Callback");
-            m_sharedDataMutex.lock();
-            pStagingBuffer->CleanUp();
-            auto it = stltype::find_if(m_stagingBufferInUse.begin(),
-                                       m_stagingBufferInUse.end(),
-                                       [pStagingBuffer](const auto& cb) { return &cb == pStagingBuffer; });
-            if (it == m_stagingBufferInUse.end())
-            {
-                m_stagingBufferInUse.clear();
-            }
-            m_sharedDataMutex.unlock();
-        };
-        cmd.optionalCallback = std::bind(callback);
+            cmd.srcOffset = offsets[i];
+        }
+
+        if (i == levels.size() - 1)
+        {
+            cmd.optionalCallback = std::bind(callback);
+        }
 
         CreateTransferCommandBuffer();
         m_transferCommandBuffer->RecordCommand(cmd);
-        m_sharedDataMutex.unlock();
     }
+    m_sharedDataMutex.unlock();
 }
 
 void VkTextureManager::EnqueueAsyncTextureTransfer(StagingBufferVulkan* pStagingBuffer,
@@ -843,7 +889,7 @@ VkImageViewCreateInfo VkTextureManager::GenerateImageViewInfo(VkFormat format, V
 void VkTextureManager::SetNoMipMap(VkImageViewCreateInfo& createInfo, u32 layerCount)
 {
     createInfo.subresourceRange.baseMipLevel = 0;
-    createInfo.subresourceRange.levelCount = 1;
+    createInfo.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
     createInfo.subresourceRange.baseArrayLayer = 0;
     createInfo.subresourceRange.layerCount = layerCount;
 }

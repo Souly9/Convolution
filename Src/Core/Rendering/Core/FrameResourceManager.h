@@ -53,6 +53,7 @@ struct FrameRendererContext
 
     UniformBuffer* pShadowViewUBO{nullptr};
     GPUMappedMemoryHandle pMappedShadowViewUBO{nullptr};
+    GPUMappedMemoryHandle pMappedSharedDataUBO{nullptr};
 
     StorageBuffer* pClusterGridBuffer{nullptr};
     DescriptorSet::Ptr clusterGridDescriptor{nullptr};

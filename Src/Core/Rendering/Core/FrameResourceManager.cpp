@@ -216,6 +216,7 @@ void FrameResourceManager::CreateFrameRendererContexts(
         // Set shadow view UBO pointers for passes to use
         frameContext.pShadowViewUBO = &m_shadowViewUBOs[i];
         frameContext.pMappedShadowViewUBO = m_mappedShadowViewUBOs[i];
+        frameContext.pMappedSharedDataUBO = m_mappedSharedDataUBOBuffer;
 
         UBO::SharedDataUBO sharedData{};
         UpdateSharedDataUBO((const void*)&sharedData, sizeof(UBO::SharedDataUBO), (u32)i);

@@ -185,7 +185,8 @@ public:
     void EnqueueAsyncTextureTransfer(StagingBufferVulkan* pStagingBuffer,
                                      Texture* pTex,
                                      const VkImageAspectFlagBits flagBit,
-                                    const stltype::vector<u32>& mips);
+                                    const stltype::vector<u32>& mips = {},
+                                    const stltype::vector<u64>& offsets = {});
     void EnqueueAsyncTextureTransfer(StagingBufferVulkan* pStagingBuffer,
                                      const TextureHandle handle,
                                      const VkImageAspectFlagBits flagBit);

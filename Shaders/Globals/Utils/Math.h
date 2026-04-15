@@ -26,8 +26,8 @@ FUNC_QUALIFIER vec2 ComputeVelocity(vec4 currClipPos, vec4 prevClipPos)
     vec2 currUV = currNDC * 0.5 + 0.5;
     vec2 prevUV = prevNDC * 0.5 + 0.5;
     
-    currUV.y = 1.0 - currUV.y;
-    prevUV.y = 1.0 - prevUV.y;
+    currUV.y = - currUV.y;
+    prevUV.y = - prevUV.y;
 
     return currUV - prevUV;
 }

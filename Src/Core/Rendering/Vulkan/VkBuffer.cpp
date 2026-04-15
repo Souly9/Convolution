@@ -121,7 +121,7 @@ void GenBufferVulkan::NamingCallBack(const stltype::string& name)
 void GenBufferVulkan::MapAndCopyToMemory(const GPUMemoryHandle& memory, const void* data, u64 size, u64 offset)
 {
     const auto bufferData = g_pGPUMemoryManager->MapMemory(memory, size);
-    memcpy((char*)bufferData, data, (size_t)size);
+    memcpy((char*)bufferData + offset, data, (size_t)size);
     g_pGPUMemoryManager->UnmapMemory(memory);
 }
 

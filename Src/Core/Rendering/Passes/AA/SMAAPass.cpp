@@ -43,11 +43,27 @@ void SMAAPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResource
     // Upload SMAA textures
 
     auto searchHandle = g_pTexManager->SubmitAsyncTextureCreation(
-        {"Resources/Textures/SearchTex.dds", false, TextureSemantic::Data, true});
-    auto placeholderHandle = g_pTexManager->SubmitAsyncTextureCreation(
-        {"Resources/Textures/AreaTexDX10.dds", false, TextureSemantic::Data, true});
+        {"Resources\\Textures\\SearchTex.dds", false, TextureSemantic::Data, true});
+    
+    ReadTextureInfo areaTexInfo{};
+    areaTexInfo.pixels = (unsigned char*)areaTexBytes;
+    areaTexInfo.extents = {AREATEX_WIDTH, AREATEX_HEIGHT};
+    areaTexInfo.dataSize = AREATEX_SIZE;
+    areaTexInfo.autoFree = false;
+    areaTexInfo.filePath = "SMAA_AreaTex";
+
+    FileTextureRequest areaReq{};
+    areaReq.ioInfo = areaTexInfo;
+    areaReq.handle = g_pTexManager->GenerateHandle();
+    areaReq.makeBindless = true;
+    areaReq.isPersistent = true;
+    areaReq.format = TexFormat::R8G8_UNORM;
+    areaReq.semantic = TextureSemantic::Data;
+
+    g_pTexManager->SubmitTextureRequest(areaReq);
+    
     m_searchTexBindless = g_pTexManager->MakeTextureBindless(searchHandle, true);
-    m_areaTexBindless = g_pTexManager->MakeTextureBindless(placeholderHandle, true);
+    m_areaTexBindless = g_pTexManager->MakeTextureBindless(areaReq.handle, true);
 
     BuildPipelines();
 }

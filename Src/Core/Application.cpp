@@ -14,12 +14,14 @@
 #include <imgui/backends/imgui_impl_vulkan.h>
 #include <imgui/imgui.h>
 #include "Core/Rendering/Vulkan/VkProfiler.h"
-#include "dds_formats.hpp"
+#include "Core/Rendering/Core/Nvidia/StreamlineManager.h"
 #include "vulkan/vulkan_core.h"
 
 
 Application::Application(bool canRender, RenderLayer<RenderAPI>& layer) : m_renderThread(&m_imGuiManager)
 {
+    Nvidia::StreamlineManager::EarlyInit();
+
     m_pProfiler = stltype::make_unique<VkProfiler>();
     VkGlobals::SetProfiler(m_pProfiler.get());
     g_pApplicationState = &m_applicationState;
@@ -31,6 +33,8 @@ Application::Application(bool canRender, RenderLayer<RenderAPI>& layer) : m_rend
     m_pProfiler->Init();
     g_pQueueHandler->Init();
     g_pTexManager->Init();
+
+    Nvidia::StreamlineManager::Init();
 
     // Load placeholder first
     auto placeholderHandle = g_pTexManager->SubmitAsyncTextureCreation({"Resources\\Textures\\placeholder.png", false, TextureSemantic::BaseColor, true});
@@ -76,6 +80,8 @@ Application::~Application()
     
     m_pProfiler->Destroy();
     VkGlobals::SetProfiler(nullptr);
+
+    Nvidia::StreamlineManager::Shutdown();
 
     m_imGuiManager.CleanUp();
 }

@@ -9,6 +9,168 @@
 #include "TextureEnums.h"
 #include "Core/Rendering/Core/RenderDefinitions.h"
 
+inline u32 GetFormatSize(const TexFormat& m)
+{
+    switch (m)
+    {
+        case TexFormat::R8_UNORM:
+        case TexFormat::R8_SNORM:
+        case TexFormat::R8_UINT:
+        case TexFormat::R8_SINT:
+            return 1;
+        case TexFormat::R8G8_UNORM:
+        case TexFormat::R8G8_SNORM:
+        case TexFormat::R8G8_UINT:
+        case TexFormat::R8G8_SINT:
+        case TexFormat::R16_UNORM:
+        case TexFormat::R16_SNORM:
+        case TexFormat::R16_UINT:
+        case TexFormat::R16_SINT:
+        case TexFormat::R16_FLOAT:
+        case TexFormat::D16_UNORM:
+            return 2;
+        case TexFormat::R8G8B8_UNORM:
+        case TexFormat::R8G8B8_SNORM:
+        case TexFormat::R8G8B8_UINT:
+        case TexFormat::R8G8B8_SINT:
+        case TexFormat::B8G8R8_UNORM:
+        case TexFormat::B8G8R8_SNORM:
+        case TexFormat::B8G8R8_UINT:
+        case TexFormat::B8G8R8_SINT:
+            return 3;
+        case TexFormat::R8G8B8A8_UNORM:
+        case TexFormat::R8G8B8A8_SNORM:
+        case TexFormat::R8G8B8A8_UINT:
+        case TexFormat::R8G8B8A8_SINT:
+        case TexFormat::B8G8R8A8_UNORM:
+        case TexFormat::B8G8R8A8_SNORM:
+        case TexFormat::B8G8R8A8_UINT:
+        case TexFormat::B8G8R8A8_SINT:
+        case TexFormat::R8G8B8A8_SRGB:
+        case TexFormat::B8G8R8A8_SRGB:
+        case TexFormat::R16G16_UNORM:
+        case TexFormat::R16G16_SNORM:
+        case TexFormat::R16G16_UINT:
+        case TexFormat::R16G16_SINT:
+        case TexFormat::R16G16_FLOAT:
+        case TexFormat::R32_UINT:
+        case TexFormat::R32_SINT:
+        case TexFormat::R32_FLOAT:
+        case TexFormat::R10G10B10A2_UNORM:
+        case TexFormat::R10G10B10A2_UINT:
+        case TexFormat::R11G11B10_FLOAT:
+        case TexFormat::RGB9E5_FLOAT:
+        case TexFormat::D32_SFLOAT:
+        case TexFormat::D24_UNORM_S8_UINT:
+        case TexFormat::X8_D24_UNORM_PACK32:
+            return 4;
+        case TexFormat::R16G16B16_UNORM:
+        case TexFormat::R16G16B16_SNORM:
+        case TexFormat::R16G16B16_UINT:
+        case TexFormat::R16G16B16_SINT:
+        case TexFormat::R16G16B16_FLOAT:
+            return 6;
+        case TexFormat::R16G16B16A16_UNORM:
+        case TexFormat::R16G16B16A16_SNORM:
+        case TexFormat::R16G16B16A16_UINT:
+        case TexFormat::R16G16B16A16_SINT:
+        case TexFormat::R16G16B16A16_FLOAT:
+        case TexFormat::R32G32_UINT:
+        case TexFormat::R32G32_SINT:
+        case TexFormat::R32G32_FLOAT:
+            return 8;
+        case TexFormat::R32G32B32_UINT:
+        case TexFormat::R32G32B32_SINT:
+        case TexFormat::R32G32B32_FLOAT:
+            return 12;
+        case TexFormat::R32G32B32A32_UINT:
+        case TexFormat::R32G32B32A32_SINT:
+        case TexFormat::R32G32B32A32_FLOAT:
+            return 16;
+        default:
+            return 0;
+    }
+}
+
+inline bool IsCompressed(const TexFormat& m)
+{
+    switch (m)
+    {
+        case TexFormat::BC1_RGB_UNORM:
+        case TexFormat::BC1_RGB_SRGB:
+        case TexFormat::BC1_RGBA_UNORM:
+        case TexFormat::BC1_RGBA_SRGB:
+        case TexFormat::BC2_UNORM:
+        case TexFormat::BC2_SRGB:
+        case TexFormat::BC3_UNORM:
+        case TexFormat::BC3_SRGB:
+        case TexFormat::BC4_UNORM:
+        case TexFormat::BC4_SNORM:
+        case TexFormat::BC5_UNORM:
+        case TexFormat::BC5_SNORM:
+        case TexFormat::BC6H_UFLOAT:
+        case TexFormat::BC6H_SFLOAT:
+        case TexFormat::BC7_UNORM:
+        case TexFormat::BC7_SRGB:
+            return true;
+        default:
+            return false;
+    }
+}
+
+inline u32 GetFormatBlockSize(const TexFormat& m)
+{
+    switch (m)
+    {
+        case TexFormat::BC1_RGB_UNORM:
+        case TexFormat::BC1_RGB_SRGB:
+        case TexFormat::BC1_RGBA_UNORM:
+        case TexFormat::BC1_RGBA_SRGB:
+        case TexFormat::BC4_UNORM:
+        case TexFormat::BC4_SNORM:
+            return 8;
+        case TexFormat::BC2_UNORM:
+        case TexFormat::BC2_SRGB:
+        case TexFormat::BC3_UNORM:
+        case TexFormat::BC3_SRGB:
+        case TexFormat::BC5_UNORM:
+        case TexFormat::BC5_SNORM:
+        case TexFormat::BC6H_UFLOAT:
+        case TexFormat::BC6H_SFLOAT:
+        case TexFormat::BC7_UNORM:
+        case TexFormat::BC7_SRGB:
+            return 16;
+        default:
+            return 0;
+    }
+}
+
+inline VkFormat GetVkFormatFromDXGI(u32 dxgiFormat)
+{
+    switch (dxgiFormat)
+    {
+        case 61: return VK_FORMAT_R8_UNORM; // DXGI_FORMAT_R8_UNORM
+        case 49: return VK_FORMAT_R8G8_UNORM; // DXGI_FORMAT_R8G8_UNORM
+        case 28: return VK_FORMAT_R8G8B8A8_UNORM; // DXGI_FORMAT_R8G8B8A8_UNORM
+        case 87: return VK_FORMAT_B8G8R8A8_UNORM; // DXGI_FORMAT_B8G8R8A8_UNORM
+        case 71: return VK_FORMAT_BC1_RGB_UNORM_BLOCK; // DXGI_FORMAT_BC1_UNORM
+        case 72: return VK_FORMAT_BC1_RGB_SRGB_BLOCK; // DXGI_FORMAT_BC1_UNORM_SRGB
+        case 74: return VK_FORMAT_BC2_UNORM_BLOCK; // DXGI_FORMAT_BC2_UNORM
+        case 75: return VK_FORMAT_BC2_SRGB_BLOCK; // DXGI_FORMAT_BC2_UNORM_SRGB
+        case 77: return VK_FORMAT_BC3_UNORM_BLOCK; // DXGI_FORMAT_BC3_UNORM
+        case 78: return VK_FORMAT_BC3_SRGB_BLOCK; // DXGI_FORMAT_BC3_UNORM_SRGB
+        case 80: return VK_FORMAT_BC4_UNORM_BLOCK; // DXGI_FORMAT_BC4_UNORM
+        case 81: return VK_FORMAT_BC4_SNORM_BLOCK; // DXGI_FORMAT_BC4_SNORM
+        case 83: return VK_FORMAT_BC5_UNORM_BLOCK; // DXGI_FORMAT_BC5_UNORM
+        case 84: return VK_FORMAT_BC5_SNORM_BLOCK; // DXGI_FORMAT_BC5_SNORM
+        case 95: return VK_FORMAT_BC6H_UFLOAT_BLOCK; // DXGI_FORMAT_BC6H_UF16
+        case 96: return VK_FORMAT_BC6H_SFLOAT_BLOCK; // DXGI_FORMAT_BC6H_SF16
+        case 98: return VK_FORMAT_BC7_UNORM_BLOCK; // DXGI_FORMAT_BC7_UNORM
+        case 99: return VK_FORMAT_BC7_SRGB_BLOCK; // DXGI_FORMAT_BC7_UNORM_SRGB
+        default: DEBUG_ASSERT(false); return VK_FORMAT_R8_UNORM;
+    }
+}
+
 inline VkFormat Conv(const TexFormat& m)
 {
     switch (m)

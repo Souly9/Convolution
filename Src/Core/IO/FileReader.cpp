@@ -6,7 +6,8 @@
 #include <fstream>
 #undef abs
 #define STBI_NO_SIMD
-#include <dds/dds.hpp>
+#define TINYDDSLOADER_IMPLEMENTATION
+#include <tinyddsloader.h>
 #include <stb/stb_image.h>
 
 
@@ -148,34 +149,46 @@ void FileReader::ReadImageFile(const IORequest& request)
 
     if (isDDS)
     {
-        dds::Image img;
-        if (dds::readFile(request.filePath.data(), &img) != dds::ReadResult::Success)
+        tinyddsloader::DDSFile dds;
+        auto rslt = dds.Load(request.filePath.data());
+        if (rslt != tinyddsloader::Result::Success)
         {
             DEBUG_LOGF("[FileReader] Failed to load DDS: {}", request.filePath.data());
             return;
         }
 
-        if (img.mipmaps.empty())
+        if (dds.GetMipCount() == 0)
         {
             DEBUG_LOGF("[FileReader] Empty mipmaps in DDS: {}", request.filePath.data());
             return;
         }
 
-        info.extents.x = img.width;
-        info.extents.y = img.height;
-        info.ddsFormat = (u32)img.format;
-        info.mipmapPixels.reserve(img.mipmaps.size());
+        info.extents.x = dds.GetWidth();
+        info.extents.y = dds.GetHeight();
+        info.ddsFormat = (u32)dds.GetFormat();
+        info.mipmapPixels.reserve(dds.GetMipCount());
         u64 imageSize = 0;
-        for (u32 i = 0; i < img.mipmaps.size(); ++i)
+        for (u32 i = 0; i < dds.GetMipCount(); ++i)
         {
-            auto& mipData =  info.mipmapPixels.emplace_back();
-            auto& pMipData = mipData.pData;
-            mipData.size = img.mipmaps[i].size_bytes();
-            pMipData = (unsigned char*)malloc(mipData.size);
-            memcpy(pMipData, img.mipmaps[i].data(), mipData.size);
+            auto imageData = dds.GetImageData(i, 0);
+            auto& mipData = info.mipmapPixels.emplace_back();
+            mipData.size = imageData->m_memSlicePitch;
+            mipData.pData = (unsigned char*)malloc(mipData.size);
+            memcpy(mipData.pData, imageData->m_mem, mipData.size);
             imageSize = imageSize + mipData.size;
         }
-        info.supportsAlpha = img.supportsAlpha;
+        
+        // Check if format has alpha. This is a bit simplified but usually works for common DDS formats.
+        auto format = dds.GetFormat();
+        info.supportsAlpha = true; // Most DXGI formats we care about support alpha, or we can check specifically if needed
+        using DXGIFormat = tinyddsloader::DDSFile::DXGIFormat;
+        if (format == DXGIFormat::BC4_SNorm || format == DXGIFormat::BC4_UNorm ||
+            format == DXGIFormat::BC5_SNorm || format == DXGIFormat::BC5_UNorm ||
+            format == DXGIFormat::R8_UNorm || format == DXGIFormat::R8G8_UNorm)
+        {
+            info.supportsAlpha = false;
+        }
+
         info.dataSize = imageSize;
     }
     else

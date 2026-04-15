@@ -23,6 +23,7 @@
 #include "StaticMeshPass.h"
 #include "AA/TAAPass.h"
 #include "AA/SMAAPass.h"
+#include "AA/DLSSPass.h"
 #include "Compositing/LightingPass.h"
 #include "Core/Rendering/Core/ProfilingUtils.h"
 #include "vulkan/vulkan_core.h"
@@ -55,6 +56,7 @@ void PassManager::InitResourceManagerAndCallbacks()
     AddPass(PassType::Lighting, stltype::make_unique<RenderPasses::LightingPass>());
     AddPass(PassType::TAA, stltype::make_unique<RenderPasses::TAAPass>());
     AddPass(PassType::SMAA, stltype::make_unique<RenderPasses::SMAAPass>());
+    AddPass(PassType::DLSS, stltype::make_unique<RenderPasses::DLSSPass>());
     AddPass(PassType::Composite, stltype::make_unique<RenderPasses::CompositPass>());
 }
 
@@ -447,6 +449,8 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
 
         // We prepare Resolve for SHADER_READ since SMAA will sample it
         RecordResolveToRead(pFinalWorkBuffer);
+
+        RenderPassGroup(PassType::DLSS, mainPassData, ctx, pFinalWorkBuffer);
 
         RenderPassGroup(PassType::SMAA, mainPassData, ctx, pFinalWorkBuffer);
 

@@ -277,7 +277,8 @@ static void RecordCommand(ImageLayoutTransitionCmd& cmd, CBufferVulkan& buffer)
         memoryBarrier.subresourceRange.baseArrayLayer = cmd.baseArrayLayer;
         memoryBarrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
         memoryBarrier.subresourceRange.baseMipLevel = cmd.mipLevel;
-        memoryBarrier.subresourceRange.levelCount = cmd.levelCount;
+        memoryBarrier.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+
 
         memoryBarrier.image = image->GetImage();
     }
