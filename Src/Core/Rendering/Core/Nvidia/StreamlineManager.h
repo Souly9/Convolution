@@ -15,6 +15,7 @@ public:
 
     static bool GetFrameToken(u32 frameIdx, sl::FrameToken*& pFrameToken);
     static bool GetDLSSFeatureRequirements(sl::FeatureRequirements& requirements);
+    static bool GetDLSSOptimalSettings(u32 width, u32 height, sl::DLSSMode mode, sl::DLSSOptimalSettings& settings);
     static void SetVulkanQueueStartIndices(u32 graphicsQueueIndex, u32 computeQueueIndex);
     static bool EnsureDLSSConfigured(u32 width, u32 height, sl::DLSSMode mode);
     static bool ConsumeDLSSResetFlag();

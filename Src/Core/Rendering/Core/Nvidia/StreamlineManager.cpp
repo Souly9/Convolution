@@ -207,6 +207,16 @@ bool StreamlineManager::GetDLSSFeatureRequirements(sl::FeatureRequirements& requ
     return g_slGetFeatureRequirements(sl::kFeatureDLSS, requirements) == sl::Result::eOk;
 }
 
+bool StreamlineManager::GetDLSSOptimalSettings(u32 width, u32 height, sl::DLSSMode mode, sl::DLSSOptimalSettings& settings)
+{
+    if (!s_initialized) return false;
+    sl::DLSSOptions options{};
+    options.mode = mode;
+    options.outputWidth = width;
+    options.outputHeight = height;
+    return slDLSSGetOptimalSettings(options, settings) == sl::Result::eOk;
+}
+
 void StreamlineManager::SetVulkanQueueStartIndices(u32 graphicsQueueIndex, u32 computeQueueIndex)
 {
     g_slGraphicsQueueStartIndex = graphicsQueueIndex;

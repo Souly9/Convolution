@@ -86,7 +86,7 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     const auto outputExtents = pColorOut->GetInfo().extents;
 
     // For now, just native mode (DLAA). Reconfigure only on mode/resolution changes.
-    constexpr sl::DLSSMode kDlssMode = sl::DLSSMode::eDLAA;
+    constexpr sl::DLSSMode kDlssMode = sl::DLSSMode::eMaxQuality;
     if (!Nvidia::StreamlineManager::EnsureDLSSConfigured(outputExtents.x, outputExtents.y, kDlssMode))
         return;
     if (Nvidia::StreamlineManager::IsDLSSEvaluateBlocked())
@@ -157,7 +157,7 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
 
     const mathstl::Vector2 jitter =
         GenerateR2Jitter(static_cast<int>(FrameGlobals::GetJitterFrameNumber()));
-    slConst.jitterOffset = {-jitter.x, -jitter.y};
+    slConst.jitterOffset = {jitter.x, jitter.y};
     slConst.mvecScale = {1.0f, 1.0f};
     slConst.cameraPinholeOffset = {0.0f, 0.0f};
     slConst.cameraPos = {data.mainView.position.x, data.mainView.position.y, data.mainView.position.z};

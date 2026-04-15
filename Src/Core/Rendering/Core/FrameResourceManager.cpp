@@ -12,6 +12,7 @@
 #include "Core/Rendering/Vulkan/Utils/VkDescriptorLayoutUtils.h"
 #include "Core/Rendering/Vulkan/VkDescriptorPool.h"
 #include "Core/Rendering/Vulkan/VkTexture.h"
+#include "Core/Rendering/Core/Nvidia/StreamlineManager.h"
 #include "Core/WindowManager.h"
 #include <EASTL/algorithm.h>
 
@@ -62,9 +63,20 @@ void FrameResourceManager::BuildSharedDataForView(const RenderView& mainView,
         renderState.aaType == AntialiasingType::DLSS)
     {
         mathstl::Vector2 jitter = GenerateR2Jitter(static_cast<int>(FrameGlobals::GetJitterFrameNumber()));
-        const auto extents = FrameGlobals::GetSwapChainExtent();
+        auto extents = FrameGlobals::GetSwapChainExtent();
+        
+        if (renderState.aaType == AntialiasingType::DLSS)
+        {
+            sl::DLSSOptimalSettings settings{};
+            if (Nvidia::StreamlineManager::GetDLSSOptimalSettings(static_cast<u32>(extents.x), static_cast<u32>(extents.y), sl::DLSSMode::eMaxQuality, settings))
+            {
+                extents.x = static_cast<f32>(settings.renderWidth);
+                extents.y = static_cast<f32>(settings.renderHeight);
+            }
+        }
+
         projMat._31 -= 2.0f * jitter.x / extents.x;
-        projMat._32 -= 2.0f * jitter.y / extents.y;
+        projMat._32 += 2.0f * jitter.y / extents.y;
         ubo.jitteredProjection = viewMat * projMat;
         ubo.jitteredViewProjectionInverse = ubo.jitteredProjection.Invert();
     }
