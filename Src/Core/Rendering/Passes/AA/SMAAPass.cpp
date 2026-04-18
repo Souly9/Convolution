@@ -142,10 +142,10 @@ void SMAAPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     ScopedZone("SMAAPass::Render");
     StartRenderPassProfilingScope(pCmdBuffer);
 
-    UpdateContextForFrame(ctx.currentFrame);
+    UpdateContextForFrame(ctx.imageIdx);
     auto& cmdBuf = m_indirectCmdBuffers[m_currentFrameIdx];
 
-    const auto extentsXY = FrameGlobals::GetSwapChainExtent();
+    const auto extentsXY = data.renderState.renderResolution;
     const DirectX::XMINT2 extents(extentsXY.x, extentsXY.y);
     auto& sceneGeometryBuffers = data.pResourceManager->GetSceneGeometryBuffers();
     if (sceneGeometryBuffers.GetVertexBuffer().GetRef() == VK_NULL_HANDLE ||

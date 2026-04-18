@@ -1,6 +1,7 @@
 #pragma once
 #include "../Utils/MemoryUtilities.h"
 #include "Core/Global/GlobalDefines.h"
+#include <chrono>
 #include <GLFW/glfw3.h>
 
 struct GLFWwindow;
@@ -14,6 +15,9 @@ public:
     GLFWwindow* GetWindow() const noexcept;
 
     void Close() noexcept;
+    void SetScreenSize(uint32_t width, uint32_t height) noexcept;
+    void QueueSwapchainRecreation(uint32_t width, uint32_t height) noexcept;
+    void Update() noexcept;
 
     uint32_t GetScreenHeight() const noexcept
     {
@@ -35,6 +39,10 @@ private:
 
     stltype::unique_ptr<GLFWwindow, DestroyglfwWin> m_pWindow{nullptr};
     stltype::string m_title;
-    uint32_t m_screenHeight;
-    uint32_t m_screenWidth;
+    uint32_t m_screenHeight{0};
+    uint32_t m_screenWidth{0};
+    uint32_t m_pendingScreenHeight{0};
+    uint32_t m_pendingScreenWidth{0};
+    bool m_hasPendingSwapchainRecreation{false};
+    std::chrono::steady_clock::time_point m_lastResizeTime{};
 };

@@ -124,7 +124,7 @@ void DebugShapePass::Render(const MainPassData& data,
                                           CommandBuffer* pCmdBuffer)
 {
     ScopedZone("DebugShapePass::Render");
-    const auto currentFrame = ctx.currentFrame;
+    const auto currentFrame = ctx.imageIdx;
     UpdateContextForFrame(currentFrame);
     const auto& passCtx = m_perObjectFrameContexts[currentFrame];
 
@@ -132,8 +132,7 @@ void DebugShapePass::Render(const MainPassData& data,
     debugAttachment.SetTexture(data.pGbuffer->Get(GBufferTextureType::GBufferDebug));
 
     stltype::vector<ColorAttachment> colorAttachments = {debugAttachment};
-    const auto ex = ctx.pCurrentSwapchainTexture->GetInfo().extents;
-    const DirectX::XMINT2 extents(ex.x, ex.y);
+    const DirectX::XMINT2 extents(data.renderState.renderResolution.x, data.renderState.renderResolution.y);
 
     auto& sceneGeometryBuffers = data.pResourceManager->GetDebugGeometryBuffers();
     if (sceneGeometryBuffers.GetVertexBuffer().GetRef() == VK_NULL_HANDLE ||

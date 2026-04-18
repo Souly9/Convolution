@@ -14,6 +14,8 @@ public:
 
     bool Cleanup();
 
+    bool RecreateSwapChain();
+
     bool AreValidationLayersAvailable(const stltype::vector<VkLayerProperties>& availableExtensions);
 
     void CreateDebugMessenger();
@@ -86,6 +88,7 @@ private:
     SwapChainSupportDetails QuerySwapChainSupport(VkPhysicalDevice device);
     VkSurfaceFormatKHR ChooseSwapSurfaceFormat(const stltype::vector<VkSurfaceFormatKHR>& availableFormats);
     VkPresentModeKHR ChooseSwapPresentMode(const stltype::vector<VkPresentModeKHR>& availablePresentModes);
+    DirectX::XMUINT2 GetWindowFramebufferExtent() const;
     DirectX::XMUINT2 ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
     bool CreateSwapChain();
     void CreateSwapChainImages();

@@ -114,8 +114,7 @@ void StaticMainMeshPass::Render(const MainPassData& data,
 
     stltype::vector<ColorAttachment> colorAttachments = {gbufferPosition, gbufferNormal, gbuffer3, gbufferVelocity};
 
-    const auto ex = ctx.pCurrentSwapchainTexture->GetInfo().extents;
-    const DirectX::XMINT2 extents(ex.x, ex.y);
+    const DirectX::XMINT2 extents(data.renderState.renderResolution.x, data.renderState.renderResolution.y);
 
     m_mainRenderingData.depthAttachment.SetTexture(data.pMainDepthTexture);
     BeginRenderingCmd cmdBegin{&m_mainPSO, ToRenderAttachmentInfos(colorAttachments), ToRenderAttachmentInfo(m_mainRenderingData.depthAttachment)};

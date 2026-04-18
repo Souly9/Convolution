@@ -5,11 +5,6 @@
 #include "Core/Global/State/ApplicationState.h"
 #include "EventUtils.h"
 
-struct WindowResizeEventData
-{
-    f32 x, y;
-};
-using WindowResizeEventCallback = stltype::fixed_function<16, void(const WindowResizeEventData&)>;
 struct NextFrameEventData
 {
     u32 frameIdx;
@@ -25,6 +20,18 @@ struct ShaderHotReloadEventData
 {
 };
 using ShaderHotReloadEventCallback = stltype::fixed_function<8, void(const ShaderHotReloadEventData&)>;
+
+struct SwapchainRecreationEventData
+{
+};
+using SwapchainRecreationEventCallback = stltype::fixed_function<8, void(const SwapchainRecreationEventData&)>;
+struct SwapchainRecreatedEventData
+{
+    mathstl::Vector2 swapchainResolution{};
+    mathstl::Vector2 renderResolution{};
+    bool swapchainWasRecreated{false};
+};
+using SwapchainRecreatedEventCallback = stltype::fixed_function<16, void(const SwapchainRecreatedEventData&)>;
 struct SceneLoadedEventData
 {
 };

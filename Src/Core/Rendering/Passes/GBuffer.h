@@ -34,7 +34,7 @@ struct GBufferInfo
             case GBufferTextureType::GBufferDebug:
                 return TexFormat::R16G16B16A16_FLOAT;
             case GBufferTextureType::GBufferVelocity:
-                return TexFormat::R16G16_FLOAT;
+                return TexFormat::R32G32_FLOAT;
             case GBufferTextureType::GBufferLastFrameColor:
             case GBufferTextureType::GBufferThisFrameColor:
             case GBufferTextureType::GBufferResolve:

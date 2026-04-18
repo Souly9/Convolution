@@ -20,9 +20,12 @@ namespace RenderPasses
 {
 
 void FrameResourceManager::BuildSharedDataForView(const RenderView& mainView,
+                                                  const mathstl::Vector2& renderResolution,
+                                                  u64 jitterFrameNumber,
                                                   UBO::SharedDataUBO& ubo,
                                                   mathstl::Matrix& viewMat,
-                                                  mathstl::Matrix& viewProj) const
+                                                  mathstl::Matrix& viewProj,
+                                                  mathstl::Vector2& jitter) const
 {
     ScopedZone("BuildSharedDataForView");
     const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
@@ -40,7 +43,7 @@ void FrameResourceManager::BuildSharedDataForView(const RenderView& mainView,
 
     viewMat = Matrix::CreateLookAt(viewPos, rotatedFocusPos, upVector);
     Matrix projMat = Matrix::CreatePerspectiveFieldOfView(DirectX::XMConvertToRadians(mainView.fov),
-                                                          FrameGlobals::GetScreenAspectRatio(),
+                                                          renderResolution.x / renderResolution.y,
                                                           stltype::max(mainView.zNear, 0.000001f),
                                                           mainView.zFar);
     // Previous frame view data
@@ -50,6 +53,7 @@ void FrameResourceManager::BuildSharedDataForView(const RenderView& mainView,
 
     // Current frame view data
     viewProj = viewMat * projMat;
+    ubo.viewProjectionInverse = viewProj.Invert();
     ubo.viewInverse = viewMat.Invert();
     ubo.projectionInverse = projMat.Invert();
     ubo.view = viewMat;
@@ -61,16 +65,16 @@ void FrameResourceManager::BuildSharedDataForView(const RenderView& mainView,
     if (renderState.aaType == AntialiasingType::TAA_SMAA ||
         renderState.aaType == AntialiasingType::DLSS)
     {
-        mathstl::Vector2 jitter = GenerateR2Jitter(static_cast<int>(FrameGlobals::GetJitterFrameNumber()));
-        auto extents = FrameGlobals::GetSwapChainExtent();
+        jitter = GenerateR2Jitter(static_cast<int>(jitterFrameNumber));
 
-        projMat._31 -= 2.0f * jitter.x / extents.x;
-        projMat._32 += 2.0f * jitter.y / extents.y;
+        projMat._31 -= 2.0f * jitter.x / renderResolution.x;
+        projMat._32 += 2.0f * jitter.y / renderResolution.y;
         ubo.jitteredProjection = viewMat * projMat;
         ubo.jitteredViewProjectionInverse = ubo.jitteredProjection.Invert();
     }
     else
     {
+        jitter = mathstl::Vector2::Zero;
         ubo.jitteredProjection = viewProj;
         ubo.jitteredViewProjectionInverse = viewProj.Invert();
     }
@@ -226,10 +230,12 @@ void FrameResourceManager::CreateFrameRendererContexts(
 }
 
 void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
+                                                         u64 jitterFrameNumber,
                                                          u32 currentSwapChainIdx,
                                                          PassManager* pPassManager)
 {
     const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+    const auto& passManagerRenderState = pPassManager->GetRenderState();
     // Recreate shadow maps
     {
         const auto csmCascades = renderState.directionalLightCascades;
@@ -273,7 +279,15 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
         const auto& mainView = m_dataToBePreProcessed.mainView;
         mathstl::Matrix viewMat{};
         mathstl::Matrix viewProj{};
-        BuildSharedDataForView(mainView, m_currentSharedDataUBO, viewMat, viewProj);
+        mathstl::Vector2 jitter{};
+        BuildSharedDataForView(mainView,
+                               passManagerRenderState.renderResolution,
+                               jitterFrameNumber,
+                               m_currentSharedDataUBO,
+                               viewMat,
+                               viewProj,
+                               jitter);
+        pPassManager->SetRenderJitter(jitter);
 
         UpdateSharedDataUBO(&m_currentSharedDataUBO, sizeof(UBO::SharedDataUBO), currentSwapChainIdx);
 
@@ -292,8 +306,8 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
             });
 
         passData.mainView = mainView;
-        passData.mainView.viewport =
-            RenderViewUtils::CreateViewportFromData(FrameGlobals::GetSwapChainExtent(), mainView.zNear, mainView.zFar);
+        passData.mainView.viewport = RenderViewUtils::CreateViewportFromData(
+            passManagerRenderState.renderResolution, mainView.zNear, mainView.zFar);
 
         auto& ctx = m_frameRendererContexts[currentSwapChainIdx];
         ctx.zNear = mainView.zNear;
@@ -394,8 +408,10 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
             {
                 pPassManager->GetResourceManager().UpdateInstanceDataSSBO(passData.staticMeshPassData,
                                                                           currentSwapChainIdx);
+                const u32 previousImageIdx =
+                    (currentSwapChainIdx == 0) ? (SWAPCHAIN_IMAGES - 1) : (currentSwapChainIdx - 1);
                 pPassManager->PreProcessMeshDataPublic(
-                    passData.staticMeshPassData, FrameGlobals::GetPreviousFrameNumber(frameIdx), frameIdx);
+                    passData.staticMeshPassData, previousImageIdx, currentSwapChainIdx);
             }
             pPassManager->TransferPassDataPublic(std::move(passData), m_dataToBePreProcessed.frameIdx);
         }
@@ -412,7 +428,8 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
         if (prevDirtyMin <= prevDirtyMax)
         {
             const u32 prevDirtyCount = prevDirtyMax - prevDirtyMin + 1;
-            resourceManager.UpdatePrevTransformRange(m_cachedTransformSSBO, prevDirtyMin, prevDirtyCount);
+            resourceManager.UpdatePrevTransformRange(
+                m_cachedTransformSSBO, prevDirtyMin, prevDirtyCount, currentSwapChainIdx);
         }
         m_transformsToPropagateToPrev.clear();
 
@@ -445,8 +462,8 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
         if (dirtyMin <= dirtyMax)
         {
             const u32 dirtyCount = dirtyMax - dirtyMin + 1;
-            resourceManager.UpdateTransformRange(m_cachedTransformSSBO, dirtyMin, dirtyCount);
-            resourceManager.UpdateSceneAABBRange(m_cachedSceneAABBs, dirtyMin, dirtyCount);
+            resourceManager.UpdateTransformRange(m_cachedTransformSSBO, dirtyMin, dirtyCount, currentSwapChainIdx);
+            resourceManager.UpdateSceneAABBRange(m_cachedSceneAABBs, dirtyMin, dirtyCount, currentSwapChainIdx);
         }
 
         if (m_dataToBePreProcessed.lightVector.empty() == false ||

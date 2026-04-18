@@ -119,8 +119,7 @@ void ClusterDebugPass::Render(const MainPassData& data, FrameRendererContext& ct
     cmdBuf.FillCmds();
     
     // Begin Rendering
-    const auto ex = ctx.pCurrentSwapchainTexture->GetInfo().extents;
-    const DirectX::XMINT2 extents(ex.x, ex.y);
+    const DirectX::XMINT2 extents(data.renderState.renderResolution.x, data.renderState.renderResolution.y);
     
     ColorAttachment gbufferDebug = m_mainRenderingData.colorAttachments[0];
     gbufferDebug.SetTexture(data.pGbuffer->Get(GBufferTextureType::GBufferDebug));

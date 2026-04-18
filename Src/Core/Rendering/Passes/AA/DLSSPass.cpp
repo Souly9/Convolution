@@ -9,7 +9,6 @@
 #include "Core/Rendering/Vulkan/VkBuffer.h"
 #include "Core/Rendering/Vulkan/VkTextureManager.h"
 #include "Core/Rendering/Vulkan/Utils/VkEnumHelpers.h"
-#include "Core/Rendering/Core/Utils/TAA/JitterFunctions.h"
 #include "sl.h"
 #include "sl_dlss.h"
 #include <iostream>
@@ -66,7 +65,7 @@ bool DLSSPass::WantsToRender() const
 void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
 {
     ScopedZone("DLSSPass::Render");
-    u32 frameIdx = FrameGlobals::GetFrameNumber();
+    u32 frameIdx = ctx.imageIdx;
     
     sl::FrameToken* pFrameToken = nullptr;
     if (!Nvidia::StreamlineManager::GetFrameToken(frameIdx, pFrameToken))
@@ -75,9 +74,9 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     // Need: Color (In/Out), Depth, Motion Vectors
     // In DLSS mode TAA is disabled, so GBufferResolve is not a valid input source.
     // Feed DLSS with the lit current frame color and write the DLSS result to resolve.
-    Texture* pColorIn = data.pGbuffer->Get(GBufferTextureType::GBufferThisFrameColor);
-    Texture* pColorOut = data.pGbuffer->Get(GBufferTextureType::GBufferResolve);
-    Texture* pDepth = data.pMainDepthTexture; // Current Depth
+    Texture* pColorIn = data.temporalResources.pCurrentColorTexture;
+    Texture* pColorOut = data.temporalResources.pResolveTexture;
+    Texture* pDepth = data.temporalResources.pCurrentDepthTexture;
     Texture* pMotion = data.pGbuffer->Get(GBufferTextureType::GBufferVelocity);
 
     if (!pColorIn || !pColorOut || !pDepth || !pMotion)
@@ -155,10 +154,9 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     const mathstl::Matrix prevClipToClip = clipToPrevClip.Invert();
     slConst.prevClipToClip = *(sl::float4x4*)&prevClipToClip;
 
-    const mathstl::Vector2 jitter =
-        GenerateR2Jitter(static_cast<int>(FrameGlobals::GetJitterFrameNumber()));
-    slConst.jitterOffset = {-jitter.x, -jitter.y};
-    slConst.mvecScale = {1.0f, 1.0f};
+    const mathstl::Vector2 jitter = data.renderState.jitter;
+    slConst.jitterOffset = {-jitter.x, jitter.y};
+    slConst.mvecScale = {1,1};
     slConst.cameraPinholeOffset = {0.0f, 0.0f};
     slConst.cameraPos = {data.mainView.position.x, data.mainView.position.y, data.mainView.position.z};
     const mathstl::Vector3 rotation = mathstl::Vector3(data.mainView.rotation.x * kDegToRad,
@@ -178,12 +176,13 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     slConst.cameraAspectRatio = (data.mainView.viewport.height > 0.0f)
                                     ? (data.mainView.viewport.width / data.mainView.viewport.height)
                                     : 1.0f;
-    slConst.motionVectorsInvalidValue = 0.0f;
+    slConst.motionVectorsInvalidValue = sl::INVALID_FLOAT;
     // Depth prepass uses LESS_OR_EQUAL with depth clear=1.0, so depth is not inverted.
     slConst.depthInverted = sl::Boolean::eFalse;
     slConst.cameraMotionIncluded = sl::Boolean::eTrue;
     slConst.motionVectors3D = sl::Boolean::eFalse;
-    slConst.reset = Nvidia::StreamlineManager::ConsumeDLSSResetFlag() ? sl::Boolean::eTrue : sl::Boolean::eFalse;
+    const bool shouldReset = data.renderState.recreatedThisFrame || Nvidia::StreamlineManager::ConsumeDLSSResetFlag();
+    slConst.reset = shouldReset ? sl::Boolean::eTrue : sl::Boolean::eFalse;
     slConst.motionVectorsJittered = sl::Boolean::eFalse;
 
     ExecuteNativeCmd streamlineCmd{};

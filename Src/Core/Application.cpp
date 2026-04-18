@@ -116,6 +116,7 @@ void Application::Run()
         Update(currentFrame);
 
         glfwPollEvents();
+        g_pWindowManager->Update();
     }
     vkDeviceWaitIdle(VkGlobals::GetLogicalDevice());
 }

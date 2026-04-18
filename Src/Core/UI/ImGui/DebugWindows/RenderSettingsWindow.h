@@ -152,6 +152,34 @@ public:
             }
         }
         ImGui::Separator();
+        if (ImGui::CollapsingHeader("Upscaling Settings"))
+        {
+            const char* resolutionOptions[] = {"100%", "75%", "50%", "25%"};
+            const u32 resolutionValues[] = {100, 75, 50, 25};
+            u32 currentPercentage = renderState.upscalingPercentage;
+            int currentIdx = 0;
+            for (int i = 0; i < 4; ++i)
+            {
+                if (resolutionValues[i] == currentPercentage)
+                {
+                    currentIdx = i;
+                    break;
+                }
+            }
+
+            if (ImGui::Combo("Upscaling Resolution", &currentIdx, resolutionOptions, IM_ARRAYSIZE(resolutionOptions)))
+            {
+                u32 newPercentage = resolutionValues[currentIdx];
+                if (newPercentage != currentPercentage)
+                {
+                    g_pApplicationState->RegisterUpdateFunction([newPercentage](ApplicationState& state)
+                                                                { state.renderState.upscalingPercentage = newPercentage; });
+                    g_pEventSystem->OnSwapchainRecreation({});
+                    needsUpdate = true;
+                }
+            }
+        }
+        ImGui::Separator();
         ImGui::Text("Clustered Lighting");
 
         int clusterX = renderState.clusterCount.x;

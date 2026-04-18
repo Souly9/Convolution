@@ -87,13 +87,19 @@ void TAAPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comman
         m_pushConstants.resetHistory = 0;
     }
 
-    m_pushConstants.frameIndex = ctx.currentFrame;
-    m_pushConstants.resolution = mathstl::Vector2((f32)FrameGlobals::GetSwapChainExtent().x, (f32)FrameGlobals::GetSwapChainExtent().y);
+    m_pushConstants.frameIndex = ctx.imageIdx;
+    m_pushConstants.resolutionX = data.renderState.renderResolution.x;
+    m_pushConstants.resolutionY = data.renderState.renderResolution.y;
+    m_pushConstants.currentJitterX = data.renderState.jitter.x;
+    m_pushConstants.currentJitterY = data.renderState.jitter.y;
+    m_pushConstants.previousJitterX = data.renderState.previousJitter.x;
+    m_pushConstants.previousJitterY = data.renderState.previousJitter.y;
     m_pushConstants.zNear = ctx.zNear;
     m_pushConstants.zFar = ctx.zFar;
+    m_pushConstants.resetHistory |= data.renderState.recreatedThisFrame ? 1u : 0u;
 
-    u32 groupCountX = (FrameGlobals::GetSwapChainExtent().x + 7) / 8;
-    u32 groupCountY = (FrameGlobals::GetSwapChainExtent().y + 7) / 8;
+    u32 groupCountX = (static_cast<u32>(data.renderState.renderResolution.x) + 7) / 8;
+    u32 groupCountY = (static_cast<u32>(data.renderState.renderResolution.y) + 7) / 8;
     u32 groupCountZ = 1;
 
     {

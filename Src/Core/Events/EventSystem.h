@@ -39,7 +39,6 @@ public:
     EVENT_FUNCTIONS(Update);
     EVENT_FUNCTIONS(BaseInit);
     EVENT_FUNCTIONS(AppInit);
-    EVENT_FUNCTIONS(WindowResize);
     EVENT_FUNCTIONS(NextFrame);
     EVENT_FUNCTIONS(KeyPress);
     EVENT_FUNCTIONS(KeyHold);
@@ -48,6 +47,8 @@ public:
     EVENT_FUNCTIONS(Scroll);
     EVENT_FUNCTIONS(PostFrame);
     EVENT_FUNCTIONS(ShaderHotReload);
+    EVENT_FUNCTIONS(SwapchainRecreation);
+    EVENT_FUNCTIONS(SwapchainRecreated);
     EVENT_FUNCTIONS(SceneLoaded);
     EVENT_FUNCTIONS(RightMouseClick);
 
@@ -56,7 +57,6 @@ protected:
     EVENT(Update);
     EVENT(BaseInit);
     EVENT(AppInit);
-    EVENT(WindowResize);
     EVENT(NextFrame);
     EVENT(KeyPress);
     EVENT(KeyHold);
@@ -65,6 +65,8 @@ protected:
     EVENT(Scroll);
     EVENT(PostFrame);
     EVENT(ShaderHotReload);
+    EVENT(SwapchainRecreation);
+    EVENT(SwapchainRecreated);
     EVENT(SceneLoaded);
     EVENT(RightMouseClick);
 };

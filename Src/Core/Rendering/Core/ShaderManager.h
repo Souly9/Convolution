@@ -5,8 +5,8 @@
 // Relative to exe
 #define SHADER_OUTPUT_DIRECTORY "/Shaders/"
 // Not portable at all but we should only compile shaders when deving locally either way
-#define SHADER_FILES_DIRECTORY   "../Shaders/Uncompiled/"
-#define SHADER_INCLUDE_DIRECTORY "../Shaders/Globals/"
+#define SHADER_FILES_DIRECTORY   "../../Shaders/Uncompiled/"
+#define SHADER_INCLUDE_DIRECTORY "../../Shaders/Globals/"
 
 class ShaderManager
 {

@@ -37,15 +37,21 @@ public:
     MeshHandle UploadMesh(const Mesh& mesh);
     MeshHandle GetMeshHandle(const Mesh* pMesh) const;
 
-    void UploadDebugMesh(const Mesh& mesh);
+    void UploadDebugMesh(const Mesh& mesh, u32 thisFrame);
 
     void WriteInstanceSSBODescriptorUpdate(u32 targetFrame);
 
     void UpdateTransformBuffer(const stltype::vector<DirectX::XMFLOAT4X4>& transformBuffer, u32 thisFrame, u32 updateCount = 0);
-    void UpdateTransformRange(const stltype::vector<DirectX::XMFLOAT4X4>& transformBuffer, u32 startIdx, u32 count);
-    void UpdatePrevTransformRange(const stltype::vector<DirectX::XMFLOAT4X4>& transformBuffer, u32 startIdx, u32 count);
+    void UpdateTransformRange(const stltype::vector<DirectX::XMFLOAT4X4>& transformBuffer,
+                              u32 startIdx,
+                              u32 count,
+                              u32 thisFrame);
+    void UpdatePrevTransformRange(const stltype::vector<DirectX::XMFLOAT4X4>& transformBuffer,
+                                  u32 startIdx,
+                                  u32 count,
+                                  u32 thisFrame);
     void UpdateSceneAABBBuffer(const stltype::vector<AABB>& aabbBuffer, u32 thisFrame, u32 updateCount = 0);
-    void UpdateSceneAABBRange(const stltype::vector<AABB>& aabbBuffer, u32 startIdx, u32 count);
+    void UpdateSceneAABBRange(const stltype::vector<AABB>& aabbBuffer, u32 startIdx, u32 count, u32 thisFrame);
     void UpdateGlobalMaterialBuffer(const UBO::MaterialBuffer& materialBuffer, u32 thisFrame);
 
     DescriptorSet::Ptr GetInstanceSSBODescriptorSet(u32 frameIdx)

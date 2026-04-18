@@ -10,7 +10,7 @@
 #include "Core/Rendering/Vulkan/Utils/VkDescriptorLayoutUtils.h"
 #include "Utils/GeometryBufferBuildUtils.h"
 
-void SharedResourceManager::UploadDebugMesh(const Mesh& mesh)
+void SharedResourceManager::UploadDebugMesh(const Mesh& mesh, u32 thisFrame)
 {
     ScopedZone("SharedResourceManager::UploadDebugMesh");
     m_bufferUpdateMutex.lock();
@@ -35,7 +35,7 @@ void SharedResourceManager::UploadDebugMesh(const Mesh& mesh)
     m_debugBufferOffsetData.vertBufferOffset += mesh.vertices.size();
 
     m_debugMeshHandles[&mesh] = meshData;
-    cmd.frameIdx = FrameGlobals::GetFrameNumber();
+    cmd.frameIdx = thisFrame;
 
     const Mesh* pMeshPtr = &mesh;
     cmd.onComplete = [this, pMeshPtr]()
@@ -177,7 +177,7 @@ void SharedResourceManager::UploadSceneGeometry(const stltype::vector<stltype::u
 
         m_meshHandles[pMesh.get()] = meshData;
     }
-    cmd.frameIdx = FrameGlobals::GetFrameNumber();
+    cmd.frameIdx = 0;
     
     stltype::vector<const Mesh*> meshPtrs;
     meshPtrs.reserve(meshes.size());
@@ -233,7 +233,7 @@ void SharedResourceManager::UpdateInstanceDataSSBO(stltype::vector<RenderPasses:
             else
             {
                 // Not in debug buffer yet, upload it
-                UploadDebugMesh(*meshData.meshData.pMesh);
+                UploadDebugMesh(*meshData.meshData.pMesh, thisFrameNum);
                 handle = m_debugMeshHandles[meshData.meshData.pMesh];
             }
         }
@@ -314,7 +314,10 @@ void SharedResourceManager::UpdateTransformBuffer(const stltype::vector<DirectX:
     g_pQueueHandler->SubmitTransferCommandAsync(transfer);
 }
 
-void SharedResourceManager::UpdateTransformRange(const stltype::vector<DirectX::XMFLOAT4X4>& transformBuffer, u32 startIdx, u32 count)
+void SharedResourceManager::UpdateTransformRange(const stltype::vector<DirectX::XMFLOAT4X4>& transformBuffer,
+                                                 u32 startIdx,
+                                                 u32 count,
+                                                 u32 thisFrame)
 {
     ScopedZone("SharedResourceManager::UpdateTransformRange");
     if (count == 0) return;
@@ -327,11 +330,14 @@ void SharedResourceManager::UpdateTransformRange(const stltype::vector<DirectX::
     transfer.pDescriptor = nullptr;
     transfer.pSSBO = &m_transformBuffer;
     transfer.dstBinding = s_modelSSBOBindingSlot;
-    transfer.frameIdx = FrameGlobals::GetFrameNumber();
+    transfer.frameIdx = thisFrame;
     g_pQueueHandler->SubmitTransferCommandAsync(transfer);
 }
 
-void SharedResourceManager::UpdatePrevTransformRange(const stltype::vector<DirectX::XMFLOAT4X4>& transformBuffer, u32 startIdx, u32 count)
+void SharedResourceManager::UpdatePrevTransformRange(const stltype::vector<DirectX::XMFLOAT4X4>& transformBuffer,
+                                                     u32 startIdx,
+                                                     u32 count,
+                                                     u32 thisFrame)
 {
     ScopedZone("SharedResourceManager::UpdatePrevTransformRange");
     if (count == 0) return;
@@ -344,7 +350,7 @@ void SharedResourceManager::UpdatePrevTransformRange(const stltype::vector<Direc
     transfer.pDescriptor = nullptr;
     transfer.pSSBO = &m_prevTransformBuffer;
     transfer.dstBinding = s_prevModelSSBOBindingSlot;
-    transfer.frameIdx = FrameGlobals::GetFrameNumber();
+    transfer.frameIdx = thisFrame;
     g_pQueueHandler->SubmitTransferCommandAsync(transfer);
 }
 
@@ -365,7 +371,10 @@ void SharedResourceManager::UpdateSceneAABBBuffer(const stltype::vector<AABB>& a
     g_pQueueHandler->SubmitTransferCommandAsync(transfer);
 }
 
-void SharedResourceManager::UpdateSceneAABBRange(const stltype::vector<AABB>& aabbBuffer, u32 startIdx, u32 count)
+void SharedResourceManager::UpdateSceneAABBRange(const stltype::vector<AABB>& aabbBuffer,
+                                                 u32 startIdx,
+                                                 u32 count,
+                                                 u32 thisFrame)
 {
     ScopedZone("SharedResourceManager::UpdateSceneAABBRange");
     if (count == 0) return;
@@ -378,7 +387,7 @@ void SharedResourceManager::UpdateSceneAABBRange(const stltype::vector<AABB>& aa
     transfer.pDescriptor = nullptr;
     transfer.pSSBO = &m_sceneAABBBuffer;
     transfer.dstBinding = s_sceneAABBsSSBOBindingSlot;
-    transfer.frameIdx = FrameGlobals::GetFrameNumber();
+    transfer.frameIdx = thisFrame;
     g_pQueueHandler->SubmitTransferCommandAsync(transfer);
 }
 

@@ -1,6 +1,7 @@
 #include "CompositPass.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
+#include "Core/Rendering/Core/View.h"
 #include "Core/Rendering/Core/SharedResourceManager.h"
 #include "Core/Rendering/Core/ShaderManager.h"
 #include "Core/Rendering/Vulkan/VkTextureManager.h"
@@ -61,7 +62,7 @@ void CompositPass::RebuildInternalData(const stltype::vector<PassMeshData>& mesh
 
 void CompositPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
 {
-    const auto currentFrame = ctx.currentFrame;
+    const auto currentFrame = ctx.imageIdx;
     UpdateContextForFrame(currentFrame);
 
     ColorAttachment swapchainAttachment = m_mainRenderingData.colorAttachments[0];
@@ -74,7 +75,7 @@ void CompositPass::Render(const MainPassData& data, FrameRendererContext& ctx, C
 
     BeginRenderingCmd cmdBegin{&m_mainPSO, ToRenderAttachmentInfos(colorAttachments)};
     cmdBegin.extents = extents;
-    cmdBegin.viewport = data.mainView.viewport;
+    cmdBegin.viewport = RenderViewUtils::CreateViewportFromData(data.renderState.swapchainResolution, ctx.zNear, ctx.zFar);
 
     auto& sceneGeometryBuffers = data.pResourceManager->GetSceneGeometryBuffers();
     if (sceneGeometryBuffers.GetVertexBuffer().GetRef() == VK_NULL_HANDLE ||

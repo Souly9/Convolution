@@ -10,25 +10,36 @@ void AttachmentBaseVulkan::SetClearValue(const mathstl::Vector4& clearValue)
 
 AttachmentBaseVulkan::AttachmentBaseVulkan(const VkAttachmentDescription& attachmentDesc,
                                            Texture* pTexture,
-                                           VkImageLayout renderingLayout,
-                                           TexFormat format)
-    : m_attachmentDesc(attachmentDesc), m_format(format), m_pTexture(pTexture), m_renderingLayout(renderingLayout)
+                                           TexFormat format,
+                                           LoadOp loadOp,
+                                           StoreOp storeOp,
+                                           ImageLayout renderingLayout)
+    : m_attachmentDesc(attachmentDesc),
+      m_format(format),
+      m_pTexture(pTexture),
+      m_loadOp(loadOp),
+      m_storeOp(storeOp),
+      m_renderingLayout(renderingLayout)
 {
 }
 
 ColorAttachmentVulkan::ColorAttachmentVulkan(const VkAttachmentDescription& attachmentDesc,
                                              Texture* pTexture,
-                                             VkImageLayout renderingLayout,
-                                             TexFormat format)
-    : AttachmentBaseVulkan(attachmentDesc, pTexture, renderingLayout, format)
+                                             TexFormat format,
+                                             LoadOp loadOp,
+                                             StoreOp storeOp,
+                                             ImageLayout renderingLayout)
+    : AttachmentBaseVulkan(attachmentDesc, pTexture, format, loadOp, storeOp, renderingLayout)
 {
 }
 
 DepthAttachmentVulkan::DepthAttachmentVulkan(const VkAttachmentDescription& attachmentDesc,
                                              Texture* pTexture,
-                                             VkImageLayout renderingLayout,
-                                             TexFormat format)
-    : AttachmentBaseVulkan(attachmentDesc, pTexture, renderingLayout, format)
+                                             TexFormat format,
+                                             LoadOp loadOp,
+                                             StoreOp storeOp,
+                                             ImageLayout renderingLayout)
+    : AttachmentBaseVulkan(attachmentDesc, pTexture, format, loadOp, storeOp, renderingLayout)
 {
 }
 
@@ -49,7 +60,12 @@ ColorAttachmentVulkan ColorAttachmentVulkan::Create(const ColorAttachmentInfo& c
     colorAttachment.initialLayout = Conv(createInfo.initialLayout);
     colorAttachment.finalLayout = Conv(createInfo.finalLayout);
 
-    return ColorAttachmentVulkan(colorAttachment, pTexture, Conv(createInfo.renderingLayout), createInfo.format);
+    return ColorAttachmentVulkan(colorAttachment,
+                                 pTexture,
+                                 createInfo.format,
+                                 createInfo.loadOp,
+                                 createInfo.storeOp,
+                                 createInfo.renderingLayout);
 }
 
 DepthAttachmentVulkan DepthAttachmentVulkan::Create(const DepthBufferAttachmentInfo& createInfo, Texture* pTexture)
@@ -64,7 +80,12 @@ DepthAttachmentVulkan DepthAttachmentVulkan::Create(const DepthBufferAttachmentI
     depthAttachment.initialLayout = Conv(createInfo.initialLayout);
     depthAttachment.finalLayout = Conv(createInfo.finalLayout);
 
-    auto att = DepthAttachmentVulkan(depthAttachment, pTexture, Conv(createInfo.renderingLayout), createInfo.format);
+    auto att = DepthAttachmentVulkan(depthAttachment,
+                                     pTexture,
+                                     createInfo.format,
+                                     createInfo.loadOp,
+                                     createInfo.storeOp,
+                                     createInfo.renderingLayout);
     att.SetClearValue(mathstl::Vector4(1.0f, 0.0f, 0.0f, 0.0f));
     return att;
 }

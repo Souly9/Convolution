@@ -123,7 +123,10 @@ public:
                                      stltype::fixed_vector<Fence, SWAPCHAIN_IMAGES>& imageAvailableFences,
                                      stltype::fixed_vector<Fence, SWAPCHAIN_IMAGES>& renderFinishedFences);
 
-    void PreProcessDataForCurrentFrame(u32 frameIdx, u32 currentSwapChainIdx, PassManager* pPassManager);
+    void PreProcessDataForCurrentFrame(u32 frameIdx,
+                                       u64 jitterFrameNumber,
+                                       u32 currentSwapChainIdx,
+                                       PassManager* pPassManager);
 
     void SetEntityMeshDataForFrame(EntityMeshDataMap&& data, u32 frameIdx);
     void SetEntityTransformDataForFrame(TransformSystemData&& data, u32 frameIdx);
@@ -168,9 +171,12 @@ public:
 
 private:
     void BuildSharedDataForView(const RenderView& mainView,
+                                const mathstl::Vector2& renderResolution,
+                                u64 jitterFrameNumber,
                                 UBO::SharedDataUBO& ubo,
                                 mathstl::Matrix& viewMat,
-                                mathstl::Matrix& viewProj) const;
+                                mathstl::Matrix& viewProj,
+                                mathstl::Vector2& jitter) const;
 
     ProfiledLockable(CustomMutex, m_passDataMutex);
     RenderDataForPreProcessing m_dataToBePreProcessed;

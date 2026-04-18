@@ -26,10 +26,35 @@ class ConvolutionRenderPass;
 // based on the view type
 struct MainPassData
 {
+    struct TemporalResources
+    {
+        Texture* pCurrentColorTexture{nullptr};
+        Texture* pHistoryColorTexture{nullptr};
+        Texture* pResolveTexture{nullptr};
+        Texture* pCurrentDepthTexture{nullptr};
+        Texture* pHistoryDepthTexture{nullptr};
+        BindlessTextureHandle currentColorHandle{0};
+        BindlessTextureHandle historyColorHandle{0};
+        BindlessTextureHandle resolveHandle{0};
+        BindlessTextureHandle currentDepthHandle{0};
+        BindlessTextureHandle historyDepthHandle{0};
+    };
+
+    struct PassManagerRenderState
+    {
+        bool recreatedThisFrame{false};
+        mathstl::Vector2 renderResolution{};
+        mathstl::Vector2 swapchainResolution{};
+        mathstl::Vector2 jitter{};
+        mathstl::Vector2 previousJitter{};
+    };
+
     ::SharedResourceManager* pResourceManager{nullptr};
     GBuffer* pGbuffer{nullptr};
     Texture* pMainDepthTexture{nullptr};
     Texture* pLastFrameDepthTexture{nullptr};
+    TemporalResources temporalResources{};
+    PassManagerRenderState renderState{};
     RenderView mainView{};
     mathstl::Matrix mainCamViewMatrix{};
     mathstl::Matrix mainCamInvViewProj{};
@@ -179,7 +204,7 @@ public:
 
     void SetSharedData(RenderView&& mainView, u32 frameIdx);
 
-    void PreProcessDataForCurrentFrame(u32 frameIdx);
+    void PreProcessDataForCurrentFrame(u32 frameIdx, u64 jitterFrameNumber);
 
     void RegisterDebugCallbacks();
 
@@ -193,6 +218,12 @@ public:
     bool BlockUntilPassesFinished(u32 frameIdx);
 
     MainPassData& GetMainPassData(u32 idx) { return m_mainPassData[idx]; }
+    const MainPassData::PassManagerRenderState& GetRenderState() const { return m_renderState; }
+    void SetRenderJitter(const mathstl::Vector2& jitter)
+    {
+        m_renderState.previousJitter = m_renderState.jitter;
+        m_renderState.jitter = jitter;
+    }
     ::SharedResourceManager& GetResourceManager() { return m_resourceManager; }
     void RecreateShadowMapsPublic(u32 cascades, const mathstl::Vector2& extents) { RecreateShadowMaps(cascades, extents); }
     void RegisterImGuiTexturesPublic() { RegisterImGuiTextures(); }
@@ -224,13 +255,16 @@ protected:
     void InitPassesAndImGui();
 
     bool AnyPassWantsToRender() const;
+    void UpdateTemporalResources(MainPassData& mainPassData);
     void PrepareMainPassDataForFrame(MainPassData& mainPassData, FrameRendererContext& ctx, u32 frameIdx);
     void RenderAllPassGroups(const MainPassData& mainPassData,
                              FrameRendererContext& ctx,
                              Semaphore& imageAvailableSemaphore);
     void RenderPassGroup(PassType groupType, const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer);
     void InitFrameContexts();
-    void UpdateGBufferUBO();
+    void UpdateGBufferUBO(const MainPassData& data);
+    void SyncRenderStateFromAppState();
+    void HandlePendingSwapchainRecreatedEvent();
 
     // Inline layout transition helpers — record directly into pCmdBuffer
     void RecordInitialLayoutTransitions(CommandBuffer* pCmdBuffer,
@@ -239,7 +273,6 @@ protected:
                                    const stltype::fixed_vector<const Texture*, 8>& gbufferTextures);
     void RecordUIToShaderRead(CommandBuffer* pCmdBuffer, const Texture* pUITexture);
     void RecordDepthToReadOnly(CommandBuffer* pCmdBuffer);
-    void RecordDepthToAttachment(CommandBuffer* pCmdBuffer);
     void RecordThisFrameColorToRead(CommandBuffer* pCmdBuffer);
     void RecordResolveToGeneral(CommandBuffer* pCmdBuffer);
     void RecordResolveToRead(CommandBuffer* pCmdBuffer);
@@ -276,8 +309,10 @@ private:
     // Depth texture created during Init and used later for attachments/ImGui
     Texture* m_pDepthTexture{nullptr};
     Texture* m_pLastFrameDepthTexture{nullptr};
+    TextureHandle m_depthTextureHandle{0};
+    TextureHandle m_lastFrameDepthTextureHandle{0};
 
-    u32 m_currentSwapChainIdx;
+    u32 m_currentSwapChainIdx{0};
 
     void CreateDepthAttachment();
 
@@ -305,6 +340,10 @@ private:
 
     u32 m_instanceBufferUpdateTimingIndex;
     u32 m_clearTileCountersTimingIndex{UINT32_MAX};
+    MainPassData::PassManagerRenderState m_renderState{};
+    SwapchainRecreatedEventData m_pendingSwapchainRecreatedEvent{};
+    bool m_hasPendingSwapchainRecreatedEvent{false};
+    CustomMutex m_swapchainEventMutex{};
     static inline stltype::atomic<u64> s_globalTimelineCounter{1};
 };
 } // namespace RenderPasses

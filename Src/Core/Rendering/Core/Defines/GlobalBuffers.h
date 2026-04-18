@@ -126,6 +126,7 @@ struct SharedDataUBO
     mathstl::Matrix view;
     mathstl::Matrix projection;
     mathstl::Matrix viewProjection;
+    mathstl::Matrix viewProjectionInverse;
     mathstl::Matrix viewInverse;
     mathstl::Matrix projectionInverse;
     mathstl::Matrix jitteredProjection;

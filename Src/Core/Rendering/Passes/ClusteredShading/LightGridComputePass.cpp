@@ -96,7 +96,7 @@ void LightGridComputePass::Render(const MainPassData& data,
     const u32 workgroupsY = (m_pushConstants.clusterCount.y + 7) / 8;
     const u32 workgroupsZ = m_pushConstants.clusterCount.z;
 
-    DescriptorSet::Ptr viewSpaceLightsDesc = data.pResourceManager->GetViewSpaceLightsDescriptorSet(ctx.currentFrame);
+    DescriptorSet::Ptr viewSpaceLightsDesc = data.pResourceManager->GetViewSpaceLightsDescriptorSet(ctx.imageIdx);
 
     // Cull lights for each cluster
     {

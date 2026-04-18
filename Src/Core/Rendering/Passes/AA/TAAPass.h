@@ -11,7 +11,12 @@ struct TAAPushConstants
 {
     u32 frameIndex;
     u32 resetHistory;
-    mathstl::Vector2 resolution;
+    f32 resolutionX;
+    f32 resolutionY;
+    f32 currentJitterX;
+    f32 currentJitterY;
+    f32 previousJitterX;
+    f32 previousJitterY;
     f32 zNear;
     f32 zFar;
 };

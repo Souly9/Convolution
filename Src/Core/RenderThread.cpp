@@ -34,9 +34,11 @@ void RenderThread::RenderLoop()
         }
 
         // Start imgui frame, update frame numbers
+        u64 currentJitterFrameNumber = 0;
         {
             lastFrame = currentFrame;
             currentFrame = FrameGlobals::GetFrameNumber();
+            currentJitterFrameNumber = jitterFrameNumber++;
         }
         // First sync game data with renderthread
 
@@ -59,9 +61,8 @@ void RenderThread::RenderLoop()
         {
             continue;
         }
-        FrameGlobals::SetJitterFrameNumber(jitterFrameNumber++);
         {
-            m_passManager->PreProcessDataForCurrentFrame(lastFrame);
+            m_passManager->PreProcessDataForCurrentFrame(lastFrame, currentJitterFrameNumber);
             g_pQueueHandler->WaitForFences(~0u);
         }
 

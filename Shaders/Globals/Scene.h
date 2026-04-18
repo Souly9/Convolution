@@ -64,6 +64,7 @@ layout(scalar, set = SharedDataUBOSet, binding = SharedDataUBOBindingSlot) unifo
     mat4 view;
     mat4 projection;
     mat4 viewProjection;
+    mat4 viewProjectionInverse;
     mat4 viewInverse;
     mat4 projectionInverse;
     mat4 jitteredProjection;

@@ -2,6 +2,7 @@
 #include "vulkan/vulkan_core.h"
 #define GLFW_INCLUDE_VULKAN
 #include "VulkanBackend.h"
+#include "Core/Events/EventSystem.h"
 #include "Core/Global/State/ApplicationState.h"
 #undef max
 #include "Core/Global/GlobalDefines.h"
@@ -57,6 +58,13 @@ void NormalizeBufferDeviceAddressExtensions(stltype::vector<const char*>& extens
     // We use VkPhysicalDeviceVulkan12Features::bufferDeviceAddress, so EXT/KHR BDA extensions
     // must not be enabled together (and EXT must not be enabled at all in this path).
     RemoveExtension(extensions, VK_EXT_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
+}
+
+mathstl::Vector2 CalculateRenderResolution(const mathstl::Vector2& swapchainResolution, u32 upscalingPercentage)
+{
+    const f32 scale = static_cast<f32>(upscalingPercentage) / 100.0f;
+    return {static_cast<f32>(stltype::max(1u, static_cast<u32>(swapchainResolution.x * scale))),
+            static_cast<f32>(stltype::max(1u, static_cast<u32>(swapchainResolution.y * scale)))};
 }
 } // namespace
 
@@ -116,6 +124,33 @@ bool RenderBackendImpl<Vulkan>::Init(uint32_t screenWidth, uint32_t screenHeight
     }
 
     UpdateGlobals();
+
+    g_pEventSystem->AddSwapchainRecreationEventCallback([this](const auto&) { RecreateSwapChain(); });
+
+    return true;
+}
+
+bool RenderBackendImpl<Vulkan>::RecreateSwapChain()
+{
+    vkDeviceWaitIdle(m_logicalDevice);
+
+    vkDestroySwapchainKHR(m_logicalDevice, m_swapChain, VulkanAllocator());
+
+    if (!CreateSwapChain())
+    {
+        DEBUG_LOG_ERR("Vulkan swapchain couldn't be recreated!");
+        return false;
+    }
+    CreateSwapChainImages();
+    UpdateGlobals();
+
+    const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+    g_pEventSystem->OnSwapchainRecreated({
+        .swapchainResolution = m_swapChainExtent,
+        .renderResolution = CalculateRenderResolution(m_swapChainExtent, renderState.upscalingPercentage),
+        .swapchainWasRecreated = true,
+    });
+
     return true;
 }
 
@@ -630,28 +665,26 @@ VkPresentModeKHR RenderBackendImpl<Vulkan>::ChooseSwapPresentMode(
     return VK_PRESENT_MODE_FIFO_KHR;
 }
 
+DirectX::XMUINT2 RenderBackendImpl<Vulkan>::GetWindowFramebufferExtent() const
+{
+    int width = 0;
+    int height = 0;
+    glfwGetFramebufferSize(g_pWindowManager->GetWindow(), &width, &height);
+    return {static_cast<uint32_t>(stltype::max(width, 1)),
+            static_cast<uint32_t>(stltype::max(height, 1))};
+}
+
 DirectX::XMUINT2 RenderBackendImpl<Vulkan>::ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities)
 {
     if (capabilities.currentExtent.width != stltype::numeric_limits<u32>::max())
     {
-        DirectX::XMUINT2 extents = {static_cast<uint32_t>(capabilities.currentExtent.width),
-                                    static_cast<uint32_t>(capabilities.currentExtent.height)};
-        return extents;
+        return {capabilities.currentExtent.width, capabilities.currentExtent.height};
     }
-    else
-    {
-        int width, height;
-        glfwGetFramebufferSize(g_pWindowManager->GetWindow(), &width, &height);
 
-        DirectX::XMUINT2 actualExtent = {static_cast<uint32_t>(width), static_cast<uint32_t>(height)};
-
-        actualExtent.x =
-            stltype::clamp(actualExtent.x, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
-        actualExtent.y =
-            stltype::clamp(actualExtent.y, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
-
-        return actualExtent;
-    }
+    DirectX::XMUINT2 actualExtent = GetWindowFramebufferExtent();
+    actualExtent.x = stltype::clamp(actualExtent.x, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
+    actualExtent.y = stltype::clamp(actualExtent.y, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
+    return actualExtent;
 }
 
 bool RenderBackendImpl<Vulkan>::CreateSwapChain()
@@ -719,7 +752,7 @@ bool RenderBackendImpl<Vulkan>::CreateSwapChain()
 
 void RenderBackendImpl<Vulkan>::CreateSwapChainImages()
 {
-    const auto ex = DirectX::XMUINT3(FrameGlobals::GetSwapChainExtent().x, FrameGlobals::GetSwapChainExtent().y, 1);
+    const auto ex = DirectX::XMUINT3(m_swapChainExtent.x, m_swapChainExtent.y, 1);
     TextureInfoBase info{};
     info.extents = ex;
 

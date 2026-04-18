@@ -34,7 +34,17 @@ public:
         m_pTexture = pTexture;
     }
 
-    VkImageLayout GetRenderingLayout() const
+    LoadOp GetLoadOp() const
+    {
+        return m_loadOp;
+    }
+
+    StoreOp GetStoreOp() const
+    {
+        return m_storeOp;
+    }
+
+    ImageLayout GetRenderingLayout() const
     {
         return m_renderingLayout;
     }
@@ -49,15 +59,18 @@ public:
 protected:
     AttachmentBaseVulkan(const VkAttachmentDescription& attachmentDesc,
                          Texture* pTexture,
-                         VkImageLayout renderingLayout,
-                         TexFormat format);
+                         TexFormat format,
+                         LoadOp loadOp,
+                         StoreOp storeOp,
+                         ImageLayout renderingLayout);
 
     VkAttachmentDescription m_attachmentDesc{};
     TexFormat m_format{TexFormat::UNDEFINED};
     // This is the texture that this attachment is attached to, if any
     Texture* m_pTexture{nullptr};
-    // Layout used for rendering, not pretty but needed for dynamic rendering and it's good enough
-    VkImageLayout m_renderingLayout{VK_IMAGE_LAYOUT_UNDEFINED};
+    LoadOp m_loadOp{LoadOp::DONT_CARE};
+    StoreOp m_storeOp{StoreOp::DONT_CARE};
+    ImageLayout m_renderingLayout{ImageLayout::UNDEFINED};
     VkClearValue m_clearValue{g_BlackCLearColor};
 };
 
@@ -69,8 +82,10 @@ public:
 protected:
     ColorAttachmentVulkan(const VkAttachmentDescription& attachmentDesc,
                           Texture* pTexture,
-                          VkImageLayout renderingLayout,
-                          TexFormat format);
+                          TexFormat format,
+                          LoadOp loadOp,
+                          StoreOp storeOp,
+                          ImageLayout renderingLayout);
 };
 
 class DepthAttachmentVulkan : public AttachmentBaseVulkan, public DepthAttachmentBase
@@ -84,7 +99,9 @@ public:
 
 protected:
     DepthAttachmentVulkan(const VkAttachmentDescription& attachmentDesc,
-                                Texture* pTexture,
-                                VkImageLayout renderingLayout,
-                                TexFormat format);
+                          Texture* pTexture,
+                          TexFormat format,
+                          LoadOp loadOp,
+                          StoreOp storeOp,
+                          ImageLayout renderingLayout);
 };

@@ -1,5 +1,6 @@
 #include "ImGuiPass.h"
 #include "Core/Global/GlobalVariables.h"
+#include "Core/Rendering/Core/View.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
 #include "Core/Rendering/Vulkan/VkGlobals.h"
 #include "Core/Rendering/Vulkan/VkTextureManager.h"
@@ -18,7 +19,7 @@ using namespace RenderPasses;
 
 ImGuiPass::ImGuiPass() : ConvolutionRenderPass("ImGuiPass")
 {
-    g_pEventSystem->AddWindowResizeEventCallback([this](const auto&) { UpdateImGuiScaling(); });
+    g_pEventSystem->AddSwapchainRecreatedEventCallback([this](const auto&) { UpdateImGuiScaling(); });
 }
 
 void ImGuiPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager)
@@ -27,8 +28,6 @@ void ImGuiPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourc
 
     const auto swapchainAttachment =
         CreateDefaultColorAttachment(SWAPCHAIN_FORMAT, LoadOp::LOAD, nullptr);
-    m_mainRenderingData.depthAttachment =
-        CreateReadOnlyDepthAttachment(LoadOp::LOAD, attachmentInfo.depthAttachment.GetTexture());
     m_mainRenderingData.colorAttachments = {swapchainAttachment};
 
     InitBaseData(attachmentInfo);
@@ -63,7 +62,7 @@ void ImGuiPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourc
     imguiRenderingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
     imguiRenderingInfo.colorAttachmentCount = 1;
     imguiRenderingInfo.pColorAttachmentFormats = &swapchainAttachment.GetDesc().format;
-    imguiRenderingInfo.depthAttachmentFormat = m_mainRenderingData.depthAttachment.GetDesc().format;
+    imguiRenderingInfo.depthAttachmentFormat = VK_FORMAT_UNDEFINED;
     info.UseDynamicRendering = true;
     info.PipelineRenderingCreateInfo = imguiRenderingInfo;
 
@@ -86,13 +85,8 @@ void ImGuiPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comm
     const auto ex = ctx.pCurrentSwapchainTexture->GetInfo().extents;
     const DirectX::XMINT2 extents(ex.x, ex.y);
     
-    m_mainRenderingData.depthAttachment.SetTexture(data.pMainDepthTexture);
-    BeginRenderingBaseCmd cmdBegin(
-        ToRenderAttachmentInfos(colorAttachments),
-        ToRenderAttachmentInfo(m_mainRenderingData.depthAttachment),
-        true
-    );
-    cmdBegin.viewport = data.mainView.viewport;
+    BeginRenderingBaseCmd cmdBegin(ToRenderAttachmentInfos(colorAttachments));
+    cmdBegin.viewport = RenderViewUtils::CreateViewportFromData(data.renderState.swapchainResolution, ctx.zNear, ctx.zFar);
     cmdBegin.extents = extents;
     
     StartRenderPassProfilingScope(pCmdBuffer);

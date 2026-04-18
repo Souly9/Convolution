@@ -68,24 +68,21 @@ static inline bool NeedToRender(const IndirectDrawCmdBuf& buffer)
     return true;
 }
 
-// Helper to convert ColorAttachment to RenderAttachmentInfo
 static inline RenderAttachmentInfo ToRenderAttachmentInfo(const ColorAttachment& attachment)
 {
     RenderAttachmentInfo info{};
     info.pTexture = const_cast<Texture*>(attachment.GetTexture());
-    // Use the tracked layout if available, otherwise assume optimal
     if (info.pTexture)
     {
-        // Ideally we query the texture for its layout, but Attachment wrapper holds a rendering layout
-        info.renderingLayout = (ImageLayout)attachment.GetRenderingLayout(); 
+        info.renderingLayout = attachment.GetRenderingLayout();
     }
     else
     {
         info.renderingLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
     }
     
-    info.loadOp = (LoadOp)attachment.GetDesc().loadOp;
-    info.storeOp = (StoreOp)attachment.GetDesc().storeOp;
+    info.loadOp = attachment.GetLoadOp();
+    info.storeOp = attachment.GetStoreOp();
     
     auto clear = attachment.GetClearValue();
     memcpy(&info.clearValue, &clear, sizeof(clear));
@@ -97,12 +94,9 @@ static inline RenderAttachmentInfo ToRenderAttachmentInfo(const DepthAttachment&
 {
     RenderAttachmentInfo info{};
     info.pTexture = const_cast<Texture*>(attachment.GetTexture());
-    
-    // Use the rendering layout assigned to the attachment
-    info.renderingLayout = (ImageLayout)attachment.GetRenderingLayout();
-    
-    info.loadOp = (LoadOp)attachment.GetDesc().loadOp;
-    info.storeOp = (StoreOp)attachment.GetDesc().storeOp;
+    info.renderingLayout = attachment.GetRenderingLayout();
+    info.loadOp = attachment.GetLoadOp();
+    info.storeOp = attachment.GetStoreOp();
     
     auto clear = attachment.GetClearValue();
     memcpy(&info.clearValue, &clear, sizeof(clear));

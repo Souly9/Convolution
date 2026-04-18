@@ -32,6 +32,16 @@
 
 using namespace RenderPasses;
 
+namespace
+{
+mathstl::Vector2 CalculateRenderResolution(const mathstl::Vector2& swapchainResolution, u32 upscalingPercentage)
+{
+    const f32 scale = static_cast<f32>(upscalingPercentage) / 100.0f;
+    return {static_cast<f32>(stltype::max(1u, static_cast<u32>(swapchainResolution.x * scale))),
+            static_cast<f32>(stltype::max(1u, static_cast<u32>(swapchainResolution.y * scale)))};
+}
+}
+
 // Helper implementations to break up large functions
 void PassManager::InitResourceManagerAndCallbacks()
 {
@@ -39,6 +49,13 @@ void PassManager::InitResourceManagerAndCallbacks()
     g_pEventSystem->AddSceneLoadedEventCallback(
         [this](const SceneLoadedEventData&) { m_resourceManager.UploadSceneGeometry(g_pMeshManager->GetMeshes()); });
     g_pEventSystem->AddShaderHotReloadEventCallback([this](const auto&) { RebuildPipelinesForAllPasses(); });
+    g_pEventSystem->AddSwapchainRecreatedEventCallback(
+        [this](const SwapchainRecreatedEventData& data)
+        {
+            SimpleScopedGuard<CustomMutex> lock(m_swapchainEventMutex);
+            m_pendingSwapchainRecreatedEvent = data;
+            m_hasPendingSwapchainRecreatedEvent = true;
+        });
 
     // Create pass objects
     AddPass(PassType::LightTransformCompute, stltype::make_unique<RenderPasses::LightTransformComputePass>());
@@ -70,29 +87,37 @@ void PassManager::CreateUBOsAndMap()
 
 void PassManager::InitPassesAndImGui()
 {
+    SyncRenderStateFromAppState();
     RecreateAllRenderResources();
 }
 
 void PassManager::CreateDepthAttachment()
 {
+    if (m_depthTextureHandle != 0)
+        g_pTexManager->FreeTexture(m_depthTextureHandle);
+    if (m_lastFrameDepthTextureHandle != 0)
+        g_pTexManager->FreeTexture(m_lastFrameDepthTextureHandle);
+
     DepthBufferAttachmentInfo depthAttachmentInfo{};
     depthAttachmentInfo.format = DEPTH_BUFFER_FORMAT;
 
     DynamicTextureRequest depthRequest{};
     depthRequest.handle = g_pTexManager->GenerateHandle();
     depthRequest.extents =
-        DirectX::XMUINT3(FrameGlobals::GetSwapChainExtent().x, FrameGlobals::GetSwapChainExtent().y, 1);
+        DirectX::XMUINT3(m_renderState.renderResolution.x, m_renderState.renderResolution.y, 1);
     depthRequest.format = DEPTH_BUFFER_FORMAT;
     depthRequest.usage = Usage::Sampled | Usage::DepthAttachment | Usage::TransferDst | Usage::TransferSrc;
     depthRequest.isPersistent = true;
     depthRequest.AddName("Main Depth Buffer");
 
+    m_depthTextureHandle = depthRequest.handle;
     m_pDepthTexture = static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(depthRequest));
     m_depthBindlessHandle = g_pTexManager->MakeTextureBindless(depthRequest.handle, depthRequest.isPersistent);
 
     depthRequest.handle = g_pTexManager->GenerateHandle();
     depthRequest.AddName("Last Frame Depth Buffer");
     
+    m_lastFrameDepthTextureHandle = depthRequest.handle;
     m_pLastFrameDepthTexture = static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(depthRequest));
     m_lastFrameDepthBindlessHandle = g_pTexManager->MakeTextureBindless(depthRequest.handle, depthRequest.isPersistent);
 
@@ -102,6 +127,9 @@ void PassManager::CreateDepthAttachment()
 void PassManager::RecreateAllRenderResources()
 {
     ScopedZone("PassManager::RecreateAllRenderResources");
+
+    SyncRenderStateFromAppState();
+    m_renderState.recreatedThisFrame = true;
 
     const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
 
@@ -128,7 +156,7 @@ void PassManager::RecreateAllRenderResources()
     CreateDepthAttachment();
 
     // 4. Recreate G-Buffers (updates descriptors internally)
-    RecreateGbuffers(mathstl::Vector2(FrameGlobals::GetSwapChainExtent().x, FrameGlobals::GetSwapChainExtent().y));
+    RecreateGbuffers(m_renderState.renderResolution);
 
     // 5. Update Main Pass Data with new handles
     u32 idx = 0;
@@ -147,7 +175,11 @@ void PassManager::RecreateAllRenderResources()
         mainPassData.bufferDescriptors[UBO::DescriptorContentsType::ClusterGrid] =
             m_frameResourceManager.GetFrameRendererContext(idx).clusterGridDescriptor;
 
-        mainPassData.depthBufferBindlessHandle = m_depthBindlessHandle;
+        mainPassData.renderState = m_renderState;
+        UpdateTemporalResources(mainPassData);
+        mainPassData.depthBufferBindlessHandle = mainPassData.temporalResources.currentDepthHandle;
+        mainPassData.pMainDepthTexture = mainPassData.temporalResources.pCurrentDepthTexture;
+        mainPassData.pLastFrameDepthTexture = mainPassData.temporalResources.pHistoryDepthTexture;
         ++idx;
     }
 
@@ -183,11 +215,12 @@ void PassManager::PrepareMainPassDataForFrame(MainPassData& mainPassData, FrameR
     mainPassData.pResourceManager = &m_resourceManager;
     mainPassData.pGbuffer = &m_gbuffer;
     mainPassData.mainView.descriptorSet = ctx.sharedDataUBODescriptor;
+    mainPassData.renderState = m_renderState;
     mainPassData.directionalLightShadowMap = m_globalRendererAttachments.directionalLightShadowMap;
     mainPassData.cascades = m_frameResourceManager.GetShadowMapState().cascadeCount;
-    mainPassData.depthBufferBindlessHandle = m_depthBindlessHandle;
-    mainPassData.pMainDepthTexture = m_pDepthTexture;
-    mainPassData.pLastFrameDepthTexture = m_pLastFrameDepthTexture;
+    mainPassData.depthBufferBindlessHandle = mainPassData.temporalResources.currentDepthHandle;
+    mainPassData.pMainDepthTexture = mainPassData.temporalResources.pCurrentDepthTexture;
+    mainPassData.pLastFrameDepthTexture = mainPassData.temporalResources.pHistoryDepthTexture;
 
     mainPassData.bufferDescriptors[UBO::DescriptorContentsType::GlobalInstanceData] =
         m_resourceManager.GetInstanceSSBODescriptorSet(frameIdx);
@@ -199,6 +232,21 @@ void PassManager::PrepareMainPassDataForFrame(MainPassData& mainPassData, FrameR
     mainPassData.pSMAABlendTexture = m_pSMAABlendTexture;
     mainPassData.smaaEdges = m_smaaEdgesBindlessHandle;
     mainPassData.smaaBlend = m_smaaBlendBindlessHandle;
+}
+
+void PassManager::UpdateTemporalResources(MainPassData& mainPassData)
+{
+    auto& temporal = mainPassData.temporalResources;
+    temporal.pCurrentColorTexture = m_gbuffer.Get(GBufferTextureType::GBufferThisFrameColor);
+    temporal.pHistoryColorTexture = m_gbuffer.Get(GBufferTextureType::GBufferLastFrameColor);
+    temporal.pResolveTexture = m_gbuffer.Get(GBufferTextureType::GBufferResolve);
+    temporal.pCurrentDepthTexture = m_pDepthTexture;
+    temporal.pHistoryDepthTexture = m_pLastFrameDepthTexture;
+    temporal.currentColorHandle = m_gbuffer.GetHandle(GBufferTextureType::GBufferThisFrameColor);
+    temporal.historyColorHandle = m_gbuffer.GetHandle(GBufferTextureType::GBufferLastFrameColor);
+    temporal.resolveHandle = m_gbuffer.GetHandle(GBufferTextureType::GBufferResolve);
+    temporal.currentDepthHandle = m_depthBindlessHandle;
+    temporal.historyDepthHandle = m_lastFrameDepthBindlessHandle;
 }
 
 void PassManager::InitFrameContexts()
@@ -264,10 +312,7 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
 {
     ScopedZone("PassManager::RenderAllPassGroups");
 
-    // Flip gbuffer history buffers before starting the frame
-    m_gbuffer.FlipHistoryBuffers();
-
-    UpdateGBufferUBO();
+    UpdateGBufferUBO(mainPassData);
 
     if (m_gpuTimingQuery.IsEnabled())
     {
@@ -412,9 +457,6 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
     {
         pMainGraphicsWorkBuffer->AddTimelineWait(&ctx.frameTimeline, depthPassSignalValue);
         pMainGraphicsWorkBuffer->SetWaitStages(SyncStages::EARLY_FRAGMENT_TESTS);
-
-        RecordDepthToAttachment(pMainGraphicsWorkBuffer);
-
         RenderPassGroup(PassType::Main, mainPassData, ctx, pMainGraphicsWorkBuffer);
         RenderPassGroup(PassType::Debug, mainPassData, ctx, pMainGraphicsWorkBuffer);
         RenderPassGroup(PassType::Shadow, mainPassData, ctx, pMainGraphicsWorkBuffer);
@@ -472,19 +514,20 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
     g_pQueueHandler->FlushGraphicsComputeBuffers();
 }
 
-void PassManager::UpdateGBufferUBO()
+void PassManager::UpdateGBufferUBO(const MainPassData& data)
 {
+    const auto& temporal = data.temporalResources;
     UBO::GBufferPostProcessUBO gbufferUBO{};
     gbufferUBO.gbufferAlbedo = m_gbuffer.GetHandle(GBufferTextureType::GBufferAlbedo);
     gbufferUBO.gbufferNormal = m_gbuffer.GetHandle(GBufferTextureType::GBufferNormal);
     gbufferUBO.gbufferTexCoordMat = m_gbuffer.GetHandle(GBufferTextureType::TexCoordMatData);
     gbufferUBO.gbufferDebug = m_gbuffer.GetHandle(GBufferTextureType::GBufferDebug);
     gbufferUBO.gbufferVelocity = m_gbuffer.GetHandle(GBufferTextureType::GBufferVelocity);
-    gbufferUBO.depthBufferIdx = m_depthBindlessHandle;
-    gbufferUBO.lastFrameColorBufferIdx = m_gbuffer.GetHandle(GBufferTextureType::GBufferLastFrameColor);
-    gbufferUBO.thisFrameColorBufferIdx = m_gbuffer.GetHandle(GBufferTextureType::GBufferThisFrameColor);
-    gbufferUBO.lastFrameDepthIdx = m_lastFrameDepthBindlessHandle;
-    gbufferUBO.gbufferResolve = m_gbuffer.GetHandle(GBufferTextureType::GBufferResolve);
+    gbufferUBO.depthBufferIdx = temporal.currentDepthHandle;
+    gbufferUBO.lastFrameColorBufferIdx = temporal.historyColorHandle;
+    gbufferUBO.thisFrameColorBufferIdx = temporal.currentColorHandle;
+    gbufferUBO.lastFrameDepthIdx = temporal.historyDepthHandle;
+    gbufferUBO.gbufferResolve = temporal.resolveHandle;
 
     memcpy(m_frameResourceManager.GetMappedGBufferPostProcessUBO(),
            &gbufferUBO,
@@ -541,15 +584,6 @@ void PassManager::RecordDepthToReadOnly(CommandBuffer* pCmdBuffer)
     depthCmd.oldLayout = ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     depthCmd.newLayout = ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL;
     VkTextureManager::SetLayoutBarrierMasks(depthCmd, ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
-    pCmdBuffer->RecordCommand(depthCmd);
-}
-
-void PassManager::RecordDepthToAttachment(CommandBuffer* pCmdBuffer)
-{
-    ImageLayoutTransitionCmd depthCmd(m_globalRendererAttachments.depthAttachment.GetTexture());
-    depthCmd.oldLayout = ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-    depthCmd.newLayout = ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(depthCmd, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL, ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
     pCmdBuffer->RecordCommand(depthCmd);
 }
 
@@ -625,12 +659,40 @@ void PassManager::Init()
     }
 }
 
+void PassManager::SyncRenderStateFromAppState()
+{
+    const auto& appRenderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+    if (m_renderState.swapchainResolution.x <= 0.0f || m_renderState.swapchainResolution.y <= 0.0f)
+        m_renderState.swapchainResolution = FrameGlobals::GetSwapChainExtent();
+    m_renderState.renderResolution =
+        CalculateRenderResolution(m_renderState.swapchainResolution, appRenderState.upscalingPercentage);
+    g_pApplicationState->RegisterUpdateFunction(
+        [renderResolution = m_renderState.renderResolution, swapchainResolution = m_renderState.swapchainResolution](ApplicationState& state)
+        {
+            state.renderState.renderResolution = renderResolution;
+            state.renderState.swapchainResolution = swapchainResolution;
+        });
+}
+
+void PassManager::HandlePendingSwapchainRecreatedEvent()
+{
+    SwapchainRecreatedEventData recreatedEvent{};
+    {
+        SimpleScopedGuard<CustomMutex> lock(m_swapchainEventMutex);
+        if (!m_hasPendingSwapchainRecreatedEvent)
+            return;
+        recreatedEvent = m_pendingSwapchainRecreatedEvent;
+        m_hasPendingSwapchainRecreatedEvent = false;
+    }
+
+    m_renderState.swapchainResolution = recreatedEvent.swapchainResolution;
+    m_renderState.renderResolution = recreatedEvent.renderResolution;
+    m_renderState.recreatedThisFrame = recreatedEvent.swapchainWasRecreated;
+    RecreateAllRenderResources();
+}
+
 void PassManager::ExecutePasses(u32 frameIdx)
 {
-
-    stltype::swap(m_pDepthTexture, m_pLastFrameDepthTexture);
-    stltype::swap(m_depthBindlessHandle, m_lastFrameDepthBindlessHandle);
-    m_globalRendererAttachments.depthAttachment.SetTexture(m_pDepthTexture);
     auto& ctx = m_frameResourceManager.GetFrameRendererContext(m_currentSwapChainIdx);
     auto& mainPassData = m_mainPassData.at(m_currentSwapChainIdx);
     auto& imageAvailableSemaphore = m_imageAvailableSemaphores.at(frameIdx);
@@ -691,10 +753,31 @@ void PassManager::SetEntityTransformDataForFrame(TransformSystemData&& data, u32
 void PassManager::SetLightDataForFrame(PointLightVector&& data, DirLightVector&& dirLights, u32 frameIdx) { m_frameResourceManager.SetLightDataForFrame(std::move(data), std::move(dirLights), frameIdx); }
 void PassManager::SetLightDeltaForFrame(stltype::vector<LightDeltaUpdate>&& updates, bool dirLightDirty, const DirectionalRenderLight& dirLight, u32 frameIdx) { m_frameResourceManager.SetLightDeltaForFrame(std::move(updates), dirLightDirty, dirLight, frameIdx); }
 void PassManager::SetSharedData(RenderView&& mainView, u32 frameIdx) { m_frameResourceManager.SetSharedData(std::move(mainView), frameIdx); }
-void PassManager::PreProcessDataForCurrentFrame(u32 frameIdx) { m_frameResourceManager.PreProcessDataForCurrentFrame(frameIdx, m_currentSwapChainIdx, this); }
+void PassManager::PreProcessDataForCurrentFrame(u32 frameIdx, u64 jitterFrameNumber)
+{
+    m_renderState.recreatedThisFrame = false;
+    g_pApplicationState->RegisterUpdateFunction(
+        [](ApplicationState& state) { state.renderState.renderTargetsRecreatedThisFrame = false; });
+    HandlePendingSwapchainRecreatedEvent();
+
+    // Rotate per-frame history targets before building any frame descriptors/state.
+    m_gbuffer.FlipHistoryBuffers();
+    stltype::swap(m_pDepthTexture, m_pLastFrameDepthTexture);
+    stltype::swap(m_depthBindlessHandle, m_lastFrameDepthBindlessHandle);
+    m_globalRendererAttachments.depthAttachment.SetTexture(m_pDepthTexture);
+    for (auto& mainPassData : m_mainPassData)
+    {
+        UpdateTemporalResources(mainPassData);
+    }
+
+    m_frameResourceManager.PreProcessDataForCurrentFrame(frameIdx, jitterFrameNumber, m_currentSwapChainIdx, this);
+}
 
 void PassManager::RecreateGbuffers(const mathstl::Vector2& resolution)
 {
+    m_renderState.recreatedThisFrame = true;
+    g_pApplicationState->RegisterUpdateFunction(
+        [](ApplicationState& state) { state.renderState.renderTargetsRecreatedThisFrame = true; });
     auto& gbuffer = m_gbuffer;
     DynamicTextureRequest baseRequest{};
     baseRequest.extents = DirectX::XMUINT3(resolution.x, resolution.y, 1);
@@ -776,9 +859,10 @@ void PassManager::RecreateGbuffers(const mathstl::Vector2& resolution)
         passData.pSMAABlendTexture = m_pSMAABlendTexture;
         passData.smaaEdges = m_smaaEdgesBindlessHandle;
         passData.smaaBlend = m_smaaBlendBindlessHandle;
+        UpdateTemporalResources(passData);
     }
 
-    UpdateGBufferUBO();
+    UpdateGBufferUBO(m_mainPassData[m_currentSwapChainIdx]);
     for (u32 i = 0; i < SWAPCHAIN_IMAGES; i++)
         m_frameResourceManager.GetFrameRendererContext(i).gbufferPostProcessDescriptor->WriteBufferUpdate(m_frameResourceManager.GetGBufferPostProcessUBO(), s_globalGbufferPostProcessUBOSlot);
 }
@@ -817,6 +901,9 @@ void PassManager::PreProcessMeshData(const stltype::vector<PassMeshData>& meshes
 
 void PassManager::RecreateShadowMaps(u32 cascades, const mathstl::Vector2& extents)
 {
+    m_renderState.recreatedThisFrame = true;
+    g_pApplicationState->RegisterUpdateFunction(
+        [](ApplicationState& state) { state.renderState.renderTargetsRecreatedThisFrame = true; });
     auto& csm = m_globalRendererAttachments.directionalLightShadowMap;
     const TextureHandle oldHandle = csm.handle;
     auto oldCascadeViews = stltype::move(csm.cascadeViews);

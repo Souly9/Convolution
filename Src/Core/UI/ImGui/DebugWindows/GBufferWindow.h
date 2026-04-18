@@ -23,7 +23,7 @@ public:
         auto& gbufferIDs = renderState.gbufferImGuiIDs;
         auto& csmIDs = renderState.csmCascadeImGuiIDs;
 
-        if (gbufferIDs.size() < 5)
+        if (gbufferIDs.size() < 4)
             return;
 
         ImGui::Begin("GBuffer Viewer", &m_isOpen);
@@ -32,6 +32,7 @@ public:
         buffers.push_back({"Normals", gbufferIDs[0]});
         buffers.push_back({"Albedo", gbufferIDs[1]});
         buffers.push_back({"SSS", gbufferIDs[2]});
+        buffers.push_back({"Velocity", gbufferIDs[3]});
 
         for (u32 i = 0; i < csmIDs.size(); ++i)
         {
