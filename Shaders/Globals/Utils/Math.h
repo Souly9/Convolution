@@ -27,11 +27,5 @@ FUNC_QUALIFIER vec2 ComputeVelocity(vec4 currClipPos, vec4 prevClipPos)
     vec2 prevUV = prevNDC * 0.5 + 0.5;
     currUV.y = 1.0 - currUV.y;
     prevUV.y = 1.0 - prevUV.y;
-    vec2 velocity = prevUV - currUV;
-
-    if (length(velocity) < 0.001f)
-    {
-        velocity = vec2(0, 0);
-    }
-    return velocity;
+    return (prevUV - currUV) * ubo.renderResolution;
 }

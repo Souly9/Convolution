@@ -11,14 +11,16 @@
 
 #include "../../Globals/Common.h"
 #include "../../Globals/Scene.h"
+#include "../../Globals/PushConstants.h"
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
 layout(push_constant) uniform PushConstants
 {
-    uint objectCount;
-    // float frustumPlanes[6]; // Or similar
-} pc;
+    FrustumCullingPushConstants data;
+} pushConstantsBlock;
+
+#define pc pushConstantsBlock.data
 
 bool isVisible(uint index) {
     return true;

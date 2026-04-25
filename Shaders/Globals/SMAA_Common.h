@@ -16,6 +16,7 @@
 #endif
 
 #include "Bindless.h"
+#include "PushConstants.h"
 
 // GLSL to HLSL types for SMAA
 #define float2 vec2
@@ -51,13 +52,10 @@
 
 #ifndef SMAA_RT_METRICS
 layout(push_constant, scalar) uniform PushConsts {
-    vec4 metrics;
-    uint tex1;
-    uint tex2;
-    uint tex3;
+    SMAAPushConstants pushConstants;
 } pc;
 
-#define SMAA_RT_METRICS pc.metrics
+#define SMAA_RT_METRICS pc.pushConstants.metrics
 #endif
 
 #endif // SMAA_COMMON_H

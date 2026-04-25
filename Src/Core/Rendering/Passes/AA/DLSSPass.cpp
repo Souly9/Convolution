@@ -1,12 +1,10 @@
 #include "DLSSPass.h"
 #include "Core/Global/GlobalVariables.h"
-#include "Core/Global/FrameGlobals.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
 #include "Core/Rendering/Core/SharedResourceManager.h"
 #include "Core/Rendering/Passes/PassManager.h"
 #include "Core/Rendering/Core/Nvidia/StreamlineManager.h"
 #include "Core/Rendering/Vulkan/VkTexture.h"
-#include "Core/Rendering/Vulkan/VkBuffer.h"
 #include "Core/Rendering/Vulkan/VkTextureManager.h"
 #include "Core/Rendering/Vulkan/Utils/VkEnumHelpers.h"
 #include "sl.h"
@@ -78,11 +76,16 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     Texture* pColorOut = data.temporalResources.pResolveTexture;
     Texture* pDepth = data.temporalResources.pCurrentDepthTexture;
     Texture* pMotion = data.pGbuffer->Get(GBufferTextureType::GBufferVelocity);
+    Texture* pExposure = ctx.pDLSSExposureTexture;
 
-    if (!pColorIn || !pColorOut || !pDepth || !pMotion)
+    if (!pColorIn || !pColorOut || !pDepth || !pMotion || !pExposure)
         return;
 
     const auto outputExtents = pColorOut->GetInfo().extents;
+    const auto inputExtents = pColorIn->GetInfo().extents;
+    const auto motionExtents = pMotion->GetInfo().extents;
+    if (motionExtents.x == 0 || motionExtents.y == 0)
+        return;
 
     // For now, just native mode (DLAA). Reconfigure only on mode/resolution changes.
     constexpr sl::DLSSMode kDlssMode = sl::DLSSMode::eDLAA;
@@ -110,7 +113,7 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
 
     sl::ViewportHandle viewport(0);
 
-    stltype::fixed_vector<StreamlineTagDesc, 4> tagDescs;
+    stltype::fixed_vector<StreamlineTagDesc, 5> tagDescs;
     auto pushTagDesc = [&](Texture* pTex, sl::BufferType type) {
         if (!pTex) return false;
         TextureVulkan* pVkTex = static_cast<TextureVulkan*>(pTex);
@@ -132,50 +135,48 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     const bool tagsOk = pushTagDesc(pColorIn, sl::kBufferTypeScalingInputColor) &&
                         pushTagDesc(pColorOut, sl::kBufferTypeScalingOutputColor) &&
                         pushTagDesc(pDepth, sl::kBufferTypeDepth) &&
-                        pushTagDesc(pMotion, sl::kBufferTypeMotionVectors);
+                        pushTagDesc(pMotion, sl::kBufferTypeMotionVectors) &&
+                        pushTagDesc(pExposure, sl::kBufferTypeExposure);
     if (!tagsOk)
     {
         restoreColorOutReadLayout();
         return;
     }
 
-    // Get UBO data for matrices
-    auto& sharedDataUBO = *reinterpret_cast<UBO::SharedDataUBO*>(ctx.pMappedSharedDataUBO);
-
     // Camera constants
     sl::Constants slConst{};
-    constexpr f32 kDegToRad = 0.01745329251994329576923690768489f;
-    slConst.cameraViewToClip = *(sl::float4x4*)&sharedDataUBO.projection;
-    slConst.clipToCameraView = *(sl::float4x4*)&sharedDataUBO.projectionInverse;
-    
-    // Calculate clipToPrevClip: clip -> view -> world -> prevWorld -> prevView -> prevClip
-    mathstl::Matrix clipToPrevClip = sharedDataUBO.projectionInverse * sharedDataUBO.viewInverse * sharedDataUBO.prevViewProjection;
-    slConst.clipToPrevClip = *(sl::float4x4*)&clipToPrevClip;
-    const mathstl::Matrix prevClipToClip = clipToPrevClip.Invert();
-    slConst.prevClipToClip = *(sl::float4x4*)&prevClipToClip;
+    const auto& cameraData = ctx.cameraData;
+    // Scale matrix to negate the Y axis (acts as an inversion between DX and VK clip spaces)
+    mathstl::Matrix S = mathstl::Matrix::Identity;
+    S._22 = -1.0f;
+
+    // Because DXMath uses row-vectors (v * M):
+    // v_clip_vk = v_view * (P_dx * S)
+    mathstl::Matrix viewToClipVK = cameraData.viewToClip * S;
+    // v_view = (v_clip_vk * S) * P_inv_dx = v_clip_vk * (S * P_inv_dx)
+    mathstl::Matrix clipToViewVK = S * cameraData.clipToView;
+    // v_clip_prev_vk = (v_clip_curr_vk * S) * clipToPrevClip_dx * S
+    mathstl::Matrix clipToPrevClipVK = S * cameraData.clipToPrevClip * S;
+    // v_clip_curr_vk = (v_clip_prev_vk * S) * prevClipToClip_dx * S
+    mathstl::Matrix prevClipToClipVK = S * cameraData.prevClipToClip * S;
+
+    slConst.cameraViewToClip = *(sl::float4x4*)&viewToClipVK;
+    slConst.clipToCameraView = *(sl::float4x4*)&clipToViewVK;
+    slConst.clipToPrevClip   = *(sl::float4x4*)&clipToPrevClipVK;
+    slConst.prevClipToClip   = *(sl::float4x4*)&prevClipToClipVK;
 
     const mathstl::Vector2 jitter = data.renderState.jitter;
-    slConst.jitterOffset = {-jitter.x, jitter.y};
-    slConst.mvecScale = {1,1};
+    slConst.jitterOffset = {jitter.x, jitter.y};
+    slConst.mvecScale = {1.0f / static_cast<float>(motionExtents.x), 1.0f / static_cast<float>(motionExtents.y)};
     slConst.cameraPinholeOffset = {0.0f, 0.0f};
-    slConst.cameraPos = {data.mainView.position.x, data.mainView.position.y, data.mainView.position.z};
-    const mathstl::Vector3 rotation = mathstl::Vector3(data.mainView.rotation.x * kDegToRad,
-                                                       data.mainView.rotation.y * kDegToRad,
-                                                       data.mainView.rotation.z * kDegToRad);
-    const mathstl::Matrix rotationMatrix = mathstl::Matrix::CreateFromYawPitchRoll(rotation.y, rotation.x, rotation.z);
-    const mathstl::Vector3 cameraRight = mathstl::Vector3::Transform(mathstl::Vector3(1.0f, 0.0f, 0.0f), rotationMatrix);
-    const mathstl::Vector3 cameraUp = mathstl::Vector3::Transform(mathstl::Vector3(0.0f, 1.0f, 0.0f), rotationMatrix);
-    const mathstl::Vector3 cameraForwardBasis = mathstl::Vector3::Transform(mathstl::Vector3(0.0f, 0.0f, 1.0f), rotationMatrix);
-    const mathstl::Vector3 cameraForward(-cameraForwardBasis.x, -cameraForwardBasis.y, -cameraForwardBasis.z);
-    slConst.cameraUp = {cameraUp.x, cameraUp.y, cameraUp.z};
-    slConst.cameraRight = {cameraRight.x, cameraRight.y, cameraRight.z};
-    slConst.cameraFwd = {cameraForward.x, cameraForward.y, cameraForward.z};
-    slConst.cameraNear = ctx.zNear;
-    slConst.cameraFar = ctx.zFar;
-    slConst.cameraFOV = data.mainView.fov * kDegToRad;
-    slConst.cameraAspectRatio = (data.mainView.viewport.height > 0.0f)
-                                    ? (data.mainView.viewport.width / data.mainView.viewport.height)
-                                    : 1.0f;
+    slConst.cameraPos = {cameraData.position.x, cameraData.position.y, cameraData.position.z};
+    slConst.cameraUp = {cameraData.up.x, cameraData.up.y, cameraData.up.z};
+    slConst.cameraRight = {cameraData.right.x, cameraData.right.y, cameraData.right.z};
+    slConst.cameraFwd = {cameraData.forward.x, cameraData.forward.y, cameraData.forward.z};
+    slConst.cameraNear = cameraData.nearPlane;
+    slConst.cameraFar = cameraData.farPlane;
+    slConst.cameraFOV = cameraData.fovRadians;
+    slConst.cameraAspectRatio = cameraData.aspectRatio;
     slConst.motionVectorsInvalidValue = sl::INVALID_FLOAT;
     // Depth prepass uses LESS_OR_EQUAL with depth clear=1.0, so depth is not inverted.
     slConst.depthInverted = sl::Boolean::eFalse;
@@ -183,7 +184,34 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     slConst.motionVectors3D = sl::Boolean::eFalse;
     const bool shouldReset = data.renderState.recreatedThisFrame || Nvidia::StreamlineManager::ConsumeDLSSResetFlag();
     slConst.reset = shouldReset ? sl::Boolean::eTrue : sl::Boolean::eFalse;
-    slConst.motionVectorsJittered = sl::Boolean::eFalse;
+    slConst.motionVectorsJittered = sl::Boolean::eTrue;
+
+    auto debugState = Nvidia::StreamlineManager::GetDLSSDebugState();
+    debugState.streamlineInitialized = Nvidia::StreamlineManager::IsAvailable();
+    debugState.inputWidth = inputExtents.x;
+    debugState.inputHeight = inputExtents.y;
+    debugState.outputWidth = outputExtents.x;
+    debugState.outputHeight = outputExtents.y;
+    debugState.jitter = jitter;
+    debugState.motionVectorScale = {slConst.mvecScale.x, slConst.mvecScale.y};
+    debugState.nearPlane = cameraData.nearPlane;
+    debugState.farPlane = cameraData.farPlane;
+    debugState.fovRadians = cameraData.fovRadians;
+    debugState.aspectRatio = cameraData.aspectRatio;
+    debugState.cameraMotionIncluded = slConst.cameraMotionIncluded == sl::Boolean::eTrue;
+    debugState.motionVectorsJittered = slConst.motionVectorsJittered == sl::Boolean::eTrue;
+    debugState.depthInverted = slConst.depthInverted == sl::Boolean::eTrue;
+    debugState.lastSetConstantsResult = sl::Result::eOk;
+    debugState.lastTagResult = sl::Result::eOk;
+    debugState.lastEvaluateResult = sl::Result::eOk;
+
+    sl::DLSSState dlssState{};
+    if (Nvidia::StreamlineManager::GetDLSSState(dlssState))
+    {
+        debugState.estimatedVRAMUsageInBytes = dlssState.estimatedVRAMUsageInBytes;
+    }
+
+    Nvidia::StreamlineManager::SetDLSSDebugState(debugState);
 
     ExecuteNativeCmd streamlineCmd{};
     streamlineCmd.callback = [tagDescs, pFrameToken](void* pNativeCmdBuf) mutable {
@@ -192,8 +220,8 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
         if (!pFrameToken)
             return;
 
-        stltype::fixed_vector<sl::Resource, 4> resources;
-        stltype::fixed_vector<sl::ResourceTag, 4> tags;
+        stltype::fixed_vector<sl::Resource, 5> resources;
+        stltype::fixed_vector<sl::ResourceTag, 5> tags;
         for (const auto& td : tagDescs)
         {
             sl::Resource& res = resources.emplace_back();
@@ -216,6 +244,9 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
                                                    tags.data(),
                                                    static_cast<uint32_t>(tags.size()),
                                                    reinterpret_cast<sl::CommandBuffer*>(cmd));
+        auto debugState = Nvidia::StreamlineManager::GetDLSSDebugState();
+        debugState.lastTagResult = tagRes;
+        Nvidia::StreamlineManager::SetDLSSDebugState(debugState);
         if (tagRes != sl::Result::eOk)
         {
             std::cout << "[DLSSPass] slSetTagForFrame failed with result: 0x" << std::hex
@@ -228,6 +259,9 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
 
     StartRenderPassProfilingScope(pCmdBuffer);
     const sl::Result constRes = slSetConstants(slConst, *pFrameToken, viewport);
+    debugState = Nvidia::StreamlineManager::GetDLSSDebugState();
+    debugState.lastSetConstantsResult = constRes;
+    Nvidia::StreamlineManager::SetDLSSDebugState(debugState);
     if (constRes != sl::Result::eOk)
     {
         std::cout << "[DLSSPass] slSetConstants failed with result: 0x" << std::hex

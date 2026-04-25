@@ -151,7 +151,7 @@ void CSMPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comman
                                      data.mainCamInvViewProj,
                                      csmView.dir,
                                      splits,
-                                     uboData.lightViewProjMatrices,
+                                     uboData.csmViewMatrices,
                                      (u32)extents.x);
 
         uboData.cascadeCount = (s32)data.cascades;

@@ -3,14 +3,10 @@
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Rendering/Core/RenderingForwardDecls.h"
 #include "Core/Rendering/Vulkan/VkPipeline.h"
+#include "../../../../../Shaders/Globals/PushConstants.h"
 
 namespace RenderPasses
 {
-struct FrustumCullingPushConstants
-{
-    u32 objectCount;
-};
-
 // Compute pass for frustum culling
 class FrustumCullingComputePass : public ConvolutionRenderPass
 {

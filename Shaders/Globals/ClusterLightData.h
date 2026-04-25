@@ -1,17 +1,37 @@
 #ifndef SHADERS_CLUSTER_LIGHT_DATA_H
 #define SHADERS_CLUSTER_LIGHT_DATA_H
 
-layout(scalar, set = TileArraySet, binding = GlobalTileArraySSBOSlot) buffer GlobalTileSSBO
-{
-    DirectionalLight dirLight;
-    uint numLights;
-    Light lights[MAX_SCENE_LIGHTS];
+#include "Scene.h"
+
+STRUCTDECL(LightClusterBuffer)
+    STRUCTFIELD(DirectionalLight, dirLight)
+    STRUCTFIELD(uint, numLights)
+    STRUCTFIELD_ARRAY(Light, lights, MAX_SCENE_LIGHTS)
 
     // Cluster light indices
-    uint clusterOffsets[MAX_CLUSTERS + 1];
-    uint clusterLightIndices[MAX_LIGHT_INDICES];
+    STRUCTFIELD_ARRAY(uint, clusterOffsets, MAX_CLUSTERS + 1)
+    STRUCTFIELD_ARRAY(uint, clusterLightIndices, MAX_LIGHT_INDICES)
+STRUCTEND()
+
+#ifndef __cplusplus
+layout(scalar, set = TileArraySet, binding = GlobalTileArraySSBOSlot) buffer GlobalTileSSBO
+{
+    LightClusterBuffer lightData;
+};
+#endif
+
+STRUCTDECL(LightUniforms)
+    STRUCTFIELD(vec4, ClusterValues) // x=scale, y=bias, z=maxSlices, w=shadowsEnabled
+    STRUCTFIELD(vec4, ClusterSize)   // x=dimX, y=dimY, z=dimZ, w=tileSizeX
+STRUCTEND()
+
+#ifndef __cplusplus
+layout(std140, set = TileArraySet, binding = GlobalLightDataUBOSlot) uniform LightUBO
+{
+    LightUniforms data;
 }
-lightData;
+lightUniforms;
+
 // IO Helpers
 FUNC_QUALIFIER uint GetClusterLightBaseIndex(uint clusterIdx)
 {
@@ -39,18 +59,6 @@ FUNC_QUALIFIER void StoreClusterLightIndex(uint baseIndex, uint i, uint lightIdx
     lightData.clusterLightIndices[baseIndex + 1 + i] = lightIdx;
 }
 
-struct LightUniforms
-{
-    vec4 ClusterValues; // x=scale, y=bias, z=maxSlices, w=shadowsEnabled
-    vec4 ClusterSize;   // x=dimX, y=dimY, z=dimZ, w=tileSizeX
-};
-
-layout(std140, set = TileArraySet, binding = GlobalLightDataUBOSlot) uniform LightUBO
-{
-    LightUniforms data;
-}
-lightUniforms;
-
 // Helper functions for cluster access
 FUNC_QUALIFIER uint getClusterIndex(vec3 viewPos, mat4 projMat)
 {
@@ -73,4 +81,5 @@ FUNC_QUALIFIER uint getClusterIndex(vec3 viewPos, mat4 projMat)
 
     return x + y * uint(clusterSize.x) + z * uint(clusterSize.x) * uint(clusterSize.y);
 }
+#endif
 #endif // SHADERS_CLUSTER_LIGHT_DATA_H

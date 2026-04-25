@@ -10,6 +10,7 @@
 
 #include "../../Globals/ClusteredShading.h"
 #include "../../Globals/ClusterLightData.h"
+#include "../../Globals/PushConstants.h"
 
 #define X_LOCAL_SIZE 128
 
@@ -17,11 +18,10 @@ layout(local_size_x = X_LOCAL_SIZE, local_size_y = 1, local_size_z = 1) in;
 
 layout(push_constant, scalar) uniform PushConstants
 {
-    ivec3 clusterCount;
-    uint numLights;
-    vec4 nearFar;
-}
-pc;
+    ClusterPushConstants data;
+} pushConstantsBlock;
+
+#define pc pushConstantsBlock.data
 
 void main()
 {

@@ -10,21 +10,20 @@
 #define MATERIAL_FLAG_SHEEN_BIT              5
 #define MATERIAL_FLAG_CLEARCOAT_BIT          6
 
-struct Material
-{
-    vec4 baseColor; // RGBA
-    vec4 emissive;  // RGB (A unused for now)
-    vec4 pbr1;      // x: metallic, y: roughness, z: subsurface, w: specular
-    vec4 pbr2;      // x: anisotropic, y: specularTint, z: clearcoat, w: clearcoatGloss
-    vec4 pbr3;      // x: sheen, y: sheenTint, z: specTrans, w: ior
-    uint diffuseTexture;
-    uint normalTexture;
-    uint metallicRoughnessTexture;
-    uint emissiveTexture;
-    uint sheenTexture;
-    uint clearcoatTexture;
-    uint flags;
-};
+STRUCTDECL(Material)
+    STRUCTFIELD(vec4, baseColor) // RGBA
+    STRUCTFIELD(vec4, emissive)  // RGB (A unused for now)
+    STRUCTFIELD(vec4, pbr1)      // x: metallic, y: roughness, z: subsurface, w: specular
+    STRUCTFIELD(vec4, pbr2)      // x: anisotropic, y: specularTint, z: clearcoat, w: clearcoatGloss
+    STRUCTFIELD(vec4, pbr3)      // x: sheen, y: sheenTint, z: specTrans, w: ior
+    STRUCTFIELD(uint, diffuseTexture)
+    STRUCTFIELD(uint, normalTexture)
+    STRUCTFIELD(uint, metallicRoughnessTexture)
+    STRUCTFIELD(uint, emissiveTexture)
+    STRUCTFIELD(uint, sheenTexture)
+    STRUCTFIELD(uint, clearcoatTexture)
+    STRUCTFIELD(uint, flags)
+STRUCTEND()
 
 FUNC_QUALIFIER bool IsMaterialFlagSet(uint flags, uint bit)
 {

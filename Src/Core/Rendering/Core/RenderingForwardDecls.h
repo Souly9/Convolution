@@ -4,15 +4,9 @@
 // For complete types, include RenderingIncludes.h in your .cpp file
 
 #include "Core/Global/GlobalDefines.h"
+#include "../../../../Shaders/Globals/Scene.h"
 
 // Common struct definitions (API-agnostic)
-struct MeshResourceData
-{
-    u32 vertBufferOffset;
-    u32 indexBufferOffset;
-    u32 vertCount;
-    u32 indexCount;
-};
 using MeshHandle = MeshResourceData;
 
 // Note: ImageLayout is defined in Core/Rendering/Core/Texture.h
@@ -117,8 +111,6 @@ using GPUMappedMemoryHandle = void*;
 using RawSemaphoreHandle = VkSemaphore;
 using IndexedIndirectDrawCmd = VkDrawIndexedIndirectCommand;
 using QueryPool = QueryPoolVulkan;
-// Bindless texture handle type
-using BindlessTextureHandle = u32;
 
 // Texture format macro
 #define TEXFORMAT(type) VK_FORMAT_##type

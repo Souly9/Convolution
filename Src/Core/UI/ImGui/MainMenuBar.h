@@ -2,6 +2,7 @@
 #include "Controls/SceneGraphWindow.h"
 #include "Controls/SelectedEntitiesWindow.h"
 #include "DebugWindows/DebugSettings.h"
+#include "DebugWindows/DLSSDebugWindow.h"
 #include "DebugWindows/GBufferWindow.h"
 #include "DebugWindows/InfoWindow.h"
 #include "DebugWindows/RenderSettingsWindow.h"
@@ -32,4 +33,5 @@ private:
     SceneGraphWindow m_sceneGraphWindow;
     RenderSettingsWindow m_renderSettingsWindow;
     GPUTimingWindow m_gpuTimingWindow;
+    DLSSDebugWindow m_dlssDebugWindow;
 };

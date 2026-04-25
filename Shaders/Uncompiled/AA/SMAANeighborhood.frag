@@ -14,5 +14,5 @@ layout(location = 0) out vec4 outColor;
 
 void main()
 {
-    outColor = SMAANeighborhoodBlendingPS(texCoord, offset, pc.tex1, pc.tex2);
+    outColor = SMAANeighborhoodBlendingPS(texCoord, offset, pc.pushConstants.tex1, pc.pushConstants.tex2);
 }

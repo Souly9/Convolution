@@ -44,7 +44,7 @@ void ScreenSpaceShadowPass::BuildPipelines()
     PushConstant pushConst;
     pushConst.shaderUsage = ShaderTypeBits::Compute;
     pushConst.offset = 0;
-    pushConst.size = sizeof(PushConstants);
+    pushConst.size = sizeof(ScreenSpaceShadowPushConstants);
     pipeInfo.pushConstantInfo.constants.push_back(pushConst);
 
     m_computePipeline = ComputePipeline(shaders, pipeInfo);
@@ -93,8 +93,8 @@ void ScreenSpaceShadowPass::Render(const MainPassData& data, FrameRendererContex
     for (int i = 0; i < dispatchList.DispatchCount; i++)
     {
         const auto& dispatch = dispatchList.Dispatch[i];
-        m_pushConstants.waveOffset[0] = dispatch.WaveOffset_Shader[0];
-        m_pushConstants.waveOffset[1] = dispatch.WaveOffset_Shader[1];
+        m_pushConstants.waveOffset.x = dispatch.WaveOffset_Shader[0];
+        m_pushConstants.waveOffset.y = dispatch.WaveOffset_Shader[1];
         GenericComputeDispatchCmd cmd(&m_computePipeline, dispatch.WaveCount[0], dispatch.WaveCount[1], dispatch.WaveCount[2]);
         cmd.descriptorSets.push_back(texArraySet);
         cmd.descriptorSets.push_back(imageArraySet);

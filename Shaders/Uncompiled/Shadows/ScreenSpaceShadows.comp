@@ -6,14 +6,13 @@ layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
 #include "../../Globals/Common.h"
 #include "../../Globals/Bindless.h"
+#include "../../Globals/PushConstants.h"
 
 layout(push_constant) uniform PushConstants {
-    vec4 lightCoordinate;
-    ivec2 waveOffset;
-    vec2 invDepthTextureSize;
-    uint depthTexIdx;
-    uint outputTexIdx;
-} pc;
+    ScreenSpaceShadowPushConstants data;
+} pushConstantsBlock;
+
+#define pc pushConstantsBlock.data
 
 #define SURFACE_THICKNESS 0.004
 #define BILINEAR_THRESHOLD 0.02

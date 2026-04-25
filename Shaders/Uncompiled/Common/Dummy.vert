@@ -15,9 +15,22 @@ layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;
 layout(location = 2) in vec2 inTexCoord0;
 layout(location = 3) in vec4 inTangent;
+layout(location = 0) out VertexOut
+{
+    vec2 fragTexCoord;
+    flat uint matIdx;
+}
+OUT;
 
 void main()
 {
-    mat4 worldMat = FetchWorldMatrix(gl_InstanceIndex);
-    gl_Position = ubo.jitteredProjection * worldMat * vec4(inPosition, 1.0);
+    uint instanceIdx = perObjectDataSSBO.transformDataIdx[gl_InstanceIndex];
+    InstanceData iData = globalInstanceDataSSBO.instances[instanceIdx];
+    uint transformIdx = GetTransformIdx(iData);
+    mat4 worldMat = globalTransformSSBO.modelMatrices[transformIdx];
+    OUT.matIdx = GetMaterialIdx(iData);
+    OUT.fragTexCoord = inTexCoord0;
+
+    vec4 localPosition = vec4(inPosition, 1.0);
+    gl_Position = ubo.jitteredProjection * worldMat * localPosition;
 }

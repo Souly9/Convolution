@@ -14,6 +14,7 @@ void DepthPrePass::BuildPipelines()
     ScopedZone("DepthPrePass::BuildPipelines");
 
     auto mainVert = Shader("Shaders/Dummy.vert.spv", "main");
+    auto mainFrag = Shader("Shaders/DepthPass.frag.spv", "main");
 
     PipelineInfo info{};
     info.descriptorSetLayout.sharedDescriptors = m_sharedDescriptors;
@@ -23,8 +24,8 @@ void DepthPrePass::BuildPipelines()
     info.depthWriteEnable = true;
     //info.rasterizerInfo.cullmode = CullMode::BACK;
     
-    m_mainPSO = PSO(
-        ShaderCollection{&mainVert, nullptr}, PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions}, info);
+    m_mainPSO =
+        PSO(ShaderCollection{&mainVert, &mainFrag}, PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions}, info);
 }
 
 void DepthPrePass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager)

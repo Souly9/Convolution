@@ -1,30 +1,42 @@
 #ifndef SHADERS_GBUFFER_SAMPLING_H
 #define SHADERS_GBUFFER_SAMPLING_H
 
+#include "../Common.h"
+
+#ifndef __cplusplus
 #extension GL_ARB_shading_language_include : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_EXT_scalar_block_layout : enable
+#endif
 
-layout(set = GBufferUBOSet, binding = GlobalGBufferPostProcessUBOSlot) uniform GBufferUBO
-{
-    BindlessTextureHandle gbufferAlbedoIdx;
-    BindlessTextureHandle gbufferNormalIdx;
-    BindlessTextureHandle gbufferTexCoordMatIdx;
-    BindlessTextureHandle gbufferDebugIdx;
-    BindlessTextureHandle gbufferVelocityIdx;
-    BindlessTextureHandle depthBufferIdx;
-    BindlessTextureHandle lastFrameColorBufferIdx;
-    BindlessTextureHandle thisFrameColorBufferIdx;
-    BindlessTextureHandle lastFrameDepthIdx;
-    BindlessTextureHandle gbufferResolveIdx;
-}
-gbufferUBO;
+STRUCTDECL(GBufferPostProcessUBO)
+    STRUCTFIELD(BindlessTextureHandle, gbufferAlbedoIdx)
+    STRUCTFIELD(BindlessTextureHandle, gbufferNormalIdx)
+    STRUCTFIELD(BindlessTextureHandle, gbufferTexCoordMatIdx)
+    STRUCTFIELD(BindlessTextureHandle, gbufferDebugIdx)
+    STRUCTFIELD(BindlessTextureHandle, gbufferVelocityIdx)
+    STRUCTFIELD(BindlessTextureHandle, depthBufferIdx)
+    STRUCTFIELD(BindlessTextureHandle, lastFrameColorBufferIdx)
+    STRUCTFIELD(BindlessTextureHandle, thisFrameColorBufferIdx)
+    STRUCTFIELD(BindlessTextureHandle, lastFrameDepthIdx)
+    STRUCTFIELD(BindlessTextureHandle, gbufferResolveIdx)
+STRUCTEND()
 
-layout(set = GBufferUBOSet, binding = GlobalShadowMapUBOSlot) uniform ShadowMapUBO
+STRUCTDECL(ShadowMapUBO)
+    STRUCTFIELD(BindlessTextureHandle, directionalShadowMapIdx)
+STRUCTEND()
+
+#ifndef __cplusplus
+layout(set = GBufferUBOSet, binding = GlobalGBufferPostProcessUBOSlot) uniform GBufferUBOBlock
 {
-    BindlessTextureHandle directionalShadowMapIdx;
-}
-shadowmapUBO;
+    GBufferPostProcessUBO gbufferUBO;
+};
+
+layout(set = GBufferUBOSet, binding = GlobalShadowMapUBOSlot) uniform ShadowMapUBOBlock
+{
+    ShadowMapUBO shadowmapUBO;
+};
+#endif
 
 #endif // SHADERS_GBUFFER_SAMPLING_H
  

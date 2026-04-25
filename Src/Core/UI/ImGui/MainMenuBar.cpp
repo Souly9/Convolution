@@ -108,6 +108,10 @@ void MainMenuBar::DrawMenuBar(f32 dt, ApplicationInfos& appInfos)
             {
                 m_gbufferWindow.SetOpen(true);
             }
+            if (ImGui::MenuItem("DLSS Debug", ""))
+            {
+                m_dlssDebugWindow.SetOpen(true);
+            }
             ImGui::EndMenu();
         }
         ImGui::EndMainMenuBar();
@@ -148,5 +152,9 @@ void MainMenuBar::DrawMenuBar(f32 dt, ApplicationInfos& appInfos)
     if (m_gbufferWindow.IsOpen())
     {
         m_gbufferWindow.DrawWindow(dt);
+    }
+    if (m_dlssDebugWindow.IsOpen())
+    {
+        m_dlssDebugWindow.DrawWindow(dt);
     }
 }

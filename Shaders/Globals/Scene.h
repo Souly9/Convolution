@@ -1,10 +1,13 @@
 #ifndef SHADERS_SCENE_H
 #define SHADERS_SCENE_H
+#ifndef __cplusplus
 #extension GL_EXT_scalar_block_layout : enable
+#endif
 
 #include "Common.h"
 #include "Material.h"
 
+#ifndef __cplusplus
 struct IndexedIndirectDrawCmd
 {
     uint    indexCount;
@@ -13,22 +16,38 @@ struct IndexedIndirectDrawCmd
     int    vertexOffset;
     uint    firstInstance;
 };
+#endif
 
-struct MeshResourceData
-{
-    uint vertBufferOffset;
-    uint indexBufferOffset;
-    uint vertCount;
-    uint indexCount;
-};
+STRUCTDECL(MeshResourceData)
+    STRUCTFIELD(uint, vertBufferOffset)
+    STRUCTFIELD(uint, indexBufferOffset)
+    STRUCTFIELD(uint, vertCount)
+    STRUCTFIELD(uint, indexCount)
+STRUCTEND()
 
-struct InstanceData
-{
-    MeshResourceData drawData;
-    vec4 aabbCenterTransIdx;
-    vec4 aabbExtentsMatIdx;
-    uint flags;
-};
+STRUCTDECL(InstanceData)
+    STRUCTFIELD(MeshResourceData, drawData)
+    STRUCTFIELD(vec4, aabbCenterTransIdx)
+    STRUCTFIELD(vec4, aabbExtentsMatIdx)
+    STRUCTFIELD(uint, flags)
+
+#ifdef __cplusplus
+    void SetTransformIdx(u32 idx)
+    {
+        aabbCenterTransIdx.w = static_cast<f32>(idx);
+    }
+
+    void SetMaterialIdx(u32 idx)
+    {
+        aabbExtentsMatIdx.w = static_cast<f32>(idx);
+    }
+
+    void SetVisible(bool visible)
+    {
+        flags = visible ? 1u : 0u;
+    }
+#endif
+STRUCTEND()
 
 FUNC_QUALIFIER uint GetTransformIdx(InstanceData data)
 {
@@ -45,52 +64,59 @@ FUNC_QUALIFIER bool IsVisible(InstanceData data)
     return (data.flags & 1) != 0;
 }
 
-struct Light
-{
-    vec4 position;
-    vec4 direction;
-    vec4 color;
-    vec4 cutoff;
-};
+STRUCTDECL(Light)
+    STRUCTFIELD(vec4, position)
+    STRUCTFIELD(vec4, direction)
+    STRUCTFIELD(vec4, color)
+    STRUCTFIELD(vec4, cutoff)
+STRUCTEND()
 
-struct DirectionalLight
-{
-    vec4 direction;
-    vec4 color;
-};
+STRUCTDECL(DirectionalLight)
+    STRUCTFIELD(vec4, direction)
+    STRUCTFIELD(vec4, color)
+STRUCTEND()
 
-layout(scalar, set = SharedDataUBOSet, binding = SharedDataUBOBindingSlot) uniform SharedDataUBO
-{
-    mat4 view;
-    mat4 projection;
-    mat4 viewProjection;
-    mat4 viewProjectionInverse;
-    mat4 viewInverse;
-    mat4 projectionInverse;
-    mat4 jitteredProjection;
-    mat4 jitteredViewProjectionInverse;
-    mat4 prevView;
-    mat4 prevProjection;
-    mat4 prevViewProjection;
-    vec4 viewPos;
+STRUCTDECL(SharedDataUBO)
+    STRUCTFIELD(mat4, view)
+    STRUCTFIELD(mat4, projection)
+    STRUCTFIELD(mat4, viewProjection)
+    STRUCTFIELD(mat4, viewProjectionInverse)
+    STRUCTFIELD(mat4, viewInverse)
+    STRUCTFIELD(mat4, projectionInverse)
+    STRUCTFIELD(mat4, jitteredProjection)
+    STRUCTFIELD(mat4, jitteredViewProjectionInverse)
+    STRUCTFIELD(mat4, prevView)
+    STRUCTFIELD(mat4, prevProjection)
+    STRUCTFIELD(mat4, prevViewProjection)
+    STRUCTFIELD(mat4, prevJitteredProjection)
+    STRUCTFIELD(vec4, viewPos)
+    STRUCTFIELD(vec2, renderResolution)
 
     // Debug & Global settings
-    uint debugFlags;
-    int debugViewMode;
-    float exposure;
-    int toneMapperType;
-    float ambientIntensity;
-    float gt7PaperWhite;
-    float gt7ReferenceLuminance;
-}
-ubo;
+    STRUCTFIELD(uint, debugFlags)
+    STRUCTFIELD(int, debugViewMode)
+    STRUCTFIELD(float, exposure)
+    STRUCTFIELD(int, toneMapperType)
+    STRUCTFIELD(float, ambientIntensity)
+    STRUCTFIELD(float, gt7PaperWhite)
+    STRUCTFIELD(float, gt7ReferenceLuminance)
+STRUCTEND()
 
+#ifndef __cplusplus
+layout(scalar, set = SharedDataUBOSet, binding = SharedDataUBOBindingSlot) uniform SharedDataUBOBlock
+{
+    SharedDataUBO ubo;
+};
+#endif
+
+#ifndef __cplusplus
 mat3 AdjugateFromWorldMat(mat4 m)
 {
     return mat3(cross(m[1].xyz, m[2].xyz),
         cross(m[2].xyz, m[0].xyz),
         cross(m[0].xyz, m[1].xyz));
 }
+#endif
 #endif // SHADERS_SCENE_H
  
 

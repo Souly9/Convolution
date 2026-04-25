@@ -3,16 +3,10 @@
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Rendering/Core/RenderingForwardDecls.h"
 #include "Core/Rendering/Vulkan/VkPipeline.h"
+#include "../../../../../Shaders/Globals/PushConstants.h"
 
 namespace RenderPasses
 {
-struct ClusterPushConstants
-{
-    DirectX::XMINT3 clusterCount;
-    u32 numLights;
-    mathstl::Vector4 nearFar; // x=near, y=far, zw=unused
-};
-
 class LightGridComputePass : public ConvolutionRenderPass
 {
 public:

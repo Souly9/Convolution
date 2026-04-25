@@ -11,6 +11,7 @@
 #include "Core/Rendering/Core/ShadowMaps.h"
 #include "Core/Rendering/Core/SharedResourceManager.h"
 #include "Core/Rendering/Core/View.h"
+#include "Core/Rendering/Core/Buffer.h"
 #include <SimpleMath/SimpleMath.h>
 #include "EASTL/fixed_vector.h"
 #include "GBuffer.h"
@@ -278,6 +279,7 @@ protected:
     void RecordResolveToRead(CommandBuffer* pCmdBuffer);
     void RecordSSSOutputToGeneral(CommandBuffer* pCmdBuffer);
     void RecordSSSOutputToShaderRead(CommandBuffer* pCmdBuffer);
+    void RecordDLSSExposureUpdate(CommandBuffer* pCmdBuffer);
     void RecordSwapchainToPresent(CommandBuffer* pCmdBuffer);
 
 private:
@@ -337,6 +339,11 @@ private:
     Texture* m_pSMAABlendTexture{nullptr};
     TextureHandle m_smaaBlendTextureHandle{0};
     BindlessTextureHandle m_smaaBlendBindlessHandle{0};
+
+    Texture* m_pDLSSExposureTexture{nullptr};
+    TextureHandle m_dlssExposureTextureHandle{0};
+    StagingBuffer m_dlssExposureStagingBuffer{};
+    bool m_dlssExposureTextureInitialized{false};
 
     u32 m_instanceBufferUpdateTimingIndex;
     u32 m_clearTileCountersTimingIndex{UINT32_MAX};

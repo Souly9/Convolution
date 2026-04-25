@@ -1,4 +1,5 @@
 #include "StreamlineManager.h"
+#include "Core/Global/ThreadBase.h"
 #include "Core/Rendering/Vulkan/VkGlobals.h"
 #include "Core/Global/GlobalVariables.h"
 #include <vulkan/vulkan.h>
@@ -19,7 +20,10 @@ static u32 g_dlssFailedHeight = 0;
 static sl::DLSSMode g_dlssFailedMode = sl::DLSSMode::eOff;
 static bool g_dlssEvaluateBlocked = false;
 static bool g_dlssNeedsReset = false;
+static bool g_dlssSupported = false;
 static HMODULE g_slModule = nullptr;
+static ProfiledLockable(CustomMutex, g_dlssDebugStateMutex);
+static StreamlineManager::DLSSDebugState g_dlssDebugState{};
 
 // Function pointers for Streamline API
 static PFun_slInit* g_slInit = nullptr;
@@ -155,6 +159,7 @@ bool StreamlineManager::Init()
     sl::AdapterInfo adapterInfo{};
     adapterInfo.vkPhysicalDevice = context.PhysicalDevice;
     res = g_slIsFeatureSupported(sl::kFeatureDLSS, adapterInfo);
+    g_dlssSupported = res == sl::Result::eOk;
     if (res != sl::Result::eOk)
     {
         DEBUG_ASSERT(false);
@@ -171,6 +176,10 @@ bool StreamlineManager::Init()
     }
 
     s_initialized = true;
+    auto debugState = GetDLSSDebugState();
+    debugState.streamlineInitialized = true;
+    debugState.featureSupported = g_dlssSupported;
+    SetDLSSDebugState(debugState);
     return true;
 }
 
@@ -190,7 +199,9 @@ void StreamlineManager::Shutdown()
         g_dlssFailedMode = sl::DLSSMode::eOff;
         g_dlssEvaluateBlocked = false;
         g_dlssNeedsReset = false;
+        g_dlssSupported = false;
     }
+    SetDLSSDebugState(DLSSDebugState{});
 }
 
 bool StreamlineManager::GetFrameToken(u32 frameIdx, sl::FrameToken*& pFrameToken)
@@ -217,6 +228,15 @@ bool StreamlineManager::GetDLSSOptimalSettings(u32 width, u32 height, sl::DLSSMo
     return slDLSSGetOptimalSettings(options, settings) == sl::Result::eOk;
 }
 
+bool StreamlineManager::GetDLSSState(sl::DLSSState& state)
+{
+    if (!s_initialized)
+        return false;
+
+    sl::ViewportHandle viewport(0);
+    return slDLSSGetState(viewport, state) == sl::Result::eOk;
+}
+
 void StreamlineManager::SetVulkanQueueStartIndices(u32 graphicsQueueIndex, u32 computeQueueIndex)
 {
     g_slGraphicsQueueStartIndex = graphicsQueueIndex;
@@ -231,7 +251,18 @@ bool StreamlineManager::SetDLSSOptions(u32 width, u32 height, sl::DLSSMode mode)
     options.mode = mode;
     options.outputWidth = width;
     options.outputHeight = height;
+    options.sharpness = 0.0f;
+    options.preExposure = 1.0f;
+    options.exposureScale = 1.0f;
     options.colorBuffersHDR = sl::Boolean::eTrue;
+    options.dlaaPreset = sl::DLSSPreset::ePresetK;
+    options.qualityPreset = sl::DLSSPreset::ePresetK;
+    options.balancedPreset = sl::DLSSPreset::ePresetK;
+    options.performancePreset = sl::DLSSPreset::ePresetK;
+    options.ultraQualityPreset = sl::DLSSPreset::ePresetK;
+    options.ultraPerformancePreset = sl::DLSSPreset::ePresetF;
+    options.useAutoExposure = sl::Boolean::eFalse;
+    options.alphaUpscalingEnabled = sl::Boolean::eFalse;
 
     sl::ViewportHandle viewport(0);
     const auto res = slDLSSSetOptions(viewport, options);
@@ -271,6 +302,17 @@ bool StreamlineManager::EnsureDLSSConfigured(u32 width, u32 height, sl::DLSSMode
         g_dlssFailedWidth = width;
         g_dlssFailedHeight = height;
         g_dlssFailedMode = mode;
+        auto debugState = GetDLSSDebugState();
+        debugState.streamlineInitialized = s_initialized;
+        debugState.featureSupported = g_dlssSupported;
+        debugState.configured = false;
+        debugState.lastConfigureFailed = true;
+        debugState.evaluateBlocked = g_dlssEvaluateBlocked;
+        debugState.needsReset = g_dlssNeedsReset;
+        debugState.configuredMode = mode;
+        debugState.outputWidth = width;
+        debugState.outputHeight = height;
+        SetDLSSDebugState(debugState);
         return false;
     }
 
@@ -284,6 +326,31 @@ bool StreamlineManager::EnsureDLSSConfigured(u32 width, u32 height, sl::DLSSMode
     g_dlssFailedMode = sl::DLSSMode::eOff;
     g_dlssEvaluateBlocked = false;
     g_dlssNeedsReset = true;
+
+    auto debugState = GetDLSSDebugState();
+    debugState.streamlineInitialized = s_initialized;
+    debugState.featureSupported = g_dlssSupported;
+    debugState.configured = true;
+    debugState.evaluateBlocked = g_dlssEvaluateBlocked;
+    debugState.lastConfigureFailed = false;
+    debugState.needsReset = g_dlssNeedsReset;
+    debugState.configuredMode = mode;
+    debugState.outputWidth = width;
+    debugState.outputHeight = height;
+
+    sl::DLSSOptimalSettings optimalSettings{};
+    if (GetDLSSOptimalSettings(width, height, mode, optimalSettings))
+    {
+        debugState.optimalRenderWidth = optimalSettings.optimalRenderWidth;
+        debugState.optimalRenderHeight = optimalSettings.optimalRenderHeight;
+        debugState.optimalSharpness = optimalSettings.optimalSharpness;
+        debugState.renderWidthMin = optimalSettings.renderWidthMin;
+        debugState.renderHeightMin = optimalSettings.renderHeightMin;
+        debugState.renderWidthMax = optimalSettings.renderWidthMax;
+        debugState.renderHeightMax = optimalSettings.renderHeightMax;
+    }
+
+    SetDLSSDebugState(debugState);
     return true;
 }
 
@@ -291,6 +358,9 @@ bool StreamlineManager::ConsumeDLSSResetFlag()
 {
     const bool needsReset = g_dlssNeedsReset;
     g_dlssNeedsReset = false;
+    auto debugState = GetDLSSDebugState();
+    debugState.needsReset = g_dlssNeedsReset;
+    SetDLSSDebugState(debugState);
     return needsReset;
 }
 
@@ -322,12 +392,28 @@ bool StreamlineManager::EvaluateDLSS(VkCommandBuffer cmdBuf, const sl::FrameToke
             std::cout << "[StreamlineManager] Blocking further DLSS evaluate calls for current config to prevent NGX recreation/VRAM growth" << std::endl;
         }
     }
+    auto debugState = GetDLSSDebugState();
+    debugState.lastEvaluateResult = res;
+    debugState.evaluateBlocked = g_dlssEvaluateBlocked;
+    SetDLSSDebugState(debugState);
     return res == sl::Result::eOk;
 }
 
 bool StreamlineManager::IsDLSSEvaluateBlocked()
 {
     return g_dlssEvaluateBlocked;
+}
+
+StreamlineManager::DLSSDebugState StreamlineManager::GetDLSSDebugState()
+{
+    SimpleScopedGuard lock(g_dlssDebugStateMutex);
+    return g_dlssDebugState;
+}
+
+void StreamlineManager::SetDLSSDebugState(const DLSSDebugState& state)
+{
+    SimpleScopedGuard lock(g_dlssDebugStateMutex);
+    g_dlssDebugState = state;
 }
 
 bool StreamlineManager::AllocateResources(VkCommandBuffer cmdBuf, sl::Feature feature)

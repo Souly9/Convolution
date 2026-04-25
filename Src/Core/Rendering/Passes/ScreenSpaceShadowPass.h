@@ -1,5 +1,6 @@
 #pragma once
 #include "Core/Rendering/Passes/RenderPass.h"
+#include "../../../../Shaders/Globals/PushConstants.h"
 
 namespace RenderPasses
 {
@@ -22,13 +23,7 @@ protected:
 
     ComputePipeline m_computePipeline;
     const Texture* m_pDepthTex{nullptr};
-    
-    struct PushConstants {
-        mathstl::Vector4 lightCoordinate;
-        s32 waveOffset[2];
-        mathstl::Vector2 invDepthTextureSize;
-        u32 depthTexIdx;
-        u32 outputTexIdx;
-    } m_pushConstants;
+
+    ScreenSpaceShadowPushConstants m_pushConstants;
 };
 } // namespace RenderPasses

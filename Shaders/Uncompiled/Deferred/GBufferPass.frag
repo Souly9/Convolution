@@ -22,7 +22,7 @@ layout(location = 0) in VertexOut
     mat3 TBN;
     vec4 jitteredClipPos;
     vec4 unjitteredClipPos;
-    vec4 prevClipPos;
+    vec4 prevJitteredClipPos;
     vec3 worldNormal;
     vec2 fragTexCoord;
     flat uint matIdx;
@@ -53,7 +53,7 @@ void main()
         }
     }
 
-    vec2 velocity = ComputeVelocity(IN.unjitteredClipPos, IN.prevClipPos);
+    vec2 velocity = ComputeVelocity(IN.jitteredClipPos, IN.prevJitteredClipPos);
 
     StoreAlbedoInGBuffer(fragTexSample);
     StoreNormalAndMaterialInGBuffer(N, IN.matIdx);

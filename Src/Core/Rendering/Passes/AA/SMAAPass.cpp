@@ -8,14 +8,8 @@
 #include "Core/Global/Profiling.h"
 #include "AreaTex.h"
 #include "SearchTex.h"
+#include "../../../../../Shaders/Globals/PushConstants.h"
 #include <DirectXMath.h>
-
-struct PushConsts {
-    mathstl::Vector4 metrics; // { 1/w, 1/h, w, h }
-    u32 tex1;
-    u32 tex2;
-    u32 tex3;
-};
 
 namespace RenderPasses
 {
@@ -80,7 +74,7 @@ void SMAAPass::BuildPipelines()
     edgeInfo.attachmentInfos = CreateAttachmentInfo({
         CreateDefaultColorAttachment(TexFormat::R8G8_UNORM, LoadOp::CLEAR, nullptr)
     });
-    edgeInfo.pushConstantInfo.constants = {{ShaderTypeBits::Vertex | ShaderTypeBits::Fragment, 0, (u32)sizeof(PushConsts)}};
+    edgeInfo.pushConstantInfo.constants = {{ShaderTypeBits::Vertex | ShaderTypeBits::Fragment, 0, (u32)sizeof(SMAAPushConstants)}};
     edgeInfo.hasDepth = false;
     m_edgePSO = PSO(ShaderCollection{&edgeVert, &edgeFrag}, PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions}, edgeInfo);
 
@@ -92,7 +86,7 @@ void SMAAPass::BuildPipelines()
     blendInfo.attachmentInfos = CreateAttachmentInfo({
         CreateDefaultColorAttachment(TexFormat::R8G8B8A8_UNORM, LoadOp::CLEAR, nullptr)
     });
-    blendInfo.pushConstantInfo.constants = {{ShaderTypeBits::Vertex | ShaderTypeBits::Fragment, 0, (u32)sizeof(PushConsts)}};
+    blendInfo.pushConstantInfo.constants = {{ShaderTypeBits::Vertex | ShaderTypeBits::Fragment, 0, (u32)sizeof(SMAAPushConstants)}};
     blendInfo.hasDepth = false;
     m_blendPSO = PSO(ShaderCollection{&blendVert, &blendFrag}, PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions}, blendInfo);
 
@@ -104,7 +98,7 @@ void SMAAPass::BuildPipelines()
     neighborInfo.attachmentInfos = CreateAttachmentInfo({
         CreateDefaultColorAttachment(TexFormat::R16G16B16A16_FLOAT, LoadOp::LOAD, nullptr)
     });
-    neighborInfo.pushConstantInfo.constants = {{ShaderTypeBits::Vertex | ShaderTypeBits::Fragment, 0, (u32)sizeof(PushConsts)}};
+    neighborInfo.pushConstantInfo.constants = {{ShaderTypeBits::Vertex | ShaderTypeBits::Fragment, 0, (u32)sizeof(SMAAPushConstants)}};
     neighborInfo.hasDepth = false;
     m_neighborhoodPSO = PSO(ShaderCollection{&neighborVert, &neighborFrag}, PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions}, neighborInfo);
 }
@@ -159,7 +153,7 @@ void SMAAPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     auto gbufferUBOSet = data.bufferDescriptors.at(UBO::DescriptorContentsType::GBuffer);
     auto texArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessTextureArray);
 
-    PushConsts pc;
+    SMAAPushConstants pc;
     pc.metrics = mathstl::Vector4(1.0f / extents.x, 1.0f / extents.y, (f32)extents.x, (f32)extents.y);
 
     // 1. Edge Detection (Writes to data.pSMAAEdgesTexture)

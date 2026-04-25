@@ -6,23 +6,17 @@
 #include "../Globals/Bindless.h"
 #include "../Globals/Common.h"
 #include "../Globals/GBuffer/GBufferSampling.h"
+#include "../Globals/PushConstants.h"
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(push_constant) uniform PushConstants
 {
-    uint frameIndex;
-    uint resetHistory;
-    float resolutionX;
-    float resolutionY;
-    float currentJitterX;
-    float currentJitterY;
-    float previousJitterX;
-    float previousJitterY;
-    float zNear;
-    float zFar;
-}
-pushConstants;
+    TAAPushConstants data;
+} pushConstantsBlock;
+
+#define pushConstants pushConstantsBlock.data
+
 
 vec3 RGBToYCoCg(vec3 rgb)
 {
@@ -43,112 +37,94 @@ vec3 YCoCgToRGB(vec3 ycocg)
     return vec3(r, g, b);
 }
 
+float SafeNonZero(float value)
+{
+    if (abs(value) >= 1e-6)
+        return value;
+
+    return value < 0.0 ? -1e-6 : 1e-6;
+}
+
 vec3 ClipAABB(vec3 aabbMin, vec3 aabbMax, vec3 p, vec3 q)
 {
     vec3 r = p - q;
-    // Add a tiny epsilon with the same sign as r to avoid division by zero
-    vec3 r_safe = r + sign(r) * 1e-6;
-    vec3 t1 = (aabbMax - q) / r_safe;
-    vec3 t2 = (aabbMin - q) / r_safe;
-    // The ray hits the AABB walls in both directions. max() gets the positive (forward) intersection.
+    vec3 rSafe = vec3(SafeNonZero(r.x), SafeNonZero(r.y), SafeNonZero(r.z));
+    vec3 t1 = (aabbMax - q) / rSafe;
+    vec3 t2 = (aabbMin - q) / rSafe;
     vec3 tIntersects = max(t1, t2);
-    // min() gets the closest intersecting plane
     float t = min(tIntersects.x, min(tIntersects.y, tIntersects.z));
     return q + r * clamp(t, 0.0, 1.0);
 }
 
-float LinearizeDepth(float depth, float zNear, float zFar) 
+float LinearizeDepth(float depth, float zNear, float zFar)
 {
-    return (zNear * zFar) / (zFar + depth * (zNear - zFar)); 
+    float nearPlane = max(zNear, 0.000001);
+    float farPlane = max(zFar, nearPlane + 0.000001);
+    float clampedDepth = clamp(depth, 0.0, 1.0);
+    float denom = max(farPlane + clampedDepth * (nearPlane - farPlane), 0.000001);
+    return (nearPlane * farPlane) / denom;
+}
+
+bool IsUVInBounds(vec2 sampleUV)
+{
+    return all(greaterThanEqual(sampleUV, vec2(0.0))) && all(lessThanEqual(sampleUV, vec2(1.0)));
+}
+
+vec2 ClampToTexelCenter(vec2 sampleUV, vec2 invResolution)
+{
+    vec2 halfTexel = invResolution * 0.5;
+    return clamp(sampleUV, halfTexel, vec2(1.0) - halfTexel);
 }
 
 void main()
 {
     ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
     vec2 resolution = vec2(pushConstants.resolutionX, pushConstants.resolutionY);
-    if (pixelCoord.x >= uint(resolution.x) || pixelCoord.y >= uint(resolution.y))
+    if (pixelCoord.x >= int(resolution.x) || pixelCoord.y >= int(resolution.y))
         return;
 
     vec2 uv = (vec2(pixelCoord) + 0.5) / resolution;
+    vec2 invRes = 1.0 / resolution;
 
-    // Sample velocity and reproduce
-    vec2 velocity = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.gbufferVelocityIdx)], uv).rg;
-    vec2 currJitterUV = vec2(pushConstants.currentJitterX, pushConstants.currentJitterY) / resolution;
-    vec2 prevJitterUV = vec2(pushConstants.previousJitterX, pushConstants.previousJitterY) / resolution;
-    vec2 prevUV = uv + velocity + (currJitterUV - prevJitterUV);
+    vec2 velocityPixels = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.gbufferVelocityIdx)], uv).rg;
+    vec2 prevUV = uv + velocityPixels * invRes;
+    bool hasHistory = pushConstants.resetHistory == 0u && IsUVInBounds(prevUV);
 
-    // Sample current and history
     vec4 currentColor = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.thisFrameColorBufferIdx)], uv);
-    vec4 historyColor = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.lastFrameColorBufferIdx)], prevUV);
-
-    // TAA accumulation assumes radiance-like (non-negative) color. Signed debug buffers (e.g. normals)
-    // should bypass temporal color-space conversion and blending.
-    if (any(lessThan(currentColor.rgb, vec3(0.0))))
-    {
-        BindlessTextureHandle resolveIdx = gbufferUBO.gbufferResolveIdx;
-        imageStore(GlobalBindlessImages[nonuniformEXT(resolveIdx)], pixelCoord, currentColor);
+    if (any(lessThan(currentColor.rgb, vec3(0.0))) || !hasHistory) {
+        imageStore(GlobalBindlessImages[nonuniformEXT(gbufferUBO.gbufferResolveIdx)], pixelCoord, currentColor);
         return;
     }
 
+    vec4 historyColor = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.lastFrameColorBufferIdx)], prevUV);
     vec3 currentYCoCg = RGBToYCoCg(currentColor.rgb);
     vec3 historyYCoCg = RGBToYCoCg(historyColor.rgb);
-
-    // Sample neighborhood to calculate mean and variance
-    // Basically just the classic variance clipping
-    vec3 m1 = vec3(0.0);
-    vec3 m2 = vec3(0.0);
-
-    vec2 invRes = 1.0 / resolution;
-    for (int y = -1; y <= 1; ++y)
-    {
-        for (int x = -1; x <= 1; ++x)
-        {
-            vec2 offsetUV = uv + vec2(x, y) * invRes;
-            vec3 neighborColor =
-                texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.thisFrameColorBufferIdx)], offsetUV).rgb;
+    vec3 m1 = vec3(0.0); vec3 m2 = vec3(0.0);
+    for (int y = -1; y <= 1; ++y) {
+        for (int x = -1; x <= 1; ++x) {
+            vec2 neighborUV = ClampToTexelCenter(uv + vec2(x, y) * invRes, invRes);
+            vec3 neighborColor = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.thisFrameColorBufferIdx)], neighborUV).rgb;
             vec3 neighborYCoCg = RGBToYCoCg(neighborColor);
-            m1 += neighborYCoCg;
-            m2 += neighborYCoCg * neighborYCoCg;
+            m1 += neighborYCoCg; m2 += neighborYCoCg * neighborYCoCg;
         }
     }
-
     const float N = 9.0;
-    vec3 mean = m1 / N;
-    vec3 variance = (m2 / N) - (mean * mean);
+    vec3 mean = m1 / N; vec3 variance = (m2 / N) - (mean * mean);
     vec3 stdDev = sqrt(max(vec3(0.0), variance));
-
-    // Gamma controls the bounding box size (standard is 1.0 or 1.25 for variance clipping)
-    const float gamma = 1.25;
+    const float gamma = 1.0;
     vec3 aabbMin = mean - gamma * stdDev;
     vec3 aabbMax = mean + gamma * stdDev;
-
-    // Clip the history color towards the current neighborhood variance AABB
     historyYCoCg = ClipAABB(aabbMin, aabbMax, historyYCoCg, currentYCoCg);
     historyColor.rgb = YCoCgToRGB(historyYCoCg);
 
-    // Simplified Depth rejection
     float currentDepthRaw = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.depthBufferIdx)], uv).r;
     float historyDepthRaw = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.lastFrameDepthIdx)], prevUV).r;
-
-    // Convert to linear depth using the active camera range from the CPU side.
     float currentDepth = LinearizeDepth(currentDepthRaw, pushConstants.zNear, pushConstants.zFar);
     float historyDepth = LinearizeDepth(historyDepthRaw, pushConstants.zNear, pushConstants.zFar);
-
-    // Use both an absolute floor and a relative term so close geometry does not
-    // over-reject from small reprojection/depth quantization differences.
     float depthDiff = abs(currentDepth - historyDepth);
-    float rejectionThreshold = max(0.05, currentDepth * 0.05);
+    float rejectionThreshold = max(0.05, min(currentDepth, historyDepth) * 0.02);
     float rejection = 1.0 - smoothstep(rejectionThreshold, rejectionThreshold * 2.0, depthDiff);
-
-    // Blend history and current
-    float historyWeight = 0.9 * rejection;
-    if (pushConstants.resetHistory > 0 || prevUV.x < 0.0 || prevUV.x > 1.0 || prevUV.y < 0.0 || prevUV.y > 1.0)
-    {
-        historyWeight = 0.0;
-    }
-
+    float historyWeight = 0.95 * rejection;
     vec4 finalColor = mix(currentColor, historyColor, historyWeight);
-
-    BindlessTextureHandle resolveIdx = gbufferUBO.gbufferResolveIdx;
-    imageStore(GlobalBindlessImages[nonuniformEXT(resolveIdx)], pixelCoord, finalColor);
+    imageStore(GlobalBindlessImages[nonuniformEXT(gbufferUBO.gbufferResolveIdx)], pixelCoord, finalColor);
 }

@@ -1,58 +1,19 @@
 #pragma once
 #include "Core/ECS/Components/Light.h"
 #include "Core/ECS/Components/Transform.h"
-#include "Core/Global/GlobalDefines.h"
-#include "Core/SceneGraph/Mesh.h"
+#include "../../../../Shaders/Globals/ClusterLightData.h"
 
-// GPU-compatible light structure (64 bytes, cache-aligned)
-// position.w = type, direction.w = range, color.w = intensity, cutoff = spot params
-struct RenderLight
-{
-    mathstl::Vector4 position{};        // xyz=position, w=type (LightType as float)
-    mathstl::Vector4 direction{};       // xyz=direction, w=range
-    mathstl::Vector4 color{1, 1, 0, 1}; // xyz=color, w=intensity
-    mathstl::Vector4 cutoff{};          // x=inner cone, y=outer cone, zw=reserved
-
-    f32 GetRange() const
-    {
-        return direction.w;
-    }
-    void SetRange(f32 r)
-    {
-        direction.w = r;
-    }
-    ECS::Components::LightType GetType() const
-    {
-        return static_cast<ECS::Components::LightType>(static_cast<u32>(position.w));
-    }
-    void SetType(ECS::Components::LightType t)
-    {
-        position.w = static_cast<f32>(static_cast<u32>(t));
-    }
-};
-
-// Mainly to differentiate between point lights and directional lights etc. for
-// now, might merge these back but want to go with clarity for now
-struct DirectionalRenderLight
-{
-    mathstl::Vector4 direction{};
-    mathstl::Vector4 color{1, 1, 0, 1};
-};
-
-// Uniform data needed by fragment shaders for lighting
-struct LightUniforms
-{
-    mathstl::Vector4 ClusterValues; // x=scale, y=bias, z=maxSlices, w=shadowsEnabled
-    mathstl::Vector4 ClusterSize;   // x=dimX, y=dimY, z=dimZ, w=tileSizeX
-};
+using RenderLight = Light;
+using DirectionalRenderLight = DirectionalLight;
 
 inline DirectionalRenderLight ConvertToDirectionalRenderLight(const ECS::Components::Light* light,
                                                               const ECS::Components::Transform* pTransform)
 {
+    (void)pTransform;
+
     DirectionalRenderLight renderLight;
     renderLight.direction = mathstl::Vector4(light->direction.x, light->direction.y, light->direction.z, 0.0f);
     renderLight.color = mathstl::Vector4(light->color.x, light->color.y, light->color.z, light->intensity);
-
     return renderLight;
 }
 
@@ -63,22 +24,8 @@ inline RenderLight ConvertToRenderLight(const ECS::Components::Light* light,
     renderLight.position = mathstl::Vector4(transform->position.x, transform->position.y, transform->position.z, 0.0f);
     renderLight.direction = mathstl::Vector4(light->direction.x, light->direction.y, light->direction.z, light->range);
     renderLight.color = mathstl::Vector4(light->color.x, light->color.y, light->color.z, light->intensity);
-    renderLight.cutoff = mathstl::Vector4(light->cutoff, light->outerCutoff, 0, 0);
+    renderLight.cutoff = mathstl::Vector4(light->cutoff, light->outerCutoff, 0.0f, 0.0f);
 
-    // Set light type
-    switch (light->type)
-    {
-        case ECS::Components::LightType::Directional:
-            renderLight.SetType(ECS::Components::LightType::Directional);
-            break;
-        case ECS::Components::LightType::Spot:
-            renderLight.SetType(ECS::Components::LightType::Spot);
-            break;
-        case ECS::Components::LightType::Point:
-        default:
-            renderLight.SetType(ECS::Components::LightType::Point);
-            break;
-    }
-
+    renderLight.position.w = static_cast<f32>(static_cast<u32>(light->type));
     return renderLight;
 }

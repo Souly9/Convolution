@@ -232,6 +232,8 @@ void PassManager::PrepareMainPassDataForFrame(MainPassData& mainPassData, FrameR
     mainPassData.pSMAABlendTexture = m_pSMAABlendTexture;
     mainPassData.smaaEdges = m_smaaEdgesBindlessHandle;
     mainPassData.smaaBlend = m_smaaBlendBindlessHandle;
+
+    ctx.pDLSSExposureTexture = m_pDLSSExposureTexture;
 }
 
 void PassManager::UpdateTemporalResources(MainPassData& mainPassData)
@@ -340,6 +342,8 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
     pMainGraphicsWorkBuffer->SetFrameIdx(ctx.currentFrame);
     pComputeCmdBuffer->SetFrameIdx(ctx.currentFrame);
     pDepthWorkBuffer->SetFrameIdx(ctx.currentFrame);
+
+    RecordDLSSExposureUpdate(pComputeCmdBuffer);
 
     auto pendingFlips = m_resourceManager.PopPendingVisibleInstanceIndices();
     if (!pendingFlips.empty())
@@ -518,16 +522,16 @@ void PassManager::UpdateGBufferUBO(const MainPassData& data)
 {
     const auto& temporal = data.temporalResources;
     UBO::GBufferPostProcessUBO gbufferUBO{};
-    gbufferUBO.gbufferAlbedo = m_gbuffer.GetHandle(GBufferTextureType::GBufferAlbedo);
-    gbufferUBO.gbufferNormal = m_gbuffer.GetHandle(GBufferTextureType::GBufferNormal);
-    gbufferUBO.gbufferTexCoordMat = m_gbuffer.GetHandle(GBufferTextureType::TexCoordMatData);
-    gbufferUBO.gbufferDebug = m_gbuffer.GetHandle(GBufferTextureType::GBufferDebug);
-    gbufferUBO.gbufferVelocity = m_gbuffer.GetHandle(GBufferTextureType::GBufferVelocity);
+    gbufferUBO.gbufferAlbedoIdx = m_gbuffer.GetHandle(GBufferTextureType::GBufferAlbedo);
+    gbufferUBO.gbufferNormalIdx = m_gbuffer.GetHandle(GBufferTextureType::GBufferNormal);
+    gbufferUBO.gbufferTexCoordMatIdx = m_gbuffer.GetHandle(GBufferTextureType::TexCoordMatData);
+    gbufferUBO.gbufferDebugIdx = m_gbuffer.GetHandle(GBufferTextureType::GBufferDebug);
+    gbufferUBO.gbufferVelocityIdx = m_gbuffer.GetHandle(GBufferTextureType::GBufferVelocity);
     gbufferUBO.depthBufferIdx = temporal.currentDepthHandle;
     gbufferUBO.lastFrameColorBufferIdx = temporal.historyColorHandle;
     gbufferUBO.thisFrameColorBufferIdx = temporal.currentColorHandle;
     gbufferUBO.lastFrameDepthIdx = temporal.historyDepthHandle;
-    gbufferUBO.gbufferResolve = temporal.resolveHandle;
+    gbufferUBO.gbufferResolveIdx = temporal.resolveHandle;
 
     memcpy(m_frameResourceManager.GetMappedGBufferPostProcessUBO(),
            &gbufferUBO,
@@ -607,6 +611,39 @@ void PassManager::RecordSSSOutputToShaderRead(CommandBuffer* pCmdBuffer)
     cmd.dstStage = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
     cmd.dstAccessMask = 0;
     pCmdBuffer->RecordCommand(cmd);
+}
+
+void PassManager::RecordDLSSExposureUpdate(CommandBuffer* pCmdBuffer)
+{
+    if (!m_pDLSSExposureTexture)
+        return;
+
+    const float exposureValue = g_pApplicationState->GetCurrentApplicationState().renderState.exposure;
+    m_dlssExposureStagingBuffer.CopyToMapped(&exposureValue, sizeof(exposureValue));
+
+    ImageLayoutTransitionCmd exposureToTransfer(m_pDLSSExposureTexture);
+    exposureToTransfer.oldLayout =
+        m_dlssExposureTextureInitialized ? ImageLayout::SHADER_READ_ONLY_OPTIMAL : ImageLayout::UNDEFINED;
+    exposureToTransfer.newLayout = ImageLayout::TRANSFER_DST_OPTIMAL;
+    VkTextureManager::SetLayoutBarrierMasks(exposureToTransfer,
+                                            exposureToTransfer.oldLayout,
+                                            ImageLayout::TRANSFER_DST_OPTIMAL);
+    pCmdBuffer->RecordCommand(exposureToTransfer);
+
+    ImageBufferCopyCmd copyExposure(&m_dlssExposureStagingBuffer, m_pDLSSExposureTexture);
+    copyExposure.imageExtent = {1, 1, 1};
+    copyExposure.aspectFlagBits = VK_IMAGE_ASPECT_COLOR_BIT;
+    pCmdBuffer->RecordCommand(copyExposure);
+
+    ImageLayoutTransitionCmd exposureToRead(m_pDLSSExposureTexture);
+    exposureToRead.oldLayout = ImageLayout::TRANSFER_DST_OPTIMAL;
+    exposureToRead.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
+    VkTextureManager::SetLayoutBarrierMasks(exposureToRead,
+                                            ImageLayout::TRANSFER_DST_OPTIMAL,
+                                            ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    pCmdBuffer->RecordCommand(exposureToRead);
+
+    m_dlssExposureTextureInitialized = true;
 }
 
 void PassManager::RecordThisFrameColorToRead(CommandBuffer* pCmdBuffer)
@@ -852,6 +889,24 @@ void PassManager::RecreateGbuffers(const mathstl::Vector2& resolution)
     m_globalRendererAttachments.pSMAAEdgesTexture = m_pSMAAEdgesTexture;
     m_globalRendererAttachments.pSMAABlendTexture = m_pSMAABlendTexture;
 
+    if (m_dlssExposureTextureHandle != 0)
+        g_pTexManager->FreeTexture(m_dlssExposureTextureHandle);
+
+    DynamicTextureRequest exposureReq{};
+    exposureReq.extents = {1, 1, 1};
+    exposureReq.handle = g_pTexManager->GenerateHandle();
+    exposureReq.format = TexFormat::R32_FLOAT;
+    exposureReq.usage = Usage::Sampled | Usage::TransferDst;
+    exposureReq.isPersistent = true;
+    exposureReq.hasMipMaps = false;
+    exposureReq.mipLevels = 1;
+    exposureReq.createSampler = false;
+    exposureReq.AddName("DLSS Exposure");
+    m_pDLSSExposureTexture = static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(exposureReq));
+    m_dlssExposureTextureHandle = exposureReq.handle;
+    m_dlssExposureTextureInitialized = false;
+    m_dlssExposureStagingBuffer.EnsureCapacity(sizeof(float));
+
     for (auto& passData : m_mainPassData) {
         passData.pScreenSpaceShadowTexture = m_pScreenSpaceShadowTexture;
         passData.screenSpaceShadows = m_screenSpaceShadowBindlessHandle;
@@ -964,7 +1019,9 @@ void PassManager::RecreateShadowMaps(u32 cascades, const mathstl::Vector2& exten
         vkCreateImageView(VkGlobals::GetLogicalDevice(), &viewInfo, nullptr, &csm.cascadeViews[i]);
     }
 
-    std::memcpy(m_frameResourceManager.GetMappedShadowMapUBO(), &csm.bindlessHandle, sizeof(BindlessTextureHandle));
+    UBO::ShadowMapUBO shadowMapUBO{};
+    shadowMapUBO.directionalShadowMapIdx = csm.bindlessHandle;
+    std::memcpy(m_frameResourceManager.GetMappedShadowMapUBO(), &shadowMapUBO, sizeof(shadowMapUBO));
     for (u32 i = 0; i < SWAPCHAIN_IMAGES; i++)
         m_frameResourceManager.GetFrameRendererContext(i).gbufferPostProcessDescriptor->WriteBufferUpdate(m_frameResourceManager.GetShadowMapUBO(), s_shadowmapUBOBindingSlot);
 

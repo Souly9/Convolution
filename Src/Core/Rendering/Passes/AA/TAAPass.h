@@ -4,23 +4,10 @@
 #include "Core/Global/State/States.h"
 #include "Core/Rendering/Core/RenderingForwardDecls.h"
 #include "Core/Rendering/Passes/RenderPass.h"
+#include "../../../../../Shaders/Globals/PushConstants.h"
 
 namespace RenderPasses
 {
-struct TAAPushConstants
-{
-    u32 frameIndex;
-    u32 resetHistory;
-    f32 resolutionX;
-    f32 resolutionY;
-    f32 currentJitterX;
-    f32 currentJitterY;
-    f32 previousJitterX;
-    f32 previousJitterY;
-    f32 zNear;
-    f32 zFar;
-};
-
 class TAAPass : public ConvolutionRenderPass
 {
 public:

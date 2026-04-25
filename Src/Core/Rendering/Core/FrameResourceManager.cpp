@@ -25,12 +25,14 @@ void FrameResourceManager::BuildSharedDataForView(const RenderView& mainView,
                                                   UBO::SharedDataUBO& ubo,
                                                   mathstl::Matrix& viewMat,
                                                   mathstl::Matrix& viewProj,
-                                                  mathstl::Vector2& jitter) const
+                                                  mathstl::Vector2& jitter,
+                                                  FrameCameraData& cameraData) const
 {
     ScopedZone("BuildSharedDataForView");
     const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
     using namespace mathstl;
 
+    const f32 fovRadians = DirectX::XMConvertToRadians(mainView.fov);
     const Vector3 rotation = Vector3(DirectX::XMConvertToRadians(mainView.rotation.x),
                                      DirectX::XMConvertToRadians(mainView.rotation.y),
                                      DirectX::XMConvertToRadians(mainView.rotation.z));
@@ -40,16 +42,18 @@ void FrameResourceManager::BuildSharedDataForView(const RenderView& mainView,
     Vector3 forward = Vector3::Transform(Vector3(0, 0, 1), rotationMatrix);
     Vector3 rotatedFocusPos = viewPos - forward;
     const Vector3 upVector(0.f, 1.f, 0.f);
+    const f32 aspectRatio = (renderResolution.y > 0.0f) ? (renderResolution.x / renderResolution.y) : 1.0f;
 
     viewMat = Matrix::CreateLookAt(viewPos, rotatedFocusPos, upVector);
-    Matrix projMat = Matrix::CreatePerspectiveFieldOfView(DirectX::XMConvertToRadians(mainView.fov),
-                                                          renderResolution.x / renderResolution.y,
+    Matrix projMat = Matrix::CreatePerspectiveFieldOfView(fovRadians,
+                                                          aspectRatio,
                                                           stltype::max(mainView.zNear, 0.000001f),
                                                           mainView.zFar);
     // Previous frame view data
     ubo.prevView = ubo.view;
     ubo.prevProjection = ubo.projection;
     ubo.prevViewProjection = ubo.viewProjection;
+    ubo.prevJitteredProjection = ubo.jitteredProjection;
 
     // Current frame view data
     viewProj = viewMat * projMat;
@@ -60,13 +64,29 @@ void FrameResourceManager::BuildSharedDataForView(const RenderView& mainView,
     ubo.projection = projMat;
     ubo.viewProjection = viewProj;
     ubo.viewPos = Vector4(viewPos.x, viewPos.y, viewPos.z, 1.0f);
+    ubo.renderResolution = renderResolution;
 
-    // Jittered projection for TAA
+    const Vector3 cameraRight = Vector3::Transform(Vector3(1.0f, 0.0f, 0.0f), rotationMatrix);
+    const Vector3 cameraUp = Vector3::Transform(Vector3(0.0f, 1.0f, 0.0f), rotationMatrix);
+    const Vector3 cameraForwardBasis = Vector3::Transform(Vector3(0.0f, 0.0f, 1.0f), rotationMatrix);
+    cameraData.viewToClip = ubo.projection;
+    cameraData.clipToView = ubo.projectionInverse;
+    cameraData.clipToPrevClip = ubo.projectionInverse * ubo.viewInverse * ubo.prevViewProjection;
+    cameraData.prevClipToClip = cameraData.clipToPrevClip.Invert();
+    cameraData.position = viewPos;
+    cameraData.up = cameraUp;
+    cameraData.right = cameraRight;
+    cameraData.forward = Vector3(-cameraForwardBasis.x, -cameraForwardBasis.y, -cameraForwardBasis.z);
+    cameraData.fovRadians = fovRadians;
+    cameraData.aspectRatio = aspectRatio;
+    cameraData.nearPlane = mainView.zNear;
+    cameraData.farPlane = mainView.zFar;
+
+    // Jittered projection for temporal AA consumers.
     if (renderState.aaType == AntialiasingType::TAA_SMAA ||
         renderState.aaType == AntialiasingType::DLSS)
     {
         jitter = GenerateR2Jitter(static_cast<int>(jitterFrameNumber));
-
         projMat._31 -= 2.0f * jitter.x / renderResolution.x;
         projMat._32 += 2.0f * jitter.y / renderResolution.y;
         ubo.jitteredProjection = viewMat * projMat;
@@ -277,6 +297,7 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
 
     {
         const auto& mainView = m_dataToBePreProcessed.mainView;
+        auto& ctx = m_frameRendererContexts[currentSwapChainIdx];
         mathstl::Matrix viewMat{};
         mathstl::Matrix viewProj{};
         mathstl::Vector2 jitter{};
@@ -286,7 +307,8 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
                                m_currentSharedDataUBO,
                                viewMat,
                                viewProj,
-                               jitter);
+                               jitter,
+                               ctx.cameraData);
         pPassManager->SetRenderJitter(jitter);
 
         UpdateSharedDataUBO(&m_currentSharedDataUBO, sizeof(UBO::SharedDataUBO), currentSwapChainIdx);
@@ -309,9 +331,9 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
         passData.mainView.viewport = RenderViewUtils::CreateViewportFromData(
             passManagerRenderState.renderResolution, mainView.zNear, mainView.zFar);
 
-        auto& ctx = m_frameRendererContexts[currentSwapChainIdx];
         ctx.zNear = mainView.zNear;
         ctx.zFar = mainView.zFar;
+        ctx.sharedDataUBODescriptor->WriteBufferUpdate(m_sharedDataUBO, s_sharedDataBindingSlot);
     }
     {
         {

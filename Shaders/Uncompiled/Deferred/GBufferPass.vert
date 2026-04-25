@@ -23,7 +23,7 @@ layout(location = 0) out VertexOut
     mat3 TBN;
     vec4 jitteredClipPos;
     vec4 unjitteredClipPos;
-    vec4 prevClipPos;
+    vec4 prevJitteredClipPos;
     vec3 worldNormal;
     vec2 fragTexCoord;
     flat uint matIdx;
@@ -46,8 +46,10 @@ void main()
     OUT.matIdx = GetMaterialIdx(iData);
     OUT.fragTexCoord = inTexCoord0;
 
-    OUT.unjitteredClipPos = ubo.viewProjection * worldMat * vec4(inPosition, 1.0);
-    OUT.prevClipPos =
-        ubo.prevViewProjection * prevGlobalTransformSSBO.prevModelMatrices[transformIdx] * vec4(inPosition, 1.0);
-    gl_Position = IsVisible(iData) ? (ubo.jitteredProjection * worldMat * vec4(inPosition, 1.0)) : vec4(0.0 / 0.0);
+    vec4 localPosition = vec4(inPosition, 1.0);
+    OUT.unjitteredClipPos = ubo.viewProjection * worldMat * localPosition;
+    OUT.jitteredClipPos = ubo.jitteredProjection * worldMat * localPosition;
+    OUT.prevJitteredClipPos =
+        ubo.prevJitteredProjection * prevGlobalTransformSSBO.prevModelMatrices[transformIdx] * localPosition;
+    gl_Position = IsVisible(iData) ?  : vec4(0.0 / 0.0);
 }

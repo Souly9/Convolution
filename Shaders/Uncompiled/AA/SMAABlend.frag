@@ -15,5 +15,6 @@ layout(location = 0) out vec4 outColor;
 
 void main()
 {
-    outColor = SMAABlendingWeightCalculationPS(texCoord, pixCoord, offset, pc.tex1, pc.tex2, pc.tex3, vec4(0.0));
+    outColor = SMAABlendingWeightCalculationPS(
+        texCoord, pixCoord, offset, pc.pushConstants.tex1, pc.pushConstants.tex2, pc.pushConstants.tex3, vec4(0.0));
 }

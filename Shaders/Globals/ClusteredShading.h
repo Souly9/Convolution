@@ -4,22 +4,31 @@
 #include "Common.h"
 #include "Scene.h"
 
-struct ClusterAABB
-{
-    vec4 minBounds;
-    vec4 maxBounds;
-};
+STRUCTDECL(ClusterAABB)
+    STRUCTFIELD(vec4, minBounds)
+    STRUCTFIELD(vec4, maxBounds)
+STRUCTEND()
 
+STRUCTDECL(ClusterGridBuffer)
+    STRUCTFIELD_ARRAY(ClusterAABB, clusters, MAX_CLUSTERS)
+STRUCTEND()
+
+STRUCTDECL(ViewSpaceLightsBuffer)
+    STRUCTFIELD_ARRAY(vec4, lights, MAX_SCENE_LIGHTS) // xyz=view-space position, w=radius
+    STRUCTFIELD_ARRAY(uint, tileCounters, MAX_TILE_XY)
+    STRUCTFIELD_ARRAY(uint, tileLightIndices, MAX_TILE_XY * MAX_LIGHTS_PER_TILE)
+STRUCTEND()
+
+#ifndef __cplusplus
 layout(scalar, set = ClusterGridSet, binding = ClusterGridSSBOSlot) buffer ClusterGrid
 {
-    ClusterAABB clusters[];
-} clusterGrid;
+    ClusterGridBuffer clusterGrid;
+};
 
 layout(scalar, set = ViewSpaceLightsSet, binding = GlobalViewSpaceLightsSSBOSlot) buffer ViewSpaceLightsSSBO
 {
-    vec4 lights[MAX_SCENE_LIGHTS]; // xyz=view-space position, w=radius
-    uint tileCounters[MAX_TILE_XY];
-    uint tileLightIndices[MAX_TILE_XY * MAX_LIGHTS_PER_TILE];
-} viewSpaceLights;
+    ViewSpaceLightsBuffer viewSpaceLights;
+};
+#endif
 
 #endif // SHADERS_CLUSTERED_SHADING_H

@@ -10,16 +10,16 @@
 
 #include "../../Globals/ClusteredShading.h"
 #include "../../Globals/ClusterLightData.h"
+#include "../../Globals/PushConstants.h"
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(push_constant, scalar) uniform PushConstants
 {
-    ivec3 clusterCount;
-    uint numLights;
-    vec4 nearFar; // x=near, y=far
-}
-pc;
+    ClusterPushConstants data;
+} pushConstantsBlock;
+
+#define pc pushConstantsBlock.data
 
 // Unproject a UV + NDC depth to view space
 vec3 screenToView(vec2 uv, float ndcDepth)

@@ -33,6 +33,22 @@ struct LightDeltaUpdate
     RenderLight light;
 };
 
+struct FrameCameraData
+{
+    mathstl::Matrix viewToClip{mathstl::Matrix::Identity};
+    mathstl::Matrix clipToView{mathstl::Matrix::Identity};
+    mathstl::Matrix clipToPrevClip{mathstl::Matrix::Identity};
+    mathstl::Matrix prevClipToClip{mathstl::Matrix::Identity};
+    mathstl::Vector3 position{mathstl::Vector3::Zero};
+    mathstl::Vector3 up{0.0f, 1.0f, 0.0f};
+    mathstl::Vector3 right{1.0f, 0.0f, 0.0f};
+    mathstl::Vector3 forward{0.0f, 0.0f, -1.0f};
+    f32 fovRadians{0.0f};
+    f32 aspectRatio{1.0f};
+    f32 nearPlane{0.1f};
+    f32 farPlane{300.0f};
+};
+
 struct FrameRendererContext
 {
     TimelineSemaphore frameTimeline{};
@@ -66,6 +82,8 @@ struct FrameRendererContext
 
     ::SharedResourceManager* pResourceManager{nullptr};
 
+    FrameCameraData cameraData{};
+    Texture* pDLSSExposureTexture{nullptr};
     f32 zNear{0.1f};
     f32 zFar{300.0f};
     u32 numLights{0};
@@ -176,7 +194,8 @@ private:
                                 UBO::SharedDataUBO& ubo,
                                 mathstl::Matrix& viewMat,
                                 mathstl::Matrix& viewProj,
-                                mathstl::Vector2& jitter) const;
+                                mathstl::Vector2& jitter,
+                                FrameCameraData& cameraData) const;
 
     ProfiledLockable(CustomMutex, m_passDataMutex);
     RenderDataForPreProcessing m_dataToBePreProcessed;
