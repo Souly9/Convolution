@@ -54,6 +54,10 @@ struct RendererState
     stltype::vector<u64> csmCascadeImGuiIDs{}; // Per-cascade ImGui texture IDs
     stltype::string physicalRenderDeviceName{};
     AntialiasingType aaType{AntialiasingType::TAA_SMAA};
+    bool dlssSupported{false};
+    u32 taaDebugMode{0};
+    f32 taaVelocityRejectionStart{0.5f};
+    f32 taaVelocityRejectionEnd{4.0f};
     u32 upscalingPercentage{100};
     bool renderTargetsRecreatedThisFrame{false};
     mathstl::Vector2 renderResolution{};

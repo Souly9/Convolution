@@ -5,6 +5,7 @@
 #include "Core/Rendering/Core/MaterialManager.h"
 #include "Core/Rendering/Core/ShaderManager.h"
 #include "Core/Rendering/Core/Synchronization.h"
+#include "Core/Rendering/Core/RenderDefinitions.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
 #include "Core/Rendering/Core/Utils/TAA/JitterFunctions.h"
 #include "Core/Rendering/Core/View.h"
@@ -45,10 +46,12 @@ void FrameResourceManager::BuildSharedDataForView(const RenderView& mainView,
     const f32 aspectRatio = (renderResolution.y > 0.0f) ? (renderResolution.x / renderResolution.y) : 1.0f;
 
     viewMat = Matrix::CreateLookAt(viewPos, rotatedFocusPos, upVector);
+    const f32 nearPlane = stltype::max(mainView.zNear, 0.000001f);
+    const f32 farPlane = stltype::max(mainView.zFar, nearPlane + 0.000001f);
     Matrix projMat = Matrix::CreatePerspectiveFieldOfView(fovRadians,
                                                           aspectRatio,
-                                                          stltype::max(mainView.zNear, 0.000001f),
-                                                          mainView.zFar);
+                                                          kUseReversedZDepth ? farPlane : nearPlane,
+                                                          kUseReversedZDepth ? nearPlane : farPlane);
     // Previous frame view data
     ubo.prevView = ubo.view;
     ubo.prevProjection = ubo.projection;

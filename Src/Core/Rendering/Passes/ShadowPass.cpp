@@ -55,7 +55,7 @@ void CSMPass::BuildPipelines()
         CreateAttachmentInfo({m_mainRenderingData.colorAttachments}, m_mainRenderingData.depthAttachment);
     // Compute viewMask from cascade count: (1 << cascades) - 1 gives bitmask for all layers
     info.viewMask = (1 << m_cascadeCount) - 1;
-    info.depthCompareOp = DepthCompareOp::LESS_OR_EQUAL;
+    info.depthCompareOp = kDepthWriteCompareOp;
     info.depthWriteEnable = true;
     info.rasterizerInfo.cullmode = CullMode::FRONT;
     m_mainPSO = PSO(
@@ -255,9 +255,15 @@ void CSMPass::ComputeLightViewProjMatrices(
         // Use exact Near/Far for this cascade slice
         float sliceNear = lastSplitDist;
         float sliceFar = splitDist;
+        float sliceNearClamped = stltype::max(sliceNear, 0.000001f);
+        float projectionNear = kUseReversedZDepth ? sliceFar : sliceNearClamped;
+        float projectionFar = kUseReversedZDepth ? sliceNearClamped : sliceFar;
 
-        mathstl::Matrix projMat = mathstl::Matrix::CreatePerspectiveFieldOfView(
-            DirectX::XMConvertToRadians(fov), aspectRatio, stltype::max(sliceNear, 0.000001f), sliceFar);
+        mathstl::Matrix projMat =
+            mathstl::Matrix::CreatePerspectiveFieldOfView(DirectX::XMConvertToRadians(fov),
+                                                          aspectRatio,
+                                                          projectionNear,
+                                                          projectionFar);
         mathstl::Matrix viewProj = view * projMat;
         auto viewProjInv = viewProj.Invert();
 
@@ -293,8 +299,13 @@ void CSMPass::ComputeLightViewProjMatrices(
         eye = center - (lightDirection * radius * 2.0f);
         lightView = mathstl::Matrix::CreateLookAt(eye, center, up);
 
-        mathstl::Matrix lightProj =
-            mathstl::Matrix::CreateOrthographicOffCenter(-radius, radius, -radius, radius, -radius * 3, radius * 6);
+        mathstl::Matrix lightProj = mathstl::Matrix::CreateOrthographicOffCenter(
+            -radius,
+            radius,
+            -radius,
+            radius,
+            kUseReversedZDepth ? radius * 6 : -radius * 3,
+            kUseReversedZDepth ? -radius * 3 : radius * 6);
 
         lightViewProjMatrices[i] = lightView * lightProj;
         lastSplitDist = splitDist;

@@ -36,7 +36,7 @@ static inline DepthAttachment CreateDefaultDepthAttachment(LoadOp loadOp, StoreO
     info.renderingLayout = ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     
     auto att = DepthAttachment::Create(info, pTex);
-    att.SetClearValue(mathstl::Vector4(1.0f, 0.0f, 0.0f, 0.0f)); // Depth 1.0, Stencil 0
+    att.SetClearValue(mathstl::Vector4(kDepthClearValue, 0.0f, 0.0f, 0.0f));
     return att;
 }
 
@@ -57,7 +57,7 @@ static inline DepthAttachment CreateReadOnlyDepthAttachment(LoadOp loadOp, Textu
     info.renderingLayout = ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 
     auto att = DepthAttachment::Create(info, pTex);
-    att.SetClearValue(mathstl::Vector4(1.0f, 0.0f, 0.0f, 0.0f)); // Depth 1.0, Stencil 0
+    att.SetClearValue(mathstl::Vector4(kDepthClearValue, 0.0f, 0.0f, 0.0f));
     return att;
 }
 

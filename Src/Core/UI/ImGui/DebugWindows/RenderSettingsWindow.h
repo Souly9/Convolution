@@ -137,18 +137,78 @@ public:
         ImGui::Separator();
         if (ImGui::CollapsingHeader("Antialiasing Settings"))
         {
-            const char* aaTypes[] = {"None", "TAA + SMAA", "FXAA", "DLSS"};
+            const char* aaTypesWithDLSS[] = {"None", "TAA + SMAA", "FXAA", "DLSS"};
+            const char* aaTypesWithoutDLSS[] = {"None", "TAA + SMAA", "FXAA"};
+            const AntialiasingType aaValuesWithDLSS[] = {
+                AntialiasingType::None,
+                AntialiasingType::TAA_SMAA,
+                AntialiasingType::FXAA,
+                AntialiasingType::DLSS};
+            const AntialiasingType aaValuesWithoutDLSS[] = {
+                AntialiasingType::None,
+                AntialiasingType::TAA_SMAA,
+                AntialiasingType::FXAA};
+            const char** aaTypes = renderState.dlssSupported ? aaTypesWithDLSS : aaTypesWithoutDLSS;
+            const AntialiasingType* aaValues = renderState.dlssSupported ? aaValuesWithDLSS : aaValuesWithoutDLSS;
+            const int aaTypeCount = renderState.dlssSupported ? IM_ARRAYSIZE(aaTypesWithDLSS) : IM_ARRAYSIZE(aaTypesWithoutDLSS);
             AntialiasingType currentAA = renderState.aaType;
-            int uiAAType = static_cast<int>(currentAA);
-
-            if (ImGui::Combo("AA Method", &uiAAType, aaTypes, IM_ARRAYSIZE(aaTypes)))
+            int uiAAType = 0;
+            for (int i = 0; i < aaTypeCount; ++i)
             {
-                if (static_cast<AntialiasingType>(uiAAType) != currentAA)
+                if (aaValues[i] == currentAA)
                 {
-                    g_pApplicationState->RegisterUpdateFunction([uiAAType](ApplicationState& state)
-                                                                { state.renderState.aaType = static_cast<AntialiasingType>(uiAAType); });
+                    uiAAType = i;
+                    break;
+                }
+            }
+
+            if (ImGui::Combo("AA Method", &uiAAType, aaTypes, aaTypeCount))
+            {
+                const AntialiasingType selectedAA = aaValues[uiAAType];
+                if (selectedAA != currentAA)
+                {
+                    g_pApplicationState->RegisterUpdateFunction([selectedAA](ApplicationState& state)
+                                                                { state.renderState.aaType = selectedAA; });
                     needsUpdate = true;
                 }
+            }
+
+            const char* taaDebugModes[] = {
+                "Off",
+                "Velocity Rejection Mask",
+                "History UV Validity",
+                "Current Velocity Magnitude",
+                "History Velocity Magnitude",
+                "Velocity Difference"};
+            int currentTAADebugMode =
+                mathstl::clamp(static_cast<int>(renderState.taaDebugMode), 0, IM_ARRAYSIZE(taaDebugModes) - 1);
+            int uiTAADebugMode = currentTAADebugMode;
+            if (ImGui::Combo("TAA Debug View", &uiTAADebugMode, taaDebugModes, IM_ARRAYSIZE(taaDebugModes)))
+            {
+                if (uiTAADebugMode != currentTAADebugMode)
+                {
+                    g_pApplicationState->RegisterUpdateFunction(
+                        [uiTAADebugMode](ApplicationState& state)
+                        { state.renderState.taaDebugMode = static_cast<u32>(uiTAADebugMode); });
+                    needsUpdate = true;
+                }
+            }
+
+            float taaVelocityRejectionStart = renderState.taaVelocityRejectionStart;
+            float taaVelocityRejectionEnd = renderState.taaVelocityRejectionEnd;
+            if (ImGui::SliderFloat("TAA Velocity Rejection Start", &taaVelocityRejectionStart, 0.0f, 64.0f, "%.3f px"))
+            {
+                g_pApplicationState->RegisterUpdateFunction(
+                    [taaVelocityRejectionStart](ApplicationState& state)
+                    { state.renderState.taaVelocityRejectionStart = taaVelocityRejectionStart; });
+                needsUpdate = true;
+            }
+            if (ImGui::SliderFloat("TAA Velocity Rejection End", &taaVelocityRejectionEnd, 0.0f, 64.0f, "%.3f px"))
+            {
+                g_pApplicationState->RegisterUpdateFunction(
+                    [taaVelocityRejectionEnd](ApplicationState& state)
+                    { state.renderState.taaVelocityRejectionEnd = taaVelocityRejectionEnd; });
+                needsUpdate = true;
             }
         }
         ImGui::Separator();

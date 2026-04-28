@@ -13,10 +13,10 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 layout(push_constant) uniform PushConstants
 {
     TAAPushConstants data;
-} pushConstantsBlock;
+}
+pushConstantsBlock;
 
 #define pushConstants pushConstantsBlock.data
-
 
 vec3 RGBToYCoCg(vec3 rgb)
 {
@@ -61,7 +61,7 @@ float LinearizeDepth(float depth, float zNear, float zFar)
     float nearPlane = max(zNear, 0.000001);
     float farPlane = max(zFar, nearPlane + 0.000001);
     float clampedDepth = clamp(depth, 0.0, 1.0);
-    float denom = max(farPlane + clampedDepth * (nearPlane - farPlane), 0.000001);
+    float denom = max(nearPlane + clampedDepth * (farPlane - nearPlane), 0.000001);
     return (nearPlane * farPlane) / denom;
 }
 
@@ -76,6 +76,96 @@ vec2 ClampToTexelCenter(vec2 sampleUV, vec2 invResolution)
     return clamp(sampleUV, halfTexel, vec2(1.0) - halfTexel);
 }
 
+float Luminance(vec3 color)
+{
+    return dot(max(color, vec3(0.0)), vec3(0.299, 0.587, 0.114));
+}
+
+vec4 AdjustHDRColor(vec3 color)
+{
+    float weight = 1.0 / (1.0 + Luminance(color));
+    return vec4(color * weight, weight);
+}
+
+float CatmullRomWeight(float x)
+{
+    float ax = abs(x);
+    float ax2 = ax * ax;
+    float ax3 = ax2 * ax;
+
+    if (ax <= 1.0)
+        return 1.5 * ax3 - 2.5 * ax2 + 1.0;
+    if (ax < 2.0)
+        return -0.5 * ax3 + 2.5 * ax2 - 4.0 * ax + 2.0;
+
+    return 0.0;
+}
+
+vec4 SampleHistoryCatmullRom(vec2 sampleUV, vec2 resolution)
+{
+    vec2 texelPos = sampleUV * resolution - 0.5;
+    vec2 base = floor(texelPos);
+    vec2 f = texelPos - base;
+    ivec2 maxCoord = ivec2(resolution) - ivec2(1);
+
+    vec4 color = vec4(0.0);
+    float weightSum = 0.0;
+    for (int y = -1; y <= 2; ++y)
+    {
+        float wy = CatmullRomWeight(float(y) - f.y);
+        for (int x = -1; x <= 2; ++x)
+        {
+            float weight = CatmullRomWeight(float(x) - f.x) * wy;
+            ivec2 coord = clamp(ivec2(base) + ivec2(x, y), ivec2(0), maxCoord);
+            color += texelFetch(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.lastFrameColorBufferIdx)], coord, 0) * weight;
+            weightSum += weight;
+        }
+    }
+
+    return color / max(weightSum, 0.0001);
+}
+
+vec2 ApplyVelocityDeadzone(vec2 velocityPixels)
+{
+    const float deadzonePixels = 0.001;
+    return vec2(abs(velocityPixels.x) < deadzonePixels ? 0.0 : velocityPixels.x,
+                abs(velocityPixels.y) < deadzonePixels ? 0.0 : velocityPixels.y);
+}
+
+vec2 GetClosestDepthVelocity(ivec2 pixelCoord, ivec2 resolution)
+{
+    float closestDepth = -1.0;
+    vec2 closestVelocity = vec2(0.0);
+    for (int y = -1; y <= 1; ++y)
+    {
+        for (int x = -1; x <= 1; ++x)
+        {
+            ivec2 sampleCoord = clamp(pixelCoord + ivec2(x, y), ivec2(0), resolution - ivec2(1));
+            float depth = texelFetch(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.depthBufferIdx)], sampleCoord, 0).r;
+            if (depth > closestDepth)
+            {
+                closestDepth = depth;
+                closestVelocity =
+                    texelFetch(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.gbufferVelocityIdx)], sampleCoord, 0).rg;
+            }
+        }
+    }
+    return closestVelocity;
+}
+
+float VelocityRejectionAmount(vec2 currentVelocityPixels, vec2 historyUV)
+{
+    if (!IsUVInBounds(historyUV))
+        return 1.0;
+
+    vec2 historyVelocityPixels =
+        textureLod(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.lastFrameVelocityIdx)], historyUV, 0.0).rg;
+    float velocityDiff = length(currentVelocityPixels - historyVelocityPixels);
+    float rejectionStart = min(pushConstants.velocityRejectionStart, pushConstants.velocityRejectionEnd);
+    float rejectionEnd = max(pushConstants.velocityRejectionStart, pushConstants.velocityRejectionEnd);
+    return smoothstep(rejectionStart, rejectionEnd, velocityDiff);
+}
+
 void main()
 {
     ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
@@ -86,45 +176,113 @@ void main()
     vec2 uv = (vec2(pixelCoord) + 0.5) / resolution;
     vec2 invRes = 1.0 / resolution;
 
-    vec2 velocityPixels = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.gbufferVelocityIdx)], uv).rg;
-    vec2 prevUV = uv + velocityPixels * invRes;
+    ivec2 resolutionPixels = ivec2(int(resolution.x), int(resolution.y));
+    vec2 velocityPixels = GetClosestDepthVelocity(pixelCoord, resolutionPixels);
+    vec2 historyVelocityPixels = ApplyVelocityDeadzone(velocityPixels);
+    vec2 prevUV = uv + historyVelocityPixels * invRes;
     bool hasHistory = pushConstants.resetHistory == 0u && IsUVInBounds(prevUV);
 
     vec4 currentColor = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.thisFrameColorBufferIdx)], uv);
-    if (any(lessThan(currentColor.rgb, vec3(0.0))) || !hasHistory) {
+    bool hasValidCurrentColor = !any(lessThan(currentColor.rgb, vec3(0.0)));
+
+    if (pushConstants.debugMode == 2u)
+    {
+        vec3 color = hasHistory ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+        imageStore(GlobalBindlessImages[nonuniformEXT(gbufferUBO.gbufferResolveIdx)], pixelCoord, vec4(color, 1.0));
+        return;
+    }
+
+    if (any(lessThan(currentColor.rgb, vec3(0.0))) || !hasHistory)
+    {
+        if (pushConstants.debugMode == 1u)
+        {
+            vec3 color = hasValidCurrentColor ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 0.0, 1.0);
+            imageStore(GlobalBindlessImages[nonuniformEXT(gbufferUBO.gbufferResolveIdx)], pixelCoord, vec4(color, 1.0));
+            return;
+        }
         imageStore(GlobalBindlessImages[nonuniformEXT(gbufferUBO.gbufferResolveIdx)], pixelCoord, currentColor);
         return;
     }
 
-    vec4 historyColor = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.lastFrameColorBufferIdx)], prevUV);
-    vec3 currentYCoCg = RGBToYCoCg(currentColor.rgb);
-    vec3 historyYCoCg = RGBToYCoCg(historyColor.rgb);
-    vec3 m1 = vec3(0.0); vec3 m2 = vec3(0.0);
-    for (int y = -1; y <= 1; ++y) {
-        for (int x = -1; x <= 1; ++x) {
+    vec4 historyColor = SampleHistoryCatmullRom(prevUV, resolution);
+
+    float velocityRejection = VelocityRejectionAmount(historyVelocityPixels, prevUV);
+
+    vec4 currentAdjusted = AdjustHDRColor(currentColor.rgb);
+    vec4 historyAdjusted = AdjustHDRColor(historyColor.rgb);
+    vec3 currentYCoCg = RGBToYCoCg(currentAdjusted.rgb);
+    vec3 historyYCoCg = RGBToYCoCg(historyAdjusted.rgb);
+    vec3 m1 = vec3(0.0);
+    vec3 m2 = vec3(0.0);
+    vec3 currentBlur = vec3(0.0);
+    for (int y = -1; y <= 1; ++y)
+    {
+        for (int x = -1; x <= 1; ++x)
+        {
             vec2 neighborUV = ClampToTexelCenter(uv + vec2(x, y) * invRes, invRes);
-            vec3 neighborColor = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.thisFrameColorBufferIdx)], neighborUV).rgb;
-            vec3 neighborYCoCg = RGBToYCoCg(neighborColor);
-            m1 += neighborYCoCg; m2 += neighborYCoCg * neighborYCoCg;
+            vec3 neighborColor =
+                texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.thisFrameColorBufferIdx)], neighborUV).rgb;
+            vec3 neighborYCoCg = RGBToYCoCg(AdjustHDRColor(neighborColor).rgb);
+            m1 += neighborYCoCg;
+            m2 += neighborYCoCg * neighborYCoCg;
+            currentBlur += neighborColor;
         }
     }
     const float N = 9.0;
-    vec3 mean = m1 / N; vec3 variance = (m2 / N) - (mean * mean);
-    vec3 stdDev = sqrt(max(vec3(0.0), variance));
-    const float gamma = 1.0;
-    vec3 aabbMin = mean - gamma * stdDev;
-    vec3 aabbMax = mean + gamma * stdDev;
-    historyYCoCg = ClipAABB(aabbMin, aabbMax, historyYCoCg, currentYCoCg);
-    historyColor.rgb = YCoCgToRGB(historyYCoCg);
+    currentBlur /= N;
+    vec3 mean = m1 / N;
+    vec3 stddev = sqrt(max(m2 / N - mean * mean, 0.0));
+    float Gamma = mix(1.5, 0.75, velocityRejection);
+    vec3 aabbMin = mean - stddev * Gamma;
+    vec3 aabbMax = mean + stddev * Gamma;
+    vec3 clampedCurrent = clamp(currentYCoCg, aabbMin, aabbMax);
 
-    float currentDepthRaw = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.depthBufferIdx)], uv).r;
-    float historyDepthRaw = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.lastFrameDepthIdx)], prevUV).r;
-    float currentDepth = LinearizeDepth(currentDepthRaw, pushConstants.zNear, pushConstants.zFar);
-    float historyDepth = LinearizeDepth(historyDepthRaw, pushConstants.zNear, pushConstants.zFar);
-    float depthDiff = abs(currentDepth - historyDepth);
-    float rejectionThreshold = max(0.05, min(currentDepth, historyDepth) * 0.02);
-    float rejection = 1.0 - smoothstep(rejectionThreshold, rejectionThreshold * 2.0, depthDiff);
-    float historyWeight = 0.95 * rejection;
-    vec4 finalColor = mix(currentColor, historyColor, historyWeight);
-    imageStore(GlobalBindlessImages[nonuniformEXT(gbufferUBO.gbufferResolveIdx)], pixelCoord, finalColor);
+    if (pushConstants.debugMode == 1u)
+    {
+        imageStore(
+            GlobalBindlessImages[nonuniformEXT(gbufferUBO.gbufferResolveIdx)], pixelCoord, vec4(vec3(velocityRejection), 1.0));
+        return;
+    }
+    if (pushConstants.debugMode == 3u)
+    {
+        float velocityMagnitude = clamp(length(historyVelocityPixels) / 32.0, 0.0, 1.0);
+        imageStore(
+            GlobalBindlessImages[nonuniformEXT(gbufferUBO.gbufferResolveIdx)], pixelCoord, vec4(vec3(velocityMagnitude), 1.0));
+        return;
+    }
+    if (pushConstants.debugMode == 4u)
+    {
+        vec2 historyVelocityPixels =
+            textureLod(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.lastFrameVelocityIdx)], prevUV, 0.0).rg;
+        float historyVelocityMagnitude = clamp(length(historyVelocityPixels) / 32.0, 0.0, 1.0);
+        imageStore(
+            GlobalBindlessImages[nonuniformEXT(gbufferUBO.gbufferResolveIdx)],
+            pixelCoord,
+            vec4(vec3(historyVelocityMagnitude), 1.0));
+        return;
+    }
+    if (pushConstants.debugMode == 5u)
+    {
+        vec2 previousVelocityPixels =
+            textureLod(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.lastFrameVelocityIdx)], prevUV, 0.0).rg;
+        float rejectionEnd = max(max(pushConstants.velocityRejectionStart, pushConstants.velocityRejectionEnd), 0.0001);
+        float velocityDiff = clamp(length(historyVelocityPixels - previousVelocityPixels) / rejectionEnd, 0.0, 1.0);
+        imageStore(
+            GlobalBindlessImages[nonuniformEXT(gbufferUBO.gbufferResolveIdx)], pixelCoord, vec4(vec3(velocityDiff), 1.0));
+        return;
+    }
+    float historyWeight = 0.95;
+
+    historyYCoCg = ClipAABB(aabbMin, aabbMax, historyYCoCg, clampedCurrent);
+    vec3 clippedHistory = YCoCgToRGB(historyYCoCg);
+    float currentWeight = (1.0 - historyWeight) * currentAdjusted.a;
+    float historyBlendWeight = historyWeight * historyAdjusted.a;
+    vec3 accumulatedColor =
+        (currentAdjusted.rgb * (1.0 - historyWeight) + clippedHistory * historyWeight) /
+        max(currentWeight + historyBlendWeight, 0.0001);
+    vec3 finalRgb = mix(accumulatedColor, currentBlur, velocityRejection);
+    vec4 finalColor = vec4(finalRgb, currentColor.a);
+    imageStore(
+        GlobalBindlessImages[nonuniformEXT(gbufferUBO.gbufferResolveIdx)], pixelCoord, finalColor);
+    return;
 }

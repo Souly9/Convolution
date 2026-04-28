@@ -9,6 +9,7 @@
 #include "Core/Global/FrameGlobals.h"
 #include "Core/Rendering/Core/Defines/GlobalBuffers.h"
 #include "Core/Rendering/Core/GPUTimingQuery.h"
+#include "Core/Rendering/Core/Nvidia/StreamlineManager.h"
 #include "Core/Rendering/Core/ShaderManager.h"
 #include "Core/Rendering/Core/Synchronization.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
@@ -73,7 +74,10 @@ void PassManager::InitResourceManagerAndCallbacks()
     AddPass(PassType::Lighting, stltype::make_unique<RenderPasses::LightingPass>());
     AddPass(PassType::TAA, stltype::make_unique<RenderPasses::TAAPass>());
     AddPass(PassType::SMAA, stltype::make_unique<RenderPasses::SMAAPass>());
-    AddPass(PassType::DLSS, stltype::make_unique<RenderPasses::DLSSPass>());
+    if (Nvidia::StreamlineManager::IsDLSSSupported())
+    {
+        AddPass(PassType::DLSS, stltype::make_unique<RenderPasses::DLSSPass>());
+    }
     AddPass(PassType::Composite, stltype::make_unique<RenderPasses::CompositPass>());
 }
 
@@ -297,7 +301,11 @@ void PassManager::RenderPassGroup(PassType groupType,
                                   FrameRendererContext& ctx,
                                   CommandBuffer* pCmdBuffer)
 {
-    const auto& passes = m_passes.at(groupType);
+    const auto it = m_passes.find(groupType);
+    if (it == m_passes.end())
+        return;
+
+    const auto& passes = it->second;
     if (passes.empty())
         return;
 
@@ -343,7 +351,10 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
     pComputeCmdBuffer->SetFrameIdx(ctx.currentFrame);
     pDepthWorkBuffer->SetFrameIdx(ctx.currentFrame);
 
-    RecordDLSSExposureUpdate(pComputeCmdBuffer);
+    if (Nvidia::StreamlineManager::IsDLSSSupported())
+    {
+        RecordDLSSExposureUpdate(pComputeCmdBuffer);
+    }
 
     auto pendingFlips = m_resourceManager.PopPendingVisibleInstanceIndices();
     if (!pendingFlips.empty())
@@ -527,6 +538,7 @@ void PassManager::UpdateGBufferUBO(const MainPassData& data)
     gbufferUBO.gbufferTexCoordMatIdx = m_gbuffer.GetHandle(GBufferTextureType::TexCoordMatData);
     gbufferUBO.gbufferDebugIdx = m_gbuffer.GetHandle(GBufferTextureType::GBufferDebug);
     gbufferUBO.gbufferVelocityIdx = m_gbuffer.GetHandle(GBufferTextureType::GBufferVelocity);
+    gbufferUBO.lastFrameVelocityIdx = m_gbuffer.GetHandle(GBufferTextureType::GBufferLastFrameVelocity);
     gbufferUBO.depthBufferIdx = temporal.currentDepthHandle;
     gbufferUBO.lastFrameColorBufferIdx = temporal.historyColorHandle;
     gbufferUBO.thisFrameColorBufferIdx = temporal.currentColorHandle;
@@ -834,6 +846,7 @@ void PassManager::RecreateGbuffers(const mathstl::Vector2& resolution)
         { GBufferTextureType::TexCoordMatData, "GBuffer UV Material Data" },
         { GBufferTextureType::GBufferDebug, "GBuffer Debug" },
         { GBufferTextureType::GBufferVelocity, "GBuffer Velocity", Usage::None, false },
+        { GBufferTextureType::GBufferLastFrameVelocity, "GBuffer Last Frame Velocity", Usage::None, false },
         { GBufferTextureType::GBufferLastFrameColor, "GBuffer Last Frame Color", Usage::Storage, false },
         { GBufferTextureType::GBufferThisFrameColor, "GBuffer This Frame Color", Usage::Storage, false },
         { GBufferTextureType::GBufferResolve, "GBuffer Resolve", Usage::Storage | Usage::Sampled, false }
@@ -890,22 +903,29 @@ void PassManager::RecreateGbuffers(const mathstl::Vector2& resolution)
     m_globalRendererAttachments.pSMAABlendTexture = m_pSMAABlendTexture;
 
     if (m_dlssExposureTextureHandle != 0)
+    {
         g_pTexManager->FreeTexture(m_dlssExposureTextureHandle);
+        m_dlssExposureTextureHandle = 0;
+        m_pDLSSExposureTexture = nullptr;
+    }
 
-    DynamicTextureRequest exposureReq{};
-    exposureReq.extents = {1, 1, 1};
-    exposureReq.handle = g_pTexManager->GenerateHandle();
-    exposureReq.format = TexFormat::R32_FLOAT;
-    exposureReq.usage = Usage::Sampled | Usage::TransferDst;
-    exposureReq.isPersistent = true;
-    exposureReq.hasMipMaps = false;
-    exposureReq.mipLevels = 1;
-    exposureReq.createSampler = false;
-    exposureReq.AddName("DLSS Exposure");
-    m_pDLSSExposureTexture = static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(exposureReq));
-    m_dlssExposureTextureHandle = exposureReq.handle;
-    m_dlssExposureTextureInitialized = false;
-    m_dlssExposureStagingBuffer.EnsureCapacity(sizeof(float));
+    if (Nvidia::StreamlineManager::IsDLSSSupported())
+    {
+        DynamicTextureRequest exposureReq{};
+        exposureReq.extents = {1, 1, 1};
+        exposureReq.handle = g_pTexManager->GenerateHandle();
+        exposureReq.format = TexFormat::R32_FLOAT;
+        exposureReq.usage = Usage::Sampled | Usage::TransferDst;
+        exposureReq.isPersistent = true;
+        exposureReq.hasMipMaps = false;
+        exposureReq.mipLevels = 1;
+        exposureReq.createSampler = false;
+        exposureReq.AddName("DLSS Exposure");
+        m_pDLSSExposureTexture = static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(exposureReq));
+        m_dlssExposureTextureHandle = exposureReq.handle;
+        m_dlssExposureTextureInitialized = false;
+        m_dlssExposureStagingBuffer.EnsureCapacity(sizeof(float));
+    }
 
     for (auto& passData : m_mainPassData) {
         passData.pScreenSpaceShadowTexture = m_pScreenSpaceShadowTexture;

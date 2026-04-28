@@ -13,6 +13,7 @@ enum class GBufferTextureType
     TexCoordMatData,
     GBufferDebug,
     GBufferVelocity,
+    GBufferLastFrameVelocity,
     GBufferLastFrameColor,
     GBufferThisFrameColor,
     GBufferLastFrameDepth,
@@ -34,6 +35,7 @@ struct GBufferInfo
             case GBufferTextureType::GBufferDebug:
                 return TexFormat::R16G16B16A16_FLOAT;
             case GBufferTextureType::GBufferVelocity:
+            case GBufferTextureType::GBufferLastFrameVelocity:
                 return TexFormat::R32G32_FLOAT;
             case GBufferTextureType::GBufferLastFrameColor:
             case GBufferTextureType::GBufferThisFrameColor:
@@ -70,6 +72,8 @@ struct GBuffer : public GBufferInfo
                 return m_pDebugTexture;
             case GBufferTextureType::GBufferVelocity:
                 return m_pVelocityTexture;
+            case GBufferTextureType::GBufferLastFrameVelocity:
+                return m_pLastFrameVelocityTexture;
             case GBufferTextureType::GBufferLastFrameColor:
                 return m_pLastFrameColorTexture;
             case GBufferTextureType::GBufferThisFrameColor:
@@ -104,6 +108,9 @@ struct GBuffer : public GBufferInfo
             case GBufferTextureType::GBufferVelocity:
                 m_pVelocityTexture = pTexture;
                 break;
+            case GBufferTextureType::GBufferLastFrameVelocity:
+                m_pLastFrameVelocityTexture = pTexture;
+                break;
             case GBufferTextureType::GBufferLastFrameColor:
                 m_pLastFrameColorTexture = pTexture;
                 break;
@@ -130,6 +137,7 @@ struct GBuffer : public GBufferInfo
             case GBufferTextureType::TexCoordMatData: m_hTexCoordMat = handle; break;
             case GBufferTextureType::GBufferDebug: m_hDebug = handle; break;
             case GBufferTextureType::GBufferVelocity: m_hVelocity = handle; break;
+            case GBufferTextureType::GBufferLastFrameVelocity: m_hLastFrameVelocity = handle; break;
             case GBufferTextureType::GBufferLastFrameColor: m_hLastFrameColor = handle; break;
             case GBufferTextureType::GBufferThisFrameColor: m_hThisFrameColor = handle; break;
             case GBufferTextureType::GBufferLastFrameDepth: m_hLastFrameDepth = handle; break;
@@ -146,6 +154,7 @@ struct GBuffer : public GBufferInfo
             case GBufferTextureType::TexCoordMatData: return m_hTexCoordMat;
             case GBufferTextureType::GBufferDebug: return m_hDebug;
             case GBufferTextureType::GBufferVelocity: return m_hVelocity;
+            case GBufferTextureType::GBufferLastFrameVelocity: return m_hLastFrameVelocity;
             case GBufferTextureType::GBufferLastFrameColor: return m_hLastFrameColor;
             case GBufferTextureType::GBufferThisFrameColor: return m_hThisFrameColor;
             case GBufferTextureType::GBufferLastFrameDepth: return m_hLastFrameDepth;
@@ -159,6 +168,8 @@ struct GBuffer : public GBufferInfo
         // Resolve from previous frame becomes the History for this frame
         stltype::swap(m_pLastFrameColorTexture, m_pResolveTexture);
         stltype::swap(m_hLastFrameColor, m_hResolve);
+        stltype::swap(m_pLastFrameVelocityTexture, m_pVelocityTexture);
+        stltype::swap(m_hLastFrameVelocity, m_hVelocity);
     }
 
 
@@ -168,6 +179,7 @@ private:
     Texture* m_pGbufferUVMatTexture{nullptr};
     Texture* m_pDebugTexture{nullptr};
     Texture* m_pVelocityTexture{nullptr};
+    Texture* m_pLastFrameVelocityTexture{nullptr};
     Texture* m_pLastFrameColorTexture{nullptr};
     Texture* m_pThisFrameColorTexture{nullptr};
     Texture* m_pLastFrameDepthTexture{nullptr};
@@ -178,6 +190,7 @@ private:
     BindlessTextureHandle m_hTexCoordMat{0};
     BindlessTextureHandle m_hDebug{0};
     BindlessTextureHandle m_hVelocity{0};
+    BindlessTextureHandle m_hLastFrameVelocity{0};
     BindlessTextureHandle m_hLastFrameColor{0};
     BindlessTextureHandle m_hThisFrameColor{0};
     BindlessTextureHandle m_hLastFrameDepth{0};

@@ -17,8 +17,8 @@ layout(push_constant) uniform PushConstants {
 #define SURFACE_THICKNESS 0.004
 #define BILINEAR_THRESHOLD 0.02
 #define SHADOW_CONTRAST 5.0
-#define NEAR_DEPTH 0.0
-#define FAR_DEPTH 1.0
+#define NEAR_DEPTH 1.0
+#define FAR_DEPTH 0.0
 
 #define WAVE_SIZE 64
 #define SAMPLE_COUNT 64

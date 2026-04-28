@@ -41,6 +41,16 @@ bool HasExtension(const stltype::vector<const char*>& extensions, const char* na
     return false;
 }
 
+bool HasExtension(const stltype::vector<VkExtensionProperties>& extensions, const char* name)
+{
+    for (const auto& existing : extensions)
+    {
+        if (strcmp(existing.extensionName, name) == 0)
+            return true;
+    }
+    return false;
+}
+
 void RemoveExtension(stltype::vector<const char*>& extensions, const char* name)
 {
     auto it = extensions.begin();
@@ -70,6 +80,8 @@ mathstl::Vector2 CalculateRenderResolution(const mathstl::Vector2& swapchainReso
 
 bool RenderBackendImpl<Vulkan>::Init(uint32_t screenWidth, uint32_t screenHeight, stltype::string_view title)
 {
+    m_dlssSupportAvailable = Nvidia::StreamlineManager::EarlyInit();
+
     if (!CreateInstance(screenWidth, screenHeight, title))
     {
         DEBUG_ASSERT(false && "Vulkan Instance couldn't be created!");
@@ -88,6 +100,13 @@ bool RenderBackendImpl<Vulkan>::Init(uint32_t screenWidth, uint32_t screenHeight
     {
         DEBUG_LOG_ERR("Vulkan Physical Device couldn't be picked!");
         return false;
+    }
+
+    if (m_dlssSupportAvailable && !DeviceSupportsDLSSRequirements(m_physicalDevice))
+    {
+        DEBUG_LOG_WARN("Selected Vulkan device does not satisfy Streamline DLSS requirements. DLSS disabled.");
+        m_dlssSupportAvailable = false;
+        Nvidia::StreamlineManager::Shutdown();
     }
 
     if (!CreateLogicalDevice())
@@ -109,11 +128,21 @@ bool RenderBackendImpl<Vulkan>::Init(uint32_t screenWidth, uint32_t screenHeight
         vkGetInstanceProcAddr(m_instance, "vkCmdEndDebugUtilsLabelEXT"));
 
     UpdateGlobals();
-    Nvidia::StreamlineManager::Init();
+    bool dlssSupported = false;
+    if (m_dlssSupportAvailable)
+    {
+        dlssSupported = Nvidia::StreamlineManager::Init();
+        if (!dlssSupported)
+        {
+            DEBUG_LOG_WARN("Streamline DLSS initialization failed. DLSS disabled.");
+            m_dlssSupportAvailable = false;
+        }
+    }
+    PublishDLSSSupport(dlssSupported);
 
     {
         DEBUG_LOG("Creating Swapchain!");
-        if (!CreateSwapChain())
+        if (!CreateSwapChain(VK_NULL_HANDLE))
         {
             DEBUG_LOG_ERR("Vulkan swapchain couldn't be created!");
             return false;
@@ -125,8 +154,6 @@ bool RenderBackendImpl<Vulkan>::Init(uint32_t screenWidth, uint32_t screenHeight
 
     UpdateGlobals();
 
-    g_pEventSystem->AddSwapchainRecreationEventCallback([this](const auto&) { RecreateSwapChain(); });
-
     return true;
 }
 
@@ -134,13 +161,19 @@ bool RenderBackendImpl<Vulkan>::RecreateSwapChain()
 {
     vkDeviceWaitIdle(m_logicalDevice);
 
-    vkDestroySwapchainKHR(m_logicalDevice, m_swapChain, VulkanAllocator());
+    VkSwapchainKHR oldSwapchain = m_swapChain;
 
-    if (!CreateSwapChain())
+    if (!CreateSwapChain(oldSwapchain))
     {
         DEBUG_LOG_ERR("Vulkan swapchain couldn't be recreated!");
         return false;
     }
+
+    if (oldSwapchain != VK_NULL_HANDLE)
+    {
+        vkDestroySwapchainKHR(m_logicalDevice, oldSwapchain, VulkanAllocator());
+    }
+
     CreateSwapChainImages();
     UpdateGlobals();
 
@@ -163,6 +196,7 @@ bool RenderBackendImpl<Vulkan>::Cleanup()
     vkDestroySurfaceKHR(m_instance, m_surface, VulkanAllocator());
     vkDestroyDevice(m_logicalDevice, VulkanAllocator());
     vkDestroyInstance(m_instance, VulkanAllocator());
+    Nvidia::StreamlineManager::Shutdown();
     return true;
 }
 
@@ -261,21 +295,34 @@ bool RenderBackendImpl<Vulkan>::CreateInstance(uint32_t screenWidth, uint32_t sc
     auto instanceExtensions = stltype::vector<const char*>(glfwExtensions, glfwExtensions + glfwExtensionCount);
     instanceExtensions.insert(instanceExtensions.end(), g_instanceExtensions.begin(), g_instanceExtensions.end());
 
-    sl::FeatureRequirements dlssRequirements{};
-    if (Nvidia::StreamlineManager::GetDLSSFeatureRequirements(dlssRequirements))
-    {
-        for (u32 i = 0; i < dlssRequirements.vkNumInstanceExtensions; ++i)
-        {
-            const char* ext = dlssRequirements.vkInstanceExtensions[i];
-            if (!HasExtension(instanceExtensions, ext))
-                instanceExtensions.push_back(ext);
-        }
-    }
-
     uint32_t extensionCount = 0;
     vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
     stltype::vector<VkExtensionProperties> extensions(extensionCount);
     vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, extensions.data());
+
+    sl::FeatureRequirements dlssRequirements{};
+    if (m_dlssSupportAvailable && Nvidia::StreamlineManager::GetDLSSFeatureRequirements(dlssRequirements))
+    {
+        bool hasAllDLSSInstanceExtensions = true;
+        for (u32 i = 0; i < dlssRequirements.vkNumInstanceExtensions; ++i)
+        {
+            const char* ext = dlssRequirements.vkInstanceExtensions[i];
+            if (!HasExtension(extensions, ext))
+            {
+                hasAllDLSSInstanceExtensions = false;
+                DEBUG_LOG_WARN(stltype::string("Missing Streamline instance extension: ") + ext);
+                continue;
+            }
+            if (!HasExtension(instanceExtensions, ext))
+                instanceExtensions.push_back(ext);
+        }
+        if (!hasAllDLSSInstanceExtensions)
+        {
+            DEBUG_LOG_WARN("Required Streamline instance extensions are unavailable. DLSS disabled.");
+            m_dlssSupportAvailable = false;
+            Nvidia::StreamlineManager::Shutdown();
+        }
+    }
 
     bool hasValidationFeaturesExt = false;
     for (const auto& ext : extensions)
@@ -339,7 +386,8 @@ bool RenderBackendImpl<Vulkan>::CreateInstance(uint32_t screenWidth, uint32_t sc
 bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
 {
     sl::FeatureRequirements dlssRequirements{};
-    const bool hasDLSSRequirements = Nvidia::StreamlineManager::GetDLSSFeatureRequirements(dlssRequirements);
+    const bool hasDLSSRequirements =
+        m_dlssSupportAvailable && Nvidia::StreamlineManager::GetDLSSFeatureRequirements(dlssRequirements);
 
     const u32 hostGraphicsQueueCount = 1;
     const u32 hostComputeQueueCount = 1;
@@ -405,9 +453,12 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
         DEBUG_LOG_WARN("Insufficient Vulkan queues for full Streamline DLSS queue requirements");
     }
 
-    Nvidia::StreamlineManager::SetVulkanQueueStartIndices(
-        finalGraphicsQueueCount > hostGraphicsQueueCount ? hostGraphicsQueueCount : 0,
-        finalComputeQueueCount > hostComputeQueueCount ? hostComputeQueueCount : 0);
+    if (hasDLSSRequirements)
+    {
+        Nvidia::StreamlineManager::SetVulkanQueueStartIndices(
+            finalGraphicsQueueCount > hostGraphicsQueueCount ? hostGraphicsQueueCount : 0,
+            finalComputeQueueCount > hostComputeQueueCount ? hostComputeQueueCount : 0);
+    }
 
     uint32_t deviceExtensionCount;
     vkEnumerateDeviceExtensionProperties(m_physicalDevice, nullptr, &deviceExtensionCount, nullptr);
@@ -517,11 +568,11 @@ bool RenderBackendImpl<Vulkan>::PickPhysicalDevice()
 
     if (m_physicalDevice != VK_NULL_HANDLE)
     {
-        DEBUG_LOG("Picked this device");
         DEBUG_ASSERT(g_pApplicationState != nullptr);
 
         VkPhysicalDeviceProperties deviceProperties;
         vkGetPhysicalDeviceProperties(m_physicalDevice, &deviceProperties);
+        DEBUG_LOGF("Picked Vulkan physical device: {}", deviceProperties.deviceName);
 
         VkPhysicalDeviceMemoryProperties memProperties;
         vkGetPhysicalDeviceMemoryProperties(m_physicalDevice, &memProperties);
@@ -549,27 +600,30 @@ bool RenderBackendImpl<Vulkan>::IsDeviceSuitable(VkPhysicalDevice device)
     DEBUG_LOG("Found Device: " + deviceName);
 
     m_indices = FindQueueFamilies(device);
+    // Fallback for missing families (unified queues/RenderDoc)
+    if (!m_indices.transferFamily.has_value()) m_indices.transferFamily = m_indices.graphicsFamily;
+    if (!m_indices.computeFamily.has_value()) m_indices.computeFamily = m_indices.graphicsFamily;
+
     bool swapChainAdequate = false;
-    if (AreExtensionsSupported(device))
+    const bool extensionsSupported = AreExtensionsSupported(device);
+    if (extensionsSupported)
     {
         SwapChainSupportDetails swapChainSupport = QuerySwapChainSupport(device);
         swapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
     }
 
-    // Fallback for missing families (unified queues/RenderDoc)
-    if (!m_indices.transferFamily.has_value()) m_indices.transferFamily = m_indices.graphicsFamily;
-    if (!m_indices.computeFamily.has_value()) m_indices.computeFamily = m_indices.graphicsFamily;
-
     bool isSuitable = m_indices.IsComplete() && swapChainAdequate && deviceFeatures.samplerAnisotropy;
-    // Prioritize discrete GPUs in the suitability loop
-    if (deviceProperties.deviceType != VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
-    {
-        bool hasOtherDiscrete = false; // We can't easily check other devices here, but we can return true only for discrete first
-        // Simple heuristic: if it's not discrete, only allow it if it's the only option or special environment
-    }
 
     if (!isSuitable)
+    {
+        DEBUG_LOG_WARNF("Rejecting Vulkan device '{}': queuesComplete={}, extensionsSupported={}, swapchainAdequate={}, samplerAnisotropy={}",
+                        deviceProperties.deviceName,
+                        m_indices.IsComplete(),
+                        extensionsSupported,
+                        swapChainAdequate,
+                        deviceFeatures.samplerAnisotropy == VK_TRUE);
         return false;
+    }
 
     VkGlobals::SetPhysicalDeviceProperties(deviceProperties);
     return true;
@@ -584,14 +638,6 @@ bool RenderBackendImpl<Vulkan>::AreExtensionsSupported(VkPhysicalDevice device)
     vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, availableExtensions.data());
 
     stltype::set<stltype::string> requiredExtensions(g_requiredDeviceExtensions.begin(), g_requiredDeviceExtensions.end());
-    sl::FeatureRequirements dlssRequirements{};
-    if (Nvidia::StreamlineManager::GetDLSSFeatureRequirements(dlssRequirements))
-    {
-        for (u32 i = 0; i < dlssRequirements.vkNumDeviceExtensions; ++i)
-        {
-            requiredExtensions.insert(dlssRequirements.vkDeviceExtensions[i]);
-        }
-    }
     // BDA is provided via Vulkan 1.2 features in this renderer; don't require extension variants.
     requiredExtensions.erase(VK_EXT_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
     requiredExtensions.erase(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
@@ -601,7 +647,56 @@ bool RenderBackendImpl<Vulkan>::AreExtensionsSupported(VkPhysicalDevice device)
         requiredExtensions.erase(extension.extensionName);
     }
 
+    for (const auto& missing : requiredExtensions)
+    {
+        DEBUG_LOG_WARNF("Missing required Vulkan device extension: {}", missing.c_str());
+    }
+
     return requiredExtensions.empty();
+}
+
+bool RenderBackendImpl<Vulkan>::DeviceSupportsDLSSRequirements(VkPhysicalDevice device) const
+{
+    if (device == VK_NULL_HANDLE)
+        return false;
+
+    sl::FeatureRequirements dlssRequirements{};
+    if (!Nvidia::StreamlineManager::GetDLSSFeatureRequirements(dlssRequirements))
+        return false;
+
+    uint32_t extensionCount;
+    vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
+
+    stltype::vector<VkExtensionProperties> availableExtensions(extensionCount);
+    vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, availableExtensions.data());
+
+    for (u32 i = 0; i < dlssRequirements.vkNumDeviceExtensions; ++i)
+    {
+        const char* ext = dlssRequirements.vkDeviceExtensions[i];
+        if (!HasExtension(availableExtensions, ext))
+        {
+            DEBUG_LOG_WARN(stltype::string("Missing Streamline device extension: ") + ext);
+            return false;
+        }
+    }
+
+    return true;
+}
+
+void RenderBackendImpl<Vulkan>::PublishDLSSSupport(bool supported) const
+{
+    if (!g_pApplicationState)
+        return;
+
+    g_pApplicationState->RegisterUpdateFunction(
+        [supported](ApplicationState& state)
+        {
+            state.renderState.dlssSupported = supported;
+            if (!supported && state.renderState.aaType == AntialiasingType::DLSS)
+            {
+                state.renderState.aaType = AntialiasingType::TAA_SMAA;
+            }
+        });
 }
 
 RenderBackendImpl<Vulkan>::SwapChainSupportDetails RenderBackendImpl<Vulkan>::QuerySwapChainSupport(
@@ -687,7 +782,7 @@ DirectX::XMUINT2 RenderBackendImpl<Vulkan>::ChooseSwapExtent(const VkSurfaceCapa
     return actualExtent;
 }
 
-bool RenderBackendImpl<Vulkan>::CreateSwapChain()
+bool RenderBackendImpl<Vulkan>::CreateSwapChain(VkSwapchainKHR oldSwapchain)
 {
     SwapChainSupportDetails swapChainSupport = QuerySwapChainSupport(m_physicalDevice);
 
@@ -737,10 +832,13 @@ bool RenderBackendImpl<Vulkan>::CreateSwapChain()
     createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     createInfo.presentMode = presentMode;
     createInfo.clipped = VK_TRUE;
-    createInfo.oldSwapchain = VK_NULL_HANDLE;
-    if (vkCreateSwapchainKHR(m_logicalDevice, &createInfo, nullptr, &m_swapChain) != VK_SUCCESS)
+    createInfo.oldSwapchain = oldSwapchain;
+
+    VkSwapchainKHR newSwapchain = VK_NULL_HANDLE;
+    if (vkCreateSwapchainKHR(m_logicalDevice, &createInfo, nullptr, &newSwapchain) != VK_SUCCESS)
         return false;
 
+    m_swapChain = newSwapchain;
     vkGetSwapchainImagesKHR(m_logicalDevice, m_swapChain, &imageCount, nullptr);
     m_swapChainImages.resize(imageCount);
     vkGetSwapchainImagesKHR(m_logicalDevice, m_swapChain, &imageCount, m_swapChainImages.data());

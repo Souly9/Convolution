@@ -35,10 +35,7 @@ static inline const stltype::vector<const char*> g_instanceExtensions = {
 
 static inline const stltype::vector<const char*> g_requiredDeviceExtensions = {
     "VK_KHR_swapchain",
-    "VK_EXT_memory_budget",
-    "VK_NVX_binary_import",
-    "VK_NV_cuda_kernel_launch",
-    "VK_KHR_sampler_mirror_clamp_to_edge"
+    "VK_EXT_memory_budget"
 };
 
 static inline const stltype::vector<const char*> g_optionalDeviceExtensions = {

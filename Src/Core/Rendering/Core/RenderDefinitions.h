@@ -135,6 +135,11 @@ enum class DepthCompareOp
     ALWAYS
 };
 
+inline constexpr bool kUseReversedZDepth = true;
+inline constexpr f32 kDepthClearValue = kUseReversedZDepth ? 0.0f : 1.0f;
+inline constexpr DepthCompareOp kDepthWriteCompareOp =
+    kUseReversedZDepth ? DepthCompareOp::GREATER_OR_EQUAL : DepthCompareOp::LESS_OR_EQUAL;
+
 enum class CullMode
 {
     NONE,

@@ -86,6 +86,6 @@ DepthAttachmentVulkan DepthAttachmentVulkan::Create(const DepthBufferAttachmentI
                                      createInfo.loadOp,
                                      createInfo.storeOp,
                                      createInfo.renderingLayout);
-    att.SetClearValue(mathstl::Vector4(1.0f, 0.0f, 0.0f, 0.0f));
+    att.SetClearValue(mathstl::Vector4(kDepthClearValue, 0.0f, 0.0f, 0.0f));
     return att;
 }

@@ -19,6 +19,7 @@ MainMenuBar::MainMenuBar() : SelfInstantiatingUIElement()
 void MainMenuBar::DrawMenuBar(f32 dt, ApplicationInfos& appInfos)
 {
     ScopedZone("MainMenuBar");
+    const bool dlssSupported = g_pApplicationState->GetCurrentApplicationState().renderState.dlssSupported;
     if (ImGui::BeginMainMenuBar())
     {
         if (ImGui::BeginMenu("Entity"))
@@ -108,7 +109,7 @@ void MainMenuBar::DrawMenuBar(f32 dt, ApplicationInfos& appInfos)
             {
                 m_gbufferWindow.SetOpen(true);
             }
-            if (ImGui::MenuItem("DLSS Debug", ""))
+            if (dlssSupported && ImGui::MenuItem("DLSS Debug", ""))
             {
                 m_dlssDebugWindow.SetOpen(true);
             }
@@ -153,7 +154,7 @@ void MainMenuBar::DrawMenuBar(f32 dt, ApplicationInfos& appInfos)
     {
         m_gbufferWindow.DrawWindow(dt);
     }
-    if (m_dlssDebugWindow.IsOpen())
+    if (dlssSupported && m_dlssDebugWindow.IsOpen())
     {
         m_dlssDebugWindow.DrawWindow(dt);
     }

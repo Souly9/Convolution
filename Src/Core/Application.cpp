@@ -14,14 +14,11 @@
 #include <imgui/backends/imgui_impl_vulkan.h>
 #include <imgui/imgui.h>
 #include "Core/Rendering/Vulkan/VkProfiler.h"
-#include "Core/Rendering/Core/Nvidia/StreamlineManager.h"
 #include "vulkan/vulkan_core.h"
 
 
-Application::Application(bool canRender, RenderLayer<RenderAPI>& layer) : m_renderThread(&m_imGuiManager)
+Application::Application(bool canRender, RenderLayer<RenderAPI>& layer) : m_renderThread(&m_imGuiManager, &layer.GetBackend())
 {
-    Nvidia::StreamlineManager::EarlyInit();
-
     m_pProfiler = stltype::make_unique<VkProfiler>();
     VkGlobals::SetProfiler(m_pProfiler.get());
     g_pApplicationState = &m_applicationState;
@@ -78,8 +75,6 @@ Application::~Application()
     
     m_pProfiler->Destroy();
     VkGlobals::SetProfiler(nullptr);
-
-    Nvidia::StreamlineManager::Shutdown();
 
     m_imGuiManager.CleanUp();
 }

@@ -22,7 +22,7 @@ layout(location = 0) in VertexOut
     mat3 TBN;
     vec4 jitteredClipPos;
     vec4 unjitteredClipPos;
-    vec4 prevJitteredClipPos;
+    vec4 prevUnjitteredClipPos;
     vec3 worldNormal;
     vec2 fragTexCoord;
     flat uint matIdx;
@@ -35,9 +35,7 @@ void main()
     vec4 fragTexSample = IsMaterialFlagSet(mat.flags, MATERIAL_FLAG_DIFFUSE_BIT)
                              ? vec4(texture(GlobalBindlessTextures[nonuniformEXT(mat.diffuseTexture)], IN.fragTexCoord))
                              : vec4(1.0);
-    // Dumb alpha discard
-    if (fragTexSample.a < 1e-6)
-        discard;
+
     vec3 N = normalize(IN.worldNormal);
     if (IsMaterialFlagSet(mat.flags, MATERIAL_FLAG_NORMAL_BIT))
     {
@@ -53,7 +51,7 @@ void main()
         }
     }
 
-    vec2 velocity = ComputeVelocity(IN.jitteredClipPos, IN.prevJitteredClipPos);
+    vec2 velocity = ComputeVelocity(IN.unjitteredClipPos, IN.prevUnjitteredClipPos);
 
     StoreAlbedoInGBuffer(fragTexSample);
     StoreNormalAndMaterialInGBuffer(N, IN.matIdx);

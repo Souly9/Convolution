@@ -53,18 +53,21 @@ float sampleShadowCascade(int cascadeIndex, vec4 fragWorldPos, vec3 normal, vec3
     {
         return 1.0;
     }
-    // Bias logic
-    float scale = exp2(-float(cascadeIndex));
 
-    // 1. Scaled Bias
-    float cosTheta = clamp(dot(normal, lightDir), 0.0, 1.0);
-    float baseBias = max(0.005 * (1.0 - cosTheta), 0.0005);
-    float bias = baseBias * scale; 
+    vec3 lightToSurfaceDir = normalize(-lightDir);
+    float cosTheta = clamp(dot(normalize(normal), lightToSurfaceDir), 0.0, 1.0);
 
-    float currentDepth = (projCoords.z - bias);
+    ivec3 shadowMapSize = textureSize(GlobalBindlessArrayTextures[shadowmapUBO.directionalShadowMapIdx], 0);
+    float shadowMapWidth = float(max(shadowMapSize.x, 1));
+    // CSM projections use a 2r-wide XY extent and a 9r depth extent, so this converts texels to normalized depth.
+    float normalizedDepthPerTexel = 2.0 / (9.0 * shadowMapWidth);
+    float biasTexels = mix(0.5, 2.0, 1.0 - cosTheta);
+    float bias = biasTexels * normalizedDepthPerTexel;
+
+    float currentDepth = (projCoords.z + bias);
     float shadow = 0.0;
-    // 2. Scaled PCF Radius
     float baseRadius = 0.0005;
+    float scale = exp2(-float(cascadeIndex));
     float diskRadius = baseRadius * scale;
     int samples = 16;
     for (int i = 0; i < samples; i++)
@@ -72,7 +75,7 @@ float sampleShadowCascade(int cascadeIndex, vec4 fragWorldPos, vec3 normal, vec3
         float pcfDepth = texture(GlobalBindlessArrayTextures[shadowmapUBO.directionalShadowMapIdx],
                                  vec3(projCoords.xy + poissonDisk[i] * diskRadius, cascadeIndex))
                              .x;
-        shadow += (currentDepth > (pcfDepth) ? 0.0 : 1.0);
+        shadow += (currentDepth < pcfDepth ? 0.0 : 1.0);
     }
 
     shadow /= float(samples);

@@ -32,6 +32,26 @@ if(Git_FOUND)
   message("Git found: ${GIT_EXECUTABLE}")
 endif()
 
+if(WIN32)
+    if(NOT DEFINED CMAKE_RC_COMPILER)
+        file(GLOB CONV_WINSDK_RC_COMPILERS "C:/Program Files (x86)/Windows Kits/10/bin/*/x64/rc.exe")
+        if(CONV_WINSDK_RC_COMPILERS)
+            list(SORT CONV_WINSDK_RC_COMPILERS COMPARE NATURAL ORDER DESCENDING)
+            list(GET CONV_WINSDK_RC_COMPILERS 0 CONV_WINSDK_RC_COMPILER)
+            set(CMAKE_RC_COMPILER "${CONV_WINSDK_RC_COMPILER}" CACHE FILEPATH "Windows resource compiler" FORCE)
+        endif()
+    endif()
+
+    if(NOT DEFINED CMAKE_MT)
+        file(GLOB CONV_WINSDK_MT_TOOLS "C:/Program Files (x86)/Windows Kits/10/bin/*/x64/mt.exe")
+        if(CONV_WINSDK_MT_TOOLS)
+            list(SORT CONV_WINSDK_MT_TOOLS COMPARE NATURAL ORDER DESCENDING)
+            list(GET CONV_WINSDK_MT_TOOLS 0 CONV_WINSDK_MT_TOOL)
+            set(CMAKE_MT "${CONV_WINSDK_MT_TOOL}" CACHE FILEPATH "Windows manifest tool" FORCE)
+        endif()
+    endif()
+endif()
+
 project("Convolution")
 set(NAME "Convolution")
 
@@ -48,16 +68,25 @@ if(MSVC)
     add_compile_options(/MP)
 endif()
 
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
+set(CONV_OUTPUT_BASE_DIR "${CMAKE_SOURCE_DIR}/bin")
+foreach(CONV_CONFIG Debug Release RelWithDebInfo MinSizeRel)
+    string(TOUPPER "${CONV_CONFIG}" CONV_CONFIG_UPPER)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${CONV_CONFIG_UPPER} "${CONV_OUTPUT_BASE_DIR}/${CONV_CONFIG}")
+    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_${CONV_CONFIG_UPPER} "${CONV_OUTPUT_BASE_DIR}/${CONV_CONFIG}")
+    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${CONV_CONFIG_UPPER} "${CONV_OUTPUT_BASE_DIR}/${CONV_CONFIG}")
+endforeach()
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CONV_OUTPUT_BASE_DIR}")
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CONV_OUTPUT_BASE_DIR}")
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CONV_OUTPUT_BASE_DIR}")
 set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/Modules)
 
 # Set a default install directory that doesn't need admin privileges
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
-    set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/install" CACHE PATH "Install path prefix" FORCE)
+    set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}" CACHE PATH "Install path prefix" FORCE)
 endif()
 set(LLVM_ENABLE_RTTI ON) 
 set(LLVM_ENABLE_EH ON)
-set(CONV_FETCHCONTENT_BASE_DIR "${CMAKE_SOURCE_DIR}/External/" CACHE PATH "Base directory for FetchContent population and sub-build artifacts")
+set(CONV_FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/_deps" CACHE PATH "Base directory for FetchContent sub-build artifacts and downloaded dependency metadata")
 set(FETCHCONTENT_BASE_DIR "${CONV_FETCHCONTENT_BASE_DIR}")
 
 set(FETCHCONTENT_UPDATES_DISCONNECTED ON CACHE BOOL "Do not contact remotes on every configure" FORCE)
@@ -128,6 +157,14 @@ set(ASSIMP_BUILD_FBX_IMPORTER ON CACHE BOOL "" FORCE)
 set(ASSIMP_BUILD_OBJ_IMPORTER ON CACHE BOOL "" FORCE)
 set(ASSIMP_BUILD_GLTF_IMPORTER ON CACHE BOOL "" FORCE)
 set(ASSIMP_BUILD_ALL_EXPORTERS_BY_DEFAULT OFF CACHE BOOL "" FORCE)
+
+# EASTL probes char8_t support with try_compile(). In the current VS Code +
+# Ninja setup that nested compiler check can fail even when the top-level
+# compiler is valid, so seed the known MSVC-family result up front.
+if(MSVC OR USE_CLANG_CL)
+    set(EASTL_HAS_FCHAR8T_FLAG OFF CACHE BOOL "" FORCE)
+    set(EASTL_HAS_ZCCHAR8T_FLAG ON CACHE BOOL "" FORCE)
+endif()
 
 FetchContent_MakeAvailable(VulkanMemoryAllocator EASTL EAStdC EAAssert EAThread GLFW3 IMGUI DIRECTXMATH ASSIMP TRACY ImGuizmo)
 find_package(Vulkan REQUIRED)
@@ -210,7 +247,7 @@ function(conv_suppress_target_warnings target_name)
     endif()
 
     if(MSVC)
-        target_compile_options(${target_name} PRIVATE /W0 /WX- /wd9025)
+        target_compile_options(${target_name} PRIVATE /W0 /WX-)
     else()
         target_compile_options(${target_name} PRIVATE -w)
     endif()
@@ -233,12 +270,6 @@ endif()
 
 link_directories(${CMAKE_SOURCE_DIR}/External/additional_libs)
 
-# Install Resources folder to build output
-install(DIRECTORY ${CMAKE_SOURCE_DIR}/Resources/
-    DESTINATION $<TARGET_FILE_DIR:${NAME}>
-    PATTERN ".gitkeep" EXCLUDE
-)
-
 file(GLOB_RECURSE SOURCE CONFIGURE_DEPENDS
 	"${CMAKE_SOURCE_DIR}/Src/*.cpp"
 )
@@ -250,6 +281,24 @@ file(GLOB_RECURSE HEADERS CONFIGURE_DEPENDS
 list(FILTER SOURCE EXCLUDE REGEX ".*\\.(glsl|vert|frag|comp|hlsl)$")
 list(FILTER HEADERS EXCLUDE REGEX ".*\\.(glsl|vert|frag|comp|hlsl)$")
 add_executable(${NAME} ${SOURCE} ${HEADERS})
+
+add_custom_target(
+    CopyResources
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "$<TARGET_FILE_DIR:${NAME}>/Resources/Textures"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/Resources"
+        "$<TARGET_FILE_DIR:${NAME}>/Resources"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/External/smaa/SearchTex.h"
+        "$<TARGET_FILE_DIR:${NAME}>/Resources/Textures/SearchTex.h"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/External/smaa/AreaTex.h"
+        "$<TARGET_FILE_DIR:${NAME}>/Resources/Textures/AreaTex.h"
+    COMMENT "Copying runtime resources and SMAA textures to the output directory"
+    VERBATIM
+)
+add_dependencies(${NAME} CopyResources)
 
 # Add natvis files for debugger visualization (embedded in PDB)
 target_sources(${NAME} PRIVATE
@@ -290,17 +339,12 @@ foreach(FILE IN LISTS STREAMLINE_FILES)
     )
 endforeach()
 
-add_custom_target(
-    CopyResources
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_SOURCE_DIR}/Resources
-        $<TARGET_FILE_DIR:${NAME}>/Resources
-    COMMENT "Copying resources to build directory"
-    VERBATIM
+set_target_properties(${NAME} PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CONV_OUTPUT_BASE_DIR}"
+    LIBRARY_OUTPUT_DIRECTORY "${CONV_OUTPUT_BASE_DIR}"
+    ARCHIVE_OUTPUT_DIRECTORY "${CONV_OUTPUT_BASE_DIR}"
+    VS_DEBUGGER_WORKING_DIRECTORY "${CONV_OUTPUT_BASE_DIR}/$<CONFIG>"
 )
-
-set_target_properties(${NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin")
-set_target_properties(${NAME} PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/bin/")
 
 target_include_directories(${NAME} PUBLIC "${CMAKE_SOURCE_DIR}/Src"
 SYSTEM
@@ -382,6 +426,12 @@ foreach(COMP ${GLSLANG_COMPONENTS})
 endforeach()
 
 target_link_libraries(${NAME} PRIVATE ${LIBS} GPUOpen::VulkanMemoryAllocator ${GLSLANG_LIBS})
+
+# Install the resources next to the executable in the install tree.
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/Resources/
+    DESTINATION Resources
+    PATTERN ".gitkeep" EXCLUDE
+)
 
 # Install the executable
 install(TARGETS ${NAME} DESTINATION .)

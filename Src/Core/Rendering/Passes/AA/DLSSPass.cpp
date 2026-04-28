@@ -1,5 +1,6 @@
 #include "DLSSPass.h"
 #include "Core/Global/GlobalVariables.h"
+#include "Core/Global/LogDefines.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
 #include "Core/Rendering/Core/SharedResourceManager.h"
 #include "Core/Rendering/Passes/PassManager.h"
@@ -9,7 +10,6 @@
 #include "Core/Rendering/Vulkan/Utils/VkEnumHelpers.h"
 #include "sl.h"
 #include "sl_dlss.h"
-#include <iostream>
 
 using namespace RenderPasses;
 namespace
@@ -57,7 +57,7 @@ void DLSSPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResource
 bool DLSSPass::WantsToRender() const
 {
     const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
-    return renderState.aaType == AntialiasingType::DLSS;
+    return Nvidia::StreamlineManager::IsDLSSSupported() && renderState.aaType == AntialiasingType::DLSS;
 }
 
 void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
@@ -84,8 +84,6 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     const auto outputExtents = pColorOut->GetInfo().extents;
     const auto inputExtents = pColorIn->GetInfo().extents;
     const auto motionExtents = pMotion->GetInfo().extents;
-    if (motionExtents.x == 0 || motionExtents.y == 0)
-        return;
 
     // For now, just native mode (DLAA). Reconfigure only on mode/resolution changes.
     constexpr sl::DLSSMode kDlssMode = sl::DLSSMode::eDLAA;
@@ -146,27 +144,19 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     // Camera constants
     sl::Constants slConst{};
     const auto& cameraData = ctx.cameraData;
-    // Scale matrix to negate the Y axis (acts as an inversion between DX and VK clip spaces)
-    mathstl::Matrix S = mathstl::Matrix::Identity;
-    S._22 = -1.0f;
-
-    // Because DXMath uses row-vectors (v * M):
-    // v_clip_vk = v_view * (P_dx * S)
-    mathstl::Matrix viewToClipVK = cameraData.viewToClip * S;
-    // v_view = (v_clip_vk * S) * P_inv_dx = v_clip_vk * (S * P_inv_dx)
-    mathstl::Matrix clipToViewVK = S * cameraData.clipToView;
-    // v_clip_prev_vk = (v_clip_curr_vk * S) * clipToPrevClip_dx * S
-    mathstl::Matrix clipToPrevClipVK = S * cameraData.clipToPrevClip * S;
-    // v_clip_curr_vk = (v_clip_prev_vk * S) * prevClipToClip_dx * S
-    mathstl::Matrix prevClipToClipVK = S * cameraData.prevClipToClip * S;
-
-    slConst.cameraViewToClip = *(sl::float4x4*)&viewToClipVK;
-    slConst.clipToCameraView = *(sl::float4x4*)&clipToViewVK;
-    slConst.clipToPrevClip   = *(sl::float4x4*)&clipToPrevClipVK;
-    slConst.prevClipToClip   = *(sl::float4x4*)&prevClipToClipVK;
+    // Streamline consumes Vulkan clip space; the renderer flips Vulkan Y at the viewport boundary.
+    const mathstl::Matrix clipYFlip = mathstl::Matrix::CreateScale(1.0f, -1.0f, 1.0f);
+    const mathstl::Matrix streamlineViewToClip = cameraData.viewToClip * clipYFlip;
+    const mathstl::Matrix streamlineClipToView = clipYFlip * cameraData.clipToView;
+    const mathstl::Matrix streamlineClipToPrevClip = clipYFlip * cameraData.clipToPrevClip * clipYFlip;
+    const mathstl::Matrix streamlinePrevClipToClip = clipYFlip * cameraData.prevClipToClip * clipYFlip;
+    slConst.cameraViewToClip = *(sl::float4x4*)&streamlineViewToClip;
+    slConst.clipToCameraView = *(sl::float4x4*)&streamlineClipToView;
+    slConst.clipToPrevClip = *(sl::float4x4*)&streamlineClipToPrevClip;
+    slConst.prevClipToClip = *(sl::float4x4*)&streamlinePrevClipToClip;
 
     const mathstl::Vector2 jitter = data.renderState.jitter;
-    slConst.jitterOffset = {jitter.x, jitter.y};
+    slConst.jitterOffset = {-jitter.x, jitter.y};
     slConst.mvecScale = {1.0f / static_cast<float>(motionExtents.x), 1.0f / static_cast<float>(motionExtents.y)};
     slConst.cameraPinholeOffset = {0.0f, 0.0f};
     slConst.cameraPos = {cameraData.position.x, cameraData.position.y, cameraData.position.z};
@@ -178,13 +168,12 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     slConst.cameraFOV = cameraData.fovRadians;
     slConst.cameraAspectRatio = cameraData.aspectRatio;
     slConst.motionVectorsInvalidValue = sl::INVALID_FLOAT;
-    // Depth prepass uses LESS_OR_EQUAL with depth clear=1.0, so depth is not inverted.
-    slConst.depthInverted = sl::Boolean::eFalse;
+    slConst.depthInverted = sl::Boolean::eTrue;
     slConst.cameraMotionIncluded = sl::Boolean::eTrue;
     slConst.motionVectors3D = sl::Boolean::eFalse;
     const bool shouldReset = data.renderState.recreatedThisFrame || Nvidia::StreamlineManager::ConsumeDLSSResetFlag();
     slConst.reset = shouldReset ? sl::Boolean::eTrue : sl::Boolean::eFalse;
-    slConst.motionVectorsJittered = sl::Boolean::eTrue;
+    slConst.motionVectorsJittered = sl::Boolean::eFalse;
 
     auto debugState = Nvidia::StreamlineManager::GetDLSSDebugState();
     debugState.streamlineInitialized = Nvidia::StreamlineManager::IsAvailable();
@@ -239,18 +228,18 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
             tags.emplace_back(&res, td.type, sl::ResourceLifecycle::eValidUntilEvaluate);
         }
 
-        const sl::Result tagRes = slSetTagForFrame(*pFrameToken,
-                                                   viewportHandle,
-                                                   tags.data(),
-                                                   static_cast<uint32_t>(tags.size()),
-                                                   reinterpret_cast<sl::CommandBuffer*>(cmd));
+        const sl::Result tagRes =
+            Nvidia::StreamlineManager::SetTagForFrame(*pFrameToken,
+                                                      viewportHandle,
+                                                      tags.data(),
+                                                      static_cast<uint32_t>(tags.size()),
+                                                      reinterpret_cast<sl::CommandBuffer*>(cmd));
         auto debugState = Nvidia::StreamlineManager::GetDLSSDebugState();
         debugState.lastTagResult = tagRes;
         Nvidia::StreamlineManager::SetDLSSDebugState(debugState);
         if (tagRes != sl::Result::eOk)
         {
-            std::cout << "[DLSSPass] slSetTagForFrame failed with result: 0x" << std::hex
-                      << static_cast<u32>(tagRes) << std::dec << std::endl;
+            DEBUG_LOG_WARNF("[DLSSPass] slSetTagForFrame failed with result: 0x{:X}", static_cast<u32>(tagRes));
             return;
         }
 
@@ -258,14 +247,13 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     };
 
     StartRenderPassProfilingScope(pCmdBuffer);
-    const sl::Result constRes = slSetConstants(slConst, *pFrameToken, viewport);
+    const sl::Result constRes = Nvidia::StreamlineManager::SetConstants(slConst, *pFrameToken, viewport);
     debugState = Nvidia::StreamlineManager::GetDLSSDebugState();
     debugState.lastSetConstantsResult = constRes;
     Nvidia::StreamlineManager::SetDLSSDebugState(debugState);
     if (constRes != sl::Result::eOk)
     {
-        std::cout << "[DLSSPass] slSetConstants failed with result: 0x" << std::hex
-                  << static_cast<u32>(constRes) << std::dec << std::endl;
+        DEBUG_LOG_WARNF("[DLSSPass] slSetConstants failed with result: 0x{:X}", static_cast<u32>(constRes));
         EndRenderPassProfilingScope(pCmdBuffer);
         restoreColorOutReadLayout();
         return;

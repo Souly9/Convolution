@@ -57,6 +57,14 @@ public:
     static bool ConsumeDLSSResetFlag();
     static bool SetDLSSOptions(u32 width, u32 height, sl::DLSSMode mode);
     static bool FreeResources(sl::Feature feature);
+    static sl::Result SetTagForFrame(const sl::FrameToken& frame,
+                                     const sl::ViewportHandle& viewport,
+                                     const sl::ResourceTag* tags,
+                                     uint32_t numTags,
+                                     sl::CommandBuffer* cmdBuffer);
+    static sl::Result SetConstants(const sl::Constants& values,
+                                   const sl::FrameToken& frame,
+                                   const sl::ViewportHandle& viewport);
     static bool EvaluateDLSS(VkCommandBuffer cmdBuf, const sl::FrameToken& frameToken);
     static bool AllocateResources(VkCommandBuffer cmdBuf, sl::Feature feature);
     static bool IsDLSSEvaluateBlocked();
@@ -64,6 +72,7 @@ public:
     static void SetDLSSDebugState(const DLSSDebugState& state);
 
     static bool IsAvailable() { return s_initialized; }
+    static bool IsDLSSSupported();
 
 private:
     static bool s_initialized;

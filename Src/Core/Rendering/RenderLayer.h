@@ -29,6 +29,11 @@ public:
         return m_backend;
     }
 
+    RenderBackendImpl<RenderAPI>& GetBackend()
+    {
+        return m_backend;
+    }
+
 private:
     RenderLayer(const RenderLayer&) = delete;
     RenderLayer(RenderLayer&&) noexcept = delete;

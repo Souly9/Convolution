@@ -1,15 +1,22 @@
 #include "RenderThread.h"
 #include "Core/ECS/EntityManager.h"
+#include "Core/Global/GlobalVariables.h"
 #include "Core/Rendering/Core/TextureManager.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
 #include "Core/Rendering/Core/Utils/DeleteQueue.h"
 #include "Core/Rendering/Vulkan/VkGlobals.h"
 #include "Core/Rendering/Vulkan/VkProfiler.h"
 
-RenderThread::RenderThread(ImGuiManager* pImGuiManager) : m_pImGuiManager(pImGuiManager)
+RenderThread::RenderThread(ImGuiManager* pImGuiManager, RenderBackendImpl<RenderAPI>* pRenderBackend)
+    : m_pImGuiManager(pImGuiManager), m_pRenderBackend(pRenderBackend)
 {
     m_passManager = stltype::make_unique<RenderPasses::PassManager>();
     m_keepRunning = false;
+    g_pEventSystem->AddSwapchainRecreationEventCallback(
+        [this](const SwapchainRecreationEventData&)
+        {
+            m_swapchainRecreationRequested.store(true, std::memory_order_release);
+        });
 }
 
 void RenderThread::WaitForGameThreadAndPreviousFrame()
@@ -45,6 +52,11 @@ void RenderThread::RenderLoop()
         g_pEntityManager->SyncSystemData(lastFrame);
 
         g_pQueueHandler->WaitForFences(~0u);
+        if (m_swapchainRecreationRequested.exchange(false, std::memory_order_acq_rel) && m_pRenderBackend != nullptr)
+        {
+            m_pRenderBackend->RecreateSwapChain();
+        }
+
         const bool acquiredFrame = m_passManager->BlockUntilPassesFinished(lastFrame);
         // All previous frame's command buffers have finished executing, safe to process deferred deletes
         g_pDeleteQueue->ProcessDeleteQueue();

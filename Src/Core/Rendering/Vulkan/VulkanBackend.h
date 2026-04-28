@@ -83,6 +83,8 @@ private:
     bool PickPhysicalDevice();
     bool IsDeviceSuitable(VkPhysicalDevice device);
     bool AreExtensionsSupported(VkPhysicalDevice device);
+    bool DeviceSupportsDLSSRequirements(VkPhysicalDevice device) const;
+    void PublishDLSSSupport(bool supported) const;
 
     void CreateAndDistributeDepthBuffer();
     SwapChainSupportDetails QuerySwapChainSupport(VkPhysicalDevice device);
@@ -90,7 +92,7 @@ private:
     VkPresentModeKHR ChooseSwapPresentMode(const stltype::vector<VkPresentModeKHR>& availablePresentModes);
     DirectX::XMUINT2 GetWindowFramebufferExtent() const;
     DirectX::XMUINT2 ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
-    bool CreateSwapChain();
+    bool CreateSwapChain(VkSwapchainKHR oldSwapchain);
     void CreateSwapChainImages();
 
     /// @brief Creates the surface with glfw to interface with the window.
@@ -115,4 +117,5 @@ private:
     VkSwapchainKHR m_swapChain{VK_NULL_HANDLE};
     stltype::vector<VkImage> m_swapChainImages;
     mathstl::Vector2 m_swapChainExtent;
+    bool m_dlssSupportAvailable{false};
 };
