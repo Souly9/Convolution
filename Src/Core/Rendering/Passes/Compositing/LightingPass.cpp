@@ -14,7 +14,8 @@ void LightingPass::Init(RendererAttachmentInfo& attachmentInfo,
 {
     ScopedZone("LightingPass::Init");
     const auto& gbufferInfo = attachmentInfo.gbuffer;
-    const auto gbufferColorAttachment = CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBufferThisFrameColor), LoadOp::LOAD, nullptr);
+    const auto gbufferColorAttachment =
+        CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBufferThisFrameColor), LoadOp::CLEAR, nullptr);
     m_mainRenderingData.colorAttachments = {gbufferColorAttachment};
 
     InitBaseData(attachmentInfo);

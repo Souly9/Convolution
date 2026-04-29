@@ -56,6 +56,7 @@ struct RendererState
     AntialiasingType aaType{AntialiasingType::TAA_SMAA};
     bool dlssSupported{false};
     u32 taaDebugMode{0};
+    bool taaForceHistory{false};
     f32 taaVelocityRejectionStart{0.5f};
     f32 taaVelocityRejectionEnd{4.0f};
     u32 upscalingPercentage{100};

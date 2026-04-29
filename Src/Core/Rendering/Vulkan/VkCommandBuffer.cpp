@@ -230,6 +230,28 @@ static void RecordCommand(ImageToImageCopyCmd& cmd, CBufferVulkan& buffer)
                    &copyRegion);
 }
 
+static void RecordCommand(ClearColorImageCmd& cmd, CBufferVulkan& buffer)
+{
+    DEBUG_ASSERT(cmd.image->GetImage() != VK_NULL_HANDLE);
+
+    VkClearColorValue clearValue{};
+    memcpy(clearValue.float32, cmd.color.float32, sizeof(clearValue.float32));
+
+    VkImageSubresourceRange range{};
+    range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    range.baseMipLevel = cmd.mipLevel;
+    range.levelCount = cmd.levelCount;
+    range.baseArrayLayer = cmd.baseArrayLayer;
+    range.layerCount = cmd.layerCount;
+
+    vkCmdClearColorImage(buffer.GetRef(),
+                         cmd.image->GetImage(),
+                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                         &clearValue,
+                         1,
+                         &range);
+}
+
 static void RecordCommand(ImageLayoutTransitionCmd& cmd, CBufferVulkan& buffer)
 {
     // Create a new VkImageMemoryBarrier2 for the transition.

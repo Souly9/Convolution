@@ -47,6 +47,32 @@ static TexFormat ChooseTextureFormatForSemantic(TextureSemantic semantic)
     }
 }
 
+static TexFormat ApplySemanticColorSpace(TexFormat format, TextureSemantic semantic)
+{
+    if (semantic != TextureSemantic::BaseColor && semantic != TextureSemantic::Emissive)
+        return format;
+
+    switch (format)
+    {
+        case TexFormat::R8G8B8A8_UNORM:
+            return TexFormat::R8G8B8A8_SRGB;
+        case TexFormat::B8G8R8A8_UNORM:
+            return TexFormat::B8G8R8A8_SRGB;
+        case TexFormat::BC1_RGB_UNORM:
+            return TexFormat::BC1_RGB_SRGB;
+        case TexFormat::BC1_RGBA_UNORM:
+            return TexFormat::BC1_RGBA_SRGB;
+        case TexFormat::BC2_UNORM:
+            return TexFormat::BC2_SRGB;
+        case TexFormat::BC3_UNORM:
+            return TexFormat::BC3_SRGB;
+        case TexFormat::BC7_UNORM:
+            return TexFormat::BC7_SRGB;
+        default:
+            return format;
+    }
+}
+
 VkTextureManager::VkTextureManager()
 {
     m_textures.reserve(MAX_TEXTURES);
@@ -262,11 +288,18 @@ void VkTextureManager::CreateTexture(const FileTextureRequest& req)
     info.extents.x = readInfo.extents.x;
     info.extents.y = readInfo.extents.y;
     info.extents.z = 1;
-    info.format = req.format != TexFormat::UNDEFINED
-                      ? req.format
-                      : (readInfo.ddsFormat != 0
-                             ? Conv(GetVkFormatFromDXGI(readInfo.ddsFormat))
-                             : ChooseTextureFormatForSemantic(req.semantic));
+    if (req.format != TexFormat::UNDEFINED)
+    {
+        info.format = req.format;
+    }
+    else if (readInfo.ddsFormat != 0)
+    {
+        info.format = ApplySemanticColorSpace(Conv(GetVkFormatFromDXGI(readInfo.ddsFormat)), req.semantic);
+    }
+    else
+    {
+        info.format = ChooseTextureFormatForSemantic(req.semantic);
+    }
 
     info.tiling = Tiling::OPTIMAL;
     info.usage = Usage::Sampled | Usage::TransferDst;
@@ -938,10 +971,10 @@ void VkTextureManager::SetLayoutBarrierMasks(ImageLayoutTransitionCmd& transitio
     else if (oldLayout == ImageLayout::TRANSFER_DST_OPTIMAL && newLayout == ImageLayout::SHADER_READ_ONLY_OPTIMAL)
     {
         transitionCmd.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-        transitionCmd.dstAccessMask = 0;
+        transitionCmd.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
 
         transitionCmd.srcStage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
+        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
     }
     else if (oldLayout == ImageLayout::UNDEFINED && newLayout == ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
     {
@@ -1028,7 +1061,7 @@ void VkTextureManager::SetLayoutBarrierMasks(ImageLayoutTransitionCmd& transitio
         transitionCmd.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
         transitionCmd.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
         transitionCmd.srcStage = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
     }
     // Not strictly great but mainly used for compute shaders
     else if (oldLayout == ImageLayout::UNDEFINED && newLayout == ImageLayout::SHADER_READ_ONLY_OPTIMAL)
@@ -1052,7 +1085,14 @@ void VkTextureManager::SetLayoutBarrierMasks(ImageLayoutTransitionCmd& transitio
     {
         transitionCmd.srcAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
         transitionCmd.dstAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
-        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+    }
+    else if (oldLayout == ImageLayout::TRANSFER_DST_OPTIMAL && newLayout == ImageLayout::GENERAL)
+    {
+        transitionCmd.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        transitionCmd.dstAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
         transitionCmd.dstStage = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
     }
     else if (oldLayout == ImageLayout::COLOR_ATTACHMENT_OPTIMAL && newLayout == ImageLayout::TRANSFER_SRC_OPTIMAL)
@@ -1062,12 +1102,26 @@ void VkTextureManager::SetLayoutBarrierMasks(ImageLayoutTransitionCmd& transitio
         transitionCmd.srcStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
         transitionCmd.dstStage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
     }
+    else if (oldLayout == ImageLayout::SHADER_READ_ONLY_OPTIMAL && newLayout == ImageLayout::TRANSFER_SRC_OPTIMAL)
+    {
+        transitionCmd.srcAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+        transitionCmd.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
+        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+    }
     else if (oldLayout == ImageLayout::TRANSFER_SRC_OPTIMAL && newLayout == ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
     {
         transitionCmd.srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
         transitionCmd.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT;
         transitionCmd.srcStage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
         transitionCmd.dstStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+    }
+    else if (oldLayout == ImageLayout::TRANSFER_SRC_OPTIMAL && newLayout == ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+    {
+        transitionCmd.srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
+        transitionCmd.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
     }
     else if (oldLayout == ImageLayout::SHADER_READ_ONLY_OPTIMAL && newLayout == ImageLayout::TRANSFER_DST_OPTIMAL)
     {

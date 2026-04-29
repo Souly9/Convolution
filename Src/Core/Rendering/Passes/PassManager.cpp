@@ -23,7 +23,6 @@
 #include "ShadowPass.h"
 #include "StaticMeshPass.h"
 #include "AA/TAAPass.h"
-#include "AA/SMAAPass.h"
 #include "AA/DLSSPass.h"
 #include "Compositing/LightingPass.h"
 #include "Core/Rendering/Core/ProfilingUtils.h"
@@ -73,7 +72,6 @@ void PassManager::InitResourceManagerAndCallbacks()
     AddPass(PassType::UI, stltype::make_unique<RenderPasses::ImGuiPass>());
     AddPass(PassType::Lighting, stltype::make_unique<RenderPasses::LightingPass>());
     AddPass(PassType::TAA, stltype::make_unique<RenderPasses::TAAPass>());
-    AddPass(PassType::SMAA, stltype::make_unique<RenderPasses::SMAAPass>());
     if (Nvidia::StreamlineManager::IsDLSSSupported())
     {
         AddPass(PassType::DLSS, stltype::make_unique<RenderPasses::DLSSPass>());
@@ -351,30 +349,7 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
     pComputeCmdBuffer->SetFrameIdx(ctx.currentFrame);
     pDepthWorkBuffer->SetFrameIdx(ctx.currentFrame);
 
-    if (Nvidia::StreamlineManager::IsDLSSSupported())
-    {
-        RecordDLSSExposureUpdate(pComputeCmdBuffer);
-    }
-
     auto pendingFlips = m_resourceManager.PopPendingVisibleInstanceIndices();
-    if (!pendingFlips.empty())
-    {
-        Profiling::StartScope(pDepthWorkBuffer, &m_gpuTimingQuery, m_instanceBufferUpdateTimingIndex, "Instance Buffer Updates");
-
-        for (u32 idx : pendingFlips)
-        {
-            u64 offset = (u64)idx * sizeof(UBO::InstanceData) + offsetof(UBO::InstanceData, flags);
-            pDepthWorkBuffer->RecordCommand(BufferUpdateCmd(&m_resourceManager.GetInstanceBuffer(), offset, 1));
-        }
-
-        pDepthWorkBuffer->RecordCommand(
-            GlobalBarrierCmd(SyncStages::TRANSFER,
-                             SyncStages::VERTEX_SHADER | SyncStages::FRAGMENT_SHADER | SyncStages::COMPUTE_SHADER,
-                             VK_ACCESS_TRANSFER_WRITE_BIT,
-                             VK_ACCESS_SHADER_READ_BIT));
-
-        Profiling::EndScope(pDepthWorkBuffer, &m_gpuTimingQuery, m_instanceBufferUpdateTimingIndex);
-    }
 
     stltype::fixed_vector<u64, SWAPCHAIN_IMAGES> priorCompositeValues;
     for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
@@ -442,6 +417,33 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
 
     // Depth Pre-Pass
     {
+        if (Nvidia::StreamlineManager::IsDLSSSupported())
+        {
+            RecordDLSSExposureUpdate(pDepthWorkBuffer);
+        }
+
+        if (!pendingFlips.empty())
+        {
+            Profiling::StartScope(pDepthWorkBuffer,
+                                  &m_gpuTimingQuery,
+                                  m_instanceBufferUpdateTimingIndex,
+                                  "Instance Buffer Updates");
+
+            for (u32 idx : pendingFlips)
+            {
+                u64 offset = (u64)idx * sizeof(UBO::InstanceData) + offsetof(UBO::InstanceData, flags);
+                pDepthWorkBuffer->RecordCommand(BufferUpdateCmd(&m_resourceManager.GetInstanceBuffer(), offset, 1));
+            }
+
+            pDepthWorkBuffer->RecordCommand(
+                GlobalBarrierCmd(SyncStages::TRANSFER,
+                                 SyncStages::VERTEX_SHADER | SyncStages::FRAGMENT_SHADER | SyncStages::COMPUTE_SHADER,
+                                 VK_ACCESS_TRANSFER_WRITE_BIT,
+                                 VK_ACCESS_SHADER_READ_BIT));
+
+            Profiling::EndScope(pDepthWorkBuffer, &m_gpuTimingQuery, m_instanceBufferUpdateTimingIndex);
+        }
+
         RecordInitialLayoutTransitions(pDepthWorkBuffer, allColorTextures);
         RenderPassGroup(PassType::PreProcess, mainPassData, ctx, pDepthWorkBuffer);
         RecordDepthToReadOnly(pDepthWorkBuffer);
@@ -499,17 +501,31 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
         // ThisFrameColor to SHADER_READ
         RecordThisFrameColorToRead(pFinalWorkBuffer);
 
-        // Resolve to GENERAL for TAA
-        RecordResolveToGeneral(pFinalWorkBuffer);
+        const auto& appRenderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+        const bool debugCopyCurrent =
+            appRenderState.aaType == AntialiasingType::TAA_SMAA && appRenderState.taaDebugMode == 1u;
+        const bool debugCopyHistory =
+            appRenderState.aaType == AntialiasingType::TAA_SMAA && appRenderState.taaDebugMode == 2u;
 
-        RenderPassGroup(PassType::TAA, mainPassData, ctx, pFinalWorkBuffer);
+        if (debugCopyCurrent)
+        {
+            RecordCopyTextureToResolve(pFinalWorkBuffer, m_gbuffer.Get(GBufferTextureType::GBufferThisFrameColor));
+        }
+        else if (debugCopyHistory)
+        {
+            RecordCopyTextureToResolve(pFinalWorkBuffer, m_gbuffer.Get(GBufferTextureType::GBufferLastFrameColor));
+        }
+        else
+        {
+            // Resolve to GENERAL for TAA
+            RecordResolveToGeneral(pFinalWorkBuffer);
 
-        // We prepare Resolve for SHADER_READ since SMAA will sample it
-        RecordResolveToRead(pFinalWorkBuffer);
+            RenderPassGroup(PassType::TAA, mainPassData, ctx, pFinalWorkBuffer);
+
+            RecordResolveToRead(pFinalWorkBuffer);
+        }
 
         RenderPassGroup(PassType::DLSS, mainPassData, ctx, pFinalWorkBuffer);
-
-        RenderPassGroup(PassType::SMAA, mainPassData, ctx, pFinalWorkBuffer);
 
         RenderPassGroup(PassType::Composite, mainPassData, ctx, pFinalWorkBuffer);
         RenderPassGroup(PassType::UI, mainPassData, ctx, pFinalWorkBuffer);
@@ -591,7 +607,6 @@ void PassManager::RecordGBufferToShaderRead(CommandBuffer* pCmdBuffer,
         pCmdBuffer->RecordCommand(shadowCmd);
     }
 
-    RecordDepthToReadOnly(pCmdBuffer);
 }
 
 void PassManager::RecordDepthToReadOnly(CommandBuffer* pCmdBuffer)
@@ -640,6 +655,8 @@ void PassManager::RecordDLSSExposureUpdate(CommandBuffer* pCmdBuffer)
     VkTextureManager::SetLayoutBarrierMasks(exposureToTransfer,
                                             exposureToTransfer.oldLayout,
                                             ImageLayout::TRANSFER_DST_OPTIMAL);
+    if (m_dlssExposureTextureInitialized)
+        exposureToTransfer.srcStage = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT;
     pCmdBuffer->RecordCommand(exposureToTransfer);
 
     ImageBufferCopyCmd copyExposure(&m_dlssExposureStagingBuffer, m_pDLSSExposureTexture);
@@ -653,6 +670,7 @@ void PassManager::RecordDLSSExposureUpdate(CommandBuffer* pCmdBuffer)
     VkTextureManager::SetLayoutBarrierMasks(exposureToRead,
                                             ImageLayout::TRANSFER_DST_OPTIMAL,
                                             ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    exposureToRead.dstStage = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT;
     pCmdBuffer->RecordCommand(exposureToRead);
 
     m_dlssExposureTextureInitialized = true;
@@ -669,11 +687,10 @@ void PassManager::RecordThisFrameColorToRead(CommandBuffer* pCmdBuffer)
 
 void PassManager::RecordResolveToGeneral(CommandBuffer* pCmdBuffer)
 {
-    ImageLayoutTransitionCmd cmd(m_gbuffer.Get(GBufferTextureType::GBufferResolve));
-    cmd.oldLayout = ImageLayout::UNDEFINED;
-    cmd.newLayout = ImageLayout::GENERAL;
-    VkTextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::UNDEFINED, ImageLayout::GENERAL);
-    pCmdBuffer->RecordCommand(cmd);
+    Texture* pResolve = m_gbuffer.Get(GBufferTextureType::GBufferResolve);
+    const ImageLayout oldLayout =
+        m_temporalResolveWrites < 2 ? ImageLayout::UNDEFINED : ImageLayout::SHADER_READ_ONLY_OPTIMAL;
+    RecordClearColorTexture(pCmdBuffer, pResolve, oldLayout, ImageLayout::GENERAL);
 }
 
 void PassManager::RecordResolveToRead(CommandBuffer* pCmdBuffer)
@@ -683,6 +700,71 @@ void PassManager::RecordResolveToRead(CommandBuffer* pCmdBuffer)
     cmd.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
     VkTextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::GENERAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
     pCmdBuffer->RecordCommand(cmd);
+    ++m_temporalResolveWrites;
+}
+
+void PassManager::RecordCopyTextureToResolve(CommandBuffer* pCmdBuffer, Texture* pSourceTexture)
+{
+    Texture* pResolve = m_gbuffer.Get(GBufferTextureType::GBufferResolve);
+    const ImageLayout oldResolveLayout =
+        m_temporalResolveWrites < 2 ? ImageLayout::UNDEFINED : ImageLayout::SHADER_READ_ONLY_OPTIMAL;
+
+    ImageLayoutTransitionCmd sourceToCopy(pSourceTexture);
+    sourceToCopy.oldLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
+    sourceToCopy.newLayout = ImageLayout::TRANSFER_SRC_OPTIMAL;
+    VkTextureManager::SetLayoutBarrierMasks(
+        sourceToCopy, ImageLayout::SHADER_READ_ONLY_OPTIMAL, ImageLayout::TRANSFER_SRC_OPTIMAL);
+    pCmdBuffer->RecordCommand(sourceToCopy);
+
+    ImageLayoutTransitionCmd resolveToCopy(pResolve);
+    resolveToCopy.oldLayout = oldResolveLayout;
+    resolveToCopy.newLayout = ImageLayout::TRANSFER_DST_OPTIMAL;
+    VkTextureManager::SetLayoutBarrierMasks(resolveToCopy, oldResolveLayout, ImageLayout::TRANSFER_DST_OPTIMAL);
+    pCmdBuffer->RecordCommand(resolveToCopy);
+
+    ImageToImageCopyCmd copyCmd(pSourceTexture, pResolve);
+    pCmdBuffer->RecordCommand(copyCmd);
+
+    ImageLayoutTransitionCmd sourceToRead(pSourceTexture);
+    sourceToRead.oldLayout = ImageLayout::TRANSFER_SRC_OPTIMAL;
+    sourceToRead.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
+    VkTextureManager::SetLayoutBarrierMasks(
+        sourceToRead, ImageLayout::TRANSFER_SRC_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    pCmdBuffer->RecordCommand(sourceToRead);
+
+    ImageLayoutTransitionCmd resolveToRead(pResolve);
+    resolveToRead.oldLayout = ImageLayout::TRANSFER_DST_OPTIMAL;
+    resolveToRead.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
+    VkTextureManager::SetLayoutBarrierMasks(
+        resolveToRead, ImageLayout::TRANSFER_DST_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    pCmdBuffer->RecordCommand(resolveToRead);
+
+    ++m_temporalResolveWrites;
+}
+
+void PassManager::RecordClearColorTexture(CommandBuffer* pCmdBuffer,
+                                          Texture* pTexture,
+                                          ImageLayout oldLayout,
+                                          ImageLayout finalLayout)
+{
+    ImageLayoutTransitionCmd toTransfer(pTexture);
+    toTransfer.oldLayout = oldLayout;
+    toTransfer.newLayout = ImageLayout::TRANSFER_DST_OPTIMAL;
+    VkTextureManager::SetLayoutBarrierMasks(toTransfer, oldLayout, ImageLayout::TRANSFER_DST_OPTIMAL);
+    pCmdBuffer->RecordCommand(toTransfer);
+
+    ClearColorImageCmd clearCmd(pTexture);
+    clearCmd.color.float32[0] = 0.0f;
+    clearCmd.color.float32[1] = 0.0f;
+    clearCmd.color.float32[2] = 0.0f;
+    clearCmd.color.float32[3] = 0.0f;
+    pCmdBuffer->RecordCommand(clearCmd);
+
+    ImageLayoutTransitionCmd toFinal(pTexture);
+    toFinal.oldLayout = ImageLayout::TRANSFER_DST_OPTIMAL;
+    toFinal.newLayout = finalLayout;
+    VkTextureManager::SetLayoutBarrierMasks(toFinal, ImageLayout::TRANSFER_DST_OPTIMAL, finalLayout);
+    pCmdBuffer->RecordCommand(toFinal);
 }
 
 void PassManager::RecordSwapchainToPresent(CommandBuffer* pCmdBuffer)
@@ -825,6 +907,7 @@ void PassManager::PreProcessDataForCurrentFrame(u32 frameIdx, u64 jitterFrameNum
 void PassManager::RecreateGbuffers(const mathstl::Vector2& resolution)
 {
     m_renderState.recreatedThisFrame = true;
+    m_temporalResolveWrites = 0;
     g_pApplicationState->RegisterUpdateFunction(
         [](ApplicationState& state) { state.renderState.renderTargetsRecreatedThisFrame = true; });
     auto& gbuffer = m_gbuffer;
@@ -1078,7 +1161,7 @@ void PassManager::UpdateImGuiGbufferTextures()
     
     Texture *pTexA = m_gbuffer.Get(GBufferTextureType::GBufferLastFrameColor);
     u64 idA = addTex(GBufferTextureType::GBufferLastFrameColor);
-    u64 idB = addTex(GBufferTextureType::GBufferThisFrameColor);
+    u64 idB = addTex(GBufferTextureType::GBufferResolve);
     m_gbufferImGuiIDs.push_back(idA);
     m_gbufferImGuiIDs.push_back(addTex(GBufferTextureType::GBufferResolve));
 

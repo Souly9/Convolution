@@ -117,7 +117,7 @@ inline const stltype::fixed_vector<PassStage, 8> PASS_SCHEDULE = {
     PassStage{{PassType::DepthReliantCompute}},
     PassStage{{PassType::Main, PassType::Debug, PassType::Shadow}},
     PassStage{{PassType::Lighting}},
-    PassStage{{PassType::TAA, PassType::SMAA, PassType::DLSS}},
+    PassStage{{PassType::TAA, PassType::DLSS}},
     PassStage{{PassType::Composite}},
     PassStage{{PassType::UI}},
 };
@@ -277,6 +277,11 @@ protected:
     void RecordThisFrameColorToRead(CommandBuffer* pCmdBuffer);
     void RecordResolveToGeneral(CommandBuffer* pCmdBuffer);
     void RecordResolveToRead(CommandBuffer* pCmdBuffer);
+    void RecordCopyTextureToResolve(CommandBuffer* pCmdBuffer, Texture* pSourceTexture);
+    void RecordClearColorTexture(CommandBuffer* pCmdBuffer,
+                                 Texture* pTexture,
+                                 ImageLayout oldLayout,
+                                 ImageLayout finalLayout);
     void RecordSSSOutputToGeneral(CommandBuffer* pCmdBuffer);
     void RecordSSSOutputToShaderRead(CommandBuffer* pCmdBuffer);
     void RecordDLSSExposureUpdate(CommandBuffer* pCmdBuffer);
@@ -293,6 +298,7 @@ private:
 
     // Only need one gbuffer
     GBuffer m_gbuffer;
+    u32 m_temporalResolveWrites{0};
 
     // Pass data for each frame
     stltype::hash_map<PassType, stltype::vector<stltype::unique_ptr<ConvolutionRenderPass>>> m_passes{};

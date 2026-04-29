@@ -273,7 +273,7 @@ void main()
     }
     float historyWeight = 0.95;
 
-    historyYCoCg = ClipAABB(aabbMin, aabbMax, historyYCoCg, clampedCurrent);
+    //historyYCoCg = ClipAABB(aabbMin, aabbMax, historyYCoCg, clampedCurrent);
     vec3 clippedHistory = YCoCgToRGB(historyYCoCg);
     float currentWeight = (1.0 - historyWeight) * currentAdjusted.a;
     float historyBlendWeight = historyWeight * historyAdjusted.a;

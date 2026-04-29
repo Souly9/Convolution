@@ -26,6 +26,8 @@ PFN_vkCmdEndDebugUtilsLabelEXT vkCmdEndDebugUtilsLabel = VK_NULL_HANDLE;
 
 namespace
 {
+constexpr u32 NVIDIA_VENDOR_ID = 0x10DE;
+
 bool IsSrgbSwapchainFormat(VkFormat format)
 {
     return format == VK_FORMAT_B8G8R8A8_SRGB || format == VK_FORMAT_R8G8B8A8_SRGB;
@@ -117,16 +119,6 @@ bool RenderBackendImpl<Vulkan>::Init(uint32_t screenWidth, uint32_t screenHeight
     DEBUG_LOG("Vulkan physical and logical device created!");
 
     VkGlobals::SetLogicalDevice(m_logicalDevice);
-    vkCmdSetCheckpoint =
-        reinterpret_cast<PFN_vkCmdSetCheckpointNV>(vkGetDeviceProcAddr(VK_LOGICAL_DEVICE, "vkCmdSetCheckpointNV"));
-    
-    vkSetDebugUtilsObjectName =
-        reinterpret_cast<PFN_vkSetDebugUtilsObjectNameEXT>(vkGetInstanceProcAddr(m_instance, "vkSetDebugUtilsObjectNameEXT"));
-    vkBeginDebugUtilsLabel = reinterpret_cast<PFN_vkCmdBeginDebugUtilsLabelEXT>(
-        vkGetInstanceProcAddr(m_instance, "vkCmdBeginDebugUtilsLabelEXT"));
-    vkCmdEndDebugUtilsLabel = reinterpret_cast<PFN_vkCmdEndDebugUtilsLabelEXT>(
-        vkGetInstanceProcAddr(m_instance, "vkCmdEndDebugUtilsLabelEXT"));
-
     UpdateGlobals();
     bool dlssSupported = false;
     if (m_dlssSupportAvailable)
@@ -139,6 +131,23 @@ bool RenderBackendImpl<Vulkan>::Init(uint32_t screenWidth, uint32_t screenHeight
         }
     }
     PublishDLSSSupport(dlssSupported);
+
+    if (!AcquireDeviceQueues())
+    {
+        DEBUG_LOG_ERR("Vulkan device queues couldn't be acquired!");
+        return false;
+    }
+    UpdateGlobals();
+
+    vkCmdSetCheckpoint =
+        reinterpret_cast<PFN_vkCmdSetCheckpointNV>(vkGetDeviceProcAddr(VK_LOGICAL_DEVICE, "vkCmdSetCheckpointNV"));
+
+    vkSetDebugUtilsObjectName = reinterpret_cast<PFN_vkSetDebugUtilsObjectNameEXT>(
+        vkGetInstanceProcAddr(m_instance, "vkSetDebugUtilsObjectNameEXT"));
+    vkBeginDebugUtilsLabel = reinterpret_cast<PFN_vkCmdBeginDebugUtilsLabelEXT>(
+        vkGetInstanceProcAddr(m_instance, "vkCmdBeginDebugUtilsLabelEXT"));
+    vkCmdEndDebugUtilsLabel = reinterpret_cast<PFN_vkCmdEndDebugUtilsLabelEXT>(
+        vkGetInstanceProcAddr(m_instance, "vkCmdEndDebugUtilsLabelEXT"));
 
     {
         DEBUG_LOG("Creating Swapchain!");
@@ -520,12 +529,22 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
     if (vkCreateDevice(m_physicalDevice, &createInfo, VulkanAllocator(), &m_logicalDevice) != VK_SUCCESS)
         return false;
 
-    vkGetDeviceQueue(m_logicalDevice, m_indices.graphicsFamily.value(), 0, &m_graphicsQueue);
-    vkGetDeviceQueue(m_logicalDevice, m_indices.presentFamily.value(), 0, &m_presentQueue);
-    vkGetDeviceQueue(m_logicalDevice, m_indices.transferFamily.value(), 0, &m_transferQueue);
-    vkGetDeviceQueue(m_logicalDevice, m_indices.computeFamily.value(), 0, &m_computeQueue);
-
     return true;
+}
+
+bool RenderBackendImpl<Vulkan>::AcquireDeviceQueues()
+{
+    Nvidia::StreamlineManager::GetVulkanDeviceQueue(
+        m_logicalDevice, m_indices.graphicsFamily.value(), 0, &m_graphicsQueue);
+    Nvidia::StreamlineManager::GetVulkanDeviceQueue(
+        m_logicalDevice, m_indices.presentFamily.value(), 0, &m_presentQueue);
+    Nvidia::StreamlineManager::GetVulkanDeviceQueue(
+        m_logicalDevice, m_indices.transferFamily.value(), 0, &m_transferQueue);
+    Nvidia::StreamlineManager::GetVulkanDeviceQueue(
+        m_logicalDevice, m_indices.computeFamily.value(), 0, &m_computeQueue);
+
+    return m_graphicsQueue != VK_NULL_HANDLE && m_presentQueue != VK_NULL_HANDLE &&
+           m_transferQueue != VK_NULL_HANDLE && m_computeQueue != VK_NULL_HANDLE;
 }
 
 bool RenderBackendImpl<Vulkan>::PickPhysicalDevice()
@@ -541,15 +560,34 @@ bool RenderBackendImpl<Vulkan>::PickPhysicalDevice()
     stltype::vector<VkPhysicalDevice> devices(deviceCount);
     vkEnumeratePhysicalDevices(m_instance, &deviceCount, devices.data());
 
-    // First pass: look for a discrete GPU
-    for (const auto& device : devices)
+    if (m_dlssSupportAvailable)
     {
-        VkPhysicalDeviceProperties deviceProperties;
-        vkGetPhysicalDeviceProperties(device, &deviceProperties);
-        if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU && IsDeviceSuitable(device))
+        for (const auto& device : devices)
         {
-            m_physicalDevice = device;
-            break;
+            VkPhysicalDeviceProperties deviceProperties;
+            vkGetPhysicalDeviceProperties(device, &deviceProperties);
+            if (deviceProperties.vendorID == NVIDIA_VENDOR_ID &&
+                deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU && IsDeviceSuitable(device) &&
+                DeviceSupportsDLSSRequirements(device))
+            {
+                m_physicalDevice = device;
+                break;
+            }
+        }
+    }
+
+    // First pass: look for a discrete GPU
+    if (m_physicalDevice == VK_NULL_HANDLE)
+    {
+        for (const auto& device : devices)
+        {
+            VkPhysicalDeviceProperties deviceProperties;
+            vkGetPhysicalDeviceProperties(device, &deviceProperties);
+            if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU && IsDeviceSuitable(device))
+            {
+                m_physicalDevice = device;
+                break;
+            }
         }
     }
 
@@ -659,6 +697,14 @@ bool RenderBackendImpl<Vulkan>::DeviceSupportsDLSSRequirements(VkPhysicalDevice 
 {
     if (device == VK_NULL_HANDLE)
         return false;
+
+    VkPhysicalDeviceProperties deviceProperties;
+    vkGetPhysicalDeviceProperties(device, &deviceProperties);
+    if (deviceProperties.vendorID != NVIDIA_VENDOR_ID)
+    {
+        DEBUG_LOG_WARNF("Vulkan device '{}' is not an NVIDIA adapter. DLSS disabled.", deviceProperties.deviceName);
+        return false;
+    }
 
     sl::FeatureRequirements dlssRequirements{};
     if (!Nvidia::StreamlineManager::GetDLSSFeatureRequirements(dlssRequirements))

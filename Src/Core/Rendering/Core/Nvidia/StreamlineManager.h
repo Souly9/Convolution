@@ -13,6 +13,7 @@ public:
     {
         bool streamlineInitialized{false};
         bool featureSupported{false};
+        bool imguiPluginAvailable{false};
         bool configured{false};
         bool evaluateBlocked{false};
         bool lastConfigureFailed{false};
@@ -52,6 +53,8 @@ public:
     static bool GetDLSSFeatureRequirements(sl::FeatureRequirements& requirements);
     static bool GetDLSSOptimalSettings(u32 width, u32 height, sl::DLSSMode mode, sl::DLSSOptimalSettings& settings);
     static bool GetDLSSState(sl::DLSSState& state);
+    static void GetVulkanDeviceQueue(VkDevice device, u32 queueFamilyIndex, u32 queueIndex, VkQueue* pQueue);
+    static void GetVulkanDeviceQueue2(VkDevice device, const VkDeviceQueueInfo2* pQueueInfo, VkQueue* pQueue);
     static void SetVulkanQueueStartIndices(u32 graphicsQueueIndex, u32 computeQueueIndex);
     static bool EnsureDLSSConfigured(u32 width, u32 height, sl::DLSSMode mode);
     static bool ConsumeDLSSResetFlag();
@@ -73,6 +76,7 @@ public:
 
     static bool IsAvailable() { return s_initialized; }
     static bool IsDLSSSupported();
+    static bool IsDLSSDebugUIAvailable();
 
 private:
     static bool s_initialized;

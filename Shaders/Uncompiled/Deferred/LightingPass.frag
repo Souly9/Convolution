@@ -143,6 +143,10 @@ void main()
 
     vec3 materialAlbedo = surface.baseColor;
     vec3 emissive = mat.emissive.rgb;
+    if (IsMaterialFlagSet(mat.flags, MATERIAL_FLAG_EMISSIVE_BIT))
+    {
+        emissive *= texture(GlobalBindlessTextures[nonuniformEXT(mat.emissiveTexture)], materialUV).rgb;
+    }
     vec3 directLighting = vec3(0.0);
 
     // Clustered Lighting logic
@@ -182,7 +186,7 @@ void main()
     }
 
     float ambientIntensity = ubo.ambientIntensity;
-    vec3 indirectLighting = albedo * ambientIntensity; 
+    vec3 indirectLighting = materialAlbedo * ambientIntensity;
 
     vec3 finalHDRColor = (directLighting + indirectLighting + emissive) * ubo.exposure;
 

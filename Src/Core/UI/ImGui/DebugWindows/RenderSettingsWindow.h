@@ -175,11 +175,9 @@ public:
 
             const char* taaDebugModes[] = {
                 "Off",
-                "Velocity Rejection Mask",
-                "History UV Validity",
-                "Current Velocity Magnitude",
-                "History Velocity Magnitude",
-                "Velocity Difference"};
+                "Current Color",
+                "History Color",
+                "History Current Difference"};
             int currentTAADebugMode =
                 mathstl::clamp(static_cast<int>(renderState.taaDebugMode), 0, IM_ARRAYSIZE(taaDebugModes) - 1);
             int uiTAADebugMode = currentTAADebugMode;
@@ -192,6 +190,14 @@ public:
                         { state.renderState.taaDebugMode = static_cast<u32>(uiTAADebugMode); });
                     needsUpdate = true;
                 }
+            }
+
+            bool taaForceHistory = renderState.taaForceHistory;
+            if (ImGui::Checkbox("TAA Force History", &taaForceHistory))
+            {
+                g_pApplicationState->RegisterUpdateFunction([taaForceHistory](ApplicationState& state)
+                                                            { state.renderState.taaForceHistory = taaForceHistory; });
+                needsUpdate = true;
             }
 
             float taaVelocityRejectionStart = renderState.taaVelocityRejectionStart;

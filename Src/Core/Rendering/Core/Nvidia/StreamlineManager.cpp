@@ -4,6 +4,7 @@
 #include "Core/Global/ThreadBase.h"
 #include "Core/Rendering/Vulkan/VkGlobals.h"
 #include <sl_helpers_vk.h>
+#include <string>
 #include <vulkan/vulkan.h>
 #include <windows.h>
 
@@ -22,6 +23,7 @@ static sl::DLSSMode g_dlssFailedMode = sl::DLSSMode::eOff;
 static bool g_dlssEvaluateBlocked = false;
 static bool g_dlssNeedsReset = false;
 static bool g_dlssSupported = false;
+static bool g_imguiPluginAvailable = false;
 static HMODULE g_slModule = nullptr;
 static ProfiledLockable(CustomMutex, g_dlssDebugStateMutex);
 static StreamlineManager::DLSSDebugState g_dlssDebugState{};
@@ -49,6 +51,25 @@ static u32 g_slComputeQueueStartIndex = 0;
 static bool IsRenderDocLoaded()
 {
     return GetModuleHandleA("renderdoc.dll") != nullptr;
+}
+
+static bool FileExists(const char* path)
+{
+    const DWORD attrs = GetFileAttributesA(path);
+    return attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY) == 0;
+}
+
+static bool DirectoryExists(const wchar_t* path)
+{
+    const DWORD attrs = GetFileAttributesW(path);
+    return attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY) != 0;
+}
+
+static std::wstring GetAbsolutePath(const wchar_t* path)
+{
+    wchar_t buffer[MAX_PATH]{};
+    const DWORD len = GetFullPathNameW(path, MAX_PATH, buffer, nullptr);
+    return len > 0 && len < MAX_PATH ? std::wstring(buffer, len) : std::wstring(path);
 }
 
 static void ResetStreamlineFunctionPointers()
@@ -179,20 +200,27 @@ bool StreamlineManager::EarlyInit()
 
     // Call slInit EARLY so interposer can hook Vulkan creation
     sl::Preferences pref{};
-    static sl::Feature features[] = {sl::kFeatureDLSS};
+    g_imguiPluginAvailable = FileExists("sl.imgui.dll") ||
+                             FileExists("External/additional_libs/NVStreamline/sl.imgui.dll");
+    sl::Feature features[] = {sl::kFeatureDLSS, sl::kFeatureImGUI};
     pref.featuresToLoad = features;
-    pref.numFeaturesToLoad = 1;
+    pref.numFeaturesToLoad = g_imguiPluginAvailable ? 2u : 1u;
     pref.renderAPI = sl::RenderAPI::eVulkan;
     pref.flags |= sl::PreferenceFlags::eUseFrameBasedResourceTagging;
     pref.flags |= sl::PreferenceFlags::eUseManualHooking;
     pref.logMessageCallback = SL_LoggingCallback;
     pref.logLevel = sl::LogLevel::eVerbose;
+    const std::wstring localPluginPath = GetAbsolutePath(L".");
+    const std::wstring externalPluginPath = GetAbsolutePath(L"External/additional_libs/NVStreamline");
+    const wchar_t* pluginPaths[] = {localPluginPath.c_str(), externalPluginPath.c_str()};
+    if (DirectoryExists(externalPluginPath.c_str()))
+    {
+        pref.pathsToPlugins = pluginPaths;
+        pref.numPathsToPlugins = 2;
+    }
 
-    // Set development IDs
-    pref.applicationId = 231313132;
     pref.engine = sl::EngineType::eCustom;
     pref.engineVersion = "1.0.0";
-    pref.projectId = "a0f57b54-1daf-4934-90ae-c4035c19df04";
 
     sl::Result res = g_slInit(pref, sl::kSDKVersion);
     if (res != sl::Result::eOk)
@@ -262,6 +290,7 @@ bool StreamlineManager::Init()
     auto debugState = GetDLSSDebugState();
     debugState.streamlineInitialized = true;
     debugState.featureSupported = g_dlssSupported;
+    debugState.imguiPluginAvailable = g_imguiPluginAvailable;
     SetDLSSDebugState(debugState);
     return true;
 }
@@ -285,6 +314,7 @@ void StreamlineManager::Shutdown()
     g_dlssEvaluateBlocked = false;
     g_dlssNeedsReset = false;
     g_dlssSupported = false;
+    g_imguiPluginAvailable = false;
     g_slGraphicsQueueStartIndex = 0;
     g_slComputeQueueStartIndex = 0;
     SetDLSSDebugState(DLSSDebugState{});
@@ -303,7 +333,14 @@ bool StreamlineManager::GetDLSSFeatureRequirements(sl::FeatureRequirements& requ
 {
     if (!g_slGetFeatureRequirements)
         return false;
-    return g_slGetFeatureRequirements(sl::kFeatureDLSS, requirements) == sl::Result::eOk;
+    const sl::Result res = g_slGetFeatureRequirements(sl::kFeatureDLSS, requirements);
+    if (res != sl::Result::eOk)
+    {
+        DEBUG_LOG_WARNF("[StreamlineManager] slGetFeatureRequirements(DLSS) failed with result: 0x{:X}",
+                        static_cast<u32>(res));
+        return false;
+    }
+    return true;
 }
 
 bool StreamlineManager::GetDLSSOptimalSettings(u32 width,
@@ -328,6 +365,46 @@ bool StreamlineManager::GetDLSSState(sl::DLSSState& state)
 
     sl::ViewportHandle viewport(0);
     return g_slDLSSGetState(viewport, state) == sl::Result::eOk;
+}
+
+void StreamlineManager::GetVulkanDeviceQueue(VkDevice device, u32 queueFamilyIndex, u32 queueIndex, VkQueue* pQueue)
+{
+    static PFN_vkGetDeviceQueue s_pHook = nullptr;
+    const auto pHook = ResolveDeviceHook(device, "vkGetDeviceQueue", s_pHook);
+    if (pHook)
+    {
+        pHook(device, queueFamilyIndex, queueIndex, pQueue);
+        return;
+    }
+
+    const auto pLoaderFn = reinterpret_cast<PFN_vkGetDeviceQueue>(vkGetDeviceProcAddr(device, "vkGetDeviceQueue"));
+    if (pLoaderFn)
+    {
+        pLoaderFn(device, queueFamilyIndex, queueIndex, pQueue);
+        return;
+    }
+
+    *pQueue = VK_NULL_HANDLE;
+}
+
+void StreamlineManager::GetVulkanDeviceQueue2(VkDevice device, const VkDeviceQueueInfo2* pQueueInfo, VkQueue* pQueue)
+{
+    static PFN_vkGetDeviceQueue2 s_pHook = nullptr;
+    const auto pHook = ResolveDeviceHook(device, "vkGetDeviceQueue2", s_pHook);
+    if (pHook)
+    {
+        pHook(device, pQueueInfo, pQueue);
+        return;
+    }
+
+    const auto pLoaderFn = reinterpret_cast<PFN_vkGetDeviceQueue2>(vkGetDeviceProcAddr(device, "vkGetDeviceQueue2"));
+    if (pLoaderFn)
+    {
+        pLoaderFn(device, pQueueInfo, pQueue);
+        return;
+    }
+
+    *pQueue = VK_NULL_HANDLE;
 }
 
 void StreamlineManager::SetVulkanQueueStartIndices(u32 graphicsQueueIndex, u32 computeQueueIndex)
@@ -386,6 +463,7 @@ bool StreamlineManager::EnsureDLSSConfigured(u32 width, u32 height, sl::DLSSMode
         auto debugState = GetDLSSDebugState();
         debugState.streamlineInitialized = s_initialized;
         debugState.featureSupported = g_dlssSupported;
+        debugState.imguiPluginAvailable = g_imguiPluginAvailable;
         debugState.configured = false;
         debugState.lastConfigureFailed = true;
         debugState.evaluateBlocked = g_dlssEvaluateBlocked;
@@ -411,6 +489,7 @@ bool StreamlineManager::EnsureDLSSConfigured(u32 width, u32 height, sl::DLSSMode
     auto debugState = GetDLSSDebugState();
     debugState.streamlineInitialized = s_initialized;
     debugState.featureSupported = g_dlssSupported;
+    debugState.imguiPluginAvailable = g_imguiPluginAvailable;
     debugState.configured = true;
     debugState.evaluateBlocked = g_dlssEvaluateBlocked;
     debugState.lastConfigureFailed = false;
@@ -511,6 +590,11 @@ bool StreamlineManager::IsDLSSSupported()
     return s_initialized && g_dlssSupported;
 }
 
+bool StreamlineManager::IsDLSSDebugUIAvailable()
+{
+    return g_imguiPluginAvailable;
+}
+
 StreamlineManager::DLSSDebugState StreamlineManager::GetDLSSDebugState()
 {
     SimpleScopedGuard lock(g_dlssDebugStateMutex);
@@ -578,6 +662,93 @@ extern "C" VKAPI_ATTR VkResult VKAPI_CALL vkAcquireNextImageKHR(VkDevice device,
     static PFN_vkAcquireNextImageKHR s_pHook = nullptr;
     const auto pHook = Nvidia::ResolveDeviceHook(device, "vkAcquireNextImageKHR", s_pHook);
     return pHook ? pHook(device, swapchain, timeout, semaphore, fence, pImageIndex) : VK_ERROR_INITIALIZATION_FAILED;
+}
+
+extern "C" VKAPI_ATTR VkResult VKAPI_CALL vkCreateCommandPool(VkDevice device,
+                                                              const VkCommandPoolCreateInfo* pCreateInfo,
+                                                              const VkAllocationCallbacks* pAllocator,
+                                                              VkCommandPool* pCommandPool)
+{
+    static PFN_vkCreateCommandPool s_pHook = nullptr;
+    const auto pHook = Nvidia::ResolveDeviceHook(device, "vkCreateCommandPool", s_pHook);
+    return pHook ? pHook(device, pCreateInfo, pAllocator, pCommandPool) : VK_ERROR_INITIALIZATION_FAILED;
+}
+
+extern "C" VKAPI_ATTR void VKAPI_CALL vkGetDeviceQueue(VkDevice device,
+                                                       uint32_t queueFamilyIndex,
+                                                       uint32_t queueIndex,
+                                                       VkQueue* pQueue)
+{
+    Nvidia::StreamlineManager::GetVulkanDeviceQueue(device, queueFamilyIndex, queueIndex, pQueue);
+}
+
+extern "C" VKAPI_ATTR void VKAPI_CALL vkGetDeviceQueue2(VkDevice device,
+                                                        const VkDeviceQueueInfo2* pQueueInfo,
+                                                        VkQueue* pQueue)
+{
+    Nvidia::StreamlineManager::GetVulkanDeviceQueue2(device, pQueueInfo, pQueue);
+}
+
+extern "C" VKAPI_ATTR VkResult VKAPI_CALL vkBeginCommandBuffer(VkCommandBuffer commandBuffer,
+                                                               const VkCommandBufferBeginInfo* pBeginInfo)
+{
+    static PFN_vkBeginCommandBuffer s_pHook = nullptr;
+    const auto pHook = Nvidia::ResolveDeviceHook(VkGlobals::GetLogicalDevice(), "vkBeginCommandBuffer", s_pHook);
+    return pHook ? pHook(commandBuffer, pBeginInfo) : VK_ERROR_INITIALIZATION_FAILED;
+}
+
+extern "C" VKAPI_ATTR void VKAPI_CALL vkCmdBindPipeline(VkCommandBuffer commandBuffer,
+                                                        VkPipelineBindPoint pipelineBindPoint,
+                                                        VkPipeline pipeline)
+{
+    static PFN_vkCmdBindPipeline s_pHook = nullptr;
+    const auto pHook = Nvidia::ResolveDeviceHook(VkGlobals::GetLogicalDevice(), "vkCmdBindPipeline", s_pHook);
+    if (pHook)
+        pHook(commandBuffer, pipelineBindPoint, pipeline);
+}
+
+extern "C" VKAPI_ATTR void VKAPI_CALL vkCmdBindDescriptorSets(VkCommandBuffer commandBuffer,
+                                                              VkPipelineBindPoint pipelineBindPoint,
+                                                              VkPipelineLayout layout,
+                                                              uint32_t firstSet,
+                                                              uint32_t descriptorSetCount,
+                                                              const VkDescriptorSet* pDescriptorSets,
+                                                              uint32_t dynamicOffsetCount,
+                                                              const uint32_t* pDynamicOffsets)
+{
+    static PFN_vkCmdBindDescriptorSets s_pHook = nullptr;
+    const auto pHook = Nvidia::ResolveDeviceHook(VkGlobals::GetLogicalDevice(), "vkCmdBindDescriptorSets", s_pHook);
+    if (pHook)
+    {
+        pHook(commandBuffer,
+              pipelineBindPoint,
+              layout,
+              firstSet,
+              descriptorSetCount,
+              pDescriptorSets,
+              dynamicOffsetCount,
+              pDynamicOffsets);
+    }
+}
+
+extern "C" VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(VkQueue queue,
+                                                        uint32_t submitCount,
+                                                        const VkSubmitInfo* pSubmits,
+                                                        VkFence fence)
+{
+    static PFN_vkQueueSubmit s_pHook = nullptr;
+    const auto pHook = Nvidia::ResolveDeviceHook(VkGlobals::GetLogicalDevice(), "vkQueueSubmit", s_pHook);
+    return pHook ? pHook(queue, submitCount, pSubmits, fence) : VK_ERROR_INITIALIZATION_FAILED;
+}
+
+extern "C" VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit2(VkQueue queue,
+                                                         uint32_t submitCount,
+                                                         const VkSubmitInfo2* pSubmits,
+                                                         VkFence fence)
+{
+    static PFN_vkQueueSubmit2 s_pHook = nullptr;
+    const auto pHook = Nvidia::ResolveDeviceHook(VkGlobals::GetLogicalDevice(), "vkQueueSubmit2", s_pHook);
+    return pHook ? pHook(queue, submitCount, pSubmits, fence) : VK_ERROR_INITIALIZATION_FAILED;
 }
 
 extern "C" VKAPI_ATTR VkResult VKAPI_CALL vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pPresentInfo)

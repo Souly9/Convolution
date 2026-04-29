@@ -80,6 +80,7 @@ public:
 private:
     bool CreateInstance(uint32_t screenWidth, uint32_t screenHeight, stltype::string_view title);
     bool CreateLogicalDevice();
+    bool AcquireDeviceQueues();
     bool PickPhysicalDevice();
     bool IsDeviceSuitable(VkPhysicalDevice device);
     bool AreExtensionsSupported(VkPhysicalDevice device);
@@ -107,12 +108,12 @@ private:
     VkInstance m_instance{VK_NULL_HANDLE};
     VkDevice m_logicalDevice{VK_NULL_HANDLE};
     VkPhysicalDevice m_physicalDevice{VK_NULL_HANDLE};
-    VkQueue m_graphicsQueue;
+    VkQueue m_graphicsQueue{VK_NULL_HANDLE};
     VkSurfaceKHR m_surface{VK_NULL_HANDLE}; ///< Surface that establishes
                                             ///< connection to the glfw window.
-    VkQueue m_presentQueue;
-    VkQueue m_transferQueue;
-    VkQueue m_computeQueue;
+    VkQueue m_presentQueue{VK_NULL_HANDLE};
+    VkQueue m_transferQueue{VK_NULL_HANDLE};
+    VkQueue m_computeQueue{VK_NULL_HANDLE};
     QueueFamilyIndices m_indices;
     VkSwapchainKHR m_swapChain{VK_NULL_HANDLE};
     stltype::vector<VkImage> m_swapChainImages;

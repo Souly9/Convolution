@@ -237,6 +237,20 @@ struct ImageToImageCopyCmd : public CommandBase
     }
 };
 
+struct ClearColorImageCmd : public CommandBase
+{
+    Texture::Ptr image{};
+    ClearColorValue color{};
+    u32 mipLevel{0};
+    u32 levelCount{1};
+    u32 baseArrayLayer{0};
+    u32 layerCount{1};
+
+    ClearColorImageCmd(Texture::Ptr pImage) : image(pImage)
+    {
+    }
+};
+
 struct ImageLayoutTransitionCmd : public CommandBase
 {
     stltype::vector<Texture::Ptr> images;
@@ -425,6 +439,7 @@ using Command = stltype::variant<CommandBase,
                                  SimpleBufferCopyCmd,
                                  ImageBufferCopyCmd,
                                  ImageToImageCopyCmd,
+                                 ClearColorImageCmd,
                                  ImageLayoutTransitionCmd,
                                  BeginRenderingBaseCmd,
                                  BeginRenderingCmd,

@@ -27,13 +27,12 @@ void main()
     
     vec3 finalHDRColor = vec3(0.0);
     uint aaType = GET_AA_TYPE(ubo.debugFlags);
-    if (aaType == 3u) // AntialiasingType::DLSS
+    if (aaType == 1u || aaType == 3u) // AntialiasingType::TAA_SMAA or DLSS
     {
         finalHDRColor = texture(GlobalBindlessTextures[gbufferUBO.gbufferResolveIdx], texCoords).xyz;
     }
     else
     {
-        // TAA+SMAA path writes final AA to thisFrameColor.
         finalHDRColor = texture(GlobalBindlessTextures[gbufferUBO.thisFrameColorBufferIdx], texCoords).xyz;
     }
 

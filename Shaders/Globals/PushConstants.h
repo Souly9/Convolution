@@ -23,6 +23,7 @@ STRUCTDECL(TAAPushConstants)
     STRUCTFIELD(float, velocityRejectionStart)
     STRUCTFIELD(float, velocityRejectionEnd)
     STRUCTFIELD(uint, debugMode)
+    STRUCTFIELD(uint, forceHistory)
 STRUCTEND()
 
 STRUCTDECL(ScreenSpaceShadowPushConstants)

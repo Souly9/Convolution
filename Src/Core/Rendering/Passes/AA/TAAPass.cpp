@@ -78,10 +78,12 @@ void TAAPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comman
 
     const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
     const auto& currentAA = renderState.aaType;
-    if (m_lastAAType != currentAA)
+    const u32 currentDebugMode = renderState.taaDebugMode;
+    if (m_lastAAType != currentAA || m_lastDebugMode != currentDebugMode)
     {
         m_pushConstants.resetHistory = 1;
         m_lastAAType = currentAA;
+        m_lastDebugMode = currentDebugMode;
     }
     else
     {
@@ -95,7 +97,8 @@ void TAAPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comman
     m_pushConstants.zFar = ctx.zFar;
     m_pushConstants.velocityRejectionStart = renderState.taaVelocityRejectionStart;
     m_pushConstants.velocityRejectionEnd = renderState.taaVelocityRejectionEnd;
-    m_pushConstants.debugMode = renderState.taaDebugMode;
+    m_pushConstants.debugMode = currentDebugMode;
+    m_pushConstants.forceHistory = renderState.taaForceHistory ? 1u : 0u;
     m_pushConstants.resetHistory |= data.renderState.recreatedThisFrame ? 1u : 0u;
 
     u32 groupCountX = (static_cast<u32>(data.renderState.renderResolution.x) + 7) / 8;

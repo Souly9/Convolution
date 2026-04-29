@@ -145,7 +145,7 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     sl::Constants slConst{};
     const auto& cameraData = ctx.cameraData;
     // Streamline consumes Vulkan clip space; the renderer flips Vulkan Y at the viewport boundary.
-    const mathstl::Matrix clipYFlip = mathstl::Matrix::CreateScale(1.0f, -1.0f, 1.0f);
+    const mathstl::Matrix clipYFlip = mathstl::Matrix::CreateScale(1.0f, 1.0f, 1.0f);
     const mathstl::Matrix streamlineViewToClip = cameraData.viewToClip * clipYFlip;
     const mathstl::Matrix streamlineClipToView = clipYFlip * cameraData.clipToView;
     const mathstl::Matrix streamlineClipToPrevClip = clipYFlip * cameraData.clipToPrevClip * clipYFlip;
@@ -156,7 +156,7 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     slConst.prevClipToClip = *(sl::float4x4*)&streamlinePrevClipToClip;
 
     const mathstl::Vector2 jitter = data.renderState.jitter;
-    slConst.jitterOffset = {-jitter.x, jitter.y};
+    slConst.jitterOffset = {jitter.x, -jitter.y};
     slConst.mvecScale = {1.0f / static_cast<float>(motionExtents.x), 1.0f / static_cast<float>(motionExtents.y)};
     slConst.cameraPinholeOffset = {0.0f, 0.0f};
     slConst.cameraPos = {cameraData.position.x, cameraData.position.y, cameraData.position.z};
