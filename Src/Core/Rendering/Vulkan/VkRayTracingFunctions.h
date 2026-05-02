@@ -1,0 +1,14 @@
+#pragma once
+#include <vulkan/vulkan.h>
+
+namespace RayTracing
+{
+extern PFN_vkCreateAccelerationStructureKHR vkCreateAccelerationStructureKHR;
+extern PFN_vkDestroyAccelerationStructureKHR vkDestroyAccelerationStructureKHR;
+extern PFN_vkGetAccelerationStructureBuildSizesKHR vkGetAccelerationStructureBuildSizesKHR;
+extern PFN_vkGetAccelerationStructureDeviceAddressKHR vkGetAccelerationStructureDeviceAddressKHR;
+extern PFN_vkCmdBuildAccelerationStructuresKHR vkCmdBuildAccelerationStructuresKHR;
+
+bool LoadFunctions(VkDevice device);
+bool AreFunctionsLoaded();
+} // namespace RayTracing

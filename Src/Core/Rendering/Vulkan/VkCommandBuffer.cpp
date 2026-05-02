@@ -4,15 +4,107 @@
 #include "Core/Rendering/Vulkan/VkProfiler.h"
 #include "Core/Rendering/Vulkan/VkQueryPool.h"
 #include "Core/Rendering/Vulkan/VkTexture.h"
+#include "Core/Rendering/Vulkan/VkRayTracingFunctions.h"
 #include "Core/Rendering/Vulkan/VulkanTraits.h"
 #include "Utils/VkEnumHelpers.h"
 #include "VkGlobals.h"
 #include <backends/imgui_impl_vulkan.h>
 #include <imgui.h>
 
-
 namespace CommandHelpers
 {
+static VkBuildAccelerationStructureFlagsKHR Conv(AccelerationStructureBuildFlags flags)
+{
+    VkBuildAccelerationStructureFlagsKHR vkFlags = 0;
+    if ((flags & AccelerationStructureBuildFlags::PreferFastTrace) != AccelerationStructureBuildFlags::None)
+        vkFlags |= VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+    return vkFlags;
+}
+
+static VkGeometryFlagsKHR Conv(AccelerationStructureGeometryFlags flags)
+{
+    VkGeometryFlagsKHR vkFlags = 0;
+    if ((flags & AccelerationStructureGeometryFlags::Opaque) != AccelerationStructureGeometryFlags::None)
+        vkFlags |= VK_GEOMETRY_OPAQUE_BIT_KHR;
+    return vkFlags;
+}
+
+static VkAccelerationStructureTypeKHR Conv(AccelerationStructureType type)
+{
+    switch (type)
+    {
+        case AccelerationStructureType::TopLevel:
+            return VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+        case AccelerationStructureType::BottomLevel:
+            return VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+        default:
+            DEBUG_ASSERT(false);
+            return VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+    }
+}
+
+static VkGeometryTypeKHR Conv(AccelerationStructureGeometryType type)
+{
+    switch (type)
+    {
+        case AccelerationStructureGeometryType::Triangles:
+            return VK_GEOMETRY_TYPE_TRIANGLES_KHR;
+        case AccelerationStructureGeometryType::Instances:
+            return VK_GEOMETRY_TYPE_INSTANCES_KHR;
+        default:
+            DEBUG_ASSERT(false);
+            return VK_GEOMETRY_TYPE_TRIANGLES_KHR;
+    }
+}
+
+static VkBuildAccelerationStructureModeKHR Conv(AccelerationStructureBuildMode mode)
+{
+    switch (mode)
+    {
+        case AccelerationStructureBuildMode::Build:
+            return VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+        case AccelerationStructureBuildMode::Update:
+            return VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR;
+        default:
+            DEBUG_ASSERT(false);
+            return VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+    }
+}
+
+static VkFormat Conv(RayTracingVertexFormat format)
+{
+    switch (format)
+    {
+        case RayTracingVertexFormat::Float3:
+            return VK_FORMAT_R32G32B32_SFLOAT;
+        default:
+            DEBUG_ASSERT(false);
+            return VK_FORMAT_UNDEFINED;
+    }
+}
+
+static VkIndexType Conv(RayTracingIndexType type)
+{
+    switch (type)
+    {
+        case RayTracingIndexType::UInt32:
+            return VK_INDEX_TYPE_UINT32;
+        default:
+            DEBUG_ASSERT(false);
+            return VK_INDEX_TYPE_NONE_KHR;
+    }
+}
+
+static VkAccessFlags2 Conv(RayTracingAccess access)
+{
+    VkAccessFlags2 vkAccess = 0;
+    if ((access & RayTracingAccess::AccelerationStructureRead) != RayTracingAccess::None)
+        vkAccess |= VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR;
+    if ((access & RayTracingAccess::AccelerationStructureWrite) != RayTracingAccess::None)
+        vkAccess |= VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
+    return vkAccess;
+}
+
 template <typename T>
 static void RecordCommand(T& cmd, CBufferVulkan& buffer)
 {
@@ -103,6 +195,13 @@ static void RecordCommand(GenericIndirectDrawCmd& cmd, CBufferVulkan& buffer)
                                 sets.data(),
                                 0,
                                 nullptr);
+        buffer.TrackBoundDescriptorSets(VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                        cmd.pso->GetLayout(),
+                                        0,
+                                        static_cast<u32>(sets.size()),
+                                        sets.data(),
+                                        0,
+                                        nullptr);
         buffer.GetStats().descriptorBinds += cmd.descriptorSets.size();
     }
 
@@ -141,6 +240,13 @@ static void RecordCommand(GenericInstancedDrawCmd& cmd, CBufferVulkan& buffer)
                                 sets.data(),
                                 0,
                                 nullptr);
+        buffer.TrackBoundDescriptorSets(VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                        cmd.pso->GetLayout(),
+                                        0,
+                                        static_cast<u32>(sets.size()),
+                                        sets.data(),
+                                        0,
+                                        nullptr);
 
         buffer.GetStats().descriptorBinds += cmd.descriptorSets.size();
     }
@@ -188,8 +294,8 @@ static void RecordCommand(ImageBufferCopyCmd& cmd, CBufferVulkan& buffer)
     copyRegion.imageSubresource.baseArrayLayer = cmd.baseArrayLayer;
     copyRegion.imageSubresource.layerCount = cmd.layerCount;
 
-    copyRegion.imageOffset = Conv(cmd.imageOffset);
-    copyRegion.imageExtent = Conv(cmd.imageExtent);
+    copyRegion.imageOffset = ::Conv(cmd.imageOffset);
+    copyRegion.imageExtent = ::Conv(cmd.imageExtent);
     vkCmdCopyBufferToImage(buffer.GetRef(),
                            cmd.srcBuffer->GetRef(),
                            cmd.dstImage->GetImage(),
@@ -244,12 +350,8 @@ static void RecordCommand(ClearColorImageCmd& cmd, CBufferVulkan& buffer)
     range.baseArrayLayer = cmd.baseArrayLayer;
     range.layerCount = cmd.layerCount;
 
-    vkCmdClearColorImage(buffer.GetRef(),
-                         cmd.image->GetImage(),
-                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                         &clearValue,
-                         1,
-                         &range);
+    vkCmdClearColorImage(
+        buffer.GetRef(), cmd.image->GetImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clearValue, 1, &range);
 }
 
 static void RecordCommand(ImageLayoutTransitionCmd& cmd, CBufferVulkan& buffer)
@@ -301,7 +403,6 @@ static void RecordCommand(ImageLayoutTransitionCmd& cmd, CBufferVulkan& buffer)
         memoryBarrier.subresourceRange.baseMipLevel = cmd.mipLevel;
         memoryBarrier.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
 
-
         memoryBarrier.image = image->GetImage();
     }
 
@@ -326,6 +427,7 @@ static void RecordCommand(ImGuiDrawCmd& cmd, CBufferVulkan& buffer)
 static void RecordCommand(BindComputePipelineCmd& cmd, CBufferVulkan& buffer)
 {
     vkCmdBindPipeline(buffer.GetRef(), VK_PIPELINE_BIND_POINT_COMPUTE, cmd.pPipeline->GetRef());
+    buffer.TrackBoundPipeline(VK_PIPELINE_BIND_POINT_COMPUTE, cmd.pPipeline->GetRef(), cmd.pPipeline->GetLayout());
     buffer.GetStats().pipelineBinds++;
 }
 
@@ -348,6 +450,7 @@ static void RecordCommand(ComputePushConstantCmd& cmd, CBufferVulkan& buffer)
 static void RecordCommand(GenericComputeDispatchCmd& cmd, CBufferVulkan& buffer)
 {
     vkCmdBindPipeline(buffer.GetRef(), VK_PIPELINE_BIND_POINT_COMPUTE, cmd.pPipeline->GetRef());
+    buffer.TrackBoundPipeline(VK_PIPELINE_BIND_POINT_COMPUTE, cmd.pPipeline->GetRef(), cmd.pPipeline->GetLayout());
 
     if (cmd.descriptorSets.empty() == false)
     {
@@ -363,6 +466,13 @@ static void RecordCommand(GenericComputeDispatchCmd& cmd, CBufferVulkan& buffer)
                                 sets.data(),
                                 0,
                                 nullptr);
+        buffer.TrackBoundDescriptorSets(VK_PIPELINE_BIND_POINT_COMPUTE,
+                                        cmd.pPipeline->GetLayout(),
+                                        0,
+                                        static_cast<u32>(sets.size()),
+                                        sets.data(),
+                                        0,
+                                        nullptr);
 
         buffer.GetStats().descriptorBinds += sets.size();
     }
@@ -407,10 +517,78 @@ static void RecordCommand(BufferUpdateCmd& cmd, CBufferVulkan& buffer)
     vkCmdUpdateBuffer(buffer.GetRef(), cmd.pBuffer->GetRef(), cmd.offset, sizeof(u32), &cmd.data);
 }
 
+static void RecordCommand(BuildAccelerationStructureCmd& cmd, CBufferVulkan& buffer)
+{
+    VkAccelerationStructureGeometryKHR geometry{};
+    geometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
+    geometry.flags = Conv(cmd.buildDesc.geometryFlags);
+
+    if (cmd.buildDesc.geometryType == AccelerationStructureGeometryType::Triangles)
+    {
+        geometry.geometryType = Conv(cmd.buildDesc.geometryType);
+        geometry.geometry.triangles.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
+        geometry.geometry.triangles.vertexFormat = Conv(cmd.buildDesc.vertexFormat);
+        geometry.geometry.triangles.vertexData.deviceAddress = cmd.buildDesc.vertexDataAddress;
+        geometry.geometry.triangles.vertexStride = cmd.buildDesc.vertexStride;
+        geometry.geometry.triangles.maxVertex = cmd.buildDesc.maxVertex;
+        geometry.geometry.triangles.indexType = Conv(cmd.buildDesc.indexType);
+        geometry.geometry.triangles.indexData.deviceAddress = cmd.buildDesc.indexDataAddress;
+        geometry.geometry.triangles.transformData.deviceAddress = cmd.buildDesc.transformDataAddress;
+    }
+    else
+    {
+        DEBUG_ASSERT(sizeof(AccelerationStructureInstanceData) == sizeof(VkAccelerationStructureInstanceKHR));
+        geometry.geometryType = Conv(cmd.buildDesc.geometryType);
+        geometry.geometry.instances.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
+        geometry.geometry.instances.arrayOfPointers = cmd.buildDesc.instancesArrayOfPointers ? VK_TRUE : VK_FALSE;
+        geometry.geometry.instances.data.deviceAddress = cmd.buildDesc.instancesDataAddress;
+    }
+
+    VkAccelerationStructureBuildGeometryInfoKHR buildInfo{};
+    buildInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
+    buildInfo.type = Conv(cmd.buildDesc.structureType);
+    buildInfo.flags = Conv(cmd.buildDesc.buildFlags);
+    buildInfo.mode = Conv(cmd.buildDesc.buildMode);
+    buildInfo.dstAccelerationStructure = (VkAccelerationStructureKHR)cmd.dstAccelerationStructureHandle;
+    buildInfo.srcAccelerationStructure = (VkAccelerationStructureKHR)cmd.srcAccelerationStructureHandle;
+    buildInfo.geometryCount = 1;
+    buildInfo.pGeometries = &geometry;
+    buildInfo.scratchData.deviceAddress = cmd.scratchAddress;
+
+    VkAccelerationStructureBuildRangeInfoKHR rangeInfo{};
+    rangeInfo.primitiveCount = cmd.buildDesc.primitiveCount;
+    rangeInfo.primitiveOffset = cmd.buildDesc.primitiveOffset;
+    rangeInfo.firstVertex = cmd.buildDesc.firstVertex;
+    rangeInfo.transformOffset = cmd.buildDesc.transformOffset;
+
+    const VkAccelerationStructureBuildRangeInfoKHR* pRangeInfo = &rangeInfo;
+    RayTracing::vkCmdBuildAccelerationStructuresKHR(buffer.GetRef(), 1, &buildInfo, &pRangeInfo);
+}
+
+static void RecordCommand(AccelerationStructureBarrierCmd& cmd, CBufferVulkan& buffer)
+{
+    VkMemoryBarrier2 barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+    barrier.srcStageMask = Conv(cmd.srcStage);
+    barrier.dstStageMask = Conv(cmd.dstStage);
+    barrier.srcAccessMask = Conv(cmd.srcAccess);
+    barrier.dstAccessMask = Conv(cmd.dstAccess);
+
+    VkDependencyInfo dependencyInfo{};
+    dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    dependencyInfo.memoryBarrierCount = 1;
+    dependencyInfo.pMemoryBarriers = &barrier;
+
+    vkCmdPipelineBarrier2(buffer.GetRef(), &dependencyInfo);
+}
+
 static void RecordCommand(ExecuteNativeCmd& cmd, CBufferVulkan& buffer)
 {
     if (cmd.callback)
+    {
         cmd.callback(reinterpret_cast<void*>(buffer.GetRef()));
+        buffer.RestoreTrackedPipelineState();
+    }
 }
 } // namespace CommandHelpers
 
@@ -566,6 +744,7 @@ void CBufferVulkan::BeginRendering(BeginRenderingCmd& cmd)
     BeginRendering(static_cast<BeginRenderingBaseCmd&>(cmd));
 
     vkCmdBindPipeline(GetRef(), VK_PIPELINE_BIND_POINT_GRAPHICS, cmd.pso->GetRef());
+    TrackBoundPipeline(VK_PIPELINE_BIND_POINT_GRAPHICS, cmd.pso->GetRef(), cmd.pso->GetLayout());
     m_stats.pipelineBinds++;
 
     if (cmd.pso->HasDynamicViewScissorState())
@@ -646,6 +825,54 @@ void CBufferVulkan::BeginRendering(BeginRenderingBaseCmd& cmd)
     vkCmdBeginRendering(GetRef(), &renderingInfo);
 }
 
+void CBufferVulkan::TrackBoundPipeline(VkPipelineBindPoint bindPoint, VkPipeline pipeline, VkPipelineLayout layout)
+{
+    m_trackedPipelineState.pipelineBindPoint = bindPoint;
+    m_trackedPipelineState.pipeline = pipeline;
+    m_trackedPipelineState.layout = layout;
+}
+
+void CBufferVulkan::TrackBoundDescriptorSets(VkPipelineBindPoint bindPoint,
+                                             VkPipelineLayout layout,
+                                             u32 firstSet,
+                                             u32 descriptorSetCount,
+                                             const VkDescriptorSet* pDescriptorSets,
+                                             u32 dynamicOffsetCount,
+                                             const u32* pDynamicOffsets)
+{
+    m_trackedPipelineState.descriptorBindPoint = bindPoint;
+    m_trackedPipelineState.layout = layout;
+    m_trackedPipelineState.firstSet = firstSet;
+    m_trackedPipelineState.descriptorSets.assign(pDescriptorSets, pDescriptorSets + descriptorSetCount);
+    if (dynamicOffsetCount > 0 && pDynamicOffsets)
+        m_trackedPipelineState.dynamicOffsets.assign(pDynamicOffsets, pDynamicOffsets + dynamicOffsetCount);
+    else
+        m_trackedPipelineState.dynamicOffsets.clear();
+}
+
+void CBufferVulkan::RestoreTrackedPipelineState()
+{
+    if (m_trackedPipelineState.pipelineBindPoint != VK_PIPELINE_BIND_POINT_MAX_ENUM &&
+        m_trackedPipelineState.pipeline != VK_NULL_HANDLE)
+    {
+        vkCmdBindPipeline(GetRef(), m_trackedPipelineState.pipelineBindPoint, m_trackedPipelineState.pipeline);
+    }
+
+    if (m_trackedPipelineState.descriptorBindPoint != VK_PIPELINE_BIND_POINT_MAX_ENUM &&
+        m_trackedPipelineState.layout != VK_NULL_HANDLE && !m_trackedPipelineState.descriptorSets.empty())
+    {
+        vkCmdBindDescriptorSets(
+            GetRef(),
+            m_trackedPipelineState.descriptorBindPoint,
+            m_trackedPipelineState.layout,
+            m_trackedPipelineState.firstSet,
+            static_cast<u32>(m_trackedPipelineState.descriptorSets.size()),
+            m_trackedPipelineState.descriptorSets.data(),
+            static_cast<u32>(m_trackedPipelineState.dynamicOffsets.size()),
+            m_trackedPipelineState.dynamicOffsets.empty() ? nullptr : m_trackedPipelineState.dynamicOffsets.data());
+    }
+}
+
 void CBufferVulkan::EndRendering()
 {
     vkCmdEndRendering(GetRef());
@@ -660,6 +887,7 @@ void CBufferVulkan::EndBuffer()
 void CBufferVulkan::ResetBuffer()
 {
     ClearSemaphores();
+    m_trackedPipelineState = {};
     vkResetCommandBuffer(GetRef(), /*VkCommandBufferResetFlagBits*/ 0);
 }
 

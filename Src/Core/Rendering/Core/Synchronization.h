@@ -20,6 +20,8 @@ enum class SyncStages
     BOTTOM_OF_PIPE = 1 << 9,
     DEPTH_OUTPUT = 1 << 10,
     CLEAR = 1 << 11,
+    RAY_TRACING_SHADER = 1 << 12,
+    ACCELERATION_STRUCTURE_BUILD = 1 << 13,
 };
 MAKE_FLAG_ENUM(SyncStages)
 

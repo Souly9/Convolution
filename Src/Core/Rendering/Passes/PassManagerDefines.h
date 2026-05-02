@@ -31,9 +31,11 @@ struct EntityMeshData
     bool IsDebugMesh() const { return flags[s_isDebugMeshFlag] || flags[s_isDebugWireframeMesh]; }
     bool IsInstanced() const { return flags[s_isInstancedFlag]; }
     bool IsDebugWireframeMesh() const { return flags[s_isDebugWireframeMesh]; }
+    bool IncludeInRayTracing() const { return flags[s_includeInRayTracingFlag]; }
     bool SetDebugMesh() { return flags[s_isDebugMeshFlag] = true; }
     bool SetInstanced() { return flags[s_isInstancedFlag] = true; }
     bool SetDebugWireframeMesh() { return flags[s_isDebugWireframeMesh] = true; }
+    bool SetIncludeInRayTracing(bool include) { return flags[s_includeInRayTracingFlag] = include; }
 
     bool DidGeometryChange(const EntityMeshData& other) const { return pMesh != other.pMesh; }
 
@@ -41,6 +43,7 @@ protected:
     static inline u8 s_isDebugMeshFlag     = 0;
     static inline u8 s_isInstancedFlag     = 1;
     static inline u8 s_isDebugWireframeMesh = 2;
+    static inline u8 s_includeInRayTracingFlag = 3;
     stltype::bitset<8> flags{};
 };
 

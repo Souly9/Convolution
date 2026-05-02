@@ -10,10 +10,23 @@
 #include "Core/Rendering/Vulkan/Utils/VkEnumHelpers.h"
 #include "sl.h"
 #include "sl_dlss.h"
+#include <cstring>
 
 using namespace RenderPasses;
 namespace
 {
+constexpr bool kForceStaticCameraDebug = false;
+constexpr bool kForceZeroMotionVectorsDebug = false;
+
+enum class StreamlineJitterDebugMode
+{
+    Current,
+    Previous,
+    Delta
+};
+
+constexpr StreamlineJitterDebugMode kStreamlineJitterDebugMode = StreamlineJitterDebugMode::Current;
+
 struct StreamlineTagDesc
 {
     sl::BufferType type{};
@@ -38,6 +51,39 @@ VkImageLayout GetTaggedLayout(sl::BufferType type)
             return VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
         default:
             return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    }
+}
+
+void CopyMatrixToStreamline(sl::float4x4& dst, const mathstl::Matrix& src)
+{
+    static_assert(sizeof(sl::float4x4) == sizeof(float) * 16, "Unexpected Streamline matrix size");
+    static_assert(sizeof(mathstl::Matrix) == sizeof(sl::float4x4), "mathstl::Matrix must match Streamline matrix ABI");
+
+    // Streamline expects row-major matrices in CPU memory. Our camera matrices are consumed
+    // by GLSL as column-vector transforms, so transpose before uploading to Streamline.
+    const mathstl::Matrix rowMajor = src.Transpose();
+    std::memcpy(&dst, &rowMajor, sizeof(dst));
+}
+
+mathstl::Vector3 GetNormalizedOrFallback(mathstl::Vector3 value, const mathstl::Vector3& fallback)
+{
+    if (value.LengthSquared() <= 0.0f)
+        return fallback;
+    value.Normalize();
+    return value;
+}
+
+mathstl::Vector2 ResolveStreamlineJitter(const MainPassData::PassManagerRenderState& renderState)
+{
+    switch (kStreamlineJitterDebugMode)
+    {
+        case StreamlineJitterDebugMode::Previous:
+            return renderState.previousJitter;
+        case StreamlineJitterDebugMode::Delta:
+            return renderState.jitter - renderState.previousJitter;
+        case StreamlineJitterDebugMode::Current:
+        default:
+            return renderState.jitter;
     }
 }
 }
@@ -92,6 +138,30 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     if (Nvidia::StreamlineManager::IsDLSSEvaluateBlocked())
         return;
 
+    if constexpr (kForceZeroMotionVectorsDebug)
+    {
+        ImageLayoutTransitionCmd motionToClear(pMotion);
+        motionToClear.oldLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
+        motionToClear.newLayout = ImageLayout::TRANSFER_DST_OPTIMAL;
+        VkTextureManager::SetLayoutBarrierMasks(
+            motionToClear, ImageLayout::SHADER_READ_ONLY_OPTIMAL, ImageLayout::TRANSFER_DST_OPTIMAL);
+        pCmdBuffer->RecordCommand(motionToClear);
+
+        ClearColorImageCmd clearMotion(pMotion);
+        clearMotion.color.float32[0] = 0.0f;
+        clearMotion.color.float32[1] = 0.0f;
+        clearMotion.color.float32[2] = 0.0f;
+        clearMotion.color.float32[3] = 0.0f;
+        pCmdBuffer->RecordCommand(clearMotion);
+
+        ImageLayoutTransitionCmd motionToRead(pMotion);
+        motionToRead.oldLayout = ImageLayout::TRANSFER_DST_OPTIMAL;
+        motionToRead.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
+        VkTextureManager::SetLayoutBarrierMasks(
+            motionToRead, ImageLayout::TRANSFER_DST_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+        pCmdBuffer->RecordCommand(motionToRead);
+    }
+
     // Transition layouts for DLSS
     // ColorOut should be in GENERAL for writing
     {
@@ -145,24 +215,34 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     sl::Constants slConst{};
     const auto& cameraData = ctx.cameraData;
     // Streamline consumes Vulkan clip space; the renderer flips Vulkan Y at the viewport boundary.
-    const mathstl::Matrix clipYFlip = mathstl::Matrix::CreateScale(1.0f, 1.0f, 1.0f);
-    const mathstl::Matrix streamlineViewToClip = cameraData.viewToClip * clipYFlip;
-    const mathstl::Matrix streamlineClipToView = clipYFlip * cameraData.clipToView;
-    const mathstl::Matrix streamlineClipToPrevClip = clipYFlip * cameraData.clipToPrevClip * clipYFlip;
-    const mathstl::Matrix streamlinePrevClipToClip = clipYFlip * cameraData.prevClipToClip * clipYFlip;
-    slConst.cameraViewToClip = *(sl::float4x4*)&streamlineViewToClip;
-    slConst.clipToCameraView = *(sl::float4x4*)&streamlineClipToView;
-    slConst.clipToPrevClip = *(sl::float4x4*)&streamlineClipToPrevClip;
-    slConst.prevClipToClip = *(sl::float4x4*)&streamlinePrevClipToClip;
+    const mathstl::Matrix clipYFlip = mathstl::Matrix::CreateScale(1.0f, -1.0f, 1.0f);
+    const mathstl::Matrix streamlineViewToClip = clipYFlip * cameraData.viewToClip;
+    const mathstl::Matrix streamlineClipToView = cameraData.clipToView * clipYFlip;
+    const mathstl::Matrix clipToPrevClip =
+        kForceStaticCameraDebug ? mathstl::Matrix::Identity : cameraData.clipToPrevClip;
+    const mathstl::Matrix prevClipToClip =
+        kForceStaticCameraDebug ? mathstl::Matrix::Identity : cameraData.prevClipToClip;
+    const mathstl::Matrix streamlineClipToPrevClip = clipYFlip * clipToPrevClip * clipYFlip;
+    const mathstl::Matrix streamlinePrevClipToClip = clipYFlip * prevClipToClip * clipYFlip;
+    CopyMatrixToStreamline(slConst.cameraViewToClip, streamlineViewToClip);
+    CopyMatrixToStreamline(slConst.clipToCameraView, streamlineClipToView);
+    CopyMatrixToStreamline(slConst.clipToPrevClip, streamlineClipToPrevClip);
+    CopyMatrixToStreamline(slConst.prevClipToClip, streamlinePrevClipToClip);
 
-    const mathstl::Vector2 jitter = data.renderState.jitter;
-    slConst.jitterOffset = {jitter.x, -jitter.y};
+    const mathstl::Vector2 streamlineJitter = ResolveStreamlineJitter(data.renderState);
+    slConst.jitterOffset = {streamlineJitter.x, streamlineJitter.y};
     slConst.mvecScale = {1.0f / static_cast<float>(motionExtents.x), 1.0f / static_cast<float>(motionExtents.y)};
     slConst.cameraPinholeOffset = {0.0f, 0.0f};
+    const mathstl::Vector3 streamlineCameraUp =
+        GetNormalizedOrFallback(cameraData.up, mathstl::Vector3::Up);
+    const mathstl::Vector3 streamlineCameraRight =
+        GetNormalizedOrFallback(cameraData.right, mathstl::Vector3::Right);
+    const mathstl::Vector3 streamlineCameraForward =
+        GetNormalizedOrFallback(cameraData.forward, mathstl::Vector3::Forward);
     slConst.cameraPos = {cameraData.position.x, cameraData.position.y, cameraData.position.z};
-    slConst.cameraUp = {cameraData.up.x, cameraData.up.y, cameraData.up.z};
-    slConst.cameraRight = {cameraData.right.x, cameraData.right.y, cameraData.right.z};
-    slConst.cameraFwd = {cameraData.forward.x, cameraData.forward.y, cameraData.forward.z};
+    slConst.cameraUp = {streamlineCameraUp.x, streamlineCameraUp.y, streamlineCameraUp.z};
+    slConst.cameraRight = {streamlineCameraRight.x, streamlineCameraRight.y, streamlineCameraRight.z};
+    slConst.cameraFwd = {streamlineCameraForward.x, streamlineCameraForward.y, streamlineCameraForward.z};
     slConst.cameraNear = cameraData.nearPlane;
     slConst.cameraFar = cameraData.farPlane;
     slConst.cameraFOV = cameraData.fovRadians;
@@ -181,7 +261,7 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     debugState.inputHeight = inputExtents.y;
     debugState.outputWidth = outputExtents.x;
     debugState.outputHeight = outputExtents.y;
-    debugState.jitter = jitter;
+    debugState.jitter = streamlineJitter;
     debugState.motionVectorScale = {slConst.mvecScale.x, slConst.mvecScale.y};
     debugState.nearPlane = cameraData.nearPlane;
     debugState.farPlane = cameraData.farPlane;
@@ -225,7 +305,7 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
             res.mipLevels = td.mipLevels;
             res.arrayLayers = td.arrayLayers;
 
-            tags.emplace_back(&res, td.type, sl::ResourceLifecycle::eValidUntilEvaluate);
+            tags.emplace_back(&res, td.type, sl::ResourceLifecycle::eValidUntilPresent);
         }
 
         const sl::Result tagRes =

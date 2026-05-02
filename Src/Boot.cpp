@@ -4,6 +4,7 @@
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Global/State/ApplicationState.h"
 #include "Core/Rendering/Core/TextureManager.h"
+#include "Core/Rendering/Core/Nvidia/StreamlineManager.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
 #include "Core/Rendering/Core/Utils/DeleteQueue.h"
 #include "Core/Rendering/Passes/PassManager.h"
@@ -19,6 +20,7 @@ int main()
     stltype::string_view title("Convolution");
     u32 screenWidth = 2560, screenHeight = 1440;
 
+    Nvidia::StreamlineManager::EarlyInit();
     g_pWindowManager = stltype::make_unique<WindowManager>(screenWidth, screenHeight, title);
     RenderLayer<RenderAPI> layer;
     {

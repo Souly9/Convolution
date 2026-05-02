@@ -69,9 +69,12 @@ void FrameResourceManager::BuildSharedDataForView(const RenderView& mainView,
     ubo.viewPos = Vector4(viewPos.x, viewPos.y, viewPos.z, 1.0f);
     ubo.renderResolution = renderResolution;
 
-    const Vector3 cameraRight = Vector3::Transform(Vector3(1.0f, 0.0f, 0.0f), rotationMatrix);
-    const Vector3 cameraUp = Vector3::Transform(Vector3(0.0f, 1.0f, 0.0f), rotationMatrix);
-    const Vector3 cameraForwardBasis = Vector3::Transform(Vector3(0.0f, 0.0f, 1.0f), rotationMatrix);
+    Vector3 cameraRight = Vector3::Transform(Vector3(1.0f, 0.0f, 0.0f), rotationMatrix);
+    Vector3 cameraUp = Vector3::Transform(Vector3(0.0f, 1.0f, 0.0f), rotationMatrix);
+    Vector3 cameraForwardBasis = Vector3::Transform(Vector3(0.0f, 0.0f, 1.0f), rotationMatrix);
+    cameraRight.Normalize();
+    cameraUp.Normalize();
+    cameraForwardBasis.Normalize();
     cameraData.viewToClip = ubo.projection;
     cameraData.clipToView = ubo.projectionInverse;
     cameraData.clipToPrevClip = ubo.projectionInverse * ubo.viewInverse * ubo.prevViewProjection;
@@ -82,17 +85,18 @@ void FrameResourceManager::BuildSharedDataForView(const RenderView& mainView,
     cameraData.forward = Vector3(-cameraForwardBasis.x, -cameraForwardBasis.y, -cameraForwardBasis.z);
     cameraData.fovRadians = fovRadians;
     cameraData.aspectRatio = aspectRatio;
-    cameraData.nearPlane = mainView.zNear;
-    cameraData.farPlane = mainView.zFar;
+    cameraData.nearPlane = nearPlane;
+    cameraData.farPlane = farPlane;
 
     // Jittered projection for temporal AA consumers.
     if (renderState.aaType == AntialiasingType::TAA_SMAA ||
         renderState.aaType == AntialiasingType::DLSS)
     {
+        auto jitteredProj = projMat;
         jitter = GenerateR2Jitter(static_cast<int>(jitterFrameNumber));
-        projMat._31 -= 2.0f * jitter.x / renderResolution.x;
-        projMat._32 += 2.0f * jitter.y / renderResolution.y;
-        ubo.jitteredProjection = viewMat * projMat;
+        jitteredProj._31 -= 2.0f * jitter.x / renderResolution.x;
+        jitteredProj._32 += 2.0f * jitter.y / renderResolution.y;
+        ubo.jitteredProjection = viewMat * jitteredProj;
         ubo.jitteredViewProjectionInverse = ubo.jitteredProjection.Invert();
     }
     else
@@ -106,6 +110,7 @@ void FrameResourceManager::BuildSharedDataForView(const RenderView& mainView,
     ubo.debugFlags = renderState.debugFlags;
     RenderFlags::SetFlag(ubo.debugFlags, DEBUG_FLAG_SHADOWS_ENABLED, renderState.shadowsEnabled);
     RenderFlags::SetFlag(ubo.debugFlags, DEBUG_FLAG_SSS_ENABLED, renderState.sssEnabled);
+    RenderFlags::SetFlag(ubo.debugFlags, DEBUG_FLAG_RT_DEBUG_ENABLED, renderState.rt.debugViewEnabled);
     ubo.debugViewMode = renderState.debugViewMode;
     ubo.exposure = renderState.exposure;
     ubo.toneMapperType = renderState.toneMapperType;
@@ -149,6 +154,7 @@ void FrameResourceManager::Init()
     }
 
     m_cachedTransformSSBO.resize(MAX_ENTITIES);
+    m_cachedPrevTransformSSBO.resize(MAX_ENTITIES);
     m_cachedSceneAABBs.resize(MAX_ENTITIES);
 }
 
@@ -376,6 +382,25 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
         }
     }
 
+    auto& resourceManager = pPassManager->GetResourceManager();
+
+    if (m_dataToBePreProcessed.IsEmpty() && !m_transformsPendingPrevCatchup.empty())
+    {
+        u32 prevDirtyMin = ~0u;
+        u32 prevDirtyMax = 0;
+        for (u32 ssboIdx : m_transformsPendingPrevCatchup)
+        {
+            m_cachedPrevTransformSSBO[ssboIdx] = m_cachedTransformSSBO[ssboIdx];
+            prevDirtyMin = (stltype::min)(prevDirtyMin, ssboIdx);
+            prevDirtyMax = (stltype::max)(prevDirtyMax, ssboIdx);
+        }
+
+        const u32 prevDirtyCount = prevDirtyMax - prevDirtyMin + 1;
+        resourceManager.UpdatePrevTransformRange(
+            m_cachedPrevTransformSSBO, prevDirtyMin, prevDirtyCount, currentSwapChainIdx);
+        m_transformsPendingPrevCatchup.clear();
+    }
+
     if (m_dataToBePreProcessed.IsEmpty() == false)
     {
         DEBUG_ASSERT(m_dataToBePreProcessed.IsValid());
@@ -441,25 +466,18 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
             pPassManager->TransferPassDataPublic(std::move(passData), m_dataToBePreProcessed.frameIdx);
         }
 
-        auto& resourceManager = pPassManager->GetResourceManager();
-
-        u32 prevDirtyMin = ~0u;
-        u32 prevDirtyMax = 0;
-        for (u32 ssboIdx : m_transformsToPropagateToPrev)
-        {
-            prevDirtyMin = (stltype::min)(prevDirtyMin, ssboIdx);
-            prevDirtyMax = (stltype::max)(prevDirtyMax, ssboIdx);
-        }
-        if (prevDirtyMin <= prevDirtyMax)
-        {
-            const u32 prevDirtyCount = prevDirtyMax - prevDirtyMin + 1;
-            resourceManager.UpdatePrevTransformRange(
-                m_cachedTransformSSBO, prevDirtyMin, prevDirtyCount, currentSwapChainIdx);
-        }
-        m_transformsToPropagateToPrev.clear();
-
         u32 dirtyMin = ~0u;
         u32 dirtyMax = 0;
+        u32 prevDirtyMin = ~0u;
+        u32 prevDirtyMax = 0;
+
+        for (u32 ssboIdx : m_transformsPendingPrevCatchup)
+        {
+            m_cachedPrevTransformSSBO[ssboIdx] = m_cachedTransformSSBO[ssboIdx];
+            m_transformsToPropagateToPrev.push_back(ssboIdx);
+        }
+        m_transformsPendingPrevCatchup.clear();
+
         for (const auto& data : m_dataToBePreProcessed.entityTransformData)
         {
             const auto& entityID = data.first;
@@ -468,8 +486,10 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
                 continue;
 
             const u32 ssboIdx = uboIt->second;
+            m_cachedPrevTransformSSBO[ssboIdx] = m_cachedTransformSSBO[ssboIdx];
             m_cachedTransformSSBO[ssboIdx] = data.second;
             m_transformsToPropagateToPrev.push_back(ssboIdx);
+            m_transformsPendingPrevCatchup.push_back(ssboIdx);
 
             AABB aabb{};
             if (m_dataToBePreProcessed.entityMeshData.find(entityID) != m_dataToBePreProcessed.entityMeshData.end())
@@ -483,6 +503,19 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
             dirtyMin = (stltype::min)(dirtyMin, ssboIdx);
             dirtyMax = (stltype::max)(dirtyMax, ssboIdx);
         }
+
+        for (u32 ssboIdx : m_transformsToPropagateToPrev)
+        {
+            prevDirtyMin = (stltype::min)(prevDirtyMin, ssboIdx);
+            prevDirtyMax = (stltype::max)(prevDirtyMax, ssboIdx);
+        }
+        if (prevDirtyMin <= prevDirtyMax)
+        {
+            const u32 prevDirtyCount = prevDirtyMax - prevDirtyMin + 1;
+            resourceManager.UpdatePrevTransformRange(
+                m_cachedPrevTransformSSBO, prevDirtyMin, prevDirtyCount, currentSwapChainIdx);
+        }
+        m_transformsToPropagateToPrev.clear();
 
         if (dirtyMin <= dirtyMax)
         {

@@ -41,4 +41,11 @@ STRUCTDECL(SMAAPushConstants)
     STRUCTFIELD(uint, tex3)
 STRUCTEND()
 
+STRUCTDECL(RTDebugViewPushConstants)
+    STRUCTFIELD(uint, outputTexIdx)
+    STRUCTFIELD(uint, debugMode)
+    STRUCTFIELD(float, maxRayDistance)
+    STRUCTFIELD(float, pad0)
+STRUCTEND()
+
 #endif // SHADERS_PUSH_CONSTANTS_H

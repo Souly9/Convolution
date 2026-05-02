@@ -28,6 +28,7 @@ void ECS::System::SRenderComponent::SyncData(u32 currentFrame)
         u32 subIdx = subMeshCounters[renderComp.entity.ID]++;
         RenderPasses::EntityMeshData& data = dataMap[renderComp.entity.ID].emplace_back(
             renderComp.entity.ID, subIdx, renderComp.component.pMesh, renderComp.component.pMaterial, renderComp.component.boundingBox, false);
+        data.SetIncludeInRayTracing(renderComp.component.includeInRayTracing);
         if (renderComp.component.isSelected || renderComp.component.isWireframe)
         {
             data.SetDebugWireframeMesh();
@@ -44,6 +45,7 @@ void ECS::System::SRenderComponent::SyncData(u32 currentFrame)
         u32 subIdx = subMeshCounters[renderComp.entity.ID]++;
         RenderPasses::EntityMeshData& data = dataMap[renderComp.entity.ID].emplace_back(
             renderComp.entity.ID, subIdx, renderComp.component.pMesh, renderComp.component.pMaterial, renderComp.component.boundingBox, true);
+        data.SetIncludeInRayTracing(false);
         if (renderComp.component.isSelected || renderComp.component.isWireframe)
         {
             data.SetDebugWireframeMesh();

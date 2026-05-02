@@ -134,6 +134,13 @@ void SharedResourceManager::UploadSceneGeometry(const stltype::vector<stltype::u
 {
     ScopedZone("SharedResourceManager::UploadSceneGeometry");
     m_bufferUpdateMutex.lock();
+    {
+        SimpleScopedGuard lock(m_pendingVisibilityMutex);
+        m_residentMeshes.clear();
+        m_pendingVisibleMeshes.clear();
+        m_pendingRayTracingMeshes.clear();
+        m_meshToInstanceIdx.clear();
+    }
 
     // Just see how much memory we need
     m_bufferOffsetData.vertexCount = 0;
@@ -195,6 +202,7 @@ void SharedResourceManager::UploadSceneGeometry(const stltype::vector<stltype::u
                              if (m_residentMeshes.insert(pMesh).second)
                              {
                                  m_pendingVisibleMeshes.push_back(pMesh);
+                                 m_pendingRayTracingMeshes.push_back(pMesh);
                              }
                          }
                      };
@@ -430,4 +438,13 @@ stltype::vector<u32> SharedResourceManager::PopPendingVisibleInstanceIndices()
     }
     m_pendingVisibleMeshes.clear();
     return indices;
+}
+
+stltype::vector<const Mesh*> SharedResourceManager::PopPendingResidentMeshesForRayTracing()
+{
+    ScopedZone("SharedResourceManager::PopPendingResidentMeshesForRayTracing");
+    SimpleScopedGuard lock(m_pendingVisibilityMutex);
+    stltype::vector<const Mesh*> meshes = stltype::move(m_pendingRayTracingMeshes);
+    m_pendingRayTracingMeshes.clear();
+    return meshes;
 }

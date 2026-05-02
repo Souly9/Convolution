@@ -13,6 +13,7 @@
 #include "Core/Rendering/Core/TextureManager.h"
 #include "Core/Rendering/RenderLayer.h"
 #include "Core/Rendering/Vulkan/BackendDefines.h"
+#include "Core/Rendering/Vulkan/VkRayTracingFunctions.h"
 #include "VkGlobals.h"
 #include "VkTextureManager.h"
 #include "Utils/VkEnumHelpers.h"
@@ -67,9 +68,10 @@ void RemoveExtension(stltype::vector<const char*>& extensions, const char* name)
 
 void NormalizeBufferDeviceAddressExtensions(stltype::vector<const char*>& extensions)
 {
-    // We use VkPhysicalDeviceVulkan12Features::bufferDeviceAddress, so EXT/KHR BDA extensions
-    // must not be enabled together (and EXT must not be enabled at all in this path).
+    // This path enables buffer device address through VkPhysicalDeviceVulkan12Features.
+    // The legacy EXT/KHR extension names must not be enabled with the core feature struct.
     RemoveExtension(extensions, VK_EXT_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
+    RemoveExtension(extensions, VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
 }
 
 mathstl::Vector2 CalculateRenderResolution(const mathstl::Vector2& swapchainResolution, u32 upscalingPercentage)
@@ -198,6 +200,11 @@ bool RenderBackendImpl<Vulkan>::RecreateSwapChain()
 
 bool RenderBackendImpl<Vulkan>::Cleanup()
 {
+    if (m_logicalDevice != VK_NULL_HANDLE)
+        vkDeviceWaitIdle(m_logicalDevice);
+
+    Nvidia::StreamlineManager::Shutdown();
+
 #ifdef CONV_DEBUG
     vkDestroyDebugUtilsMessengerEXT(m_instance, VulkanAllocator(), &m_debugMessenger);
 #endif
@@ -205,7 +212,6 @@ bool RenderBackendImpl<Vulkan>::Cleanup()
     vkDestroySurfaceKHR(m_instance, m_surface, VulkanAllocator());
     vkDestroyDevice(m_logicalDevice, VulkanAllocator());
     vkDestroyInstance(m_instance, VulkanAllocator());
-    Nvidia::StreamlineManager::Shutdown();
     return true;
 }
 
@@ -309,30 +315,6 @@ bool RenderBackendImpl<Vulkan>::CreateInstance(uint32_t screenWidth, uint32_t sc
     stltype::vector<VkExtensionProperties> extensions(extensionCount);
     vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, extensions.data());
 
-    sl::FeatureRequirements dlssRequirements{};
-    if (m_dlssSupportAvailable && Nvidia::StreamlineManager::GetDLSSFeatureRequirements(dlssRequirements))
-    {
-        bool hasAllDLSSInstanceExtensions = true;
-        for (u32 i = 0; i < dlssRequirements.vkNumInstanceExtensions; ++i)
-        {
-            const char* ext = dlssRequirements.vkInstanceExtensions[i];
-            if (!HasExtension(extensions, ext))
-            {
-                hasAllDLSSInstanceExtensions = false;
-                DEBUG_LOG_WARN(stltype::string("Missing Streamline instance extension: ") + ext);
-                continue;
-            }
-            if (!HasExtension(instanceExtensions, ext))
-                instanceExtensions.push_back(ext);
-        }
-        if (!hasAllDLSSInstanceExtensions)
-        {
-            DEBUG_LOG_WARN("Required Streamline instance extensions are unavailable. DLSS disabled.");
-            m_dlssSupportAvailable = false;
-            Nvidia::StreamlineManager::Shutdown();
-        }
-    }
-
     bool hasValidationFeaturesExt = false;
     for (const auto& ext : extensions)
     {
@@ -389,7 +371,7 @@ bool RenderBackendImpl<Vulkan>::CreateInstance(uint32_t screenWidth, uint32_t sc
     }
 #endif
 
-    return vkCreateInstance(&createInfo, VulkanAllocator(), &m_instance) == VK_SUCCESS;
+    return Nvidia::StreamlineManager::CreateVulkanInstance(&createInfo, VulkanAllocator(), &m_instance) == VK_SUCCESS;
 }
 
 bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
@@ -508,11 +490,19 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
                                                                   hasMemoryPriority ? &memFeat : nullptr, VK_TRUE};
     VkPhysicalDeviceVulkan14Features features14{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES, hasPageableMemory ? (void*)&pageFeat : (hasMemoryPriority ? (void*)&memFeat : nullptr), VK_TRUE};
     VkPhysicalDeviceVulkan13Features features13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, &features14, VK_TRUE, VK_TRUE, VK_TRUE, VK_TRUE};
-    VkPhysicalDeviceVulkan12Features features12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, &features13, VK_TRUE, VK_TRUE, 0, VK_TRUE, VK_TRUE, VK_TRUE, VK_TRUE, VK_TRUE, VK_TRUE, VK_TRUE, VK_TRUE, 0, 0, VK_TRUE, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, VK_TRUE};
-    VkPhysicalDeviceVulkan11Features features11{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES, &features12, VK_TRUE};
+    VkPhysicalDeviceVulkan12Features features12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, &features13, VK_TRUE, VK_TRUE, 0, VK_TRUE, VK_TRUE, VK_TRUE, VK_TRUE, VK_TRUE, VK_TRUE, VK_TRUE, VK_TRUE, 0, 0, VK_TRUE, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, VK_TRUE};
+    VkPhysicalDeviceAccelerationStructureFeaturesKHR accelerationStructureFeatures{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR, &features12, VK_TRUE};
+    VkPhysicalDeviceRayQueryFeaturesKHR rayQueryFeatures{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR, &accelerationStructureFeatures, VK_TRUE};
+    VkPhysicalDeviceVulkan11Features features11{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
+        &rayQueryFeatures,
+        VK_TRUE};
     VkPhysicalDeviceFeatures2 deviceFeatures2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &features11};
     vkGetPhysicalDeviceFeatures2(m_physicalDevice, &deviceFeatures2);
     deviceFeatures2.features.samplerAnisotropy = VK_TRUE;
+    features12.bufferDeviceAddress = VK_TRUE;
 
     VkDeviceCreateInfo createInfo{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
     createInfo.queueCreateInfoCount = static_cast<u32>(queueCreateInfos.size());
@@ -526,9 +516,25 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
 
     createInfo.pNext = hasAftermath ? (void*)&aftermathInfo : (void*)&deviceFeatures2;
 
-    if (vkCreateDevice(m_physicalDevice, &createInfo, VulkanAllocator(), &m_logicalDevice) != VK_SUCCESS)
+    if (Nvidia::StreamlineManager::CreateVulkanDevice(
+            m_physicalDevice, &createInfo, VulkanAllocator(), &m_logicalDevice) != VK_SUCCESS)
         return false;
 
+    if (!RayTracing::LoadFunctions(m_logicalDevice))
+    {
+        RayTracingDevice::SetCapabilities({});
+        DEBUG_LOG_ERR("Failed to load Vulkan ray tracing function pointers");
+        return false;
+    }
+
+    RayTracingDevice::SetCapabilities({.supported = true,
+                                       .maxGeometryCount = m_rayTracingProperties.accelerationStructure.maxGeometryCount,
+                                       .maxPrimitiveCount = m_rayTracingProperties.accelerationStructure.maxPrimitiveCount,
+                                       .maxInstanceCount = m_rayTracingProperties.accelerationStructure.maxInstanceCount,
+                                       .minScratchAlignment =
+                                               m_rayTracingProperties.accelerationStructure
+                                               .minAccelerationStructureScratchOffsetAlignment});
+    PublishRTSupport(true);
     return true;
 }
 
@@ -651,6 +657,15 @@ bool RenderBackendImpl<Vulkan>::IsDeviceSuitable(VkPhysicalDevice device)
     }
 
     bool isSuitable = m_indices.IsComplete() && swapChainAdequate && deviceFeatures.samplerAnisotropy;
+    if (isSuitable)
+    {
+        VulkanRayTracingProperties rtProperties{};
+        isSuitable = QueryRayTracingSupport(device, &rtProperties);
+        if (isSuitable)
+        {
+            m_rayTracingProperties = rtProperties;
+        }
+    }
 
     if (!isSuitable)
     {
@@ -691,6 +706,37 @@ bool RenderBackendImpl<Vulkan>::AreExtensionsSupported(VkPhysicalDevice device)
     }
 
     return requiredExtensions.empty();
+}
+
+bool RenderBackendImpl<Vulkan>::QueryRayTracingSupport(VkPhysicalDevice device,
+                                                       VulkanRayTracingProperties* pProperties) const
+{
+    if (device == VK_NULL_HANDLE)
+        return false;
+
+    VkPhysicalDeviceAccelerationStructureFeaturesKHR accelerationStructureFeatures{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR};
+    VkPhysicalDeviceRayQueryFeaturesKHR rayQueryFeatures{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR, &accelerationStructureFeatures};
+    VkPhysicalDeviceVulkan12Features vulkan12Features{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, &rayQueryFeatures};
+    VkPhysicalDeviceFeatures2 features2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &vulkan12Features};
+    vkGetPhysicalDeviceFeatures2(device, &features2);
+
+    if (accelerationStructureFeatures.accelerationStructure != VK_TRUE ||
+        rayQueryFeatures.rayQuery != VK_TRUE || vulkan12Features.bufferDeviceAddress != VK_TRUE)
+    {
+        return false;
+    }
+
+    if (pProperties)
+    {
+        VkPhysicalDeviceProperties2 properties2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+                                                &pProperties->accelerationStructure};
+        vkGetPhysicalDeviceProperties2(device, &properties2);
+    }
+
+    return true;
 }
 
 bool RenderBackendImpl<Vulkan>::DeviceSupportsDLSSRequirements(VkPhysicalDevice device) const
@@ -741,6 +787,27 @@ void RenderBackendImpl<Vulkan>::PublishDLSSSupport(bool supported) const
             if (!supported && state.renderState.aaType == AntialiasingType::DLSS)
             {
                 state.renderState.aaType = AntialiasingType::TAA_SMAA;
+            }
+        });
+}
+
+void RenderBackendImpl<Vulkan>::PublishRTSupport(bool supported) const
+{
+    if (!supported)
+    {
+        RayTracingDevice::SetCapabilities({});
+    }
+
+    if (!g_pApplicationState)
+        return;
+
+    g_pApplicationState->RegisterUpdateFunction(
+        [supported](ApplicationState& state)
+        {
+            state.renderState.rt.enabled = supported;
+            if (!supported)
+            {
+                state.renderState.rt.debugViewEnabled = false;
             }
         });
 }

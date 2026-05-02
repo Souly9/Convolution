@@ -102,6 +102,17 @@ GPUMappedMemoryHandle GenBufferVulkan::MapMemory()
     return g_pGPUMemoryManager->MapMemory(m_allocatedMemory, m_info.size);
 }
 
+u64 GenBufferVulkan::GetDeviceAddress() const
+{
+    if (m_buffer == VK_NULL_HANDLE)
+        return 0;
+
+    VkBufferDeviceAddressInfo addressInfo{};
+    addressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+    addressInfo.buffer = m_buffer;
+    return vkGetBufferDeviceAddress(VK_LOGICAL_DEVICE, &addressInfo);
+}
+
 void GenBufferVulkan::UnmapMemory()
 {
     g_pGPUMemoryManager->UnmapMemory(m_allocatedMemory);

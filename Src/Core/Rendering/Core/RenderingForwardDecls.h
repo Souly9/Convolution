@@ -78,6 +78,8 @@ template <typename API>
 class GPUTimingQueryT;
 template <typename API>
 class ShaderT;
+template <typename API>
+class AccelerationStructureT;
 
 // Definitions of rendering types
 using Texture = TextureT<CurrentAPI>;
@@ -95,6 +97,7 @@ using ColorAttachment = ColorAttachmentT<CurrentAPI>;
 using DepthAttachment = DepthAttachmentT<CurrentAPI>;
 using GPUTimingQuery = GPUTimingQueryT<CurrentAPI>;
 using Shader = ShaderT<CurrentAPI>;
+using AccelerationStructure = AccelerationStructureT<CurrentAPI>;
 
 using GenericBuffer = GenBufferT<CurrentAPI>;
 using StagingBuffer = StagingBufferT<CurrentAPI>;

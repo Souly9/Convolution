@@ -19,4 +19,5 @@ public:
 
 private:
     static stltype::vector<ImGuiRenderFunction> s_registeredFunctions;
+    static bool s_streamlineOverlayInputMode;
 };

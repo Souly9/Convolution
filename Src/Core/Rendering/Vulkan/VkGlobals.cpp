@@ -74,6 +74,7 @@ const VkPhysicalDeviceMemoryProperties& VkGlobals::GetPhysicalDeviceMemoryProper
 {
     return s_physicalDeviceMemoryProperties;
 }
+
 u64 VkGlobals::GetTotalVram()
 {
     return s_totalVram;

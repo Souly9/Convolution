@@ -28,7 +28,7 @@ public:
             return;
         }
 
-        ImGui::TextWrapped("NVIDIA Streamline ImGui is loaded as the sl.imgui plugin. Use Ctrl+Shift+Insert to toggle the Streamline debug UI and Ctrl+Shift+Home to toggle its stats overlay.");
+        ImGui::TextWrapped("NVIDIA Streamline ImGui is loaded as the sl.imgui plugin. Use Ctrl+Shift+Home to toggle the Streamline overlay. The engine hides its own ImGui while that overlay is active so it can receive input. Ctrl+Shift+Insert is only useful for plugins that expose a buffer visualizer, such as DLSS-G.");
         ImGui::Separator();
 
         ImGui::Text("AA Mode: %s", renderState.aaType == AntialiasingType::DLSS ? "DLSS" : "Not DLSS");
@@ -46,6 +46,7 @@ public:
         ImGui::Text("DLSS Output: %u x %u", debugState.outputWidth, debugState.outputHeight);
         ImGui::Text("Estimated VRAM Usage: %.2f MB",
                     static_cast<f32>(debugState.estimatedVRAMUsageInBytes) / (1024.0f * 1024.0f));
+        ImGui::Text("Evaluate Calls: %llu", debugState.evaluateCallCount);
         ImGui::Text("slSetConstants: %s (0x%X)",
                     ResultToString(debugState.lastSetConstantsResult),
                     static_cast<u32>(debugState.lastSetConstantsResult));

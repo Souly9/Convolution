@@ -171,22 +171,16 @@ find_package(Vulkan REQUIRED)
 
 
 
-file(GLOB_RECURSE ADD_LIBS 
-	"${CMAKE_SOURCE_DIR}/External/additional_libs/*.lib"
-	"${CMAKE_SOURCE_DIR}/External/additional_libs/*.a"
-)
-# Exclude glslang libraries and any debug libraries from the general glob to avoid linking both release and debug versions
-if(ADD_LIBS)
-    list(FILTER ADD_LIBS EXCLUDE REGEX "additional_libs/glsl/")
-    # Never link libraries ending with 'd.lib' or 'd.a'
-    list(FILTER ADD_LIBS EXCLUDE REGEX ".*d\\.(lib|a)$")
-endif()
-
 set(AFTERMATH_SDK_LIB "${CMAKE_SOURCE_DIR}/External/additional_libs/GFSDK_Aftermath_Lib.x64.lib")
 set(AFTERMATH_SDK_DLL "${CMAKE_SOURCE_DIR}/External/additional_libs/GFSDK_Aftermath_Lib.x64.dll")
 set(CONV_WITH_AFTERMATH_SDK OFF)
 if(WIN32 AND EXISTS "${AFTERMATH_SDK_LIB}")
     set(CONV_WITH_AFTERMATH_SDK ON)
+endif()
+set(STREAMLINE_INTERPOSER_LIB "${CMAKE_SOURCE_DIR}/External/additional_libs/NVStreamline/sl.interposer.lib")
+set(CONV_WITH_STREAMLINE_INTERPOSER_LIB OFF)
+if(WIN32 AND EXISTS "${STREAMLINE_INTERPOSER_LIB}")
+    set(CONV_WITH_STREAMLINE_INTERPOSER_LIB ON)
 endif()
 set(IMGUI_SOURCE
     "${CMAKE_SOURCE_DIR}/External/imgui/imgui.cpp"
@@ -261,44 +255,39 @@ endif()
 
 set(LIBS
     ${Vulkan_LIBRARIES}
-    ${ADD_LIBS}
     ${CONV_EXTERNAL_LINK_TARGETS}
 )
 if(CONV_WITH_AFTERMATH_SDK)
     list(APPEND LIBS ${AFTERMATH_SDK_LIB})
 endif()
+if(CONV_WITH_STREAMLINE_INTERPOSER_LIB)
+    list(APPEND LIBS ${STREAMLINE_INTERPOSER_LIB})
+endif()
 
 link_directories(${CMAKE_SOURCE_DIR}/External/additional_libs)
 
-file(GLOB_RECURSE SOURCE CONFIGURE_DEPENDS
-	"${CMAKE_SOURCE_DIR}/Src/*.cpp"
+add_executable(${NAME})
+file(GLOB_RECURSE CONV_SOURCE_FILES
+    "${CMAKE_SOURCE_DIR}/Src/*.cpp"
 )
-file(GLOB_RECURSE HEADERS CONFIGURE_DEPENDS
-	"${CMAKE_SOURCE_DIR}/Src/*.h"
-	"${CMAKE_SOURCE_DIR}/Src/*.inl"
+file(GLOB_RECURSE CONV_HEADER_FILES
+    "${CMAKE_SOURCE_DIR}/Src/*.h"
+    "${CMAKE_SOURCE_DIR}/Src/*.inl"
 )
-# Exclude shaders from source/header lists to avoid IDE warnings/errors
-list(FILTER SOURCE EXCLUDE REGEX ".*\\.(glsl|vert|frag|comp|hlsl)$")
-list(FILTER HEADERS EXCLUDE REGEX ".*\\.(glsl|vert|frag|comp|hlsl)$")
-add_executable(${NAME} ${SOURCE} ${HEADERS})
+list(FILTER CONV_SOURCE_FILES EXCLUDE REGEX ".*\\.(glsl|vert|frag|comp|hlsl)$")
+list(FILTER CONV_HEADER_FILES EXCLUDE REGEX ".*\\.(glsl|vert|frag|comp|hlsl)$")
+target_sources(${NAME} PRIVATE ${CONV_SOURCE_FILES} ${CONV_HEADER_FILES})
 
-add_custom_target(
-    CopyResources
-    COMMAND ${CMAKE_COMMAND} -E make_directory
-        "$<TARGET_FILE_DIR:${NAME}>/Resources/Textures"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_SOURCE_DIR}/Resources"
-        "$<TARGET_FILE_DIR:${NAME}>/Resources"
+set(CONV_UTILITY_COMMANDS
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${NAME}>/Resources/Textures"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/Resources" "$<TARGET_FILE_DIR:${NAME}>/Resources"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_SOURCE_DIR}/External/smaa/SearchTex.h"
         "$<TARGET_FILE_DIR:${NAME}>/Resources/Textures/SearchTex.h"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_SOURCE_DIR}/External/smaa/AreaTex.h"
         "$<TARGET_FILE_DIR:${NAME}>/Resources/Textures/AreaTex.h"
-    COMMENT "Copying runtime resources and SMAA textures to the output directory"
-    VERBATIM
 )
-add_dependencies(${NAME} CopyResources)
 
 # Add natvis files for debugger visualization (embedded in PDB)
 target_sources(${NAME} PRIVATE
@@ -307,8 +296,7 @@ target_sources(${NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/External/imgui/misc/debuggers/imgui.natvis
 )
 
-# Also Copy natvis files to bin directory for safety
-add_custom_command(TARGET ${NAME} POST_BUILD
+list(APPEND CONV_UTILITY_COMMANDS
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_SOURCE_DIR}/External/EASTL/doc/EASTL.natvis
         $<TARGET_FILE_DIR:${NAME}>/EASTL.natvis
@@ -320,24 +308,79 @@ add_custom_command(TARGET ${NAME} POST_BUILD
         $<TARGET_FILE_DIR:${NAME}>/imgui.natvis
 )
 if(CONV_WITH_AFTERMATH_SDK AND EXISTS "${AFTERMATH_SDK_DLL}")
-add_custom_command(TARGET ${NAME} POST_BUILD
+list(APPEND CONV_UTILITY_COMMANDS
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${AFTERMATH_SDK_DLL}
         $<TARGET_FILE_DIR:${NAME}>/GFSDK_Aftermath_Lib.x64.dll
 )
 endif()
 
-# Copy Streamline DLLs and other dependencies (licenses, etc.)
-file(GLOB STREAMLINE_FILES "${CMAKE_SOURCE_DIR}/External/additional_libs/NVStreamline/*.*")
-foreach(FILE IN LISTS STREAMLINE_FILES)
-    get_filename_component(FILE_NAME "${FILE}" NAME)
-    add_custom_command(TARGET ${NAME} POST_BUILD
+# Copy only the Streamline runtime files used by the current integration.
+# Copying every plugin makes Streamline probe features the host did not request.
+set(STREAMLINE_ROOT "${CMAKE_SOURCE_DIR}/External/additional_libs/NVStreamline")
+set(STREAMLINE_DEVELOPMENT_ROOT "${STREAMLINE_ROOT}/development")
+set(STREAMLINE_DEVELOPMENT_CONFIG "$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>")
+
+set(STREAMLINE_SL_DLLS
+    sl.interposer.dll
+    sl.common.dll
+    sl.dlss.dll
+    sl.imgui.dll
+)
+foreach(FILE_NAME IN LISTS STREAMLINE_SL_DLLS)
+    set(PRODUCTION_FILE "${STREAMLINE_ROOT}/${FILE_NAME}")
+    set(DEVELOPMENT_FILE "${STREAMLINE_DEVELOPMENT_ROOT}/${FILE_NAME}")
+    if(NOT EXISTS "${PRODUCTION_FILE}")
+        continue()
+    endif()
+    list(APPEND CONV_UTILITY_COMMANDS
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<IF:${STREAMLINE_DEVELOPMENT_CONFIG},${DEVELOPMENT_FILE},${PRODUCTION_FILE}>"
+            "$<TARGET_FILE_DIR:${NAME}>/${FILE_NAME}"
+    )
+endforeach()
+
+set(STREAMLINE_SHARED_DLLS
+    nvngx_dlss.dll
+    NvLowLatencyVk.dll
+)
+foreach(FILE_NAME IN LISTS STREAMLINE_SHARED_DLLS)
+    set(PRODUCTION_FILE "${STREAMLINE_ROOT}/${FILE_NAME}")
+    set(DEVELOPMENT_FILE "${STREAMLINE_DEVELOPMENT_ROOT}/${FILE_NAME}")
+    if(NOT EXISTS "${PRODUCTION_FILE}")
+        continue()
+    endif()
+    list(APPEND CONV_UTILITY_COMMANDS
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<IF:${STREAMLINE_DEVELOPMENT_CONFIG},${DEVELOPMENT_FILE},${PRODUCTION_FILE}>"
+            "$<TARGET_FILE_DIR:${NAME}>/${FILE_NAME}"
+    )
+endforeach()
+
+set(STREAMLINE_CONFIG_FILES
+    sl.interposer.json
+    sl.common.json
+    nvngx_dlss.license.txt
+    sl.imgui.json
+)
+foreach(FILE_NAME IN LISTS STREAMLINE_CONFIG_FILES)
+    set(FILE "${STREAMLINE_ROOT}/${FILE_NAME}")
+    if(NOT EXISTS "${FILE}")
+        continue()
+    endif()
+    list(APPEND CONV_UTILITY_COMMANDS
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${FILE}"
             "$<TARGET_FILE_DIR:${NAME}>/${FILE_NAME}"
-        COMMENT "Copying Streamline file ${FILE_NAME} to output directory"
     )
 endforeach()
+
+add_custom_target(
+    ${NAME}Utilities
+    ${CONV_UTILITY_COMMANDS}
+    COMMENT "Staging runtime resources, debugger helpers, and optional SDK runtimes"
+    VERBATIM
+)
 
 set_target_properties(${NAME} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CONV_OUTPUT_BASE_DIR}"
@@ -366,6 +409,11 @@ SYSTEM
     "${CMAKE_SOURCE_DIR}/External/smaa"
     "${CMAKE_SOURCE_DIR}/External/additional_libs/NVStreamline"
 )
+
+if(CONV_WITH_STREAMLINE_INTERPOSER_LIB AND MSVC)
+    target_link_libraries(${NAME} PRIVATE delayimp)
+    target_link_options(${NAME} PRIVATE "/DELAYLOAD:sl.interposer.dll")
+endif()
 
 target_compile_definitions(${NAME} PRIVATE 
     $<$<CONFIG:Debug>:CONV_DEBUG=1>

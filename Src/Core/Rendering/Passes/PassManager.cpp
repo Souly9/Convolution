@@ -25,6 +25,7 @@
 #include "AA/TAAPass.h"
 #include "AA/DLSSPass.h"
 #include "Compositing/LightingPass.h"
+#include "RT/RTDebugViewPass.h"
 #include "Core/Rendering/Core/ProfilingUtils.h"
 #include "vulkan/vulkan_core.h"
 #include <cstring>
@@ -46,8 +47,14 @@ mathstl::Vector2 CalculateRenderResolution(const mathstl::Vector2& swapchainReso
 void PassManager::InitResourceManagerAndCallbacks()
 {
     m_resourceManager.Init();
+    m_rtSceneManager.Init(&m_resourceManager, VkGlobals::GetQueueFamilyIndices().graphicsFamily.value());
     g_pEventSystem->AddSceneLoadedEventCallback(
-        [this](const SceneLoadedEventData&) { m_resourceManager.UploadSceneGeometry(g_pMeshManager->GetMeshes()); });
+        [this](const SceneLoadedEventData&)
+        {
+            m_rtSceneManager.Reset();
+            m_resourceManager.UploadSceneGeometry(g_pMeshManager->GetMeshes());
+            m_rtSceneManager.RegisterSceneMeshes(g_pMeshManager->GetMeshes());
+        });
     g_pEventSystem->AddShaderHotReloadEventCallback([this](const auto&) { RebuildPipelinesForAllPasses(); });
     g_pEventSystem->AddSwapchainRecreatedEventCallback(
         [this](const SwapchainRecreatedEventData& data)
@@ -71,6 +78,9 @@ void PassManager::InitResourceManagerAndCallbacks()
     AddPass(PassType::Debug, stltype::make_unique<RenderPasses::ClusterDebugPass>());
     AddPass(PassType::UI, stltype::make_unique<RenderPasses::ImGuiPass>());
     AddPass(PassType::Lighting, stltype::make_unique<RenderPasses::LightingPass>());
+    auto pRTDebugPass = stltype::make_unique<RenderPasses::RTDebugViewPass>();
+    m_pRTDebugViewPass = pRTDebugPass.get();
+    AddPass(PassType::PostProcess, std::move(pRTDebugPass));
     AddPass(PassType::TAA, stltype::make_unique<RenderPasses::TAAPass>());
     if (Nvidia::StreamlineManager::IsDLSSSupported())
     {
@@ -229,6 +239,8 @@ void PassManager::PrepareMainPassDataForFrame(MainPassData& mainPassData, FrameR
     mainPassData.bufferDescriptors[UBO::DescriptorContentsType::BindlessTextureArray] =
         g_pTexManager->GetBindlessDescriptorSet();
     mainPassData.bufferDescriptors[UBO::DescriptorContentsType::ClusterGrid] = ctx.clusterGridDescriptor;
+    mainPassData.pRTSceneManager = &m_rtSceneManager;
+    mainPassData.rtDebugTextureHandle = m_pRTDebugViewPass ? m_pRTDebugViewPass->GetOutputBindlessHandle() : 0;
 
     mainPassData.pSMAAEdgesTexture = m_pSMAAEdgesTexture;
     mainPassData.pSMAABlendTexture = m_pSMAABlendTexture;
@@ -473,7 +485,10 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
     // Geometry Stage (Main -> Shadow)
     {
         pMainGraphicsWorkBuffer->AddTimelineWait(&ctx.frameTimeline, depthPassSignalValue);
-        pMainGraphicsWorkBuffer->SetWaitStages(SyncStages::EARLY_FRAGMENT_TESTS);
+        pMainGraphicsWorkBuffer->SetWaitStages(SyncStages::TRANSFER |
+                                                SyncStages::EARLY_FRAGMENT_TESTS |
+                                                SyncStages::COLOR_ATTACHMENT_OUTPUT);
+        RecordVelocityClear(pMainGraphicsWorkBuffer);
         RenderPassGroup(PassType::Main, mainPassData, ctx, pMainGraphicsWorkBuffer);
         RenderPassGroup(PassType::Debug, mainPassData, ctx, pMainGraphicsWorkBuffer);
         RenderPassGroup(PassType::Shadow, mainPassData, ctx, pMainGraphicsWorkBuffer);
@@ -494,35 +509,45 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
         pFinalWorkBuffer->AddTimelineWait(&ctx.frameTimeline, mainPassSignalValue);
         pFinalWorkBuffer->AddTimelineWait(&ctx.computeTimeline, sssSignalValue);
         pFinalWorkBuffer->AddWaitSemaphore(&imageAvailableSemaphore);
-        pFinalWorkBuffer->SetWaitStages(SyncStages::FRAGMENT_SHADER);
+        // Final stage includes DLSS evaluation through Streamline, which may record compute work.
+        // Wait at both fragment and compute stages so DLSS cannot run before upstream timeline waits resolve.
+        pFinalWorkBuffer->SetWaitStages(SyncStages::FRAGMENT_SHADER | SyncStages::COMPUTE_SHADER);
 
         RenderPassGroup(PassType::Lighting, mainPassData, ctx, pFinalWorkBuffer);
 
         // ThisFrameColor to SHADER_READ
         RecordThisFrameColorToRead(pFinalWorkBuffer);
+        RenderPassGroup(PassType::PostProcess, mainPassData, ctx, pFinalWorkBuffer);
 
         const auto& appRenderState = g_pApplicationState->GetCurrentApplicationState().renderState;
-        const bool debugCopyCurrent =
-            appRenderState.aaType == AntialiasingType::TAA_SMAA && appRenderState.taaDebugMode == 1u;
-        const bool debugCopyHistory =
-            appRenderState.aaType == AntialiasingType::TAA_SMAA && appRenderState.taaDebugMode == 2u;
+        const bool taaModeActive = appRenderState.aaType == AntialiasingType::TAA_SMAA;
+        const bool seedHistoryFromCurrentColor = taaModeActive && appRenderState.taaSeedHistoryFromCurrentColor;
+        const bool debugCopyCurrent = taaModeActive && appRenderState.taaDebugMode == 1u;
+        const bool debugCopyHistory = taaModeActive && appRenderState.taaDebugMode == 2u;
 
-        if (debugCopyCurrent)
+        if (taaModeActive)
         {
-            RecordCopyTextureToResolve(pFinalWorkBuffer, m_gbuffer.Get(GBufferTextureType::GBufferThisFrameColor));
-        }
-        else if (debugCopyHistory)
-        {
-            RecordCopyTextureToResolve(pFinalWorkBuffer, m_gbuffer.Get(GBufferTextureType::GBufferLastFrameColor));
-        }
-        else
-        {
-            // Resolve to GENERAL for TAA
-            RecordResolveToGeneral(pFinalWorkBuffer);
-
-            RenderPassGroup(PassType::TAA, mainPassData, ctx, pFinalWorkBuffer);
-
-            RecordResolveToRead(pFinalWorkBuffer);
+            if (seedHistoryFromCurrentColor)
+            {
+                RecordCopyTextureToResolve(pFinalWorkBuffer, m_gbuffer.Get(GBufferTextureType::GBufferThisFrameColor));
+                g_pApplicationState->RegisterUpdateFunction(
+                    [](ApplicationState& state) { state.renderState.taaSeedHistoryFromCurrentColor = false; });
+            }
+            else if (debugCopyCurrent)
+            {
+                RecordCopyTextureToResolve(pFinalWorkBuffer, m_gbuffer.Get(GBufferTextureType::GBufferThisFrameColor));
+            }
+            else if (debugCopyHistory)
+            {
+                RecordCopyTextureToResolve(pFinalWorkBuffer, m_gbuffer.Get(GBufferTextureType::GBufferLastFrameColor));
+            }
+            else
+            {
+                // Resolve is only a TAA target here. DLSS manages its own output transition/write path.
+                RecordResolveToGeneral(pFinalWorkBuffer);
+                RenderPassGroup(PassType::TAA, mainPassData, ctx, pFinalWorkBuffer);
+                RecordResolveToRead(pFinalWorkBuffer);
+            }
         }
 
         RenderPassGroup(PassType::DLSS, mainPassData, ctx, pFinalWorkBuffer);
@@ -560,6 +585,7 @@ void PassManager::UpdateGBufferUBO(const MainPassData& data)
     gbufferUBO.thisFrameColorBufferIdx = temporal.currentColorHandle;
     gbufferUBO.lastFrameDepthIdx = temporal.historyDepthHandle;
     gbufferUBO.gbufferResolveIdx = temporal.resolveHandle;
+    gbufferUBO.rtDebugViewIdx = data.rtDebugTextureHandle;
 
     memcpy(m_frameResourceManager.GetMappedGBufferPostProcessUBO(),
            &gbufferUBO,
@@ -607,6 +633,14 @@ void PassManager::RecordGBufferToShaderRead(CommandBuffer* pCmdBuffer,
         pCmdBuffer->RecordCommand(shadowCmd);
     }
 
+}
+
+void PassManager::RecordVelocityClear(CommandBuffer* pCmdBuffer)
+{
+    RecordClearColorTexture(pCmdBuffer,
+                            m_gbuffer.Get(GBufferTextureType::GBufferVelocity),
+                            ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                            ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
 }
 
 void PassManager::RecordDepthToReadOnly(CommandBuffer* pCmdBuffer)
@@ -833,6 +867,7 @@ void PassManager::ExecutePasses(u32 frameIdx)
     ctx.pCurrentSwapchainTexture = Texture::Cast(&g_pTexManager->GetSwapChainTextures().at(m_currentSwapChainIdx));
 
     g_pQueueHandler->DispatchAllRequests();
+    m_rtSceneManager.Update(frameIdx, m_currentSwapChainIdx, m_frameResourceManager);
     PrepareMainPassDataForFrame(mainPassData, ctx, frameIdx);
     RenderAllPassGroups(mainPassData, ctx, imageAvailableSemaphore);
 
@@ -1157,17 +1192,29 @@ void PassManager::UpdateImGuiGbufferTextures()
     m_gbufferImGuiIDs.push_back(addTex(GBufferTextureType::GBufferNormal));
     m_gbufferImGuiIDs.push_back(addTex(GBufferTextureType::GBufferAlbedo));
     m_gbufferImGuiIDs.push_back(reinterpret_cast<u64>(ImGui_ImplVulkan_AddTexture(m_pScreenSpaceShadowTexture->GetSampler(), m_pScreenSpaceShadowTexture->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)));
-    m_gbufferImGuiIDs.push_back(addTex(GBufferTextureType::GBufferVelocity));
-    
-    Texture *pTexA = m_gbuffer.Get(GBufferTextureType::GBufferLastFrameColor);
-    u64 idA = addTex(GBufferTextureType::GBufferLastFrameColor);
-    u64 idB = addTex(GBufferTextureType::GBufferResolve);
-    m_gbufferImGuiIDs.push_back(idA);
-    m_gbufferImGuiIDs.push_back(addTex(GBufferTextureType::GBufferResolve));
 
-    g_pApplicationState->RegisterUpdateFunction([this, pTexA, idA, idB](auto& state) {
+    Texture* pVelocityA = m_gbuffer.Get(GBufferTextureType::GBufferVelocity);
+    u64 velocityIdA = addTex(GBufferTextureType::GBufferVelocity);
+    u64 velocityIdB = addTex(GBufferTextureType::GBufferLastFrameVelocity);
+    m_gbufferImGuiIDs.push_back(velocityIdA);
+
+    m_gbufferImGuiIDs.push_back(addTex(GBufferTextureType::GBufferThisFrameColor));
+    
+    Texture* pHistoryColorA = m_gbuffer.Get(GBufferTextureType::GBufferLastFrameColor);
+    u64 historyColorIdA = addTex(GBufferTextureType::GBufferLastFrameColor);
+    u64 historyColorIdB = addTex(GBufferTextureType::GBufferResolve);
+    m_gbufferImGuiIDs.push_back(historyColorIdA);
+    m_gbufferImGuiIDs.push_back(historyColorIdB);
+
+    g_pApplicationState->RegisterUpdateFunction(
+        [this, pVelocityA, velocityIdA, velocityIdB, pHistoryColorA, historyColorIdA, historyColorIdB](auto& state) {
         state.renderState.csmCascadeImGuiIDs = m_csmCascadeImGuiIDs;
         state.renderState.gbufferImGuiIDs = m_gbufferImGuiIDs;
-        state.renderState.gbufferImGuiIDs[4] = (m_gbuffer.Get(GBufferTextureType::GBufferLastFrameColor) == pTexA) ? idA : idB;
+        const bool velocitySwapped = m_gbuffer.Get(GBufferTextureType::GBufferVelocity) != pVelocityA;
+        state.renderState.gbufferImGuiIDs[3] = velocitySwapped ? velocityIdB : velocityIdA;
+
+        const bool colorSwapped = m_gbuffer.Get(GBufferTextureType::GBufferLastFrameColor) != pHistoryColorA;
+        state.renderState.gbufferImGuiIDs[5] = colorSwapped ? historyColorIdB : historyColorIdA;
+        state.renderState.gbufferImGuiIDs[6] = colorSwapped ? historyColorIdA : historyColorIdB;
     });
 }

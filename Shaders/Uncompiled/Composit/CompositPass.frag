@@ -26,14 +26,21 @@ void main()
     vec2 texCoords = IN.fragTexCoord;
     
     vec3 finalHDRColor = vec3(0.0);
-    uint aaType = GET_AA_TYPE(ubo.debugFlags);
-    if (aaType == 1u || aaType == 3u) // AntialiasingType::TAA_SMAA or DLSS
+    if ((ubo.debugFlags & DEBUG_FLAG_RT_DEBUG_ENABLED) != 0u)
     {
-        finalHDRColor = texture(GlobalBindlessTextures[gbufferUBO.gbufferResolveIdx], texCoords).xyz;
+        finalHDRColor = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.rtDebugViewIdx)], texCoords).xyz;
     }
     else
     {
-        finalHDRColor = texture(GlobalBindlessTextures[gbufferUBO.thisFrameColorBufferIdx], texCoords).xyz;
+        uint aaType = GET_AA_TYPE(ubo.debugFlags);
+        if (aaType == 1u || aaType == 3u) // AntialiasingType::TAA_SMAA or DLSS
+        {
+            finalHDRColor = texture(GlobalBindlessTextures[gbufferUBO.gbufferResolveIdx], texCoords).xyz;
+        }
+        else
+        {
+            finalHDRColor = texture(GlobalBindlessTextures[gbufferUBO.thisFrameColorBufferIdx], texCoords).xyz;
+        }
     }
 
     // Tone Mapping

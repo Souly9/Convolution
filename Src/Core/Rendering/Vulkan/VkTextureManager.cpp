@@ -1102,6 +1102,13 @@ void VkTextureManager::SetLayoutBarrierMasks(ImageLayoutTransitionCmd& transitio
         transitionCmd.srcStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
         transitionCmd.dstStage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
     }
+    else if (oldLayout == ImageLayout::COLOR_ATTACHMENT_OPTIMAL && newLayout == ImageLayout::TRANSFER_DST_OPTIMAL)
+    {
+        transitionCmd.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+        transitionCmd.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+    }
     else if (oldLayout == ImageLayout::SHADER_READ_ONLY_OPTIMAL && newLayout == ImageLayout::TRANSFER_SRC_OPTIMAL)
     {
         transitionCmd.srcAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
@@ -1112,6 +1119,13 @@ void VkTextureManager::SetLayoutBarrierMasks(ImageLayoutTransitionCmd& transitio
     else if (oldLayout == ImageLayout::TRANSFER_SRC_OPTIMAL && newLayout == ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
     {
         transitionCmd.srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
+        transitionCmd.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT;
+        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+    }
+    else if (oldLayout == ImageLayout::TRANSFER_DST_OPTIMAL && newLayout == ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+    {
+        transitionCmd.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
         transitionCmd.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT;
         transitionCmd.srcStage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
         transitionCmd.dstStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;

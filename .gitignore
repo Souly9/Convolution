@@ -65,3 +65,26 @@ External/additional_libs/glsl/SPIRV-Toolsd.lib
 .gitignore
 .gitignore
 .gitignore
+.github/build (Release, Clang)/1_Set up job.txt
+.github/build (Release, Clang)/2_Run actions_checkout@v4.txt
+.github/build (Release, Clang)/3_Install Vulkan SDK.txt
+.github/build (Release, Clang)/4_Configure CMake.txt
+.github/build (Release, Clang)/5_Build.txt
+.github/build (Release, Clang)/9_Post Install Vulkan SDK.txt
+.github/build (Release, Clang)/10_Post Run actions_checkout@v4.txt
+.github/build (Release, Clang)/11_Complete job.txt
+.github/build (Release, Clang)/system.txt
+.github/build (Release, MSVC)/1_Set up job.txt
+.github/build (Release, MSVC)/2_Run actions_checkout@v4.txt
+.github/build (Release, MSVC)/3_Install Vulkan SDK.txt
+.github/build (Release, MSVC)/4_Configure CMake.txt
+.github/build (Release, MSVC)/5_Build.txt
+.github/build (Release, MSVC)/9_Post Install Vulkan SDK.txt
+.github/build (Release, MSVC)/10_Post Run actions_checkout@v4.txt
+.github/build (Release, MSVC)/11_Complete job.txt
+.github/build (Release, MSVC)/system.txt
+.gitignore
+.vscode/launch.json
+.vscode/settings.json
+build*/
+.gitignore

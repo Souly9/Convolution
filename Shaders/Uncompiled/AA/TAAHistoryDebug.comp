@@ -70,12 +70,7 @@ vec3 SampleHistoryBilinearHDR(vec2 sampleUV, vec2 resolution)
 
 vec3 AccumulateHDR(vec3 currentColor, vec3 historyColor, float historyWeight)
 {
-    vec4 currentAdjusted = AdjustHDRColor(currentColor);
-    vec4 historyAdjusted = AdjustHDRColor(historyColor);
-    float currentWeight = (1.0 - historyWeight) * currentAdjusted.a;
-    float weightedHistory = historyWeight * historyAdjusted.a;
-    return (currentAdjusted.rgb * (1.0 - historyWeight) + historyAdjusted.rgb * historyWeight) /
-           max(currentWeight + weightedHistory, 0.0001);
+    return mix(currentColor, historyColor, historyWeight);
 }
 
 void StoreColor(ivec2 pixelCoord, vec4 color)

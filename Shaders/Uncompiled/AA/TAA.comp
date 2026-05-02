@@ -274,13 +274,8 @@ void main()
     float historyWeight = 0.95;
 
     //historyYCoCg = ClipAABB(aabbMin, aabbMax, historyYCoCg, clampedCurrent);
-    vec3 clippedHistory = YCoCgToRGB(historyYCoCg);
-    float currentWeight = (1.0 - historyWeight) * currentAdjusted.a;
-    float historyBlendWeight = historyWeight * historyAdjusted.a;
-    vec3 accumulatedColor =
-        (currentAdjusted.rgb * (1.0 - historyWeight) + clippedHistory * historyWeight) /
-        max(currentWeight + historyBlendWeight, 0.0001);
-    vec3 finalRgb = mix(accumulatedColor, currentBlur, velocityRejection);
+    vec3 accumulatedHdr = mix(currentColor.rgb, historyColor.rgb, historyWeight);
+    vec3 finalRgb = mix(accumulatedHdr, currentBlur, velocityRejection);
     vec4 finalColor = vec4(finalRgb, currentColor.a);
     imageStore(
         GlobalBindlessImages[nonuniformEXT(gbufferUBO.gbufferResolveIdx)], pixelCoord, finalColor);

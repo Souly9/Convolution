@@ -41,6 +41,7 @@ Application::Application(bool canRender, RenderLayer<RenderAPI>& layer) : m_rend
     FrameGlobals::SetFrameNumber(0);
     m_applicationState.SetCurrentScene(stltype::make_unique<SponzaScene>());
     g_pShaderManager->ReadAllSourceShaders();
+    m_applicationState.ProcessStateUpdates();
 
     g_pEventSystem->OnBaseInit({});
 

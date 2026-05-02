@@ -18,6 +18,7 @@ struct RenderComponent : public IComponent
     AABB boundingBox{};
     bool isSelected{false};
     bool isWireframe{false};
+    bool includeInRayTracing{true};
 };
 } // namespace Components
 } // namespace ECS

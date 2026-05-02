@@ -7,9 +7,19 @@
 struct Mesh
 {
 public:
+    static inline constexpr u32 InvalidRTMeshId = ~0u;
+
+    Mesh() = default;
+    Mesh(stltype::vector<CompleteVertex> inVertices, stltype::vector<u32> inIndices)
+        : vertices(stltype::move(inVertices)), indices(stltype::move(inIndices))
+    {
+    }
+
     stltype::vector<CompleteVertex> vertices;
     stltype::vector<u32> indices;
     AABB boundingBox{};
+    u32 rtMeshId{InvalidRTMeshId};
+    u32 rtMeshGeneration{0};
 };
 
 class MeshManager
@@ -22,6 +32,7 @@ public:
     {
         m_meshes.push_back(stltype::make_unique<Mesh>());
         auto* pMesh = m_meshes.back().get();
+        AllocateRTMeshIdentity(*pMesh);
         pMesh->vertices.reserve(vertexCount);
         pMesh->indices.reserve(indexCount);
         return pMesh;
@@ -60,11 +71,16 @@ public:
     }
 
 private:
+    void AllocateRTMeshIdentity(Mesh& mesh);
+    void ReleaseRTMeshIdentity(const Mesh& mesh);
+
     stltype::vector<stltype::unique_ptr<Mesh>> m_meshes;
     stltype::hash_map<const Mesh*, AABB> m_meshAABBs;
     Mesh* m_pPlanePrimitive;
     Mesh* m_pCubePrimitive;
     Mesh* m_pFullscreenTrianglePrimitive;
+    stltype::vector<u32> m_rtMeshGenerations;
+    stltype::vector<u32> m_freeRTMeshIds;
 };
 
 extern stltype::unique_ptr<MeshManager> g_pMeshManager;

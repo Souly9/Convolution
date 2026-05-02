@@ -1,5 +1,6 @@
 #include "VkDescriptorPool.h"
 #include "Core/Global/GlobalDefines.h"
+#include "VkAccelerationStructure.h"
 #include "VkGlobals.h"
 
 DescriptorPoolVulkan::DescriptorPoolVulkan()
@@ -27,6 +28,11 @@ void DescriptorPoolVulkan::Create(const DescriptorPoolCreateInfo& createInfo)
     if (createInfo.enableStorageBufferDescriptors)
     {
         poolSizes.push_back(CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, MAX_DESCRIPTOR_SETS));
+    }
+    if (createInfo.enableAccelerationStructureDescriptors)
+    {
+        poolSizes.push_back(
+            CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, MAX_DESCRIPTOR_SETS));
     }
 
     VkDescriptorPoolCreateInfo poolInfo{};
@@ -151,6 +157,30 @@ void DescriptorSetVulkan::WriteBufferUpdate(
     descriptorWrite.pBufferInfo = &bufferInfo;
     descriptorWrite.pImageInfo = nullptr;       // Optional
     descriptorWrite.pTexelBufferView = nullptr; // Optional
+
+    vkUpdateDescriptorSets(VK_LOGICAL_DEVICE, 1, &descriptorWrite, 0, nullptr);
+}
+
+void DescriptorSetVulkan::WriteAccelerationStructureUpdate(const AccelerationStructure& accelerationStructure,
+                                                           u32 bindingSlot)
+{
+    const auto& vkAccelerationStructure = static_cast<const AccelerationStructureVulkan&>(accelerationStructure);
+
+    VkAccelerationStructureKHR nativeHandle =
+        reinterpret_cast<VkAccelerationStructureKHR>(vkAccelerationStructure.GetNativeHandle());
+    VkWriteDescriptorSetAccelerationStructureKHR accelerationStructureInfo{};
+    accelerationStructureInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
+    accelerationStructureInfo.accelerationStructureCount = 1;
+    accelerationStructureInfo.pAccelerationStructures = &nativeHandle;
+
+    VkWriteDescriptorSet descriptorWrite{};
+    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrite.pNext = &accelerationStructureInfo;
+    descriptorWrite.dstSet = GetRef();
+    descriptorWrite.dstBinding = bindingSlot == 0 ? m_bindingSlot : bindingSlot;
+    descriptorWrite.dstArrayElement = 0;
+    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+    descriptorWrite.descriptorCount = 1;
 
     vkUpdateDescriptorSets(VK_LOGICAL_DEVICE, 1, &descriptorWrite, 0, nullptr);
 }

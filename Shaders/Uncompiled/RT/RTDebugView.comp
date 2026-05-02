@@ -1,0 +1,68 @@
+#version 460 core
+#extension GL_ARB_shading_language_include : enable
+#extension GL_EXT_nonuniform_qualifier : require
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_ray_query : require
+
+#define SharedDataUBOSet 2
+#define RTSceneASSet     3
+
+#include "../../Globals/Bindless.h"
+#include "../../Globals/Common.h"
+#include "../../Globals/Scene.h"
+#include "../../Globals/PushConstants.h"
+#include "../../Globals/Utils/Math.h"
+
+layout(set = RTSceneASSet, binding = RTSceneASBindingSlot) uniform accelerationStructureEXT sceneTLAS;
+
+layout(push_constant) uniform RTDebugViewPushConstantsBlock
+{
+    RTDebugViewPushConstants pc;
+};
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+vec3 HashColor(uint value)
+{
+    float r = fract(sin(float(value) * 12.9898 + 78.233) * 43758.5453);
+    float g = fract(sin(float(value) * 26.6518 + 12.453) * 21356.1235);
+    float b = fract(sin(float(value) * 98.3125 + 98.654) * 87541.2356);
+    return vec3(r, g, b);
+}
+
+void main()
+{
+    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 resolution = ivec2(ubo.renderResolution);
+    if (pixelCoord.x >= resolution.x || pixelCoord.y >= resolution.y)
+        return;
+
+    vec2 uv = (vec2(pixelCoord) + 0.5) / vec2(ubo.renderResolution);
+    vec3 origin = ubo.viewPos.xyz;
+    vec3 farWorld = DepthToWorldSpace(uv, 0.0, ubo.viewProjectionInverse).xyz;
+    vec3 direction = normalize(farWorld - origin);
+
+    rayQueryEXT rayQuery;
+    rayQueryInitializeEXT(rayQuery, sceneTLAS, gl_RayFlagsOpaqueEXT, 0xFF, origin, 0.001, direction, pc.maxRayDistance);
+
+    while (rayQueryProceedEXT(rayQuery))
+    {
+    }
+
+    vec4 color = vec4(0.0, 0.0, 0.0, 1.0);
+    if (rayQueryGetIntersectionTypeEXT(rayQuery, true) != gl_RayQueryCommittedIntersectionNoneEXT)
+    {
+        if (pc.debugMode == 1u)
+        {
+            uint customIndex = rayQueryGetIntersectionInstanceCustomIndexEXT(rayQuery, true);
+            color = vec4(HashColor(customIndex), 1.0);
+        }
+        else
+        {
+            color = vec4(1.0, 1.0, 1.0, 1.0);
+        }
+    }
+
+    imageStore(GlobalBindlessImages[nonuniformEXT(pc.outputTexIdx)], pixelCoord, color);
+}

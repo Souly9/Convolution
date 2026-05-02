@@ -23,4 +23,5 @@ struct APITraits
     using DescriptorSetType = void;
     using GPUTimingQueryType = void;
     using ShaderType = void;
+    using AccelerationStructureType = void;
 };

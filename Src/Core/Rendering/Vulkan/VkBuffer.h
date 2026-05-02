@@ -50,6 +50,12 @@ public:
     {
         return m_info.usage;
     }
+    virtual bool IsCreated() const override
+    {
+        return m_buffer != VK_NULL_HANDLE;
+    }
+
+    virtual u64 GetDeviceAddress() const override;
 
     virtual void NamingCallBack(const stltype::string& name) override;
 

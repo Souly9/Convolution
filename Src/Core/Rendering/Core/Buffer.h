@@ -18,6 +18,9 @@ enum class BufferUsage
     IndirectDrawCount,
     GenericHostVisible,
     GenericDeviceVisible,
+    AccelerationStructureStorage,
+    AccelerationStructureScratch,
+    AccelerationStructureInstances,
     Texture
 };
 
@@ -33,6 +36,16 @@ class BufferBase : public TrackedResource
 public:
     BufferBase() = default;
     virtual ~BufferBase() = default;
+
+    virtual bool IsCreated() const
+    {
+        return false;
+    }
+
+    virtual u64 GetDeviceAddress() const
+    {
+        return 0;
+    }
 };
 
 class StagingBufferBase : public BufferBase

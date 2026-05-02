@@ -26,6 +26,7 @@ class ColorAttachmentVulkan;
 class DepthAttachmentVulkan;
 class GPUTimingQueryVulkan;
 class ShaderVulkan;
+class AccelerationStructureVulkan;
 
 template<>
 struct APITraits<API_Vulkan>
@@ -54,5 +55,6 @@ struct APITraits<API_Vulkan>
     using DepthAttachmentType = DepthAttachmentVulkan;
     using GPUTimingQueryType = GPUTimingQueryVulkan;
     using ShaderType = ShaderVulkan;
+    using AccelerationStructureType = AccelerationStructureVulkan;
     // Add other types as we migrate them...
 };

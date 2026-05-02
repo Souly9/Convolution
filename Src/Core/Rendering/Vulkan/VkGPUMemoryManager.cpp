@@ -25,6 +25,7 @@ inline bool NeedsMappableHandle(const BufferUsage& m)
         case BufferUsage::Uniform:
         case BufferUsage::SSBOHost:
         case BufferUsage::IndirectDrawCmds:
+        case BufferUsage::AccelerationStructureInstances:
             return true;
         default:
             break;
@@ -70,7 +71,8 @@ void GPUMemManager<Vulkan>::FreeMemory(GPUMemoryHandle memory)
 void GPUMemManager<Vulkan>::InitializeVMA()
 {
     VmaAllocatorCreateInfo allocatorCreateInfo = {};
-    allocatorCreateInfo.flags = VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT;
+    allocatorCreateInfo.flags =
+        VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT | VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
     allocatorCreateInfo.vulkanApiVersion = VK_API_VERSION_1_2;
     allocatorCreateInfo.physicalDevice = VK_PHYS_DEVICE;
     allocatorCreateInfo.device = VK_LOGICAL_DEVICE;

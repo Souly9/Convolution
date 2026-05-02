@@ -55,6 +55,8 @@ static inline bool IsBindless(DescriptorType type)
             return false;
         case DescriptorType::StorageBuffer:
             return false;
+        case DescriptorType::AccelerationStructure:
+            return false;
         case DescriptorType::CombinedImageSampler:
             return false;
         case DescriptorType::BindlessTextures:

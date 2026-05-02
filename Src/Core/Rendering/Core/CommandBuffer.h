@@ -1,5 +1,6 @@
 #pragma once
 #include "RenderTraitsMacros.h"
+#include "Core/Rendering/Core/AccelerationStructure.h"
 #include "Core/Rendering/Core/Texture.h"
 #include "RenderingForwardDecls.h"
 #include "Core/Rendering/Core/Synchronization.h"
@@ -347,6 +348,32 @@ struct BufferUpdateCmd : public CommandBase
     }
 };
 
+struct BuildAccelerationStructureCmd : public CommandBase
+{
+    AccelerationStructureBuildDesc buildDesc{};
+    u64 dstAccelerationStructureHandle{0};
+    u64 srcAccelerationStructureHandle{0};
+    u64 scratchAddress{0};
+};
+
+struct AccelerationStructureBarrierCmd : public CommandBase
+{
+    SyncStages srcStage{SyncStages::ACCELERATION_STRUCTURE_BUILD};
+    SyncStages dstStage{SyncStages::COMPUTE_SHADER};
+    RayTracingAccess srcAccess{RayTracingAccess::None};
+    RayTracingAccess dstAccess{RayTracingAccess::None};
+
+    AccelerationStructureBarrierCmd() = default;
+
+    AccelerationStructureBarrierCmd(SyncStages src,
+                                    SyncStages dst,
+                                    RayTracingAccess srcAccessMask,
+                                    RayTracingAccess dstAccessMask)
+        : srcStage(src), dstStage(dst), srcAccess(srcAccessMask), dstAccess(dstAccessMask)
+    {
+    }
+};
+
 struct ExecuteNativeCmd : public CommandBase
 {
     stltype::fixed_function<960, void(void*)> callback{};
@@ -452,6 +479,8 @@ using Command = stltype::variant<CommandBase,
                                  ResetQueryPoolCmd,
                                  WriteTimestampCmd,
                                  BufferUpdateCmd,
+                                 BuildAccelerationStructureCmd,
+                                 AccelerationStructureBarrierCmd,
                                  ExecuteNativeCmd>;
 
 // Generic command buffer, basically collects all commands as generic structs first so we can reason about them

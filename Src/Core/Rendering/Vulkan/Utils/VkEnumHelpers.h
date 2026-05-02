@@ -615,9 +615,13 @@ inline VkBufferUsageFlags Conv(const BufferUsage& m)
     switch (m)
     {
         case BufferUsage::Vertex:
-            return VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+            return VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
+                   VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+                   VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
         case BufferUsage::Index:
-            return VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+            return VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
+                   VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+                   VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
         case BufferUsage::Texture:
             return VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
         case BufferUsage::Staging:
@@ -635,6 +639,15 @@ inline VkBufferUsageFlags Conv(const BufferUsage& m)
         case BufferUsage::IndirectDrawCount:
             return VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+        case BufferUsage::AccelerationStructureStorage:
+            return VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR |
+                   VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+        case BufferUsage::AccelerationStructureScratch:
+            return VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+        case BufferUsage::AccelerationStructureInstances:
+            return VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                   VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+                   VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
         default:
             DEBUG_ASSERT(false);
     }
@@ -653,10 +666,14 @@ inline VkMemoryPropertyFlags Conv2MemFlags(const BufferUsage& m)
             return VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
         case BufferUsage::Uniform:
         case BufferUsage::SSBOHost:
+        case BufferUsage::AccelerationStructureInstances:
             return VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
         case BufferUsage::SSBODevice:
             return VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
         case BufferUsage::GenericDeviceVisible:
+            return VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+        case BufferUsage::AccelerationStructureStorage:
+        case BufferUsage::AccelerationStructureScratch:
             return VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
         case BufferUsage::IndirectDrawCmds:
             return VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
@@ -684,6 +701,11 @@ inline VmaMemoryUsage Conv2VmaMemFlags(const BufferUsage& m)
             return VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
         case BufferUsage::GenericDeviceVisible:
             return VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+        case BufferUsage::AccelerationStructureStorage:
+        case BufferUsage::AccelerationStructureScratch:
+            return VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+        case BufferUsage::AccelerationStructureInstances:
+            return VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
         case BufferUsage::IndirectDrawCmds:
             return VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
         default:
@@ -739,6 +761,10 @@ static inline u32 Conv(SyncStages stage)
             (vkStage | VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT);
     if ((u32)stage & (u32)SyncStages::CLEAR)
         vkStage = (vkStage | VK_PIPELINE_STAGE_2_CLEAR_BIT);
+    if ((u32)stage & (u32)SyncStages::RAY_TRACING_SHADER)
+        vkStage = (vkStage | VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR);
+    if ((u32)stage & (u32)SyncStages::ACCELERATION_STRUCTURE_BUILD)
+        vkStage = (vkStage | VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
             
     return vkStage;
 }

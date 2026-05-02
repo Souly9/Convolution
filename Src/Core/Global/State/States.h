@@ -49,6 +49,15 @@ struct PassTimingStat
 
 struct RendererState
 {
+    struct RTState
+    {
+        bool enabled{false};
+        bool debugViewEnabled{false};
+        u32 debugMode{1};
+        u32 pendingBlasCount{0};
+        u32 residentInstanceCount{0};
+    } rt;
+
     stltype::vector<u64> gbufferImGuiIDs{};
     u64 depthbufferImGuiID{};
     stltype::vector<u64> csmCascadeImGuiIDs{}; // Per-cascade ImGui texture IDs
@@ -57,6 +66,7 @@ struct RendererState
     bool dlssSupported{false};
     u32 taaDebugMode{0};
     bool taaForceHistory{false};
+    bool taaSeedHistoryFromCurrentColor{false};
     f32 taaVelocityRejectionStart{0.5f};
     f32 taaVelocityRejectionEnd{4.0f};
     u32 upscalingPercentage{100};

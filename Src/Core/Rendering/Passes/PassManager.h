@@ -8,6 +8,7 @@
 #include "Core/Rendering/Core/GPUTimingQuery.h"
 #include "Core/Events/EventSystem.h"
 #include "Core/Rendering/Core/FrameResourceManager.h"
+#include "Core/Rendering/Core/RT/RTSceneManager.h"
 #include "Core/Rendering/Core/ShadowMaps.h"
 #include "Core/Rendering/Core/SharedResourceManager.h"
 #include "Core/Rendering/Core/View.h"
@@ -20,6 +21,7 @@ class SharedResourceManager;
 namespace RenderPasses
 {
 class ConvolutionRenderPass;
+class RTDebugViewPass;
 
 // A pass is responsible for rendering a view (aka, main pass renders the main
 // camera view), can also execute solely on CPU side (think culling would be a
@@ -69,6 +71,8 @@ struct MainPassData
     Texture* pScreenSpaceShadowTexture{nullptr};
     BindlessTextureHandle screenSpaceShadows{0};
     BindlessTextureHandle depthBufferBindlessHandle{0};
+    RT::RTSceneManager* pRTSceneManager{nullptr};
+    BindlessTextureHandle rtDebugTextureHandle{0};
     u32 cascades{0};
     f32 csmStepSize{0.0f};
 
@@ -111,12 +115,13 @@ struct PassStage
     stltype::fixed_vector<PassType, 8> groups;
 };
 
-inline const stltype::fixed_vector<PassStage, 8> PASS_SCHEDULE = {
+inline const stltype::fixed_vector<PassStage, 9> PASS_SCHEDULE = {
     PassStage{{PassType::EarlyAsyncCompute}},
     PassStage{{PassType::PreProcess}},
     PassStage{{PassType::DepthReliantCompute}},
     PassStage{{PassType::Main, PassType::Debug, PassType::Shadow}},
     PassStage{{PassType::Lighting}},
+    PassStage{{PassType::PostProcess}},
     PassStage{{PassType::TAA, PassType::DLSS}},
     PassStage{{PassType::Composite}},
     PassStage{{PassType::UI}},
@@ -129,6 +134,7 @@ inline bool IsComputePass(PassType type)
            type == PassType::LightTransformCompute || 
            type == PassType::ClusterGenCompute ||
            type == PassType::TileAssignmentCompute ||
+           type == PassType::PostProcess ||
            type == PassType::TAA ||
            type == PassType::DLSS;
 }
@@ -272,6 +278,7 @@ protected:
                                         const stltype::fixed_vector<const Texture*, 16>& allGbufferAndSwapchain);
     void RecordGBufferToShaderRead(CommandBuffer* pCmdBuffer,
                                    const stltype::fixed_vector<const Texture*, 8>& gbufferTextures);
+    void RecordVelocityClear(CommandBuffer* pCmdBuffer);
     void RecordUIToShaderRead(CommandBuffer* pCmdBuffer, const Texture* pUITexture);
     void RecordDepthToReadOnly(CommandBuffer* pCmdBuffer);
     void RecordThisFrameColorToRead(CommandBuffer* pCmdBuffer);
@@ -294,6 +301,7 @@ private:
 
     // Resource Manager
     ::SharedResourceManager m_resourceManager;
+    RT::RTSceneManager m_rtSceneManager;
     FrameResourceManager m_frameResourceManager;
 
     // Only need one gbuffer
@@ -350,6 +358,7 @@ private:
     TextureHandle m_dlssExposureTextureHandle{0};
     StagingBuffer m_dlssExposureStagingBuffer{};
     bool m_dlssExposureTextureInitialized{false};
+    RTDebugViewPass* m_pRTDebugViewPass{nullptr};
 
     u32 m_instanceBufferUpdateTimingIndex;
     u32 m_clearTileCountersTimingIndex{UINT32_MAX};

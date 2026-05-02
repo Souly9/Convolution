@@ -200,6 +200,12 @@ public:
                 needsUpdate = true;
             }
 
+            if (currentAA == AntialiasingType::TAA_SMAA && ImGui::Button("Seed History From Current Color"))
+            {
+                g_pApplicationState->RegisterUpdateFunction(
+                    [](ApplicationState& state) { state.renderState.taaSeedHistoryFromCurrentColor = true; });
+            }
+
             float taaVelocityRejectionStart = renderState.taaVelocityRejectionStart;
             float taaVelocityRejectionEnd = renderState.taaVelocityRejectionEnd;
             if (ImGui::SliderFloat("TAA Velocity Rejection Start", &taaVelocityRejectionStart, 0.0f, 64.0f, "%.3f px"))

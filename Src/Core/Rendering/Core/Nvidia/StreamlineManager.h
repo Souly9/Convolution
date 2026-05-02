@@ -1,5 +1,8 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
+#ifndef VK_USE_PLATFORM_WIN32_KHR
+#define VK_USE_PLATFORM_WIN32_KHR
+#endif
 #include <vulkan/vulkan.h>
 #include "sl.h"
 #include "sl_dlss.h"
@@ -21,6 +24,7 @@ public:
         bool cameraMotionIncluded{false};
         bool motionVectorsJittered{false};
         bool depthInverted{false};
+        u64 evaluateCallCount{0};
         sl::DLSSMode configuredMode{sl::DLSSMode::eOff};
         sl::Result lastSetConstantsResult{sl::Result::eOk};
         sl::Result lastTagResult{sl::Result::eOk};
@@ -53,9 +57,15 @@ public:
     static bool GetDLSSFeatureRequirements(sl::FeatureRequirements& requirements);
     static bool GetDLSSOptimalSettings(u32 width, u32 height, sl::DLSSMode mode, sl::DLSSOptimalSettings& settings);
     static bool GetDLSSState(sl::DLSSState& state);
-    static void GetVulkanDeviceQueue(VkDevice device, u32 queueFamilyIndex, u32 queueIndex, VkQueue* pQueue);
-    static void GetVulkanDeviceQueue2(VkDevice device, const VkDeviceQueueInfo2* pQueueInfo, VkQueue* pQueue);
+    static VkResult CreateVulkanInstance(const VkInstanceCreateInfo* pCreateInfo,
+                                         const VkAllocationCallbacks* pAllocator,
+                                         VkInstance* pInstance);
+    static VkResult CreateVulkanDevice(VkPhysicalDevice physicalDevice,
+                                       const VkDeviceCreateInfo* pCreateInfo,
+                                       const VkAllocationCallbacks* pAllocator,
+                                       VkDevice* pDevice);
     static void SetVulkanQueueStartIndices(u32 graphicsQueueIndex, u32 computeQueueIndex);
+    static void GetVulkanDeviceQueue(VkDevice device, u32 queueFamilyIndex, u32 queueIndex, VkQueue* pQueue);
     static bool EnsureDLSSConfigured(u32 width, u32 height, sl::DLSSMode mode);
     static bool ConsumeDLSSResetFlag();
     static bool SetDLSSOptions(u32 width, u32 height, sl::DLSSMode mode);

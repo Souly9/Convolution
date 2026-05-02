@@ -10,6 +10,17 @@
 class CBufferVulkan : public CommandBufferBase
 {
 public:
+    struct TrackedPipelineState
+    {
+        VkPipelineBindPoint pipelineBindPoint{VK_PIPELINE_BIND_POINT_MAX_ENUM};
+        VkPipeline pipeline{VK_NULL_HANDLE};
+        VkPipelineLayout layout{VK_NULL_HANDLE};
+        VkPipelineBindPoint descriptorBindPoint{VK_PIPELINE_BIND_POINT_MAX_ENUM};
+        u32 firstSet{0};
+        stltype::vector<VkDescriptorSet> descriptorSets{};
+        stltype::vector<u32> dynamicOffsets{};
+    };
+
     CBufferVulkan() = default;
     CBufferVulkan(VkCommandBuffer commandBuffer);
     ~CBufferVulkan();
@@ -42,6 +53,15 @@ public:
     void BeginBufferForSingleSubmit();
     void BeginRendering(BeginRenderingCmd& cmd);
     void BeginRendering(BeginRenderingBaseCmd& cmd);
+    void TrackBoundPipeline(VkPipelineBindPoint bindPoint, VkPipeline pipeline, VkPipelineLayout layout);
+    void TrackBoundDescriptorSets(VkPipelineBindPoint bindPoint,
+                                  VkPipelineLayout layout,
+                                  u32 firstSet,
+                                  u32 descriptorSetCount,
+                                  const VkDescriptorSet* pDescriptorSets,
+                                  u32 dynamicOffsetCount,
+                                  const u32* pDynamicOffsets);
+    void RestoreTrackedPipelineState();
 
     void EndRendering();
     void EndBuffer();
@@ -132,4 +152,5 @@ protected:
     VkCommandBuffer m_commandBuffer{VK_NULL_HANDLE};
     u32 m_waitStages;
     u32 m_signalStages;
+    TrackedPipelineState m_trackedPipelineState{};
 };

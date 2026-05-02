@@ -1,9 +1,17 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
+#include "Core/Rendering/Core/AccelerationStructure.h"
 #include "Core/Rendering/Backend/RenderBackendBase.h"
+#include "Core/Rendering/Vulkan/VkGlobals.h"
 #include "Core/Rendering/Vulkan/VkPipeline.h"
 #include "Core/Rendering/Vulkan/VkTexture.h"
 #include <vulkan/vulkan.h>
+
+struct VulkanRayTracingProperties
+{
+    VkPhysicalDeviceAccelerationStructurePropertiesKHR accelerationStructure{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR};
+};
 
 template <>
 class RenderBackendImpl<Vulkan>
@@ -85,7 +93,10 @@ private:
     bool IsDeviceSuitable(VkPhysicalDevice device);
     bool AreExtensionsSupported(VkPhysicalDevice device);
     bool DeviceSupportsDLSSRequirements(VkPhysicalDevice device) const;
+    bool QueryRayTracingSupport(VkPhysicalDevice device,
+                                VulkanRayTracingProperties* pProperties = nullptr) const;
     void PublishDLSSSupport(bool supported) const;
+    void PublishRTSupport(bool supported) const;
 
     void CreateAndDistributeDepthBuffer();
     SwapChainSupportDetails QuerySwapChainSupport(VkPhysicalDevice device);
@@ -119,4 +130,5 @@ private:
     stltype::vector<VkImage> m_swapChainImages;
     mathstl::Vector2 m_swapChainExtent;
     bool m_dlssSupportAvailable{false};
+    VulkanRayTracingProperties m_rayTracingProperties{};
 };

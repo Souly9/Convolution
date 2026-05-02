@@ -155,5 +155,9 @@ private:
 
 public:
     stltype::vector<u32> PopPendingVisibleInstanceIndices();
+    stltype::vector<const Mesh*> PopPendingResidentMeshesForRayTracing();
     StorageBuffer& GetInstanceBuffer() { return m_sceneInstanceBuffer; }
+
+private:
+    stltype::vector<const Mesh*> m_pendingRayTracingMeshes;
 };

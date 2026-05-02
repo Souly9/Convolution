@@ -33,9 +33,11 @@
 
 #define GlobalGBufferPostProcessUBOSlot 1
 #define GlobalShadowMapUBOSlot          2
+#define RTSceneASBindingSlot            1
 
 #define DEBUG_FLAG_SHADOWS_ENABLED (1 << 0)
 #define DEBUG_FLAG_SSS_ENABLED     (1 << 1)
+#define DEBUG_FLAG_RT_DEBUG_ENABLED (1 << 2)
 
 #define GET_AA_TYPE(flags) ((flags >> 8) & 0xFF)
 

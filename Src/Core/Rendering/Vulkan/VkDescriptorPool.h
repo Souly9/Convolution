@@ -1,5 +1,6 @@
 #pragma once
 #include "BackendDefines.h"
+#include "Core/Rendering/Core/RenderingForwardDecls.h"
 #include "Core/Rendering/Core/DescriptorPool.h"
 
 static inline constexpr u32 MAX_DESCRIPTOR_SETS = 128;
@@ -21,6 +22,7 @@ public:
     void WriteBufferUpdate(const GenBufferVulkan& buffer, u32 bindingSlot = 0);
     void WriteSSBOUpdate(const GenBufferVulkan& buffer, u32 bindingSlot = 0);
     void WriteBufferUpdate(const GenBufferVulkan& buffer, bool isUBO, u32 size, u32 bindingSlot = 0, u32 offset = 0);
+    void WriteAccelerationStructureUpdate(const AccelerationStructure& accelerationStructure, u32 bindingSlot = 0);
     void WriteBindlessTextureUpdate(const TextureVulkan* pTex, u32 idx, u32 bindingSlot = 0);
     void WriteBindlessImageUpdate(const TextureVulkan* pTex, u32 idx, u32 bindingSlot = 0);
 
@@ -35,6 +37,7 @@ struct DescriptorPoolCreateInfo
 {
     bool enableBindlessTextureDescriptors{true};
     bool enableStorageBufferDescriptors{false};
+    bool enableAccelerationStructureDescriptors{false};
     bool freeDescriptorSet{true};
 };
 class DescriptorPoolVulkan : public DescriptorPoolBase

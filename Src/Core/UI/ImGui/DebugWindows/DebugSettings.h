@@ -51,6 +51,13 @@ public:
                 [debugCulling](ApplicationState& state)
                 { mathstl::setFlag(state.renderState.debugFlags, (u32)DebugFlags::CullFrustum, debugCulling); });
         }
+        bool debugTLAS = renderState.rt.debugViewEnabled;
+        if (ImGui::Checkbox("Debug TLAS", &debugTLAS))
+        {
+            g_pApplicationState->RegisterUpdateFunction(
+                [debugTLAS](ApplicationState& state)
+                { state.renderState.rt.debugViewEnabled=debugTLAS; });
+        }
         ImGui::End();
 
         if (drawDebugMeshes != m_drawDebugMeshes)

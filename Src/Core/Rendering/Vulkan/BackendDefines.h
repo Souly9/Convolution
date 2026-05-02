@@ -35,7 +35,12 @@ static inline const stltype::vector<const char*> g_instanceExtensions = {
 
 static inline const stltype::vector<const char*> g_requiredDeviceExtensions = {
     "VK_KHR_swapchain",
-    "VK_EXT_memory_budget"
+    "VK_EXT_memory_budget",
+    VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+    VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+    VK_KHR_RAY_QUERY_EXTENSION_NAME,
+    VK_KHR_SPIRV_1_4_EXTENSION_NAME,
+    VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME
 };
 
 static inline const stltype::vector<const char*> g_optionalDeviceExtensions = {

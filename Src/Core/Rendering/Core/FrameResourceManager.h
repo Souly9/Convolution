@@ -186,6 +186,8 @@ public:
 
     UBO::LightClusterSSBO& GetLightCluster() { return *m_lightCluster; }
     ShadowMapState& GetShadowMapState() { return m_currentShadowMapState; }
+    const PassGeometryData& GetCurrentPassGeometryState() const { return m_currentPassGeometryState; }
+    const DirectX::XMFLOAT4X4& GetCurrentTransform(u32 idx) const { return m_cachedTransformSSBO[idx]; }
 
 private:
     void BuildSharedDataForView(const RenderView& mainView,
@@ -233,8 +235,10 @@ private:
     stltype::hash_map<ECS::EntityID, u32> m_entityToObjectDataIdx{};
     DirLightVector m_cachedDirLights{};
     stltype::vector<DirectX::XMFLOAT4X4> m_cachedTransformSSBO{};
+    stltype::vector<DirectX::XMFLOAT4X4> m_cachedPrevTransformSSBO{};
     stltype::vector<AABB> m_cachedSceneAABBs{};
     stltype::vector<u32> m_transformsToPropagateToPrev{};
+    stltype::vector<u32> m_transformsPendingPrevCatchup{};
 
     bool m_needsToPropagateMainDataUpdate{false};
     u32 m_frameIdxToPropagate{0};

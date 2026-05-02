@@ -19,6 +19,7 @@ enum class DescriptorType
 {
     UniformBuffer,
     StorageBuffer,
+    AccelerationStructure,
     CombinedImageSampler,
     BindlessTextures,
     BindlessImages

@@ -12,6 +12,8 @@ static inline VkDescriptorType Conv(const DescriptorType& m)
             return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         case DescriptorType::StorageBuffer:
             return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        case DescriptorType::AccelerationStructure:
+            return VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
         case DescriptorType::CombinedImageSampler:
         case DescriptorType::BindlessTextures:
             return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -31,6 +33,8 @@ static inline VkDescriptorBindingFlags ConvFlags(const DescriptorType& m)
         case DescriptorType::UniformBuffer:
             return 0;
         case DescriptorType::StorageBuffer:
+            return 0;
+        case DescriptorType::AccelerationStructure:
             return 0;
         case DescriptorType::CombinedImageSampler:
             return 0;

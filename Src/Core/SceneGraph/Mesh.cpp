@@ -13,6 +13,7 @@ MeshManager::MeshManager()
             CompleteVertex{mathstl::Vector3{-1.0f, -3.0f, 0.0f}, mathstl::Vector3{0.0f, 0.0f, 1.0f}, mathstl::Vector2{0.0f, 2.0f}, mathstl::Vector4{1.0f, 0.0f, 0.0f, 1.0f}}};
         const stltype::vector<u32> indices = {0, 1, 2};
         m_meshes.push_back(stltype::make_unique<Mesh>(vertexData, indices));
+        AllocateRTMeshIdentity(*m_meshes.back());
         m_pFullscreenTrianglePrimitive = m_meshes.back().get();
         CalcAABB(mathstl::Vector3{-1.0f, -3.0f, 0.0f}, mathstl::Vector3{3.0f, 1.0f, 0.0f}, m_pFullscreenTrianglePrimitive);
     }
@@ -37,6 +38,7 @@ MeshManager::MeshManager()
         const stltype::vector<u32> indices = {0, 1, 2, 2, 3, 0};
 
         m_meshes.push_back(stltype::make_unique<Mesh>(vertexData, indices));
+        AllocateRTMeshIdentity(*m_meshes.back());
         m_pPlanePrimitive = m_meshes.back().get();
         CalcAABB(mathstl::Vector3{-1.0f, -1.0f, 0.0f}, mathstl::Vector3{1.0f, 1.0f, 0.0f}, m_pPlanePrimitive);
     }
@@ -93,9 +95,37 @@ MeshManager::MeshManager()
             20, 21, 22, 20, 22, 23, // Bottom
         };
         m_meshes.push_back(stltype::make_unique<Mesh>(vertexData, indices));
+        AllocateRTMeshIdentity(*m_meshes.back());
         m_pCubePrimitive = m_meshes.back().get();
         CalcAABB(mathstl::Vector3{-0.5f}, mathstl::Vector3{0.5f}, m_pCubePrimitive);
     }
+}
+
+void MeshManager::AllocateRTMeshIdentity(Mesh& mesh)
+{
+    u32 meshId = Mesh::InvalidRTMeshId;
+    if (!m_freeRTMeshIds.empty())
+    {
+        meshId = m_freeRTMeshIds.back();
+        m_freeRTMeshIds.pop_back();
+        ++m_rtMeshGenerations[meshId];
+    }
+    else
+    {
+        meshId = static_cast<u32>(m_rtMeshGenerations.size());
+        m_rtMeshGenerations.push_back(0);
+    }
+
+    mesh.rtMeshId = meshId;
+    mesh.rtMeshGeneration = m_rtMeshGenerations[meshId];
+}
+
+void MeshManager::ReleaseRTMeshIdentity(const Mesh& mesh)
+{
+    if (mesh.rtMeshId == Mesh::InvalidRTMeshId)
+        return;
+
+    m_freeRTMeshIds.push_back(mesh.rtMeshId);
 }
 
 Mesh* MeshManager::GetPrimitiveMesh(PrimitiveType type)
@@ -112,6 +142,11 @@ Mesh* MeshManager::GetPrimitiveMesh(PrimitiveType type)
 void MeshManager::Flush()
 {
     DEBUG_LOGF("[MeshManager] Flushing meshes, keeping standard primitives");
+
+    for (size_t i = 3; i < m_meshes.size(); ++i)
+    {
+        ReleaseRTMeshIdentity(*m_meshes[i]);
+    }
     
     // Keep only the first three (Triangle, Plane and Cube primitives)
     m_meshes.erase(m_meshes.begin() + 3, m_meshes.end());
