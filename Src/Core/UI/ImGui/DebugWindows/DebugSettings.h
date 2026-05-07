@@ -51,12 +51,59 @@ public:
                 [debugCulling](ApplicationState& state)
                 { mathstl::setFlag(state.renderState.debugFlags, (u32)DebugFlags::CullFrustum, debugCulling); });
         }
-        bool debugTLAS = renderState.rt.debugViewEnabled;
-        if (ImGui::Checkbox("Debug TLAS", &debugTLAS))
+
+        if (ImGui::CollapsingHeader("Ray Tracing", ImGuiTreeNodeFlags_DefaultOpen))
         {
-            g_pApplicationState->RegisterUpdateFunction(
-                [debugTLAS](ApplicationState& state)
-                { state.renderState.rt.debugViewEnabled=debugTLAS; });
+            bool rtEnabled = renderState.rt.enabled;
+            if (ImGui::Checkbox("Enable Ray Tracing", &rtEnabled))
+            {
+                g_pApplicationState->RegisterUpdateFunction(
+                    [rtEnabled](ApplicationState& state) { state.renderState.rt.enabled = rtEnabled; });
+            }
+
+            bool rtReflections = renderState.rt.reflectionsEnabled;
+            if (ImGui::Checkbox("Ray-Traced Reflections", &rtReflections))
+            {
+                g_pApplicationState->RegisterUpdateFunction(
+                    [rtReflections](ApplicationState& state) { state.renderState.rt.reflectionsEnabled = rtReflections; });
+            }
+
+            const char* rtDebugViews[] = {"None", "TLAS", "Reflections Only"};
+            int uiRTDebugView = 0;
+            if (renderState.rt.debugViewEnabled)
+                uiRTDebugView = 1;
+            else if (renderState.rt.reflectionsDebugMode == RTReflectionDebugMode::ReflectionsOnly)
+                uiRTDebugView = 2;
+
+            if (ImGui::Combo("Debug View", &uiRTDebugView, rtDebugViews, IM_ARRAYSIZE(rtDebugViews)))
+            {
+                g_pApplicationState->RegisterUpdateFunction(
+                    [uiRTDebugView](ApplicationState& state)
+                    {
+                        state.renderState.rt.debugViewEnabled = uiRTDebugView == 1;
+                        state.renderState.rt.reflectionsDebugMode =
+                            uiRTDebugView == 2 ? RTReflectionDebugMode::ReflectionsOnly : RTReflectionDebugMode::None;
+                    });
+            }
+
+            bool globalReflectanceOverride = renderState.rt.globalReflectanceOverrideEnabled;
+            if (ImGui::Checkbox("Override Material Reflectance", &globalReflectanceOverride))
+            {
+                g_pApplicationState->RegisterUpdateFunction(
+                    [globalReflectanceOverride](ApplicationState& state)
+                    { state.renderState.rt.globalReflectanceOverrideEnabled = globalReflectanceOverride; });
+            }
+
+            float globalReflectance = mathstl::clamp(renderState.rt.globalMaterialReflectance, 0.0f, 1.0f);
+            if (ImGui::SliderFloat("Global Material Reflectance", &globalReflectance, 0.0f, 1.0f, "%.2f"))
+            {
+                g_pApplicationState->RegisterUpdateFunction(
+                    [globalReflectance](ApplicationState& state)
+                    { state.renderState.rt.globalMaterialReflectance = globalReflectance; });
+            }
+
+            ImGui::Text("Pending BLAS: %u", renderState.rt.pendingBlasCount);
+            ImGui::Text("Resident RT Instances: %u", renderState.rt.residentInstanceCount);
         }
         ImGui::End();
 

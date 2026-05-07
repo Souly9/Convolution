@@ -100,6 +100,8 @@ STRUCTDECL(SharedDataUBO)
     STRUCTFIELD(float, ambientIntensity)
     STRUCTFIELD(float, gt7PaperWhite)
     STRUCTFIELD(float, gt7ReferenceLuminance)
+    STRUCTFIELD(uint, rtUseGlobalMaterialReflectance)
+    STRUCTFIELD(float, rtGlobalMaterialReflectance)
 STRUCTEND()
 
 #ifndef __cplusplus

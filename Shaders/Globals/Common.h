@@ -39,6 +39,9 @@
 #define DEBUG_FLAG_SSS_ENABLED     (1 << 1)
 #define DEBUG_FLAG_RT_DEBUG_ENABLED (1 << 2)
 
+#define RT_REFLECTION_DEBUG_NONE 0u
+#define RT_REFLECTION_DEBUG_REFLECTIONS_ONLY 1u
+
 #define GET_AA_TYPE(flags) ((flags >> 8) & 0xFF)
 
 #endif // SHADERS_COMMON_H

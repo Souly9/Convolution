@@ -2,17 +2,16 @@
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Global/State/States.h"
-#include "Core/Rendering/Core/RenderingForwardDecls.h"
 #include "Core/Rendering/Passes/RenderPass.h"
 #include "../../../../Shaders/Globals/PushConstants.h"
 #include "../PassManager.h"
 
 namespace RenderPasses
 {
-class RTDebugViewPass : public ConvolutionRenderPass
+class RTReflectionsPass : public ConvolutionRenderPass
 {
 public:
-    RTDebugViewPass();
+    RTReflectionsPass();
 
     void Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager) override;
     void BuildPipelines() override;
@@ -31,6 +30,6 @@ protected:
     DescriptorPool m_descriptorPool{};
     DescriptorSetLayout m_tlasDescriptorLayout{};
     stltype::fixed_vector<DescriptorSet::Ptr, SWAPCHAIN_IMAGES> m_tlasDescriptors{SWAPCHAIN_IMAGES};
-    RTDebugViewPushConstants m_pushConstants{};
+    RTReflectionsPushConstants m_pushConstants{};
 };
 } // namespace RenderPasses

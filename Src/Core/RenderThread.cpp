@@ -1,6 +1,8 @@
 #include "RenderThread.h"
 #include "Core/ECS/EntityManager.h"
+#include "Core/Global/FrameGlobals.h"
 #include "Core/Global/GlobalVariables.h"
+#include "Core/Rendering/Core/StaticFunctions.h"
 #include "Core/Rendering/Core/TextureManager.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
 #include "Core/Rendering/Core/Utils/DeleteQueue.h"
@@ -24,6 +26,33 @@ void RenderThread::WaitForGameThreadAndPreviousFrame()
     g_mainRenderThreadSyncSemaphore.Wait();
     g_frameTimerSemaphore.Post();
     g_frameTimerSemaphore2.Wait();
+}
+
+bool RenderThread::HandleResizeAtFrameStart()
+{
+    const bool swapchainResizeRequested = m_swapchainRecreationRequested.exchange(false, std::memory_order_acq_rel);
+    const bool renderTargetsResizeRequested =
+        m_passManager->NeedsResizeDependentResourceRecreate(FrameGlobals::GetSwapChainExtent());
+    if (!swapchainResizeRequested && !renderTargetsResizeRequested)
+        return true;
+
+    g_pQueueHandler->DispatchAllRequests();
+    g_pQueueHandler->WaitForFences(~0u);
+    SRF::WaitForDeviceIdle<RenderAPI>();
+
+    bool swapchainRecreated = false;
+    if (swapchainResizeRequested && m_pRenderBackend != nullptr)
+    {
+        swapchainRecreated = m_pRenderBackend->RecreateSwapChain();
+        if (!swapchainRecreated)
+        {
+            m_swapchainRecreationRequested.store(true, std::memory_order_release);
+            return false;
+        }
+    }
+
+    m_passManager->RecreateResizeDependentResources(FrameGlobals::GetSwapChainExtent(), swapchainRecreated);
+    return true;
 }
 
 void RenderThread::RenderLoop()
@@ -51,10 +80,11 @@ void RenderThread::RenderLoop()
 
         g_pEntityManager->SyncSystemData(lastFrame);
 
-        g_pQueueHandler->WaitForFences(~0u);
-        if (m_swapchainRecreationRequested.exchange(false, std::memory_order_acq_rel) && m_pRenderBackend != nullptr)
+        if (!HandleResizeAtFrameStart())
         {
-            m_pRenderBackend->RecreateSwapChain();
+            g_renderThreadReadSemaphore.Post();
+            g_imguiSemaphore.Wait();
+            continue;
         }
 
         const bool acquiredFrame = m_passManager->BlockUntilPassesFinished(lastFrame);
@@ -75,7 +105,6 @@ void RenderThread::RenderLoop()
         }
         {
             m_passManager->PreProcessDataForCurrentFrame(lastFrame, currentJitterFrameNumber);
-            g_pQueueHandler->WaitForFences(~0u);
         }
 
         {

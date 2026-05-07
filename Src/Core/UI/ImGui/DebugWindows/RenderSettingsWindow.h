@@ -246,7 +246,6 @@ public:
                 {
                     g_pApplicationState->RegisterUpdateFunction([newPercentage](ApplicationState& state)
                                                                 { state.renderState.upscalingPercentage = newPercentage; });
-                    g_pEventSystem->OnSwapchainRecreation({});
                     needsUpdate = true;
                 }
             }

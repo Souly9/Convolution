@@ -20,6 +20,8 @@ enum class GBufferTextureType
     GBufferResolve
 };
 
+inline constexpr u32 GBufferTextureTypeCount = static_cast<u32>(GBufferTextureType::GBufferResolve) + 1;
+
 struct GBufferInfo
 {
     TexFormat GetFormat(GBufferTextureType type) const
@@ -145,6 +147,21 @@ struct GBuffer : public GBufferInfo
         }
     }
 
+    void SetTextureHandle(GBufferTextureType type, TextureHandle handle)
+    {
+        m_textureHandles[static_cast<u32>(type)] = handle;
+    }
+
+    TextureHandle GetTextureHandle(GBufferTextureType type) const
+    {
+        return m_textureHandles[static_cast<u32>(type)];
+    }
+
+    void ClearTextureHandle(GBufferTextureType type)
+    {
+        m_textureHandles[static_cast<u32>(type)] = 0;
+    }
+
     BindlessTextureHandle GetHandle(GBufferTextureType type) const
     {
         switch (type)
@@ -168,8 +185,12 @@ struct GBuffer : public GBufferInfo
         // Resolve from previous frame becomes the History for this frame
         stltype::swap(m_pLastFrameColorTexture, m_pResolveTexture);
         stltype::swap(m_hLastFrameColor, m_hResolve);
+        stltype::swap(m_textureHandles[static_cast<u32>(GBufferTextureType::GBufferLastFrameColor)],
+                      m_textureHandles[static_cast<u32>(GBufferTextureType::GBufferResolve)]);
         stltype::swap(m_pLastFrameVelocityTexture, m_pVelocityTexture);
         stltype::swap(m_hLastFrameVelocity, m_hVelocity);
+        stltype::swap(m_textureHandles[static_cast<u32>(GBufferTextureType::GBufferLastFrameVelocity)],
+                      m_textureHandles[static_cast<u32>(GBufferTextureType::GBufferVelocity)]);
     }
 
 
@@ -195,5 +216,6 @@ private:
     BindlessTextureHandle m_hThisFrameColor{0};
     BindlessTextureHandle m_hLastFrameDepth{0};
     BindlessTextureHandle m_hResolve{0};
+    stltype::array<TextureHandle, GBufferTextureTypeCount> m_textureHandles{};
 };
 } // namespace RenderPasses

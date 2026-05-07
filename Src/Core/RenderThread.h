@@ -17,6 +17,7 @@ public:
     void WaitForGameThreadAndPreviousFrame();
 
     void RenderLoop();
+    bool HandleResizeAtFrameStart();
 
     RenderPasses::PassManager* Start();
     void CleanUp();

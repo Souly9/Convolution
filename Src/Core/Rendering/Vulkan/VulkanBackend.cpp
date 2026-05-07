@@ -74,12 +74,6 @@ void NormalizeBufferDeviceAddressExtensions(stltype::vector<const char*>& extens
     RemoveExtension(extensions, VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
 }
 
-mathstl::Vector2 CalculateRenderResolution(const mathstl::Vector2& swapchainResolution, u32 upscalingPercentage)
-{
-    const f32 scale = static_cast<f32>(upscalingPercentage) / 100.0f;
-    return {static_cast<f32>(stltype::max(1u, static_cast<u32>(swapchainResolution.x * scale))),
-            static_cast<f32>(stltype::max(1u, static_cast<u32>(swapchainResolution.y * scale)))};
-}
 } // namespace
 
 bool RenderBackendImpl<Vulkan>::Init(uint32_t screenWidth, uint32_t screenHeight, stltype::string_view title)
@@ -170,8 +164,6 @@ bool RenderBackendImpl<Vulkan>::Init(uint32_t screenWidth, uint32_t screenHeight
 
 bool RenderBackendImpl<Vulkan>::RecreateSwapChain()
 {
-    vkDeviceWaitIdle(m_logicalDevice);
-
     VkSwapchainKHR oldSwapchain = m_swapChain;
 
     if (!CreateSwapChain(oldSwapchain))
@@ -187,13 +179,6 @@ bool RenderBackendImpl<Vulkan>::RecreateSwapChain()
 
     CreateSwapChainImages();
     UpdateGlobals();
-
-    const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
-    g_pEventSystem->OnSwapchainRecreated({
-        .swapchainResolution = m_swapChainExtent,
-        .renderResolution = CalculateRenderResolution(m_swapChainExtent, renderState.upscalingPercentage),
-        .swapchainWasRecreated = true,
-    });
 
     return true;
 }
@@ -542,12 +527,30 @@ bool RenderBackendImpl<Vulkan>::AcquireDeviceQueues()
 {
     Nvidia::StreamlineManager::GetVulkanDeviceQueue(
         m_logicalDevice, m_indices.graphicsFamily.value(), 0, &m_graphicsQueue);
-    Nvidia::StreamlineManager::GetVulkanDeviceQueue(
-        m_logicalDevice, m_indices.presentFamily.value(), 0, &m_presentQueue);
-    Nvidia::StreamlineManager::GetVulkanDeviceQueue(
-        m_logicalDevice, m_indices.transferFamily.value(), 0, &m_transferQueue);
-    Nvidia::StreamlineManager::GetVulkanDeviceQueue(
-        m_logicalDevice, m_indices.computeFamily.value(), 0, &m_computeQueue);
+
+    if (m_indices.presentFamily == m_indices.graphicsFamily)
+        m_presentQueue = m_graphicsQueue;
+    else
+        Nvidia::StreamlineManager::GetVulkanDeviceQueue(
+            m_logicalDevice, m_indices.presentFamily.value(), 0, &m_presentQueue);
+
+    if (m_indices.transferFamily == m_indices.graphicsFamily)
+        m_transferQueue = m_graphicsQueue;
+    else if (m_indices.transferFamily == m_indices.presentFamily)
+        m_transferQueue = m_presentQueue;
+    else
+        Nvidia::StreamlineManager::GetVulkanDeviceQueue(
+            m_logicalDevice, m_indices.transferFamily.value(), 0, &m_transferQueue);
+
+    if (m_indices.computeFamily == m_indices.graphicsFamily)
+        m_computeQueue = m_graphicsQueue;
+    else if (m_indices.computeFamily == m_indices.presentFamily)
+        m_computeQueue = m_presentQueue;
+    else if (m_indices.computeFamily == m_indices.transferFamily)
+        m_computeQueue = m_transferQueue;
+    else
+        Nvidia::StreamlineManager::GetVulkanDeviceQueue(
+            m_logicalDevice, m_indices.computeFamily.value(), 0, &m_computeQueue);
 
     return m_graphicsQueue != VK_NULL_HANDLE && m_presentQueue != VK_NULL_HANDLE &&
            m_transferQueue != VK_NULL_HANDLE && m_computeQueue != VK_NULL_HANDLE;

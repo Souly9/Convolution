@@ -20,7 +20,6 @@ using namespace RenderPasses;
 
 ImGuiPass::ImGuiPass() : ConvolutionRenderPass("ImGuiPass")
 {
-    g_pEventSystem->AddSwapchainRecreatedEventCallback([this](const auto&) { UpdateImGuiScaling(); });
 }
 
 void ImGuiPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager)
@@ -76,8 +75,6 @@ void ImGuiPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comm
 
     ImGuiIO& io = ImGui::GetIO();
     ImGui::Render();
-    ImGui::UpdatePlatformWindows();
-    ImGui::RenderPlatformWindowsDefault();
     ColorAttachment swapChainColorAttachment = m_mainRenderingData.colorAttachments[0];
     swapChainColorAttachment.SetTexture(ctx.pCurrentSwapchainTexture);
 

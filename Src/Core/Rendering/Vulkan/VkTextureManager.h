@@ -172,6 +172,7 @@ public:
                                            const ImageLayout newLayout);
     void EnqueueAsyncImageLayoutTransition(Texture* pTex, const ImageLayout oldLayout, const ImageLayout newLayout);
     void EnqueueAsyncImageLayoutTransition(const AsyncLayoutTransitionRequest& request);
+    stltype::vector<Texture*> PopPendingGraphicsShaderReadTransitions();
     void DispatchAsyncOps(stltype::string cbufferName = "TextureManager_TransferCommandBuffer");
 
     TextureVulkan* GetTexture(TextureHandle handle);
@@ -254,6 +255,7 @@ protected:
     DescriptorSetLayoutVulkan m_bindlessImageDescriptorSetLayout;
     stltype::vector<TextureHandle> m_texturesToMakeBindless;
     stltype::vector<TextureHandle> m_persistentTexturesToMakeBindless;
+    stltype::vector<Texture*> m_pendingGraphicsShaderReadTransitions;
 
     // Frequently accessed by threads
     stltype::queue<TextureRequest> m_requests{}; // Pending texture requests, mainly handled by manager thread

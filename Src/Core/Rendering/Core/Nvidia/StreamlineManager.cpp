@@ -205,13 +205,13 @@ bool StreamlineManager::EarlyInit()
 
     // Call slInit EARLY so interposer can hook Vulkan creation
     sl::Preferences pref{};
-    g_imguiPluginAvailable = FileExists("sl.imgui.dll") ||
-                             FileExists("External/additional_libs/NVStreamline/sl.imgui.dll");
-    sl::Feature features[] = {sl::kFeatureDLSS, sl::kFeatureImGUI};
+    g_imguiPluginAvailable = false;
+    sl::Feature features[] = {sl::kFeatureDLSS};
     pref.featuresToLoad = features;
-    pref.numFeaturesToLoad = g_imguiPluginAvailable ? 2u : 1u;
+    pref.numFeaturesToLoad = 1u;
     pref.renderAPI = sl::RenderAPI::eVulkan;
     pref.flags |= sl::PreferenceFlags::eUseManualHooking;
+    pref.flags |= sl::PreferenceFlags::eUseFrameBasedResourceTagging;
     pref.logMessageCallback = SL_LoggingCallback;
     pref.logLevel = sl::LogLevel::eOff;
     const std::wstring localPluginPath = GetAbsolutePath(L".");

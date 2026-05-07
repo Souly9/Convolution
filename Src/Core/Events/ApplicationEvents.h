@@ -25,13 +25,6 @@ struct SwapchainRecreationEventData
 {
 };
 using SwapchainRecreationEventCallback = stltype::fixed_function<8, void(const SwapchainRecreationEventData&)>;
-struct SwapchainRecreatedEventData
-{
-    mathstl::Vector2 swapchainResolution{};
-    mathstl::Vector2 renderResolution{};
-    bool swapchainWasRecreated{false};
-};
-using SwapchainRecreatedEventCallback = stltype::fixed_function<16, void(const SwapchainRecreatedEventData&)>;
 struct SceneLoadedEventData
 {
 };

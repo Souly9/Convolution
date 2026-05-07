@@ -765,6 +765,8 @@ static inline u32 Conv(SyncStages stage)
         vkStage = (vkStage | VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR);
     if ((u32)stage & (u32)SyncStages::ACCELERATION_STRUCTURE_BUILD)
         vkStage = (vkStage | VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
+    if ((u32)stage & (u32)SyncStages::ALL_COMMANDS)
+        vkStage = (vkStage | VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT);
             
     return vkStage;
 }

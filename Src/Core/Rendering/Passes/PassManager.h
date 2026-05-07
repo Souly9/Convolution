@@ -8,6 +8,7 @@
 #include "Core/Rendering/Core/GPUTimingQuery.h"
 #include "Core/Events/EventSystem.h"
 #include "Core/Rendering/Core/FrameResourceManager.h"
+#include "Core/Rendering/Core/RT/RTResourceManager.h"
 #include "Core/Rendering/Core/RT/RTSceneManager.h"
 #include "Core/Rendering/Core/ShadowMaps.h"
 #include "Core/Rendering/Core/SharedResourceManager.h"
@@ -21,7 +22,6 @@ class SharedResourceManager;
 namespace RenderPasses
 {
 class ConvolutionRenderPass;
-class RTDebugViewPass;
 
 // A pass is responsible for rendering a view (aka, main pass renders the main
 // camera view), can also execute solely on CPU side (think culling would be a
@@ -72,7 +72,12 @@ struct MainPassData
     BindlessTextureHandle screenSpaceShadows{0};
     BindlessTextureHandle depthBufferBindlessHandle{0};
     RT::RTSceneManager* pRTSceneManager{nullptr};
+    Texture* pRTDebugViewTexture{nullptr};
+    Texture* pRTReflectionsTexture{nullptr};
+    Texture* pRTReflectedSceneColorTexture{nullptr};
     BindlessTextureHandle rtDebugTextureHandle{0};
+    BindlessTextureHandle rtReflectionsTextureHandle{0};
+    BindlessTextureHandle rtReflectedSceneColorTextureHandle{0};
     u32 cascades{0};
     f32 csmStepSize{0.0f};
 
@@ -144,6 +149,7 @@ struct GraphicsFrameContext
     CommandPool cmdPool;
     stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> cmdBuffers{SWAPCHAIN_IMAGES};
     stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> compositeCmdBuffers{SWAPCHAIN_IMAGES};
+    stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> presentTransitionCmdBuffers{SWAPCHAIN_IMAGES};
     stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> depthPrePassCmdBuffers{SWAPCHAIN_IMAGES};
     bool initialized{false};
 };
@@ -194,7 +200,8 @@ public:
 
     void Init();
     void RecreateGbuffers(const mathstl::Vector2& resolution);
-    void RecreateAllRenderResources();
+    bool NeedsResizeDependentResourceRecreate(const mathstl::Vector2& swapchainResolution) const;
+    void RecreateResizeDependentResources(const mathstl::Vector2& swapchainResolution, bool swapchainRecreated);
 
     void AddPass(PassType type, stltype::unique_ptr<ConvolutionRenderPass>&& pass);
     void TransferPassData(const PassGeometryData& passData, u32 frameIdx);
@@ -270,12 +277,11 @@ protected:
     void RenderPassGroup(PassType groupType, const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer);
     void InitFrameContexts();
     void UpdateGBufferUBO(const MainPassData& data);
-    void SyncRenderStateFromAppState();
-    void HandlePendingSwapchainRecreatedEvent();
 
     // Inline layout transition helpers — record directly into pCmdBuffer
     void RecordInitialLayoutTransitions(CommandBuffer* pCmdBuffer,
                                         const stltype::fixed_vector<const Texture*, 16>& allGbufferAndSwapchain);
+    void RecordPendingTextureUploadTransitions(CommandBuffer* pCmdBuffer);
     void RecordGBufferToShaderRead(CommandBuffer* pCmdBuffer,
                                    const stltype::fixed_vector<const Texture*, 8>& gbufferTextures);
     void RecordVelocityClear(CommandBuffer* pCmdBuffer);
@@ -284,6 +290,7 @@ protected:
     void RecordThisFrameColorToRead(CommandBuffer* pCmdBuffer);
     void RecordResolveToGeneral(CommandBuffer* pCmdBuffer);
     void RecordResolveToRead(CommandBuffer* pCmdBuffer);
+    void RecordTemporalColorTargetsToRead(CommandBuffer* pCmdBuffer);
     void RecordCopyTextureToResolve(CommandBuffer* pCmdBuffer, Texture* pSourceTexture);
     void RecordClearColorTexture(CommandBuffer* pCmdBuffer,
                                  Texture* pTexture,
@@ -302,6 +309,7 @@ private:
     // Resource Manager
     ::SharedResourceManager m_resourceManager;
     RT::RTSceneManager m_rtSceneManager;
+    RT::RTResourceManager m_rtResourceManager;
     FrameResourceManager m_frameResourceManager;
 
     // Only need one gbuffer
@@ -358,14 +366,9 @@ private:
     TextureHandle m_dlssExposureTextureHandle{0};
     StagingBuffer m_dlssExposureStagingBuffer{};
     bool m_dlssExposureTextureInitialized{false};
-    RTDebugViewPass* m_pRTDebugViewPass{nullptr};
-
     u32 m_instanceBufferUpdateTimingIndex;
     u32 m_clearTileCountersTimingIndex{UINT32_MAX};
     MainPassData::PassManagerRenderState m_renderState{};
-    SwapchainRecreatedEventData m_pendingSwapchainRecreatedEvent{};
-    bool m_hasPendingSwapchainRecreatedEvent{false};
-    CustomMutex m_swapchainEventMutex{};
     static inline stltype::atomic<u64> s_globalTimelineCounter{1};
 };
 } // namespace RenderPasses

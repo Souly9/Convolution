@@ -22,6 +22,7 @@ enum class SyncStages
     CLEAR = 1 << 11,
     RAY_TRACING_SHADER = 1 << 12,
     ACCELERATION_STRUCTURE_BUILD = 1 << 13,
+    ALL_COMMANDS = 1 << 14,
 };
 MAKE_FLAG_ENUM(SyncStages)
 

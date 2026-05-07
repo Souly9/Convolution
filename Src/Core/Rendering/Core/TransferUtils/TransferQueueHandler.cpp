@@ -212,6 +212,15 @@ void AsyncQueueHandler::FlushGraphicsComputeBuffers()
     // lock dtor handles unlock
 }
 
+u64 AsyncQueueHandler::GetLastSubmittedValue(QueueType type)
+{
+    SimpleScopedGuard lock(m_sharedDataMutex);
+    const auto it = m_queueTimelines.find(type);
+    if (it == m_queueTimelines.end())
+        return 0;
+    return it->second.lastSubmittedValue;
+}
+
 void AsyncQueueHandler::CheckRequests()
 {
     while (KeepRunning())
@@ -253,7 +262,17 @@ void AsyncQueueHandler::SubmitToSwapchainForPresentation(const stltype::vector<P
 {
     for (const auto& request : requests)
     {
-        SRF::SubmitForPresentationToMainSwapchain<RenderAPI>(request.pWaitSemaphore, request.swapChainImageIdx);
+        const auto status =
+            SRF::SubmitForPresentationToMainSwapchain<RenderAPI>(request.pWaitSemaphore, request.swapChainImageIdx);
+        if (status == SRF::SwapchainPresentStatus::NeedsRecreate)
+        {
+            if (g_pEventSystem != nullptr)
+                g_pEventSystem->OnSwapchainRecreation({});
+        }
+        else if (status == SRF::SwapchainPresentStatus::Failed)
+        {
+            DEBUG_LOG_ERR("Swapchain presentation failed.");
+        }
     }
 }
 

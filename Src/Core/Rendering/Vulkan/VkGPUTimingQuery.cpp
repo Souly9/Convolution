@@ -18,6 +18,14 @@ void GPUTimingQueryVulkan::Init(u32 maxPasses)
         m_queryPools[i][COMPUTE_POOL_IDX].Init(VK_QUERY_TYPE_TIMESTAMP, m_queryCount);
         m_timestampResults[i][GRAPHICS_POOL_IDX].resize(m_queryCount, 0);
         m_timestampResults[i][COMPUTE_POOL_IDX].resize(m_queryCount, 0);
+        vkResetQueryPool(VkGlobals::GetLogicalDevice(),
+                         m_queryPools[i][GRAPHICS_POOL_IDX].GetRef(),
+                         0,
+                         m_queryCount);
+        vkResetQueryPool(VkGlobals::GetLogicalDevice(),
+                         m_queryPools[i][COMPUTE_POOL_IDX].GetRef(),
+                         0,
+                         m_queryCount);
     }
 
     m_results.reserve(maxPasses);
@@ -70,6 +78,18 @@ void GPUTimingQueryVulkan::ReadResults(u32 frameIdx)
     u32 readFrameIdx = frameIdx % SWAPCHAIN_IMAGES;
 
     if (!m_enabled || !m_poolInitialized[readFrameIdx] || m_nextPassIndex == 0)
+        return;
+
+    bool anyPassRan = false;
+    for (u32 i = 0; i < m_nextPassIndex && i < m_results.size(); ++i)
+    {
+        if (DidPassRun(i, frameIdx))
+        {
+            anyPassRan = true;
+            break;
+        }
+    }
+    if (!anyPassRan)
         return;
 
     for (u32 poolIdx = 0; poolIdx < 2; ++poolIdx)

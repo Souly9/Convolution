@@ -171,10 +171,11 @@ static void SubmitCommandBufferToQueue(const stltype::vector<CommandBuffer*>& co
 }
 
 template <>
-inline bool QueryImageForPresentationFromMainSwapchain<Vulkan>(const Semaphore& imageAvailableSemaphore,
-                                                              const Fence& imageAvailableFence,
-                                                              u32& imageIndex,
-                                                              u64 timeout)
+inline SwapchainAcquireStatus QueryImageForPresentationFromMainSwapchain<Vulkan>(
+    const Semaphore& imageAvailableSemaphore,
+    const Fence& imageAvailableFence,
+    u32& imageIndex,
+    u64 timeout)
 {
     while (true)
     {
@@ -186,17 +187,18 @@ inline bool QueryImageForPresentationFromMainSwapchain<Vulkan>(const Semaphore& 
                                                     &imageIndex);
 
         if (rslt == VK_SUCCESS || rslt == VK_SUBOPTIMAL_KHR)
-            return true;
+            return SwapchainAcquireStatus::Acquired;
+        if (rslt == VK_ERROR_OUT_OF_DATE_KHR)
+            return SwapchainAcquireStatus::NeedsRecreate;
         if (rslt == VK_NOT_READY || rslt == VK_TIMEOUT)
             continue;
 
-        // Avoid blocking on an unsignaled fence when acquire fails.
-        return false;
+        return SwapchainAcquireStatus::Failed;
     }
 }
 
 template <>
-void SubmitForPresentationToMainSwapchain<Vulkan>(Semaphore* pWaitSemaphore, u32 swapChainIdx)
+SwapchainPresentStatus SubmitForPresentationToMainSwapchain<Vulkan>(Semaphore* pWaitSemaphore, u32 swapChainIdx)
 {
     VkSemaphore waitSemaphore = VK_NULL_HANDLE;
     u32 waitCount = 0;
@@ -218,7 +220,14 @@ void SubmitForPresentationToMainSwapchain<Vulkan>(Semaphore* pWaitSemaphore, u32
     presentInfo.pImageIndices = &swapChainIdx;
     presentInfo.pResults = nullptr;
 
-    DEBUG_ASSERT(vkQueuePresentKHR(VkGlobals::GetPresentQueue(), &presentInfo) == VK_SUCCESS);
+    const VkResult result = vkQueuePresentKHR(VkGlobals::GetPresentQueue(), &presentInfo);
+    if (result == VK_SUCCESS)
+        return SwapchainPresentStatus::Presented;
+    if (result == VK_SUBOPTIMAL_KHR || result == VK_ERROR_OUT_OF_DATE_KHR)
+        return SwapchainPresentStatus::NeedsRecreate;
+
+    DEBUG_ASSERT(false);
+    return SwapchainPresentStatus::Failed;
 }
 
 template<>

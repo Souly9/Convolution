@@ -334,8 +334,6 @@ void VkTextureManager::CreateTexture(const FileTextureRequest& req)
     }
 
     EnqueueAsyncTextureTransfer(&pStgBuffer, static_cast<Texture*>(pTex), VK_IMAGE_ASPECT_COLOR_BIT, mipLevels, mipOffsets);
-    EnqueueAsyncImageLayoutTransition(
-        static_cast<Texture*>(pTex), ImageLayout::TRANSFER_DST_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
     // Note: ImageView and Sampler are already created by CreateTextureImmediate
 
@@ -549,6 +547,14 @@ void VkTextureManager::EnqueueAsyncImageLayoutTransition(Texture* pTex,
                                                          const ImageLayout newLayout)
 {
     EnqueueAsyncImageLayoutTransition(AsyncLayoutTransitionRequest{{pTex}, oldLayout, newLayout});
+}
+
+stltype::vector<Texture*> VkTextureManager::PopPendingGraphicsShaderReadTransitions()
+{
+    SimpleScopedGuard<tracy::Lockable<CustomMutex>> lock(m_sharedDataMutex);
+    stltype::vector<Texture*> pending = stltype::move(m_pendingGraphicsShaderReadTransitions);
+    m_pendingGraphicsShaderReadTransitions.clear();
+    return pending;
 }
 
 void VkTextureManager::EnqueueAsyncImageLayoutTransition(const AsyncLayoutTransitionRequest& request)
@@ -776,7 +782,12 @@ void VkTextureManager::EnqueueAsyncTextureTransfer(StagingBufferVulkan* pStaging
 
         if (i == levels.size() - 1)
         {
-            cmd.optionalCallback = std::bind(callback);
+            cmd.optionalCallback = [this, callback, pTex]()
+            {
+                callback();
+                SimpleScopedGuard<tracy::Lockable<CustomMutex>> lock(m_sharedDataMutex);
+                m_pendingGraphicsShaderReadTransitions.push_back(pTex);
+            };
         }
 
         CreateTransferCommandBuffer();

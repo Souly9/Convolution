@@ -66,6 +66,12 @@ bool HasInstanceDataChanged(const stltype::vector<RTInstanceRecord>& lhs, const 
 
     return false;
 }
+
+void ReleaseTLASFrameData(TLASFrameData& frameData)
+{
+    frameData.accelerationStructure.CleanUp();
+    frameData = TLASFrameData{};
+}
 } // namespace
 
 void RTSceneManager::Init(SharedResourceManager* pResourceManager, u32 graphicsQueueFamilyIdx)
@@ -84,7 +90,7 @@ void RTSceneManager::Reset()
     m_currentSortedInstances.clear();
     for (auto& frameData : m_tlasFrameData)
     {
-        frameData = TLASFrameData{};
+        ReleaseTLASFrameData(frameData);
     }
     m_residentInstanceCount = 0;
     PublishDebugState();
@@ -134,7 +140,7 @@ void RTSceneManager::Update(u32 frameIdx, u32 frameSlot, const RenderPasses::Fra
     }
     else if (m_currentSortedInstances.empty())
     {
-        frameData = TLASFrameData{};
+        ReleaseTLASFrameData(frameData);
     }
 
     m_previousSortedInstances = m_currentSortedInstances;
@@ -208,6 +214,7 @@ bool RTSceneManager::BuildTLASForFrame(TLASFrameData& frameData, u32 frameSubmit
 
     if (rtCaps.maxInstanceCount == 0 || instanceCount > rtCaps.maxInstanceCount)
     {
+        ReleaseTLASFrameData(frameData);
         frameData.state = TLASState::Failed;
         DEBUG_LOG_WARNF("RTSceneManager rejected TLAS build due to instance-count limits ({})", instanceCount);
         return false;
@@ -215,10 +222,13 @@ bool RTSceneManager::BuildTLASForFrame(TLASFrameData& frameData, u32 frameSubmit
 
     if (rtCaps.minScratchAlignment == 0)
     {
+        ReleaseTLASFrameData(frameData);
         frameData.state = TLASState::Failed;
         DEBUG_LOG_WARN("RTSceneManager rejected TLAS build because the device reports zero RT scratch alignment");
         return false;
     }
+
+    ReleaseTLASFrameData(frameData);
 
     BufferCreateInfo instanceBufferInfo{};
     instanceBufferInfo.size = sizeof(AccelerationStructureInstanceData) * instanceCount;
@@ -252,6 +262,7 @@ bool RTSceneManager::BuildTLASForFrame(TLASFrameData& frameData, u32 frameSubmit
 
     if ((frameData.scratchBuffer.GetDeviceAddress() % rtCaps.minScratchAlignment) != 0)
     {
+        frameData.accelerationStructure.CleanUp();
         frameData.state = TLASState::Failed;
         DEBUG_LOG_WARNF("RTSceneManager rejected TLAS build {} due to scratch-address alignment", frameSlot);
         return false;

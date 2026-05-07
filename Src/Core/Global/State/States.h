@@ -28,6 +28,12 @@ enum class AntialiasingType : u32
     DLSS = 3
 };
 
+enum class RTReflectionDebugMode : u32
+{
+    None = 0,
+    ReflectionsOnly = 1,
+};
+
 struct GUIState : public stltype::bitset<32>
 {
 public:
@@ -53,7 +59,11 @@ struct RendererState
     {
         bool enabled{false};
         bool debugViewEnabled{false};
+        bool reflectionsEnabled{true};
+        bool globalReflectanceOverrideEnabled{false};
         u32 debugMode{1};
+        RTReflectionDebugMode reflectionsDebugMode{RTReflectionDebugMode::None};
+        f32 globalMaterialReflectance{1.0f};
         u32 pendingBlasCount{0};
         u32 residentInstanceCount{0};
     } rt;

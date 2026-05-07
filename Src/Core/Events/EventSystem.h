@@ -48,7 +48,6 @@ public:
     EVENT_FUNCTIONS(PostFrame);
     EVENT_FUNCTIONS(ShaderHotReload);
     EVENT_FUNCTIONS(SwapchainRecreation);
-    EVENT_FUNCTIONS(SwapchainRecreated);
     EVENT_FUNCTIONS(SceneLoaded);
     EVENT_FUNCTIONS(RightMouseClick);
 
@@ -66,7 +65,6 @@ protected:
     EVENT(PostFrame);
     EVENT(ShaderHotReload);
     EVENT(SwapchainRecreation);
-    EVENT(SwapchainRecreated);
     EVENT(SceneLoaded);
     EVENT(RightMouseClick);
 };

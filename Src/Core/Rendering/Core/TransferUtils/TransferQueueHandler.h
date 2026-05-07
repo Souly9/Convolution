@@ -88,6 +88,7 @@ public:
     void FlushGraphicsComputeBuffers();
 
     TimelineSemaphore* GetTimelineSemaphore(QueueType type) { return &m_queueTimelines[type].timeline; }
+    u64 GetLastSubmittedValue(QueueType type);
 
     struct SynchronizableCommand
     {

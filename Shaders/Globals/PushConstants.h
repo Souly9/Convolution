@@ -48,4 +48,15 @@ STRUCTDECL(RTDebugViewPushConstants)
     STRUCTFIELD(float, pad0)
 STRUCTEND()
 
+STRUCTDECL(RTReflectionsPushConstants)
+    STRUCTFIELD(uint, reflectionsTexIdx)
+    STRUCTFIELD(uint, reflectedSceneColorTexIdx)
+    STRUCTFIELD(uint, inputSceneColorTexIdx)
+    STRUCTFIELD(uint, debugMode)
+    STRUCTFIELD(float, maxRayDistance)
+    STRUCTFIELD(float, reflectionIntensity)
+    STRUCTFIELD(uint, hasReadyTLAS)
+    STRUCTFIELD(uint, pad0)
+STRUCTEND()
+
 #endif // SHADERS_PUSH_CONSTANTS_H

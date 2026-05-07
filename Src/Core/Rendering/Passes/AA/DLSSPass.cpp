@@ -118,7 +118,18 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     // Need: Color (In/Out), Depth, Motion Vectors
     // In DLSS mode TAA is disabled, so GBufferResolve is not a valid input source.
     // Feed DLSS with the lit current frame color and write the DLSS result to resolve.
+    const auto& rtState = g_pApplicationState->GetCurrentApplicationState().renderState.rt;
+    const bool useRTReflections = rtState.enabled &&
+                                  rtState.reflectionsEnabled &&
+                                  data.pRTSceneManager != nullptr &&
+                                  data.pRTSceneManager->HasReadyTLAS(ctx.imageIdx);
     Texture* pColorIn = data.temporalResources.pCurrentColorTexture;
+    if (useRTReflections)
+    {
+        pColorIn = rtState.reflectionsDebugMode == RTReflectionDebugMode::ReflectionsOnly
+                       ? data.pRTReflectionsTexture
+                       : data.pRTReflectedSceneColorTexture;
+    }
     Texture* pColorOut = data.temporalResources.pResolveTexture;
     Texture* pDepth = data.temporalResources.pCurrentDepthTexture;
     Texture* pMotion = data.pGbuffer->Get(GBufferTextureType::GBufferVelocity);

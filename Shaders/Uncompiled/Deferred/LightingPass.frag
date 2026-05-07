@@ -15,10 +15,10 @@
 #include "../../Globals/Shadows/Data.h"
 #include "../../Globals/GBuffer/GBufferSampling.h"
 #include "../../Globals/Shadows/ShadowSampling.h"
+#include "../../Globals/ClusterLightData.h"
 #include "../../Globals/UnrealPBR.h"
 #include "../../Globals/GeometryPassData.h"
 #include "../../Globals/Tonemapping.h"
-#include "../../Globals/ClusterLightData.h"
 #include "../../Globals/Utils/Math.h"
 
 layout(location = 0) in VertexOut
@@ -140,6 +140,7 @@ void main()
     {
         surface.clearcoat *= texture(GlobalBindlessTextures[nonuniformEXT(mat.clearcoatTexture)], materialUV).r;
     }
+    surface = ApplyReflectanceDebug(surface, ubo.rtUseGlobalMaterialReflectance, ubo.rtGlobalMaterialReflectance);
 
     vec3 materialAlbedo = surface.baseColor;
     vec3 emissive = mat.emissive.rgb;
