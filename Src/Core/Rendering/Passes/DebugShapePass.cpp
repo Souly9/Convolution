@@ -19,6 +19,20 @@ void DebugShapePass::Init(RendererAttachmentInfo& attachmentInfo,
 {
     ScopedZone("DebugShapePass::Init");
 
+    RecreateResolutionDependentResources(attachmentInfo, resourceManager);
+    for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
+    {
+        m_indirectCmdBuffersWireframe[i].Init(250000);
+        m_indirectCmdBuffers[i].Init(250000);
+    }
+    BuildPipelines();
+}
+
+void DebugShapePass::RecreateResolutionDependentResources(RendererAttachmentInfo& attachmentInfo,
+                                                          const SharedResourceManager& resourceManager)
+{
+    ScopedZone("DebugShapePass::RecreateResolutionDependentResources");
+
     const auto& gbufferInfo = attachmentInfo.gbuffer;
 
     const auto debugAttachment =
@@ -29,13 +43,6 @@ void DebugShapePass::Init(RendererAttachmentInfo& attachmentInfo,
     m_mainRenderingData.colorAttachments = {debugAttachment};
 
     InitBaseData(attachmentInfo);
-    for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
-    {
-        m_indirectCmdBuffersWireframe[i].Init(250000);
-        m_indirectCmdBuffers[i].Init(250000);
-    }
-
-    BuildPipelines();
 }
 
 void DebugShapePass::BuildPipelines()

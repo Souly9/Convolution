@@ -36,11 +36,6 @@ AccelerationStructureTransform3x4 BuildInstanceTransform(const DirectX::XMFLOAT4
     return result;
 }
 
-u32 BuildInstanceCustomIndex(ECS::EntityID entityId, u32 subMeshIdx)
-{
-    return static_cast<u32>((static_cast<u64>(entityId) ^ (static_cast<u64>(subMeshIdx) << 20)) & 0x00FFFFFFu);
-}
-
 AccelerationStructureBuildDesc BuildTLASDesc(const TLASFrameData& frameData, u32 instanceCount)
 {
     AccelerationStructureBuildDesc desc{};
@@ -182,13 +177,12 @@ void RTSceneManager::BuildCurrentInstanceList(const RenderPasses::FrameResourceM
         instanceRecord.meshId = pBLASRecord->meshId;
         instanceRecord.blasGeneration = pBLASRecord->generation;
         instanceRecord.transformIndex = passMeshData.transformIdx;
+        instanceRecord.instanceDataIdx = meshData.instanceDataIdx;
         instanceRecord.entityId = meshData.entityID;
         instanceRecord.subMeshIdx = meshData.subMeshIdx;
         instanceRecord.flags = 0;
         instanceRecord.instanceData.transform =
             BuildInstanceTransform(frameResourceManager.GetCurrentTransform(passMeshData.transformIdx));
-        instanceRecord.instanceData.SetCustomIndexAndMask(
-            BuildInstanceCustomIndex(meshData.entityID, meshData.subMeshIdx), kRTInstanceMask);
         instanceRecord.instanceData.SetShaderBindingOffsetAndFlags(0, AccelerationStructureInstanceFlags::None);
         instanceRecord.instanceData.accelerationStructureAddress = pBLASRecord->deviceAddress;
 
@@ -200,6 +194,11 @@ void RTSceneManager::BuildCurrentInstanceList(const RenderPasses::FrameResourceM
                 {
                     return lhs.instanceKey < rhs.instanceKey;
                 });
+
+    for (u32 rtInstanceIdx = 0; rtInstanceIdx < m_currentSortedInstances.size(); ++rtInstanceIdx)
+    {
+        m_currentSortedInstances[rtInstanceIdx].instanceData.SetCustomIndexAndMask(rtInstanceIdx, kRTInstanceMask);
+    }
 
     m_residentInstanceCount = static_cast<u32>(m_currentSortedInstances.size());
 }
@@ -217,6 +216,14 @@ bool RTSceneManager::BuildTLASForFrame(TLASFrameData& frameData, u32 frameSubmit
         ReleaseTLASFrameData(frameData);
         frameData.state = TLASState::Failed;
         DEBUG_LOG_WARNF("RTSceneManager rejected TLAS build due to instance-count limits ({})", instanceCount);
+        return false;
+    }
+
+    if (instanceCount > 0x00FFFFFFu)
+    {
+        ReleaseTLASFrameData(frameData);
+        frameData.state = TLASState::Failed;
+        DEBUG_LOG_WARNF("RTSceneManager rejected TLAS build due to 24-bit custom-index limits ({})", instanceCount);
         return false;
     }
 
@@ -244,6 +251,21 @@ bool RTSceneManager::BuildTLASForFrame(TLASFrameData& frameData, u32 frameSubmit
     frameData.instanceBuffer.FillImmediate(instanceData.data(),
                                           sizeof(AccelerationStructureInstanceData) * instanceCount,
                                           0);
+
+    BufferCreateInfo hitDataBufferInfo{};
+    hitDataBufferInfo.size = sizeof(RTInstanceHitData) * instanceCount;
+    hitDataBufferInfo.usage = BufferUsage::SSBOHost;
+    frameData.hitDataBuffer.Create(hitDataBufferInfo);
+    frameData.hitDataBuffer.SetName("TLAS Hit Data Buffer " + stltype::to_string(frameSlot));
+    stltype::vector<RTInstanceHitData> hitData{};
+    hitData.reserve(instanceCount);
+    for (const RTInstanceRecord& instanceRecord : m_currentSortedInstances)
+    {
+        RTInstanceHitData data{};
+        data.instanceDataIdx = instanceRecord.instanceDataIdx;
+        hitData.push_back(data);
+    }
+    frameData.hitDataBuffer.FillImmediate(hitData.data(), sizeof(RTInstanceHitData) * instanceCount, 0);
 
     const AccelerationStructureBuildDesc buildDesc = BuildTLASDesc(frameData, instanceCount);
     const AccelerationStructureBuildSizes buildSizes = AccelerationStructure::GetBuildSizes(buildDesc);

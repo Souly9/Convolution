@@ -11,6 +11,8 @@ public:
     virtual void BuildBuffers() override;
 
     virtual void Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager) override;
+    virtual void RecreateResolutionDependentResources(RendererAttachmentInfo& attachmentInfo,
+                                                      const SharedResourceManager& resourceManager) override;
     virtual void BuildPipelines() override;
 
     virtual void RebuildInternalData(const stltype::vector<PassMeshData>& meshes,

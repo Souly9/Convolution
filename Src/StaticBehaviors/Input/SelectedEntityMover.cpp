@@ -13,16 +13,37 @@ mathstl::Vector2 s_mouseRotateDelta = {0, 0};
 f32 s_moveSpeed = 0.005f;
 f32 s_scrollSpeed = 1.f;
 f32 s_rotateSpeed = 0.1f; // degrees per pixel
+f32 s_cameraYawDegrees = 0.0f;
+f32 s_cameraPitchDegrees = 0.0f;
 mathstl::Quaternion s_cameraOrientation = mathstl::Quaternion::Identity;
 ECS::Entity s_orientationEntity{};
 bool s_orientationInitialized = false;
 
+constexpr f32 kCameraPitchLimitDegrees = 89.0f;
+
+f32 ClampCameraPitch(f32 pitchDegrees)
+{
+    return (pitchDegrees < -kCameraPitchLimitDegrees)
+               ? -kCameraPitchLimitDegrees
+               : ((pitchDegrees > kCameraPitchLimitDegrees) ? kCameraPitchLimitDegrees : pitchDegrees);
+}
+
+void RebuildCameraOrientation()
+{
+    s_cameraPitchDegrees = ClampCameraPitch(s_cameraPitchDegrees);
+
+    const f32 yawRad = DirectX::XMConvertToRadians(s_cameraYawDegrees);
+    const f32 pitchRad = DirectX::XMConvertToRadians(s_cameraPitchDegrees);
+
+    s_cameraOrientation = mathstl::Quaternion::CreateFromYawPitchRoll(yawRad, pitchRad, 0.0f);
+    s_cameraOrientation.Normalize();
+}
+
 void InitializeOrientationFromTransform(const ECS::Components::Transform& transform, ECS::Entity entity)
 {
-    mathstl::Vector3 rotRad = transform.rotation;
-    rotRad *= (DirectX::XM_PI / 180.0f);
-    s_cameraOrientation = mathstl::Quaternion::CreateFromYawPitchRoll(rotRad.y, rotRad.x, rotRad.z);
-    s_cameraOrientation.Normalize();
+    s_cameraYawDegrees = transform.rotation.y;
+    s_cameraPitchDegrees = ClampCameraPitch(transform.rotation.x);
+    RebuildCameraOrientation();
     s_orientationEntity = entity;
     s_orientationInitialized = true;
 }
@@ -100,41 +121,13 @@ void SelectedEntityMover::OnUpdate(const UpdateEventData& data)
     // Apply rotation from mouse if any
     if (hasRotate)
     {
-        // Horizontal mouse -> yaw around world up
-        const f32 yawRad = DirectX::XMConvertToRadians(s_mouseRotateDelta.x * s_rotateSpeed);
-        if ((abs)(yawRad) > FLOAT_TOLERANCE)
-        {
-            const auto yawQ = mathstl::Quaternion::CreateFromAxisAngle(mathstl::Vector3(0.0f, 1.0f, 0.0f), yawRad);
-            s_cameraOrientation = yawQ * s_cameraOrientation;
-            s_cameraOrientation.Normalize();
-        }
+        s_cameraYawDegrees += s_mouseRotateDelta.x * s_rotateSpeed;
+        s_cameraPitchDegrees += s_mouseRotateDelta.y * s_rotateSpeed;
+        RebuildCameraOrientation();
 
-        // Vertical mouse -> pitch around local right axis (with clamp)
-        const f32 pitchRad = DirectX::XMConvertToRadians(s_mouseRotateDelta.y * s_rotateSpeed);
-        const f32 pitchLimit = 89.9f;
-        if ((abs)(pitchRad) > FLOAT_TOLERANCE)
-        {
-            auto right = mathstl::Vector3::Transform(mathstl::Vector3(1.0f, 0.0f, 0.0f), s_cameraOrientation);
-            right.Normalize();
-            const auto pitchQ = mathstl::Quaternion::CreateFromAxisAngle(right, pitchRad);
-            auto candidate = pitchQ * s_cameraOrientation;
-            candidate.Normalize();
-
-            auto forward = mathstl::Vector3::Transform(mathstl::Vector3(0.0f, 0.0f, 1.0f), candidate);
-            forward.Normalize();
-            const f32 clampedY = (forward.y < -1.0f) ? -1.0f : ((forward.y > 1.0f) ? 1.0f : forward.y);
-            const f32 pitchDeg = DirectX::XMConvertToDegrees(asinf(clampedY));
-
-            if (pitchDeg <= pitchLimit && pitchDeg >= -pitchLimit)
-            {
-                s_cameraOrientation = candidate;
-            }
-        }
-
-        mathstl::Vector3 eulerRad = s_cameraOrientation.ToEuler();
-        pCamTransform->rotation.x = DirectX::XMConvertToDegrees(eulerRad.x);
-        pCamTransform->rotation.y = DirectX::XMConvertToDegrees(eulerRad.y);
-        pCamTransform->rotation.z = DirectX::XMConvertToDegrees(eulerRad.z);
+        pCamTransform->rotation.x = s_cameraPitchDegrees;
+        pCamTransform->rotation.y = s_cameraYawDegrees;
+        pCamTransform->rotation.z = 0.0f;
         didUpdateTransform = true;
     }
 

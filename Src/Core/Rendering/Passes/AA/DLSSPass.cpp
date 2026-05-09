@@ -86,6 +86,20 @@ mathstl::Vector2 ResolveStreamlineJitter(const MainPassData::PassManagerRenderSt
             return renderState.jitter;
     }
 }
+
+sl::DLSSMode ResolveDLSSModeForRenderScale(const mathstl::Vector2& renderResolution,
+                                           const mathstl::Vector2& swapchainResolution)
+{
+    if (swapchainResolution.x <= 0.0f || renderResolution.x >= swapchainResolution.x)
+        return sl::DLSSMode::eDLAA;
+
+    const f32 upscalingPercentage = (renderResolution.x * 100.0f) / swapchainResolution.x;
+    if (upscalingPercentage >= 75)
+        return sl::DLSSMode::eMaxQuality;
+    if (upscalingPercentage >= 50)
+        return sl::DLSSMode::eMaxPerformance;
+    return sl::DLSSMode::eUltraPerformance;
+}
 }
 
 DLSSPass::DLSSPass() : ConvolutionRenderPass("DLSSPass")
@@ -116,20 +130,8 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
         return;
     
     // Need: Color (In/Out), Depth, Motion Vectors
-    // In DLSS mode TAA is disabled, so GBufferResolve is not a valid input source.
-    // Feed DLSS with the lit current frame color and write the DLSS result to resolve.
-    const auto& rtState = g_pApplicationState->GetCurrentApplicationState().renderState.rt;
-    const bool useRTReflections = rtState.enabled &&
-                                  rtState.reflectionsEnabled &&
-                                  data.pRTSceneManager != nullptr &&
-                                  data.pRTSceneManager->HasReadyTLAS(ctx.imageIdx);
-    Texture* pColorIn = data.temporalResources.pCurrentColorTexture;
-    if (useRTReflections)
-    {
-        pColorIn = rtState.reflectionsDebugMode == RTReflectionDebugMode::ReflectionsOnly
-                       ? data.pRTReflectionsTexture
-                       : data.pRTReflectedSceneColorTexture;
-    }
+    // The temporal input is already tonemapped to keep DLSS history stable.
+    Texture* pColorIn = data.temporalResources.pTemporalCurrentColorTexture;
     Texture* pColorOut = data.temporalResources.pResolveTexture;
     Texture* pDepth = data.temporalResources.pCurrentDepthTexture;
     Texture* pMotion = data.pGbuffer->Get(GBufferTextureType::GBufferVelocity);
@@ -142,9 +144,9 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     const auto inputExtents = pColorIn->GetInfo().extents;
     const auto motionExtents = pMotion->GetInfo().extents;
 
-    // For now, just native mode (DLAA). Reconfigure only on mode/resolution changes.
-    constexpr sl::DLSSMode kDlssMode = sl::DLSSMode::eDLAA;
-    if (!Nvidia::StreamlineManager::EnsureDLSSConfigured(outputExtents.x, outputExtents.y, kDlssMode))
+    const sl::DLSSMode dlssMode =
+        ResolveDLSSModeForRenderScale(data.renderState.renderResolution, data.renderState.swapchainResolution);
+    if (!Nvidia::StreamlineManager::EnsureDLSSConfigured(outputExtents.x, outputExtents.y, dlssMode))
         return;
     if (Nvidia::StreamlineManager::IsDLSSEvaluateBlocked())
         return;
@@ -227,8 +229,8 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     const auto& cameraData = ctx.cameraData;
     // Streamline consumes Vulkan clip space; the renderer flips Vulkan Y at the viewport boundary.
     const mathstl::Matrix clipYFlip = mathstl::Matrix::CreateScale(1.0f, -1.0f, 1.0f);
-    const mathstl::Matrix streamlineViewToClip = clipYFlip * cameraData.viewToClip;
-    const mathstl::Matrix streamlineClipToView = cameraData.clipToView * clipYFlip;
+    const mathstl::Matrix streamlineViewToClip = cameraData.viewToClip * clipYFlip;
+    const mathstl::Matrix streamlineClipToView = clipYFlip * cameraData.clipToView;
     const mathstl::Matrix clipToPrevClip =
         kForceStaticCameraDebug ? mathstl::Matrix::Identity : cameraData.clipToPrevClip;
     const mathstl::Matrix prevClipToClip =
@@ -242,7 +244,7 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
 
     const mathstl::Vector2 streamlineJitter = ResolveStreamlineJitter(data.renderState);
     slConst.jitterOffset = {streamlineJitter.x, streamlineJitter.y};
-    slConst.mvecScale = {1.0f / static_cast<float>(motionExtents.x), 1.0f / static_cast<float>(motionExtents.y)};
+    slConst.mvecScale = {1.0f / static_cast<float>(inputExtents.x), 1.0f / static_cast<float>(inputExtents.y)};
     slConst.cameraPinholeOffset = {0.0f, 0.0f};
     const mathstl::Vector3 streamlineCameraUp =
         GetNormalizedOrFallback(cameraData.up, mathstl::Vector3::Up);

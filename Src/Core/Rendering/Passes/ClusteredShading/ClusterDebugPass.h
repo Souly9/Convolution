@@ -12,6 +12,8 @@ public:
     ClusterDebugPass();
 
     void Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager) override;
+    void RecreateResolutionDependentResources(RendererAttachmentInfo& attachmentInfo,
+                                              const SharedResourceManager& resourceManager) override;
     void RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
                              FrameRendererContext& previousFrameCtx,
                              u32 thisFrameNum) override;

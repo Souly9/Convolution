@@ -16,6 +16,7 @@
 #include "../../Globals/GBuffer/GBufferSampling.h"
 #include "../../Globals/Shadows/ShadowSampling.h"
 #include "../../Globals/ClusterLightData.h"
+#include "../../Globals/MaterialHelpers.h"
 #include "../../Globals/UnrealPBR.h"
 #include "../../Globals/GeometryPassData.h"
 #include "../../Globals/Tonemapping.h"
@@ -110,44 +111,10 @@ void main()
     }
 
     Material mat = fragMaterial;
-    SurfaceParameters surface = GetDefaultSurface(albedo * mat.baseColor.rgb, mat.pbr1.y, mat.pbr1.x);
-    
-    surface.subsurface = mat.pbr1.z;
-    surface.specular = mat.pbr1.w;
-
-    surface.anisotropic = mat.pbr2.x;
-    //surface.specularTint = mat.pbr2.y;
-    surface.clearcoat = mat.pbr2.z;
-    surface.clearcoatGloss = mat.pbr2.w;
-
-    surface.sheen = mat.pbr3.x;
-    //surface.sheenTint = mat.pbr3.y;
-    //surface.specTrans = mat.pbr3.z;
-    //surface.ior = mat.pbr3.w;
-
-    if (IsMaterialFlagSet(mat.flags, MATERIAL_FLAG_METALLIC_ROUGHNESS_BIT))
-    {
-        vec3 sampledData = texture(GlobalBindlessTextures[nonuniformEXT(mat.metallicRoughnessTexture)], materialUV).rgb;
-        surface.roughness *= sampledData.g;
-        surface.metallic *= sampledData.b;
-    }
-
-    if (IsMaterialFlagSet(mat.flags, MATERIAL_FLAG_SHEEN_BIT))
-    {
-        surface.sheen *= texture(GlobalBindlessTextures[nonuniformEXT(mat.sheenTexture)], materialUV).r;
-    }
-    if (IsMaterialFlagSet(mat.flags, MATERIAL_FLAG_CLEARCOAT_BIT))
-    {
-        surface.clearcoat *= texture(GlobalBindlessTextures[nonuniformEXT(mat.clearcoatTexture)], materialUV).r;
-    }
-    surface = ApplyReflectanceDebug(surface, ubo.rtUseGlobalMaterialReflectance, ubo.rtGlobalMaterialReflectance);
+    SurfaceParameters surface = BuildMaterialSurface(mat, materialUV, albedo * mat.baseColor.rgb);
 
     vec3 materialAlbedo = surface.baseColor;
-    vec3 emissive = mat.emissive.rgb;
-    if (IsMaterialFlagSet(mat.flags, MATERIAL_FLAG_EMISSIVE_BIT))
-    {
-        emissive *= texture(GlobalBindlessTextures[nonuniformEXT(mat.emissiveTexture)], materialUV).rgb;
-    }
+    vec3 emissive = SampleMaterialEmissive(mat, materialUV);
     vec3 directLighting = vec3(0.0);
 
     // Clustered Lighting logic

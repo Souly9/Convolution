@@ -16,11 +16,13 @@ enum class GBufferTextureType
     GBufferLastFrameVelocity,
     GBufferLastFrameColor,
     GBufferThisFrameColor,
+    GBufferTemporalCurrentColor,
     GBufferLastFrameDepth,
-    GBufferResolve
+    GBufferResolve,
+    GBufferPostAAColor
 };
 
-inline constexpr u32 GBufferTextureTypeCount = static_cast<u32>(GBufferTextureType::GBufferResolve) + 1;
+inline constexpr u32 GBufferTextureTypeCount = static_cast<u32>(GBufferTextureType::GBufferPostAAColor) + 1;
 
 struct GBufferInfo
 {
@@ -41,7 +43,9 @@ struct GBufferInfo
                 return TexFormat::R32G32_FLOAT;
             case GBufferTextureType::GBufferLastFrameColor:
             case GBufferTextureType::GBufferThisFrameColor:
+            case GBufferTextureType::GBufferTemporalCurrentColor:
             case GBufferTextureType::GBufferResolve:
+            case GBufferTextureType::GBufferPostAAColor:
                 return TexFormat::R16G16B16A16_FLOAT;
             case GBufferTextureType::GBufferLastFrameDepth:
                 return TexFormat::D32_SFLOAT;
@@ -80,10 +84,14 @@ struct GBuffer : public GBufferInfo
                 return m_pLastFrameColorTexture;
             case GBufferTextureType::GBufferThisFrameColor:
                 return m_pThisFrameColorTexture;
+            case GBufferTextureType::GBufferTemporalCurrentColor:
+                return m_pTemporalCurrentColorTexture;
             case GBufferTextureType::GBufferLastFrameDepth:
                 return m_pLastFrameDepthTexture;
             case GBufferTextureType::GBufferResolve:
                 return m_pResolveTexture;
+            case GBufferTextureType::GBufferPostAAColor:
+                return m_pPostAAColorTexture;
             default:
                 DEBUG_ASSERT(false);
                 return nullptr;
@@ -119,11 +127,17 @@ struct GBuffer : public GBufferInfo
             case GBufferTextureType::GBufferThisFrameColor:
                 m_pThisFrameColorTexture = pTexture;
                 break;
+            case GBufferTextureType::GBufferTemporalCurrentColor:
+                m_pTemporalCurrentColorTexture = pTexture;
+                break;
             case GBufferTextureType::GBufferLastFrameDepth:
                 m_pLastFrameDepthTexture = pTexture;
                 break;
             case GBufferTextureType::GBufferResolve:
                 m_pResolveTexture = pTexture;
+                break;
+            case GBufferTextureType::GBufferPostAAColor:
+                m_pPostAAColorTexture = pTexture;
                 break;
             default:
                 DEBUG_ASSERT(false);
@@ -142,8 +156,10 @@ struct GBuffer : public GBufferInfo
             case GBufferTextureType::GBufferLastFrameVelocity: m_hLastFrameVelocity = handle; break;
             case GBufferTextureType::GBufferLastFrameColor: m_hLastFrameColor = handle; break;
             case GBufferTextureType::GBufferThisFrameColor: m_hThisFrameColor = handle; break;
+            case GBufferTextureType::GBufferTemporalCurrentColor: m_hTemporalCurrentColor = handle; break;
             case GBufferTextureType::GBufferLastFrameDepth: m_hLastFrameDepth = handle; break;
             case GBufferTextureType::GBufferResolve: m_hResolve = handle; break;
+            case GBufferTextureType::GBufferPostAAColor: m_hPostAAColor = handle; break;
         }
     }
 
@@ -174,8 +190,10 @@ struct GBuffer : public GBufferInfo
             case GBufferTextureType::GBufferLastFrameVelocity: return m_hLastFrameVelocity;
             case GBufferTextureType::GBufferLastFrameColor: return m_hLastFrameColor;
             case GBufferTextureType::GBufferThisFrameColor: return m_hThisFrameColor;
+            case GBufferTextureType::GBufferTemporalCurrentColor: return m_hTemporalCurrentColor;
             case GBufferTextureType::GBufferLastFrameDepth: return m_hLastFrameDepth;
             case GBufferTextureType::GBufferResolve: return m_hResolve;
+            case GBufferTextureType::GBufferPostAAColor: return m_hPostAAColor;
         }
         return 0;
     }
@@ -203,8 +221,10 @@ private:
     Texture* m_pLastFrameVelocityTexture{nullptr};
     Texture* m_pLastFrameColorTexture{nullptr};
     Texture* m_pThisFrameColorTexture{nullptr};
+    Texture* m_pTemporalCurrentColorTexture{nullptr};
     Texture* m_pLastFrameDepthTexture{nullptr};
     Texture* m_pResolveTexture{nullptr};
+    Texture* m_pPostAAColorTexture{nullptr};
 
     BindlessTextureHandle m_hAlbedo{0};
     BindlessTextureHandle m_hNormal{0};
@@ -214,8 +234,10 @@ private:
     BindlessTextureHandle m_hLastFrameVelocity{0};
     BindlessTextureHandle m_hLastFrameColor{0};
     BindlessTextureHandle m_hThisFrameColor{0};
+    BindlessTextureHandle m_hTemporalCurrentColor{0};
     BindlessTextureHandle m_hLastFrameDepth{0};
     BindlessTextureHandle m_hResolve{0};
+    BindlessTextureHandle m_hPostAAColor{0};
     stltype::array<TextureHandle, GBufferTextureTypeCount> m_textureHandles{};
 };
 } // namespace RenderPasses

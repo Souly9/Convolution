@@ -7,6 +7,7 @@
 
 #include "../../Globals/Common.h"
 #include "../../Globals/Scene.h"
+#include "../../Globals/GeometryHelpers.h"
 #include "../../Globals/GeometryPassData.h"
 
 layout(location = 0) in vec3 inPosition;
@@ -19,10 +20,9 @@ layout(location = 2) out flat uint outTransformIdx;
 
 void main() {
     uint instanceIdx = perObjectDataSSBO.transformDataIdx[gl_InstanceIndex];
-    InstanceData instance = globalInstanceDataSSBO.instances[instanceIdx];
-    uint transformIdx = GetTransformIdx(instance);
+    InstanceData instance = FetchInstanceData(instanceIdx);
 
-    gl_Position = ubo.viewProjection * globalTransformSSBO.modelMatrices[transformIdx] * vec4(inPosition, 1.0);
+    gl_Position = ubo.viewProjection * FetchInstanceWorldMatrix(instance) * vec4(inPosition, 1.0);
     fragColor = vec3(1,1,0); 
     fragTexCoord = inTexCoord0;
     outTransformIdx = instanceIdx;

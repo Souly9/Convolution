@@ -20,15 +20,22 @@ void CompositPass::Init(RendererAttachmentInfo& attachmentInfo,
 {
     ScopedZone("CompositPass::Init");
 
+    RecreateResolutionDependentResources(attachmentInfo, resourceManager);
+    for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
+        m_indirectCmdBuffers[i].Init(10);
+    BuildPipelines();
+}
+
+void CompositPass::RecreateResolutionDependentResources(RendererAttachmentInfo& attachmentInfo,
+                                                        const SharedResourceManager& resourceManager)
+{
+    ScopedZone("CompositPass::RecreateResolutionDependentResources");
+
     const auto swapChainAttachment =
         CreateDefaultColorAttachment(SWAPCHAIN_FORMAT, LoadOp::CLEAR, nullptr);
     m_mainRenderingData.colorAttachments = {swapChainAttachment};
 
     InitBaseData(attachmentInfo);
-    for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
-        m_indirectCmdBuffers[i].Init(10);
-        
-    BuildPipelines();
 }
 
 void CompositPass::BuildPipelines()

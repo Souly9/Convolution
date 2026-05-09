@@ -15,6 +15,7 @@
 #include "../../Globals/DebugPrintf.h"
 #include "../../Globals/GBuffer/Output.h"
 #include "../../Globals/GeometryPassData.h"
+#include "../../Globals/MaterialHelpers.h"
 #include "../../Globals/Utils/Math.h"
 
 layout(location = 0) in VertexOut
@@ -32,24 +33,10 @@ IN;
 void main()
 {
     Material mat = globalObjectDataSSBO.materials[IN.matIdx];
-    vec4 fragTexSample = IsMaterialFlagSet(mat.flags, MATERIAL_FLAG_DIFFUSE_BIT)
-                             ? vec4(texture(GlobalBindlessTextures[nonuniformEXT(mat.diffuseTexture)], IN.fragTexCoord))
-                             : vec4(1.0);
+    vec4 fragTexSample = SampleMaterialBaseColorTextureRGBA(mat, IN.fragTexCoord);
 
     vec3 N = normalize(IN.worldNormal);
-    if (IsMaterialFlagSet(mat.flags, MATERIAL_FLAG_NORMAL_BIT))
-    {
-        vec3 tangentNormal =
-            texture(GlobalBindlessTextures[nonuniformEXT(mat.normalTexture)], IN.fragTexCoord).xyz * 2.0 - 1.0;
-        if (dot(tangentNormal, tangentNormal) > 1e-6)
-        {
-           N = normalize(IN.TBN * tangentNormal);
-            if (IsMaterialFlagSet(mat.flags, MATERIAL_FLAG_FLIPPED_NORMAL_BIT))
-        {
-                N.y = -N.y;
-            }
-        }
-    }
+    N = ApplyMaterialNormalMap(mat, IN.fragTexCoord, IN.TBN, N);
 
     vec2 velocity = ComputeVelocity(IN.unjitteredClipPos, IN.prevUnjitteredClipPos);
 

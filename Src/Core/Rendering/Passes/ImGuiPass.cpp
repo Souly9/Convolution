@@ -26,11 +26,7 @@ void ImGuiPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourc
 {
     ScopedZone("ImGuiPass::Init");
 
-    const auto swapchainAttachment =
-        CreateDefaultColorAttachment(SWAPCHAIN_FORMAT, LoadOp::LOAD, nullptr);
-    m_mainRenderingData.colorAttachments = {swapchainAttachment};
-
-    InitBaseData(attachmentInfo);
+    RecreateResolutionDependentResources(attachmentInfo, resourceManager);
 
     const auto vkContext = VkGlobals::GetContext();
 
@@ -61,12 +57,24 @@ void ImGuiPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourc
     VkPipelineRenderingCreateInfo imguiRenderingInfo{};
     imguiRenderingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
     imguiRenderingInfo.colorAttachmentCount = 1;
-    imguiRenderingInfo.pColorAttachmentFormats = &swapchainAttachment.GetDesc().format;
+    imguiRenderingInfo.pColorAttachmentFormats = &m_mainRenderingData.colorAttachments[0].GetDesc().format;
     imguiRenderingInfo.depthAttachmentFormat = VK_FORMAT_UNDEFINED;
     info.UseDynamicRendering = true;
     info.PipelineRenderingCreateInfo = imguiRenderingInfo;
 
     ImGui_ImplVulkan_Init(&info);
+}
+
+void ImGuiPass::RecreateResolutionDependentResources(RendererAttachmentInfo& attachmentInfo,
+                                                     const SharedResourceManager& resourceManager)
+{
+    ScopedZone("ImGuiPass::RecreateResolutionDependentResources");
+
+    const auto swapchainAttachment =
+        CreateDefaultColorAttachment(SWAPCHAIN_FORMAT, LoadOp::LOAD, nullptr);
+    m_mainRenderingData.colorAttachments = {swapchainAttachment};
+
+    InitBaseData(attachmentInfo);
 }
 
 void ImGuiPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)

@@ -11,6 +11,7 @@
 #include "../../Globals/Scene.h"
 #include "../../Globals/Bindless.h"
 #include "../../Globals/GeometryPassData.h"
+#include "../../Globals/MaterialHelpers.h"
 
 layout(location = 0) in VertexOut
 {
@@ -22,9 +23,7 @@ IN;
 void main()
 {
     Material mat = globalObjectDataSSBO.materials[IN.matIdx];
-    vec4 fragTexSample = IsMaterialFlagSet(mat.flags, MATERIAL_FLAG_DIFFUSE_BIT)
-                             ? vec4(texture(GlobalBindlessTextures[nonuniformEXT(mat.diffuseTexture)], IN.fragTexCoord))
-                             : vec4(1.0);
+    vec4 fragTexSample = SampleMaterialBaseColorTextureRGBA(mat, IN.fragTexCoord);
     // Dumb alpha discard
     if (fragTexSample.a < 1e-6)
         discard;

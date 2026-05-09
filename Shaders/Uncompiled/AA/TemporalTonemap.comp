@@ -1,0 +1,31 @@
+#version 460
+#extension GL_EXT_nonuniform_qualifier : require
+#extension GL_ARB_shading_language_include : enable
+
+#define GBufferUBOSet 2
+#include "../Globals/Bindless.h"
+#include "../Globals/Common.h"
+#include "../Globals/GBuffer/GBufferSampling.h"
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+vec3 ReinhardForTemporal(vec3 color)
+{
+    color = max(color, vec3(0.0));
+    return color / (vec3(1.0) + color);
+}
+
+void main()
+{
+    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 renderResolution = imageSize(GlobalBindlessImages[nonuniformEXT(gbufferUBO.temporalCurrentColorBufferIdx)]);
+    if (pixelCoord.x >= renderResolution.x || pixelCoord.y >= renderResolution.y)
+        return;
+
+    vec2 uv = (vec2(pixelCoord) + 0.5) / vec2(renderResolution);
+    vec4 hdrColor = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.thisFrameColorBufferIdx)], uv);
+    vec3 temporalColor = ReinhardForTemporal(hdrColor.rgb);
+    imageStore(GlobalBindlessImages[nonuniformEXT(gbufferUBO.temporalCurrentColorBufferIdx)],
+               pixelCoord,
+               vec4(temporalColor, hdrColor.a));
+}

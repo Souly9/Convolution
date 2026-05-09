@@ -46,6 +46,10 @@ public:
     virtual void CreateSharedDescriptorLayout() = 0;
 
     virtual void Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager) = 0;
+    virtual void RecreateResolutionDependentResources(RendererAttachmentInfo& attachmentInfo,
+                                                      const SharedResourceManager& resourceManager)
+    {
+    }
     virtual void BuildPipelines()
     {
     }

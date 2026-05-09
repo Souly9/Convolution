@@ -26,6 +26,8 @@ void RTReflectionsPass::CreateSharedDescriptorLayout()
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::InstanceDataSSBO, 3));
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::GBufferUBO, 4));
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::ShadowmapUBO, 4));
+    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::TileArraySSBO, 6));
+    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::LightUniformsUBO, 6));
 
     PipelineDescriptorLayout tlasLayout{};
     tlasLayout.type = DescriptorType::AccelerationStructure;
@@ -33,13 +35,34 @@ void RTReflectionsPass::CreateSharedDescriptorLayout()
     tlasLayout.shaderStagesToBind = ShaderTypeBits::Compute;
     tlasLayout.setIndex = 5;
     m_sharedDescriptors.push_back(tlasLayout);
+
+    PipelineDescriptorLayout hitDataLayout{};
+    hitDataLayout.type = DescriptorType::StorageBuffer;
+    hitDataLayout.bindingSlot = s_rtInstanceHitDataBindingSlot;
+    hitDataLayout.shaderStagesToBind = ShaderTypeBits::Compute;
+    hitDataLayout.setIndex = 5;
+    m_sharedDescriptors.push_back(hitDataLayout);
+
+    PipelineDescriptorLayout vertexBufferLayout{};
+    vertexBufferLayout.type = DescriptorType::StorageBuffer;
+    vertexBufferLayout.bindingSlot = s_rtSceneVertexBufferBindingSlot;
+    vertexBufferLayout.shaderStagesToBind = ShaderTypeBits::Compute;
+    vertexBufferLayout.setIndex = 5;
+    m_sharedDescriptors.push_back(vertexBufferLayout);
+
+    PipelineDescriptorLayout indexBufferLayout{};
+    indexBufferLayout.type = DescriptorType::StorageBuffer;
+    indexBufferLayout.bindingSlot = s_rtSceneIndexBufferBindingSlot;
+    indexBufferLayout.shaderStagesToBind = ShaderTypeBits::Compute;
+    indexBufferLayout.setIndex = 5;
+    m_sharedDescriptors.push_back(indexBufferLayout);
 }
 
 void RTReflectionsPass::CreateTLASDescriptorResources()
 {
     m_descriptorPool = DescriptorPool();
     m_descriptorPool.Create({.enableBindlessTextureDescriptors = false,
-                             .enableStorageBufferDescriptors = false,
+                             .enableStorageBufferDescriptors = true,
                              .enableAccelerationStructureDescriptors = true,
                              .freeDescriptorSet = true});
     m_descriptorPool.SetName("RT Reflections Descriptor Pool");
@@ -49,14 +72,34 @@ void RTReflectionsPass::CreateTLASDescriptorResources()
     tlasLayout.bindingSlot = s_rtSceneASBindingSlot;
     tlasLayout.shaderStagesToBind = ShaderTypeBits::Compute;
     tlasLayout.setIndex = 0;
-    m_tlasDescriptorLayout = DescriptorLayoutUtils::CreateOneDescriptorSetForAll({tlasLayout});
-    m_tlasDescriptorLayout.SetName("RT Reflections TLAS Layout");
+
+    PipelineDescriptorLayout hitDataLayout{};
+    hitDataLayout.type = DescriptorType::StorageBuffer;
+    hitDataLayout.bindingSlot = s_rtInstanceHitDataBindingSlot;
+    hitDataLayout.shaderStagesToBind = ShaderTypeBits::Compute;
+    hitDataLayout.setIndex = 0;
+
+    PipelineDescriptorLayout vertexBufferLayout{};
+    vertexBufferLayout.type = DescriptorType::StorageBuffer;
+    vertexBufferLayout.bindingSlot = s_rtSceneVertexBufferBindingSlot;
+    vertexBufferLayout.shaderStagesToBind = ShaderTypeBits::Compute;
+    vertexBufferLayout.setIndex = 0;
+
+    PipelineDescriptorLayout indexBufferLayout{};
+    indexBufferLayout.type = DescriptorType::StorageBuffer;
+    indexBufferLayout.bindingSlot = s_rtSceneIndexBufferBindingSlot;
+    indexBufferLayout.shaderStagesToBind = ShaderTypeBits::Compute;
+    indexBufferLayout.setIndex = 0;
+
+    m_tlasDescriptorLayout =
+        DescriptorLayoutUtils::CreateOneDescriptorSetForAll({tlasLayout, hitDataLayout, vertexBufferLayout, indexBufferLayout});
+    m_tlasDescriptorLayout.SetName("RT Reflections Scene Layout");
 
     for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
     {
         m_tlasDescriptors[i] = m_descriptorPool.CreateDescriptorSet(m_tlasDescriptorLayout);
         m_tlasDescriptors[i]->SetBindingSlot(s_rtSceneASBindingSlot);
-        m_tlasDescriptors[i]->SetName("RT Reflections TLAS Descriptor Set " + stltype::to_string(i));
+        m_tlasDescriptors[i]->SetName("RT Reflections Scene Descriptor Set " + stltype::to_string(i));
     }
 }
 
@@ -106,8 +149,15 @@ bool RTReflectionsPass::WantsToRender() const
 void RTReflectionsPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
 {
     if (data.pRTSceneManager == nullptr ||
+        data.pResourceManager == nullptr ||
         data.rtReflectionsTextureHandle == 0 ||
         data.rtReflectedSceneColorTextureHandle == 0)
+    {
+        return;
+    }
+
+    const auto& sceneGeometryBuffers = data.pResourceManager->GetSceneGeometryBuffers();
+    if (!sceneGeometryBuffers.GetVertexBuffer().IsCreated() || !sceneGeometryBuffers.GetIndexBuffer().IsCreated())
     {
         return;
     }
@@ -123,7 +173,7 @@ void RTReflectionsPass::Render(const MainPassData& data, FrameRendererContext& c
 
     {
         const RT::TLASFrameData* pTLASFrameData = data.pRTSceneManager->GetTLASFrameData(ctx.imageIdx);
-        if (pTLASFrameData == nullptr)
+        if (pTLASFrameData == nullptr || !pTLASFrameData->hitDataBuffer.IsCreated())
         {
             EndRenderPassProfilingScope(pCmdBuffer);
             return;
@@ -132,6 +182,12 @@ void RTReflectionsPass::Render(const MainPassData& data, FrameRendererContext& c
         {
             m_tlasDescriptors[ctx.imageIdx]->WriteAccelerationStructureUpdate(pTLASFrameData->accelerationStructure,
                                                                               s_rtSceneASBindingSlot);
+            m_tlasDescriptors[ctx.imageIdx]->WriteSSBOUpdate(pTLASFrameData->hitDataBuffer,
+                                                             s_rtInstanceHitDataBindingSlot);
+            m_tlasDescriptors[ctx.imageIdx]->WriteSSBOUpdate(sceneGeometryBuffers.GetVertexBuffer(),
+                                                             s_rtSceneVertexBufferBindingSlot);
+            m_tlasDescriptors[ctx.imageIdx]->WriteSSBOUpdate(sceneGeometryBuffers.GetIndexBuffer(),
+                                                             s_rtSceneIndexBufferBindingSlot);
         }
     }
 
@@ -153,7 +209,8 @@ void RTReflectionsPass::Render(const MainPassData& data, FrameRendererContext& c
                                   data.mainView.descriptorSet,
                                   data.bufferDescriptors.at(UBO::DescriptorContentsType::GlobalInstanceData),
                                   data.bufferDescriptors.at(UBO::DescriptorContentsType::GBuffer),
-                                  m_tlasDescriptors[ctx.imageIdx]};
+                                  m_tlasDescriptors[ctx.imageIdx],
+                                  data.bufferDescriptors.at(UBO::DescriptorContentsType::LightData)};
     dispatchCmd.SetPushConstants(0, m_pushConstants);
     pCmdBuffer->RecordCommand(dispatchCmd);
 

@@ -9,17 +9,36 @@
 #define TransformSSBOSet 3
 #define GBufferUBOSet    4
 #define RTSceneASSet     5
-#define PassPerObjectDataSet 6
+#define TileArraySet     6
+#define PassPerObjectDataSet 10
 
 #include "../../Globals/Bindless.h"
+#include "../../Globals/ClusterLightData.h"
 #include "../../Globals/Common.h"
 #include "../../Globals/GBuffer/GBufferSampling.h"
-#include "../../Globals/GeometryPassData.h"
+#include "../../Globals/GeometryHelpers.h"
+#include "../../Globals/MaterialHelpers.h"
 #include "../../Globals/PushConstants.h"
+#include "../../Globals/RT.h"
 #include "../../Globals/UnrealPBR.h"
 #include "../../Globals/Utils/Math.h"
 
 layout(set = RTSceneASSet, binding = RTSceneASBindingSlot) uniform accelerationStructureEXT sceneTLAS;
+
+layout(scalar, set = RTSceneASSet, binding = RTInstanceHitDataBindingSlot) readonly buffer RTInstanceHitDataSSBO
+{
+    RTInstanceHitData rtInstanceHitData[];
+};
+
+layout(scalar, set = RTSceneASSet, binding = RTSceneVertexBufferBindingSlot) readonly buffer RTSceneVertexSSBO
+{
+    GPUCompleteVertex rtSceneVertices[];
+};
+
+layout(scalar, set = RTSceneASSet, binding = RTSceneIndexBufferBindingSlot) readonly buffer RTSceneIndexSSBO
+{
+    uint rtSceneIndices[];
+};
 
 layout(push_constant) uniform RTReflectionsPushConstantsBlock
 {
@@ -28,39 +47,62 @@ layout(push_constant) uniform RTReflectionsPushConstantsBlock
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
-bool IsUVInBounds(vec2 uv)
+bool TraceAndShadeTLAS(vec3 rayOrigin, vec3 rayDir, out vec3 reflectedRadiance)
 {
-    return all(greaterThanEqual(uv, vec2(0.0))) && all(lessThanEqual(uv, vec2(1.0)));
-}
+    reflectedRadiance = vec3(0.0);
 
-vec2 ProjectWorldToUV(vec3 worldPos)
-{
-    vec4 clip = ubo.viewProjection * vec4(worldPos, 1.0);
-    vec2 uv = (clip.xy / clip.w) * 0.5 + 0.5;
-    uv.y = 1.0 - uv.y;
-    return uv;
-}
+    rayQueryEXT rayQuery;
+    rayQueryInitializeEXT(rayQuery, sceneTLAS, gl_RayFlagsOpaqueEXT, 0xFF, rayOrigin, 0.02, rayDir, pc.maxRayDistance);
 
-SurfaceParameters BuildReflectionSurface(Material mat, vec2 materialUV, vec3 albedo)
-{
-    SurfaceParameters surface = GetDefaultSurface(albedo * mat.baseColor.rgb, mat.pbr1.y, mat.pbr1.x);
-    surface.specular = mat.pbr1.w;
-    surface.clearcoat = mat.pbr2.z;
-    surface.clearcoatGloss = mat.pbr2.w;
-
-    if (IsMaterialFlagSet(mat.flags, MATERIAL_FLAG_METALLIC_ROUGHNESS_BIT))
+    while (rayQueryProceedEXT(rayQuery))
     {
-        vec3 sampledData = texture(GlobalBindlessTextures[nonuniformEXT(mat.metallicRoughnessTexture)], materialUV).rgb;
-        surface.roughness *= sampledData.g;
-        surface.metallic *= sampledData.b;
     }
 
-    if (IsMaterialFlagSet(mat.flags, MATERIAL_FLAG_CLEARCOAT_BIT))
-    {
-        surface.clearcoat *= texture(GlobalBindlessTextures[nonuniformEXT(mat.clearcoatTexture)], materialUV).r;
-    }
+    if (rayQueryGetIntersectionTypeEXT(rayQuery, true) == gl_RayQueryCommittedIntersectionNoneEXT)
+        return false;
 
-    return ApplyReflectanceDebug(surface, ubo.rtUseGlobalMaterialReflectance, ubo.rtGlobalMaterialReflectance);
+    uint customIndex = rayQueryGetIntersectionInstanceCustomIndexEXT(rayQuery, true);
+    uint primitiveIndex = rayQueryGetIntersectionPrimitiveIndexEXT(rayQuery, true);
+    vec2 barycentrics = rayQueryGetIntersectionBarycentricsEXT(rayQuery, true);
+    vec3 bary = vec3(1.0 - barycentrics.x - barycentrics.y, barycentrics.x, barycentrics.y);
+
+    RTInstanceHitData hitData = rtInstanceHitData[customIndex];
+    InstanceData instance = FetchInstanceData(hitData.instanceDataIdx);
+    MeshResourceData drawData = instance.drawData;
+
+    uint indexBase = drawData.indexBufferOffset + primitiveIndex * 3u;
+    uint i0 = rtSceneIndices[indexBase + 0u];
+    uint i1 = rtSceneIndices[indexBase + 1u];
+    uint i2 = rtSceneIndices[indexBase + 2u];
+
+    GPUCompleteVertex v0 = rtSceneVertices[drawData.vertBufferOffset + i0];
+    GPUCompleteVertex v1 = rtSceneVertices[drawData.vertBufferOffset + i1];
+    GPUCompleteVertex v2 = rtSceneVertices[drawData.vertBufferOffset + i2];
+
+    vec3 localPos = v0.position * bary.x + v1.position * bary.y + v2.position * bary.z;
+    vec3 localNormal = normalize(v0.normal * bary.x + v1.normal * bary.y + v2.normal * bary.z);
+    vec4 localTangent = normalize(v0.tangent * bary.x + v1.tangent * bary.y + v2.tangent * bary.z);
+    vec2 materialUV = v0.texCoord * bary.x + v1.texCoord * bary.y + v2.texCoord * bary.z;
+
+    mat4 worldMat = FetchInstanceWorldMatrix(instance);
+    vec3 hitNormal = TransformLocalNormalToWorld(worldMat, localNormal);
+
+    Material hitMaterial = FetchInstanceMaterial(instance);
+    hitNormal = ApplyMaterialNormalMap(hitMaterial, materialUV, BuildWorldTBN(worldMat, hitNormal, localTangent), hitNormal);
+
+    vec3 materialAlbedo = SampleMaterialAlbedo(hitMaterial, materialUV);
+    SurfaceParameters hitSurface = BuildMaterialSurface(hitMaterial, materialUV, materialAlbedo);
+
+    DirectionalLight dirLight = lightData.dirLight;
+    vec3 dirLightTravelDir = normalize(dirLight.direction.xyz);
+    vec3 lightColor = dirLight.color.xyz * dirLight.color.w;
+    vec3 viewDirAtHit = normalize(-rayDir);
+    vec3 directLighting = computeDirLight(dirLightTravelDir, viewDirAtHit, hitNormal, lightColor, hitSurface);
+    vec3 indirectLighting = hitSurface.baseColor * ubo.ambientIntensity;
+    vec3 emissive = SampleMaterialEmissive(hitMaterial, materialUV);
+
+    reflectedRadiance = (directLighting + indirectLighting + emissive) * ubo.exposure;
+    return true;
 }
 
 void main()
@@ -85,7 +127,7 @@ void main()
 
         uint materialIdx = uint(normalData.w);
         Material mat = globalObjectDataSSBO.materials[materialIdx];
-        SurfaceParameters surface = BuildReflectionSurface(mat, uvMatData.xy, albedo);
+        SurfaceParameters surface = BuildMaterialSurface(mat, uvMatData.xy, albedo * mat.baseColor.rgb);
 
         vec3 worldPos = DepthToWorldSpace(uv, fragmentDepth, ubo.jitteredViewProjectionInverse).xyz;
         vec3 normal = normalize(normalData.xyz);
@@ -95,25 +137,11 @@ void main()
 
         if (reflectionStrength > 0.001)
         {
-            rayQueryEXT rayQuery;
-            rayQueryInitializeEXT(
-                rayQuery, sceneTLAS, gl_RayFlagsOpaqueEXT, 0xFF, worldPos + normal * 0.02, 0.02, rayDir, pc.maxRayDistance);
-
-            while (rayQueryProceedEXT(rayQuery))
+            vec3 reflectedRadiance = vec3(0.0);
+            if (TraceAndShadeTLAS(worldPos + normal * 0.02, rayDir, reflectedRadiance))
             {
-            }
-
-            if (rayQueryGetIntersectionTypeEXT(rayQuery, true) != gl_RayQueryCommittedIntersectionNoneEXT)
-            {
-                float hitT = rayQueryGetIntersectionTEXT(rayQuery, true);
-                vec3 hitPos = worldPos + rayDir * hitT;
-                vec2 hitUV = ProjectWorldToUV(hitPos);
-                if (IsUVInBounds(hitUV))
-                {
-                    vec3 reflectedRadiance = texture(GlobalBindlessTextures[nonuniformEXT(pc.inputSceneColorTexIdx)], hitUV).rgb;
-                    reflectionContribution.rgb = reflectedRadiance * reflectionStrength;
-                    finalColor = mix(litColor, reflectedRadiance, reflectionStrength);
-                }
+                reflectionContribution.rgb = reflectedRadiance * reflectionStrength;
+                finalColor = mix(litColor, reflectedRadiance, reflectionStrength);
             }
         }
     }

@@ -39,6 +39,7 @@ private:
 
     stltype::fixed_vector<IndirectDrawCmdBuf, SWAPCHAIN_IMAGES> m_indirectCmdBuffers;
     u32 m_currentFrameIdx{0};
+    bool m_outputWritten{true};
 };
 
 } // namespace RenderPasses

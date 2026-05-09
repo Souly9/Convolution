@@ -24,10 +24,15 @@ void ScreenSpaceShadowPass::Init(RendererAttachmentInfo& attachmentInfo, const S
 {
     ScopedZone("ScreenSpaceShadowPass::Init");
 
-
-    m_pDepthTex = static_cast<const Texture*>(attachmentInfo.depthAttachment.GetTexture());
-
+    RecreateResolutionDependentResources(attachmentInfo, resourceManager);
     BuildPipelines();
+}
+
+void ScreenSpaceShadowPass::RecreateResolutionDependentResources(RendererAttachmentInfo& attachmentInfo,
+                                                                 const SharedResourceManager& resourceManager)
+{
+    ScopedZone("ScreenSpaceShadowPass::RecreateResolutionDependentResources");
+    m_pDepthTex = static_cast<const Texture*>(attachmentInfo.depthAttachment.GetTexture());
 }
 
 void ScreenSpaceShadowPass::BuildPipelines()

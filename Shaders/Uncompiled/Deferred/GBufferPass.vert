@@ -10,6 +10,7 @@
 #include "../../Globals/Bindless.h"
 #include "../../Globals/Common.h"
 #include "../../Globals/DebugPrintf.h"
+#include "../../Globals/GeometryHelpers.h"
 #include "../../Globals/GeometryPassData.h"
 
 
@@ -33,16 +34,13 @@ OUT;
 void main()
 {
     uint instanceIdx = perObjectDataSSBO.transformDataIdx[gl_InstanceIndex];
-    InstanceData iData = globalInstanceDataSSBO.instances[instanceIdx];
+    InstanceData iData = FetchInstanceData(instanceIdx);
     uint transformIdx = GetTransformIdx(iData);
-    mat4 worldMat = globalTransformSSBO.modelMatrices[transformIdx];
-    mat3 normalMat = AdjugateFromWorldMat(worldMat);
+    mat4 worldMat = FetchInstanceWorldMatrix(iData);
     vec3 localNormal = inNormal;
-    OUT.worldNormal = normalize(normalMat * localNormal);
-    vec3 worldTangent = normalize(normalMat * inTangent.xyz);
-    vec3 worldBitangent = cross(OUT.worldNormal, worldTangent) * inTangent.w;
+    OUT.worldNormal = TransformLocalNormalToWorld(worldMat, localNormal);
 
-    OUT.TBN = mat3(worldTangent, worldBitangent, OUT.worldNormal);
+    OUT.TBN = BuildWorldTBN(worldMat, OUT.worldNormal, inTangent);
     OUT.matIdx = GetMaterialIdx(iData);
     OUT.fragTexCoord = inTexCoord0;
 

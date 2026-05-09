@@ -23,6 +23,8 @@
 #include "ShadowPass.h"
 #include "StaticMeshPass.h"
 #include "AA/TAAPass.h"
+#include "AA/TemporalTonemapPass.h"
+#include "AA/SMAAPass.h"
 #include "AA/DLSSPass.h"
 #include "Compositing/LightingPass.h"
 #include "RT/RTDebugViewPass.h"
@@ -74,7 +76,9 @@ void PassManager::InitResourceManagerAndCallbacks()
     AddPass(PassType::Lighting, stltype::make_unique<RenderPasses::LightingPass>());
     AddPass(PassType::PostProcess, stltype::make_unique<RenderPasses::RTReflectionsPass>());
     AddPass(PassType::PostProcess, stltype::make_unique<RenderPasses::RTDebugViewPass>());
+    AddPass(PassType::TemporalTonemap, stltype::make_unique<RenderPasses::TemporalTonemapPass>());
     AddPass(PassType::TAA, stltype::make_unique<RenderPasses::TAAPass>());
+    AddPass(PassType::SMAA, stltype::make_unique<RenderPasses::SMAAPass>());
     if (Nvidia::StreamlineManager::IsDLSSSupported())
     {
         AddPass(PassType::DLSS, stltype::make_unique<RenderPasses::DLSSPass>());
@@ -179,7 +183,7 @@ void PassManager::RecreateResizeDependentResources(const mathstl::Vector2& swapc
     CreateDepthAttachment();
 
     // 4. Recreate G-Buffers (updates descriptors internally)
-    RecreateGbuffers(m_renderState.renderResolution);
+    RecreateGbuffers(m_renderState.renderResolution, m_renderState.swapchainResolution);
     m_rtResourceManager.Recreate(m_renderState.renderResolution);
 
     // 5. Update Main Pass Data with new handles
@@ -209,14 +213,22 @@ void PassManager::RecreateResizeDependentResources(const mathstl::Vector2& swapc
 
     g_pTexManager->PostRender();
 
-    // 6. Re-init passes with new attachments
+    // 6. First creation owns full pass setup; later render-size changes only refresh cached resize state.
     for (auto& [type, passes] : m_passes)
     {
         for (auto& pPass : passes)
         {
-            pPass->Init(m_globalRendererAttachments, m_resourceManager);
+            if (m_passesInitialized)
+            {
+                pPass->RecreateResolutionDependentResources(m_globalRendererAttachments, m_resourceManager);
+            }
+            else
+            {
+                pPass->Init(m_globalRendererAttachments, m_resourceManager);
+            }
         }
     }
+    m_passesInitialized = true;
 
     // 7. Update UI Descriptors
     RegisterImGuiTextures();
@@ -250,6 +262,7 @@ void PassManager::PrepareMainPassDataForFrame(MainPassData& mainPassData, FrameR
 
     mainPassData.bufferDescriptors[UBO::DescriptorContentsType::GlobalInstanceData] =
         m_resourceManager.GetInstanceSSBODescriptorSet(frameIdx);
+    mainPassData.bufferDescriptors[UBO::DescriptorContentsType::LightData] = ctx.tileArraySSBODescriptor;
     mainPassData.bufferDescriptors[UBO::DescriptorContentsType::BindlessTextureArray] =
         g_pTexManager->GetBindlessDescriptorSet();
     mainPassData.bufferDescriptors[UBO::DescriptorContentsType::ClusterGrid] = ctx.clusterGridDescriptor;
@@ -276,13 +289,17 @@ void PassManager::UpdateTemporalResources(MainPassData& mainPassData)
 {
     auto& temporal = mainPassData.temporalResources;
     temporal.pCurrentColorTexture = m_gbuffer.Get(GBufferTextureType::GBufferThisFrameColor);
+    temporal.pTemporalCurrentColorTexture = m_gbuffer.Get(GBufferTextureType::GBufferTemporalCurrentColor);
     temporal.pHistoryColorTexture = m_gbuffer.Get(GBufferTextureType::GBufferLastFrameColor);
     temporal.pResolveTexture = m_gbuffer.Get(GBufferTextureType::GBufferResolve);
+    temporal.pPostAAColorTexture = m_gbuffer.Get(GBufferTextureType::GBufferPostAAColor);
     temporal.pCurrentDepthTexture = m_pDepthTexture;
     temporal.pHistoryDepthTexture = m_pLastFrameDepthTexture;
     temporal.currentColorHandle = m_gbuffer.GetHandle(GBufferTextureType::GBufferThisFrameColor);
+    temporal.temporalCurrentColorHandle = m_gbuffer.GetHandle(GBufferTextureType::GBufferTemporalCurrentColor);
     temporal.historyColorHandle = m_gbuffer.GetHandle(GBufferTextureType::GBufferLastFrameColor);
     temporal.resolveHandle = m_gbuffer.GetHandle(GBufferTextureType::GBufferResolve);
+    temporal.postAAColorHandle = m_gbuffer.GetHandle(GBufferTextureType::GBufferPostAAColor);
     temporal.currentDepthHandle = m_depthBindlessHandle;
     temporal.historyDepthHandle = m_lastFrameDepthBindlessHandle;
 }
@@ -371,8 +388,14 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
     stltype::fixed_vector<const Texture*, 16> allColorTextures;
     allColorTextures.assign(gbufferTextures.begin(), gbufferTextures.end());
     allColorTextures.push_back(m_gbuffer.Get(GBufferTextureType::GBufferThisFrameColor));
-    allColorTextures.push_back(m_pSMAAEdgesTexture);
-    allColorTextures.push_back(m_pSMAABlendTexture);
+    if (m_pSMAAEdgesTexture != nullptr)
+    {
+        allColorTextures.push_back(m_pSMAAEdgesTexture);
+    }
+    if (m_pSMAABlendTexture != nullptr)
+    {
+        allColorTextures.push_back(m_pSMAABlendTexture);
+    }
     allColorTextures.push_back(ctx.pCurrentSwapchainTexture);
 
     CommandBuffer* pMainGraphicsWorkBuffer = m_graphicsFrameCtx.cmdBuffers[ctx.imageIdx];
@@ -581,21 +604,29 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
 
         const auto& appRenderState = g_pApplicationState->GetCurrentApplicationState().renderState;
         const bool taaModeActive = appRenderState.aaType == AntialiasingType::TAA_SMAA;
+        const bool dlssModeActive = appRenderState.aaType == AntialiasingType::DLSS;
         const bool seedHistoryFromCurrentColor = taaModeActive && appRenderState.taaSeedHistoryFromCurrentColor;
         const bool debugCopyCurrent = taaModeActive && appRenderState.taaDebugMode == 1u;
         const bool debugCopyHistory = taaModeActive && appRenderState.taaDebugMode == 2u;
+
+        if (taaModeActive || dlssModeActive)
+        {
+            RecordTemporalCurrentColorToGeneral(pFinalWorkBuffer);
+            RenderPassGroup(PassType::TemporalTonemap, mainPassData, ctx, pFinalWorkBuffer);
+            RecordTemporalCurrentColorToRead(pFinalWorkBuffer);
+        }
 
         if (taaModeActive)
         {
             if (seedHistoryFromCurrentColor)
             {
-                RecordCopyTextureToResolve(pFinalWorkBuffer, m_gbuffer.Get(GBufferTextureType::GBufferThisFrameColor));
+                RecordCopyTextureToResolve(pFinalWorkBuffer, m_gbuffer.Get(GBufferTextureType::GBufferTemporalCurrentColor));
                 g_pApplicationState->RegisterUpdateFunction(
                     [](ApplicationState& state) { state.renderState.taaSeedHistoryFromCurrentColor = false; });
             }
             else if (debugCopyCurrent)
             {
-                RecordCopyTextureToResolve(pFinalWorkBuffer, m_gbuffer.Get(GBufferTextureType::GBufferThisFrameColor));
+                RecordCopyTextureToResolve(pFinalWorkBuffer, m_gbuffer.Get(GBufferTextureType::GBufferTemporalCurrentColor));
             }
             else if (debugCopyHistory)
             {
@@ -607,6 +638,7 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
                 RecordResolveToGeneral(pFinalWorkBuffer);
                 RenderPassGroup(PassType::TAA, mainPassData, ctx, pFinalWorkBuffer);
                 RecordResolveToRead(pFinalWorkBuffer);
+                RenderPassGroup(PassType::SMAA, mainPassData, ctx, pFinalWorkBuffer);
             }
         }
 
@@ -656,8 +688,19 @@ void PassManager::UpdateGBufferUBO(const MainPassData& data)
     gbufferUBO.rtDebugViewIdx = data.rtDebugTextureHandle;
     gbufferUBO.rtReflectionsIdx = data.rtReflectionsTextureHandle;
     gbufferUBO.rtReflectedSceneColorIdx = data.rtReflectedSceneColorTextureHandle;
+    gbufferUBO.temporalCurrentColorBufferIdx = temporal.temporalCurrentColorHandle;
 
-    const auto& rtState = g_pApplicationState->GetCurrentApplicationState().renderState.rt;
+    const auto& appRenderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+    const bool taaModeActive = appRenderState.aaType == AntialiasingType::TAA_SMAA;
+    const bool taaDebugOrSeed = appRenderState.taaSeedHistoryFromCurrentColor ||
+                                appRenderState.taaDebugMode == 1u ||
+                                appRenderState.taaDebugMode == 2u;
+    gbufferUBO.finalTemporalColorBufferIdx =
+        (taaModeActive && !taaDebugOrSeed && temporal.postAAColorHandle != 0)
+            ? temporal.postAAColorHandle
+            : temporal.resolveHandle;
+
+    const auto& rtState = appRenderState.rt;
     const bool rtReflectionsRequested = rtState.enabled && rtState.reflectionsEnabled;
     const bool useRTReflections = rtReflectionsRequested &&
                                   data.pRTSceneManager != nullptr &&
@@ -683,24 +726,43 @@ void PassManager::UpdateGBufferUBO(const MainPassData& data)
 void PassManager::RecordInitialLayoutTransitions(CommandBuffer* pCmdBuffer,
                                                  const stltype::fixed_vector<const Texture*, 16>& allGbufferAndSwapchain)
 {
-    ImageLayoutTransitionCmd colorCmd(stltype::vector<const Texture*>(allGbufferAndSwapchain.begin(), allGbufferAndSwapchain.end()));
-    colorCmd.oldLayout = ImageLayout::UNDEFINED;
-    colorCmd.newLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(colorCmd, ImageLayout::UNDEFINED, ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
-    pCmdBuffer->RecordCommand(colorCmd);
+    stltype::vector<const Texture*> colorTextures;
+    colorTextures.reserve(allGbufferAndSwapchain.size());
+    for (const auto* pTexture : allGbufferAndSwapchain)
+    {
+        if (pTexture != nullptr)
+        {
+            colorTextures.push_back(pTexture);
+        }
+    }
+    if (!colorTextures.empty())
+    {
+        ImageLayoutTransitionCmd colorCmd(colorTextures);
+        colorCmd.oldLayout = ImageLayout::UNDEFINED;
+        colorCmd.newLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
+        VkTextureManager::SetLayoutBarrierMasks(colorCmd, ImageLayout::UNDEFINED, ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+        pCmdBuffer->RecordCommand(colorCmd);
+    }
 
     stltype::fixed_vector<const Texture*, 2> depthTextures;
-    depthTextures.push_back(m_globalRendererAttachments.depthAttachment.GetTexture());
+    if (m_globalRendererAttachments.depthAttachment.GetTexture() != nullptr)
+    {
+        depthTextures.push_back(m_globalRendererAttachments.depthAttachment.GetTexture());
+    }
     if (m_globalRendererAttachments.directionalLightShadowMap.pTexture)
     {
         depthTextures.push_back(m_globalRendererAttachments.directionalLightShadowMap.pTexture);
     }
-    
-    ImageLayoutTransitionCmd depthCmd(stltype::vector<const Texture*>(depthTextures.begin(), depthTextures.end()));
-    depthCmd.oldLayout = ImageLayout::UNDEFINED;
-    depthCmd.newLayout = ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(depthCmd, ImageLayout::UNDEFINED, ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
-    pCmdBuffer->RecordCommand(depthCmd);
+
+    if (!depthTextures.empty())
+    {
+        ImageLayoutTransitionCmd depthCmd(stltype::vector<const Texture*>(depthTextures.begin(), depthTextures.end()));
+        depthCmd.oldLayout = ImageLayout::UNDEFINED;
+        depthCmd.newLayout = ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        VkTextureManager::SetLayoutBarrierMasks(
+            depthCmd, ImageLayout::UNDEFINED, ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+        pCmdBuffer->RecordCommand(depthCmd);
+    }
 }
 
 void PassManager::RecordPendingTextureUploadTransitions(CommandBuffer* pCmdBuffer)
@@ -827,12 +889,42 @@ void PassManager::RecordThisFrameColorToRead(CommandBuffer* pCmdBuffer)
     pCmdBuffer->RecordCommand(cmd);
 }
 
+void PassManager::RecordTemporalCurrentColorToGeneral(CommandBuffer* pCmdBuffer)
+{
+    ImageLayoutTransitionCmd cmd(m_gbuffer.Get(GBufferTextureType::GBufferTemporalCurrentColor));
+    cmd.oldLayout = m_temporalCurrentColorWritten ? ImageLayout::SHADER_READ_ONLY_OPTIMAL : ImageLayout::UNDEFINED;
+    cmd.newLayout = ImageLayout::GENERAL;
+    VkTextureManager::SetLayoutBarrierMasks(cmd, cmd.oldLayout, ImageLayout::GENERAL);
+    pCmdBuffer->RecordCommand(cmd);
+}
+
+void PassManager::RecordTemporalCurrentColorToRead(CommandBuffer* pCmdBuffer)
+{
+    ImageLayoutTransitionCmd cmd(m_gbuffer.Get(GBufferTextureType::GBufferTemporalCurrentColor));
+    cmd.oldLayout = ImageLayout::GENERAL;
+    cmd.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
+    VkTextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::GENERAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    pCmdBuffer->RecordCommand(cmd);
+    m_temporalCurrentColorWritten = true;
+}
+
 void PassManager::RecordResolveToGeneral(CommandBuffer* pCmdBuffer)
 {
     Texture* pResolve = m_gbuffer.Get(GBufferTextureType::GBufferResolve);
     const ImageLayout oldLayout =
         m_temporalResolveWrites < 2 ? ImageLayout::UNDEFINED : ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-    RecordClearColorTexture(pCmdBuffer, pResolve, oldLayout, ImageLayout::GENERAL);
+    if (m_temporalResolveWrites < 2)
+    {
+        RecordClearColorTexture(pCmdBuffer, pResolve, oldLayout, ImageLayout::GENERAL);
+    }
+    else
+    {
+        ImageLayoutTransitionCmd cmd(pResolve);
+        cmd.oldLayout = oldLayout;
+        cmd.newLayout = ImageLayout::GENERAL;
+        VkTextureManager::SetLayoutBarrierMasks(cmd, oldLayout, ImageLayout::GENERAL);
+        pCmdBuffer->RecordCommand(cmd);
+    }
 }
 
 void PassManager::RecordResolveToRead(CommandBuffer* pCmdBuffer)
@@ -853,6 +945,10 @@ void PassManager::RecordTemporalColorTargetsToRead(CommandBuffer* pCmdBuffer)
                             ImageLayout::SHADER_READ_ONLY_OPTIMAL);
     RecordClearColorTexture(pCmdBuffer,
                             m_gbuffer.Get(GBufferTextureType::GBufferResolve),
+                            ImageLayout::UNDEFINED,
+                            ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    RecordClearColorTexture(pCmdBuffer,
+                            m_gbuffer.Get(GBufferTextureType::GBufferPostAAColor),
                             ImageLayout::UNDEFINED,
                             ImageLayout::SHADER_READ_ONLY_OPTIMAL);
     m_temporalResolveWrites = 2;
@@ -877,8 +973,18 @@ void PassManager::RecordCopyTextureToResolve(CommandBuffer* pCmdBuffer, Texture*
     VkTextureManager::SetLayoutBarrierMasks(resolveToCopy, oldResolveLayout, ImageLayout::TRANSFER_DST_OPTIMAL);
     pCmdBuffer->RecordCommand(resolveToCopy);
 
-    ImageToImageCopyCmd copyCmd(pSourceTexture, pResolve);
-    pCmdBuffer->RecordCommand(copyCmd);
+    const auto sourceExtents = pSourceTexture->GetInfo().extents;
+    const auto resolveExtents = pResolve->GetInfo().extents;
+    if (sourceExtents.x == resolveExtents.x && sourceExtents.y == resolveExtents.y)
+    {
+        ImageToImageCopyCmd copyCmd(pSourceTexture, pResolve);
+        pCmdBuffer->RecordCommand(copyCmd);
+    }
+    else
+    {
+        ImageToImageBlitCmd blitCmd(pSourceTexture, pResolve);
+        pCmdBuffer->RecordCommand(blitCmd);
+    }
 
     ImageLayoutTransitionCmd sourceToRead(pSourceTexture);
     sourceToRead.oldLayout = ImageLayout::TRANSFER_SRC_OPTIMAL;
@@ -1035,17 +1141,18 @@ void PassManager::PreProcessDataForCurrentFrame(u32 frameIdx, u64 jitterFrameNum
     m_frameResourceManager.PreProcessDataForCurrentFrame(frameIdx, jitterFrameNumber, m_currentSwapChainIdx, this);
 }
 
-void PassManager::RecreateGbuffers(const mathstl::Vector2& resolution)
+void PassManager::RecreateGbuffers(const mathstl::Vector2& renderResolution, const mathstl::Vector2& outputResolution)
 {
     m_renderState.recreatedThisFrame = true;
     m_temporalResolveWrites = 0;
+    m_temporalCurrentColorWritten = false;
     g_pApplicationState->RegisterUpdateFunction(
         [](ApplicationState& state) { state.renderState.renderTargetsRecreatedThisFrame = true; });
     auto& gbuffer = m_gbuffer;
     stltype::vector<TextureHandle> oldTextureHandles;
     stltype::vector<u64> oldImGuiIDs = stltype::move(m_gbufferImGuiIDs);
     DynamicTextureRequest baseRequest{};
-    baseRequest.extents = DirectX::XMUINT3(resolution.x, resolution.y, 1);
+    baseRequest.extents = DirectX::XMUINT3(renderResolution.x, renderResolution.y, 1);
     baseRequest.usage = Usage::GBuffer | Usage::TransferSrc | Usage::TransferDst;
     baseRequest.isPersistent = true;
 
@@ -1054,6 +1161,7 @@ void PassManager::RecreateGbuffers(const mathstl::Vector2& resolution)
         const char* name;
         Usage extraUsage = Usage::None;
         bool nearest = true;
+        bool outputSized = false;
     };
     
     static const GBufferTexDef defs[] = {
@@ -1063,9 +1171,11 @@ void PassManager::RecreateGbuffers(const mathstl::Vector2& resolution)
         { GBufferTextureType::GBufferDebug, "GBuffer Debug" },
         { GBufferTextureType::GBufferVelocity, "GBuffer Velocity", Usage::None, false },
         { GBufferTextureType::GBufferLastFrameVelocity, "GBuffer Last Frame Velocity", Usage::None, false },
-        { GBufferTextureType::GBufferLastFrameColor, "GBuffer Last Frame Color", Usage::Storage, false },
+        { GBufferTextureType::GBufferLastFrameColor, "GBuffer Last Frame Color", Usage::Storage, false, true },
         { GBufferTextureType::GBufferThisFrameColor, "GBuffer This Frame Color", Usage::Storage, false },
-        { GBufferTextureType::GBufferResolve, "GBuffer Resolve", Usage::Storage | Usage::Sampled, false }
+        { GBufferTextureType::GBufferTemporalCurrentColor, "GBuffer Temporal Current Color", Usage::Storage | Usage::Sampled, false },
+        { GBufferTextureType::GBufferResolve, "GBuffer Resolve", Usage::Storage | Usage::Sampled, false, true },
+        { GBufferTextureType::GBufferPostAAColor, "GBuffer Post AA Color", Usage::Storage | Usage::Sampled, false, true }
     };
 
     for (const auto& def : defs)
@@ -1078,6 +1188,8 @@ void PassManager::RecreateGbuffers(const mathstl::Vector2& resolution)
         }
 
         DynamicTextureRequest req = baseRequest;
+        if (def.outputSized)
+            req.extents = DirectX::XMUINT3(outputResolution.x, outputResolution.y, 1);
         req.format = gbuffer.GetFormat(def.type);
         req.handle = g_pTexManager->GenerateHandle();
         req.usage |= def.extraUsage;
@@ -1104,6 +1216,7 @@ void PassManager::RecreateGbuffers(const mathstl::Vector2& resolution)
     m_globalRendererAttachments.pScreenSpaceShadowTexture = m_pScreenSpaceShadowTexture;
 
     DynamicTextureRequest smaaEdgeReq = baseRequest;
+    smaaEdgeReq.extents = DirectX::XMUINT3(outputResolution.x, outputResolution.y, 1);
     smaaEdgeReq.format = TexFormat::R8G8_UNORM;
     smaaEdgeReq.handle = g_pTexManager->GenerateHandle();
     smaaEdgeReq.AddName("SMAA Edges");
@@ -1114,6 +1227,7 @@ void PassManager::RecreateGbuffers(const mathstl::Vector2& resolution)
     m_smaaEdgesBindlessHandle = g_pTexManager->MakeTextureBindless(smaaEdgeReq.handle, true);
 
     DynamicTextureRequest smaaBlendReq = baseRequest;
+    smaaBlendReq.extents = DirectX::XMUINT3(outputResolution.x, outputResolution.y, 1);
     smaaBlendReq.format = TexFormat::R8G8B8A8_UNORM;
     smaaBlendReq.handle = g_pTexManager->GenerateHandle();
     smaaBlendReq.AddName("SMAA Blend Weights");
@@ -1345,6 +1459,7 @@ void PassManager::UpdateImGuiGbufferTextures()
     u64 historyColorIdB = addTex(GBufferTextureType::GBufferResolve);
     m_gbufferImGuiIDs.push_back(historyColorIdA);
     m_gbufferImGuiIDs.push_back(historyColorIdB);
+    m_gbufferImGuiIDs.push_back(addTex(GBufferTextureType::GBufferPostAAColor));
 
     g_pApplicationState->RegisterUpdateFunction(
         [this, pVelocityA, velocityIdA, velocityIdB, pHistoryColorA, historyColorIdA, historyColorIdB](auto& state) {

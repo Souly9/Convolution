@@ -19,10 +19,6 @@ layout(location = 0) out vec4 outDebug;
 
 void main()
 {
-    InstanceData instance = globalInstanceDataSSBO.instances[transformIdx];
-    uint matIdx = uint(instance.aabbExtentsMatIdx.w);
-    Material mat = globalObjectDataSSBO.materials[matIdx];
-
     vec4 finalColor = vec4(fragColor, 1.0);
 
     outDebug = finalColor;

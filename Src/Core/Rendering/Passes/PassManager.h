@@ -32,13 +32,17 @@ struct MainPassData
     struct TemporalResources
     {
         Texture* pCurrentColorTexture{nullptr};
+        Texture* pTemporalCurrentColorTexture{nullptr};
         Texture* pHistoryColorTexture{nullptr};
         Texture* pResolveTexture{nullptr};
+        Texture* pPostAAColorTexture{nullptr};
         Texture* pCurrentDepthTexture{nullptr};
         Texture* pHistoryDepthTexture{nullptr};
         BindlessTextureHandle currentColorHandle{0};
+        BindlessTextureHandle temporalCurrentColorHandle{0};
         BindlessTextureHandle historyColorHandle{0};
         BindlessTextureHandle resolveHandle{0};
+        BindlessTextureHandle postAAColorHandle{0};
         BindlessTextureHandle currentDepthHandle{0};
         BindlessTextureHandle historyDepthHandle{0};
     };
@@ -101,6 +105,7 @@ enum class PassType
     TAA,         // Temporal Anti-Aliasing
     SMAA,        // Subpixel Morphological Anti-Aliasing
     DLSS,        // Deep Learning Super Sampling
+    TemporalTonemap,
     Composite,
     UI,
     Debug,
@@ -120,14 +125,16 @@ struct PassStage
     stltype::fixed_vector<PassType, 8> groups;
 };
 
-inline const stltype::fixed_vector<PassStage, 9> PASS_SCHEDULE = {
+inline const stltype::fixed_vector<PassStage, 11> PASS_SCHEDULE = {
     PassStage{{PassType::EarlyAsyncCompute}},
     PassStage{{PassType::PreProcess}},
     PassStage{{PassType::DepthReliantCompute}},
     PassStage{{PassType::Main, PassType::Debug, PassType::Shadow}},
     PassStage{{PassType::Lighting}},
     PassStage{{PassType::PostProcess}},
+    PassStage{{PassType::TemporalTonemap}},
     PassStage{{PassType::TAA, PassType::DLSS}},
+    PassStage{{PassType::SMAA}},
     PassStage{{PassType::Composite}},
     PassStage{{PassType::UI}},
 };
@@ -140,6 +147,7 @@ inline bool IsComputePass(PassType type)
            type == PassType::ClusterGenCompute ||
            type == PassType::TileAssignmentCompute ||
            type == PassType::PostProcess ||
+           type == PassType::TemporalTonemap ||
            type == PassType::TAA ||
            type == PassType::DLSS;
 }
@@ -199,7 +207,7 @@ public:
     ~PassManager();
 
     void Init();
-    void RecreateGbuffers(const mathstl::Vector2& resolution);
+    void RecreateGbuffers(const mathstl::Vector2& renderResolution, const mathstl::Vector2& outputResolution);
     bool NeedsResizeDependentResourceRecreate(const mathstl::Vector2& swapchainResolution) const;
     void RecreateResizeDependentResources(const mathstl::Vector2& swapchainResolution, bool swapchainRecreated);
 
@@ -288,6 +296,8 @@ protected:
     void RecordUIToShaderRead(CommandBuffer* pCmdBuffer, const Texture* pUITexture);
     void RecordDepthToReadOnly(CommandBuffer* pCmdBuffer);
     void RecordThisFrameColorToRead(CommandBuffer* pCmdBuffer);
+    void RecordTemporalCurrentColorToGeneral(CommandBuffer* pCmdBuffer);
+    void RecordTemporalCurrentColorToRead(CommandBuffer* pCmdBuffer);
     void RecordResolveToGeneral(CommandBuffer* pCmdBuffer);
     void RecordResolveToRead(CommandBuffer* pCmdBuffer);
     void RecordTemporalColorTargetsToRead(CommandBuffer* pCmdBuffer);
@@ -315,6 +325,7 @@ private:
     // Only need one gbuffer
     GBuffer m_gbuffer;
     u32 m_temporalResolveWrites{0};
+    bool m_temporalCurrentColorWritten{false};
 
     // Pass data for each frame
     stltype::hash_map<PassType, stltype::vector<stltype::unique_ptr<ConvolutionRenderPass>>> m_passes{};
@@ -366,6 +377,7 @@ private:
     TextureHandle m_dlssExposureTextureHandle{0};
     StagingBuffer m_dlssExposureStagingBuffer{};
     bool m_dlssExposureTextureInitialized{false};
+    bool m_passesInitialized{false};
     u32 m_instanceBufferUpdateTimingIndex;
     u32 m_clearTileCountersTimingIndex{UINT32_MAX};
     MainPassData::PassManagerRenderState m_renderState{};

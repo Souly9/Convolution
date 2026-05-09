@@ -21,6 +21,17 @@ void StaticMainMeshPass::Init(RendererAttachmentInfo& attachmentInfo,
 {
     ScopedZone("StaticMeshPass::Init");
 
+    RecreateResolutionDependentResources(attachmentInfo, resourceManager);
+    for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
+        m_indirectCmdBuffers[i].Init(1000000);
+    BuildPipelines();
+}
+
+void StaticMainMeshPass::RecreateResolutionDependentResources(RendererAttachmentInfo& attachmentInfo,
+                                                              const SharedResourceManager& resourceManager)
+{
+    ScopedZone("StaticMeshPass::RecreateResolutionDependentResources");
+
     const auto& gbufferInfo = attachmentInfo.gbuffer;
 
     // const auto gbufferPosition = CreateDefaultColorAttachment(attachmentInfo.swapchainTextures[0].GetInfo().format,
@@ -39,10 +50,6 @@ void StaticMainMeshPass::Init(RendererAttachmentInfo& attachmentInfo,
     m_mainRenderingData.colorAttachments = {gbufferPosition, gbufferNormal, gbuffer3, gbufferVelocity};
 
     InitBaseData(attachmentInfo);
-    for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
-        m_indirectCmdBuffers[i].Init(1000000);
-
-    BuildPipelines();
 }
 
 void StaticMainMeshPass::BuildPipelines()

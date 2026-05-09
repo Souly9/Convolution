@@ -238,6 +238,23 @@ struct ImageToImageCopyCmd : public CommandBase
     }
 };
 
+struct ImageToImageBlitCmd : public CommandBase
+{
+    Texture::Ptr srcImage{};
+    Texture::Ptr dstImage{};
+
+    u32 aspectFlagBits{0x00000001};
+    u32 srcMipLevel{0};
+    u32 dstMipLevel{0};
+    u32 srcBaseLayer{0};
+    u32 dstBaseLayer{0};
+    u32 layerCount{1};
+
+    ImageToImageBlitCmd(Texture::Ptr src, Texture::Ptr dst) : srcImage(src), dstImage(dst)
+    {
+    }
+};
+
 struct ClearColorImageCmd : public CommandBase
 {
     Texture::Ptr image{};
@@ -466,6 +483,7 @@ using Command = stltype::variant<CommandBase,
                                  SimpleBufferCopyCmd,
                                  ImageBufferCopyCmd,
                                  ImageToImageCopyCmd,
+                                 ImageToImageBlitCmd,
                                  ClearColorImageCmd,
                                  ImageLayoutTransitionCmd,
                                  BeginRenderingBaseCmd,

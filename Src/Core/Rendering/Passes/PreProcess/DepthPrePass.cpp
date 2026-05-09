@@ -32,14 +32,21 @@ void DepthPrePass::Init(RendererAttachmentInfo& attachmentInfo, const SharedReso
 {
     ScopedZone("DepthPrePass::Init");
 
+    RecreateResolutionDependentResources(attachmentInfo, resourceManager);
+    for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
+        m_indirectCmdBuffers[i].Init(1000000);
+    BuildPipelines();
+}
+
+void DepthPrePass::RecreateResolutionDependentResources(RendererAttachmentInfo& attachmentInfo,
+                                                        const SharedResourceManager& resourceManager)
+{
+    ScopedZone("DepthPrePass::RecreateResolutionDependentResources");
+
     m_mainRenderingData.depthAttachment =
         CreateDefaultDepthAttachment(LoadOp::CLEAR, attachmentInfo.depthAttachment.GetTexture());
 
     InitBaseData(attachmentInfo);
-    for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
-        m_indirectCmdBuffers[i].Init(1000000);
-
-    BuildPipelines();
 }
 
 void DepthPrePass::BuildBuffers()

@@ -21,6 +21,8 @@ protected:
     void Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer) override;
     void CreateSharedDescriptorLayout() override;
     void Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager) override;
+    void RecreateResolutionDependentResources(RendererAttachmentInfo& attachmentInfo,
+                                              const SharedResourceManager& resourceManager) override;
     bool WantsToRender() const override;
 };
 } // namespace RenderPasses

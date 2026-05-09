@@ -259,8 +259,8 @@ protected:
 
     // Frequently accessed by threads
     stltype::queue<TextureRequest> m_requests{}; // Pending texture requests, mainly handled by manager thread
-    stltype::hash_map<TextureHandle, TextureVulkan> m_textures;
-    stltype::hash_map<TextureHandle, TextureVulkan> m_persistentTextures;
+    stltype::hash_map<TextureHandle, stltype::unique_ptr<Texture>> m_textures;
+    stltype::hash_map<TextureHandle, stltype::unique_ptr<Texture>> m_persistentTextures;
     stltype::deque<StagingBufferVulkan> m_stagingBufferInUse;
     stltype::vector<TextureVulkan> m_swapChainTextures;
 

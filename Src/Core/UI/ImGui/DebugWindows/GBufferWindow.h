@@ -23,7 +23,7 @@ public:
         auto& gbufferIDs = renderState.gbufferImGuiIDs;
         auto& csmIDs = renderState.csmCascadeImGuiIDs;
 
-        if (gbufferIDs.size() < 7)
+        if (gbufferIDs.size() < 8)
             return;
 
         ImGui::Begin("GBuffer Viewer", &m_isOpen);
@@ -36,6 +36,7 @@ public:
         buffers.push_back({"Lighting", gbufferIDs[4]});
         buffers.push_back({"History", gbufferIDs[5]});
         buffers.push_back({"Resolve", gbufferIDs[6]});
+        buffers.push_back({"Post AA", gbufferIDs[7]});
 
         for (u32 i = 0; i < csmIDs.size(); ++i)
         {

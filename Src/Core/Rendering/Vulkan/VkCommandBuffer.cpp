@@ -336,6 +336,42 @@ static void RecordCommand(ImageToImageCopyCmd& cmd, CBufferVulkan& buffer)
                    &copyRegion);
 }
 
+static void RecordCommand(ImageToImageBlitCmd& cmd, CBufferVulkan& buffer)
+{
+    DEBUG_ASSERT(cmd.srcImage->GetImage() != VK_NULL_HANDLE && cmd.dstImage->GetImage() != VK_NULL_HANDLE);
+
+    const auto& srcExtents = cmd.srcImage->GetInfo().extents;
+    const auto& dstExtents = cmd.dstImage->GetInfo().extents;
+
+    VkImageBlit blitRegion{};
+    blitRegion.srcSubresource.aspectMask = cmd.aspectFlagBits;
+    blitRegion.srcSubresource.mipLevel = cmd.srcMipLevel;
+    blitRegion.srcSubresource.baseArrayLayer = cmd.srcBaseLayer;
+    blitRegion.srcSubresource.layerCount = cmd.layerCount;
+    blitRegion.srcOffsets[0] = {0, 0, 0};
+    blitRegion.srcOffsets[1] = {static_cast<int32_t>(srcExtents.x),
+                                static_cast<int32_t>(srcExtents.y),
+                                static_cast<int32_t>(srcExtents.z)};
+
+    blitRegion.dstSubresource.aspectMask = cmd.aspectFlagBits;
+    blitRegion.dstSubresource.mipLevel = cmd.dstMipLevel;
+    blitRegion.dstSubresource.baseArrayLayer = cmd.dstBaseLayer;
+    blitRegion.dstSubresource.layerCount = cmd.layerCount;
+    blitRegion.dstOffsets[0] = {0, 0, 0};
+    blitRegion.dstOffsets[1] = {static_cast<int32_t>(dstExtents.x),
+                                static_cast<int32_t>(dstExtents.y),
+                                static_cast<int32_t>(dstExtents.z)};
+
+    vkCmdBlitImage(buffer.GetRef(),
+                   cmd.srcImage->GetImage(),
+                   VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                   cmd.dstImage->GetImage(),
+                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                   1,
+                   &blitRegion,
+                   VK_FILTER_LINEAR);
+}
+
 static void RecordCommand(ClearColorImageCmd& cmd, CBufferVulkan& buffer)
 {
     DEBUG_ASSERT(cmd.image->GetImage() != VK_NULL_HANDLE);

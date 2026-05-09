@@ -6,6 +6,7 @@
 #include "../Globals/Common.h"
 #include "../Globals/GBuffer/GBufferSampling.h"
 #include "../Globals/PushConstants.h"
+#include "../Globals/Utils/ScreenSpace.h"
 
 layout(set = 0, binding = GlobalBindlessTextureBufferSlot) uniform sampler2D GlobalBindlessTextures[];
 layout(rgba16f, set = 1, binding = GlobalBindlessImageBufferSlot) uniform writeonly image2D TAAResolveImages[];
@@ -19,11 +20,6 @@ layout(push_constant) uniform PushConstants
 pushConstantsBlock;
 
 #define pushConstants pushConstantsBlock.data
-
-bool IsUVInBounds(vec2 sampleUV)
-{
-    return all(greaterThanEqual(sampleUV, vec2(0.0))) && all(lessThanEqual(sampleUV, vec2(1.0)));
-}
 
 float Luminance(vec3 color)
 {

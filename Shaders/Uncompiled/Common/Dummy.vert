@@ -9,6 +9,7 @@
 
 #include "../../Globals/Common.h"
 #include "../../Globals/Scene.h"
+#include "../../Globals/GeometryHelpers.h"
 #include "../../Globals/GeometryPassData.h"
 
 layout(location = 0) in vec3 inPosition;
@@ -25,9 +26,8 @@ OUT;
 void main()
 {
     uint instanceIdx = perObjectDataSSBO.transformDataIdx[gl_InstanceIndex];
-    InstanceData iData = globalInstanceDataSSBO.instances[instanceIdx];
-    uint transformIdx = GetTransformIdx(iData);
-    mat4 worldMat = globalTransformSSBO.modelMatrices[transformIdx];
+    InstanceData iData = FetchInstanceData(instanceIdx);
+    mat4 worldMat = FetchInstanceWorldMatrix(iData);
     OUT.matIdx = GetMaterialIdx(iData);
     OUT.fragTexCoord = inTexCoord0;
 

@@ -21,6 +21,12 @@ IN;
 
 layout(location = 0) out vec4 outColor;
 
+vec3 InverseReinhardFromTemporal(vec3 color)
+{
+    color = clamp(color, vec3(0.0), vec3(0.9999));
+    return color / max(vec3(1.0) - color, vec3(0.0001));
+}
+
 void main()
 {
     vec2 texCoords = IN.fragTexCoord;
@@ -35,7 +41,8 @@ void main()
         uint aaType = GET_AA_TYPE(ubo.debugFlags);
         if (aaType == 1u || aaType == 3u) // AntialiasingType::TAA_SMAA or DLSS
         {
-            finalHDRColor = texture(GlobalBindlessTextures[gbufferUBO.gbufferResolveIdx], texCoords).xyz;
+            vec3 temporalColor = texture(GlobalBindlessTextures[gbufferUBO.finalTemporalColorBufferIdx], texCoords).xyz;
+            finalHDRColor = InverseReinhardFromTemporal(temporalColor);
         }
         else
         {

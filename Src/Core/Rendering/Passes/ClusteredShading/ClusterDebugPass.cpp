@@ -17,6 +17,17 @@ ClusterDebugPass::ClusterDebugPass() : ConvolutionRenderPass("ClusterDebugPass")
 void ClusterDebugPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager)
 {
     ScopedZone("ClusterDebugPass::Init");
+
+    RecreateResolutionDependentResources(attachmentInfo, resourceManager);
+
+    BuildBuffers();
+    BuildPipelines();
+}
+
+void ClusterDebugPass::RecreateResolutionDependentResources(RendererAttachmentInfo& attachmentInfo,
+                                                            const SharedResourceManager& resourceManager)
+{
+    ScopedZone("ClusterDebugPass::RecreateResolutionDependentResources");
     
     const auto& gbufferInfo = attachmentInfo.gbuffer;
     const auto gbufferDebug =
@@ -28,9 +39,6 @@ void ClusterDebugPass::Init(RendererAttachmentInfo& attachmentInfo, const Shared
         CreateReadOnlyDepthAttachment(LoadOp::LOAD, attachmentInfo.depthAttachment.GetTexture());
     
     InitBaseData(attachmentInfo);
-    
-    BuildBuffers();
-    BuildPipelines();
 }
 
 void ClusterDebugPass::BuildBuffers()

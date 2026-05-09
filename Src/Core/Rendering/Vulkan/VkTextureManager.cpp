@@ -177,11 +177,11 @@ void VkTextureManager::PostRender()
             TextureVulkan* pTex = nullptr;
             if (auto mapIt = m_textures.find(*it); mapIt != m_textures.end())
             {
-                pTex = &mapIt->second;
+                pTex = mapIt->second.get();
             }
             else if (auto persistentIt = m_persistentTextures.find(*it); persistentIt != m_persistentTextures.end())
             {
-                pTex = &persistentIt->second;
+                pTex = persistentIt->second.get();
             }
             if (pTex == nullptr || pTex->GetImageView() == VK_NULL_HANDLE || pTex->GetSampler() == VK_NULL_HANDLE)
             {
@@ -360,14 +360,15 @@ Texture* VkTextureManager::CreateTextureImmediate(const DynamicTextureRequest& r
     Texture* pTex = nullptr;
     if (req.isPersistent)
     {
-        auto& mapEntry =
-            m_persistentTextures.emplace(req.handle, Texture(vulkanTexCreateInfo, genericInfo)).first->second;
-        pTex = static_cast<Texture*>(&mapEntry);
+        auto mapEntry = stltype::make_unique<Texture>(vulkanTexCreateInfo, genericInfo);
+        pTex = static_cast<Texture*>(mapEntry.get());
+        m_persistentTextures.emplace(req.handle, std::move(mapEntry));
     }
     else
     {
-        auto& mapEntry = m_textures.emplace(req.handle, Texture(vulkanTexCreateInfo, genericInfo)).first->second;
-        pTex = static_cast<Texture*>(&mapEntry);
+        auto mapEntry = stltype::make_unique<Texture>(vulkanTexCreateInfo, genericInfo);
+        pTex = static_cast<Texture*>(mapEntry.get());
+        m_textures.emplace(req.handle, std::move(mapEntry));
     }
     m_sharedDataMutex.unlock();
 
@@ -656,11 +657,11 @@ TextureVulkan* VkTextureManager::GetTexture(TextureHandle handle)
 
     auto it = m_textures.find(handle);
     if (it != m_textures.end())
-        return &(it->second);
+        return it->second.get();
 
     auto itPersistent = m_persistentTextures.find(handle);
     if (itPersistent != m_persistentTextures.end())
-        return &(itPersistent->second);
+        return itPersistent->second.get();
 
     return nullptr;
 }
@@ -719,9 +720,9 @@ VkTextureManager::~VkTextureManager()
     for (auto& tex : m_swapChainTextures)
         tex.CleanUp();
     for (auto& pair : m_textures)
-        pair.second.CleanUp();
+        pair.second->CleanUp();
     for (auto& pair : m_persistentTextures)
-        pair.second.CleanUp();
+        pair.second->CleanUp();
 
     m_swapChainTextures.clear();
     m_textures.clear();
@@ -844,7 +845,7 @@ void VkTextureManager::Flush()
 
     for (auto it = m_textures.begin(); it != m_textures.end();)
     {
-        it->second.CleanUp();
+        it->second->CleanUp();
         it = m_textures.erase(it);
     }
 
@@ -866,16 +867,16 @@ void VkTextureManager::FreeTexture(TextureHandle handle)
 
     if (it != m_textures.end())
     {
-        DEBUG_LOGF("[VkTextureManager] Freeing scene texture \"{}\" handle {}", it->second.GetName().c_str(), handle);
-        it->second.CleanUp();
+        DEBUG_LOGF("[VkTextureManager] Freeing scene texture \"{}\" handle {}", it->second->GetName().c_str(), handle);
+        it->second->CleanUp();
         m_textures.erase(it);
     }
     else if (itPersistent != m_persistentTextures.end())
     {
         DEBUG_LOGF("[VkTextureManager] Freeing persistent texture \"{}\" handle {}",
-                   itPersistent->second.GetName().c_str(),
+                   itPersistent->second->GetName().c_str(),
                    handle);
-        itPersistent->second.CleanUp();
+        itPersistent->second->CleanUp();
         m_persistentTextures.erase(itPersistent);
     }
     else

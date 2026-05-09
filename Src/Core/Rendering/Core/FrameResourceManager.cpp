@@ -119,7 +119,7 @@ void FrameResourceManager::BuildSharedDataForView(const RenderView& mainView,
     ubo.gt7ReferenceLuminance = renderState.gt7ReferenceLuminance;
     ubo.rtUseGlobalMaterialReflectance = renderState.rt.globalReflectanceOverrideEnabled ? 1u : 0u;
     ubo.rtGlobalMaterialReflectance = renderState.rt.globalMaterialReflectance;
-    ubo.debugFlags |= ((u32)renderState.aaType << 8);
+    ubo.debugFlags = (ubo.debugFlags & ~(0xFFu << 8)) | ((u32)renderState.aaType << 8);
 }
 
 void FrameResourceManager::Init()

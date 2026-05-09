@@ -139,8 +139,9 @@ void SMAAPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     UpdateContextForFrame(ctx.imageIdx);
     auto& cmdBuf = m_indirectCmdBuffers[m_currentFrameIdx];
 
-    const auto extentsXY = data.renderState.renderResolution;
+    const auto extentsXY = data.renderState.swapchainResolution;
     const DirectX::XMINT2 extents(extentsXY.x, extentsXY.y);
+    const auto displayViewport = RenderViewUtils::CreateViewportFromData(extentsXY, ctx.zNear, ctx.zFar);
     auto& sceneGeometryBuffers = data.pResourceManager->GetSceneGeometryBuffers();
     if (sceneGeometryBuffers.GetVertexBuffer().GetRef() == VK_NULL_HANDLE ||
         sceneGeometryBuffers.GetIndexBuffer().GetRef() == VK_NULL_HANDLE)
@@ -161,7 +162,7 @@ void SMAAPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
         ColorAttachment attach = CreateDefaultColorAttachment(data.pSMAAEdgesTexture->GetInfo().format, LoadOp::CLEAR, data.pSMAAEdgesTexture);
         BeginRenderingCmd beginEdge{&m_edgePSO, ToRenderAttachmentInfos(stltype::vector<ColorAttachment>{attach})};
         beginEdge.extents = extents;
-        beginEdge.viewport = data.mainView.viewport;
+        beginEdge.viewport = displayViewport;
         
         GenericIndirectDrawCmd cmdEdge{&m_edgePSO, cmdBuf};
         cmdEdge.drawCount = cmdBuf.GetDrawCmdNum();
@@ -190,7 +191,7 @@ void SMAAPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
         ColorAttachment attach = CreateDefaultColorAttachment(data.pSMAABlendTexture->GetInfo().format, LoadOp::CLEAR, data.pSMAABlendTexture);
         BeginRenderingCmd beginBlend{&m_blendPSO, ToRenderAttachmentInfos(stltype::vector<ColorAttachment>{attach})};
         beginBlend.extents = extents;
-        beginBlend.viewport = data.mainView.viewport;
+        beginBlend.viewport = displayViewport;
 
         GenericIndirectDrawCmd cmdBlend{&m_blendPSO, cmdBuf};
         cmdBlend.drawCount = cmdBuf.GetDrawCmdNum();
@@ -216,19 +217,22 @@ void SMAAPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
         pCmdBuffer->RecordCommand(barrier);
     }
     {
-        // Output to GBufferThisFrameColor
-        Texture* pOutputTexture = data.pGbuffer->Get(GBufferTextureType::GBufferThisFrameColor);
+        Texture* pOutputTexture = data.pGbuffer->Get(GBufferTextureType::GBufferPostAAColor);
         
         ImageLayoutTransitionCmd outputBarrier(pOutputTexture);
-        outputBarrier.oldLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
+        outputBarrier.oldLayout =
+            (m_outputWritten || data.renderState.recreatedThisFrame) ? ImageLayout::SHADER_READ_ONLY_OPTIMAL
+                                                                     : ImageLayout::UNDEFINED;
         outputBarrier.newLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
-        VkTextureManager::SetLayoutBarrierMasks(outputBarrier, ImageLayout::SHADER_READ_ONLY_OPTIMAL, ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+        VkTextureManager::SetLayoutBarrierMasks(outputBarrier, outputBarrier.oldLayout, ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
         pCmdBuffer->RecordCommand(outputBarrier);
 
-        ColorAttachment attach = CreateDefaultColorAttachment(pOutputTexture->GetInfo().format, LoadOp::LOAD, pOutputTexture);
+        const LoadOp outputLoadOp =
+            (m_outputWritten || data.renderState.recreatedThisFrame) ? LoadOp::LOAD : LoadOp::CLEAR;
+        ColorAttachment attach = CreateDefaultColorAttachment(pOutputTexture->GetInfo().format, outputLoadOp, pOutputTexture);
         BeginRenderingCmd beginNeighbor{&m_neighborhoodPSO, ToRenderAttachmentInfos(stltype::vector<ColorAttachment>{attach})};
         beginNeighbor.extents = extents;
-        beginNeighbor.viewport = data.mainView.viewport;
+        beginNeighbor.viewport = displayViewport;
 
         GenericIndirectDrawCmd cmdNeighbor{&m_neighborhoodPSO, cmdBuf};
         cmdNeighbor.drawCount = cmdBuf.GetDrawCmdNum();
@@ -243,12 +247,12 @@ void SMAAPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
         pCmdBuffer->RecordCommand(cmdNeighbor);
         pCmdBuffer->RecordCommand(EndRenderingCmd{});
         
-        // Transition back to SHADER_READ for Composite
         ImageLayoutTransitionCmd outputBarrier2(pOutputTexture);
         outputBarrier2.oldLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
         outputBarrier2.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
         VkTextureManager::SetLayoutBarrierMasks(outputBarrier2, ImageLayout::COLOR_ATTACHMENT_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
         pCmdBuffer->RecordCommand(outputBarrier2);
+        m_outputWritten = true;
     }
     
 

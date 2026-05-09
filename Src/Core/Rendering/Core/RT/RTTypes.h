@@ -3,6 +3,7 @@
 #include "Core/Rendering/Core/Buffer.h"
 #include "Core/Rendering/Core/RenderingForwardDecls.h"
 #include "Core/SceneGraph/Mesh.h"
+#include "../../../../../Shaders/Globals/RT.h"
 #include <cstring>
 
 namespace RT
@@ -47,6 +48,7 @@ struct RTInstanceRecord
     u32 meshId{Mesh::InvalidRTMeshId};
     u32 blasGeneration{0};
     u32 transformIndex{0};
+    u32 instanceDataIdx{0};
     ECS::EntityID entityId{0};
     u32 subMeshIdx{0};
     u32 flags{0};
@@ -58,6 +60,7 @@ struct RTInstanceRecord
                meshId == other.meshId &&
                blasGeneration == other.blasGeneration &&
                transformIndex == other.transformIndex &&
+               instanceDataIdx == other.instanceDataIdx &&
                entityId == other.entityId &&
                subMeshIdx == other.subMeshIdx &&
                flags == other.flags &&
@@ -72,6 +75,7 @@ struct TLASFrameData
     GenericBuffer storageBuffer{};
     GenericBuffer scratchBuffer{};
     GenericBuffer instanceBuffer{};
+    GenericBuffer hitDataBuffer{};
     u64 scratchSize{0};
     u32 lastBuiltInstanceCount{0};
 };

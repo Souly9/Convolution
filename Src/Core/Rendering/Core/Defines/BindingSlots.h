@@ -22,3 +22,6 @@ static constexpr u32 s_clusterGridSSBOBindingSlot = ClusterGridSSBOSlot;
 static constexpr u32 s_sceneAABBsSSBOBindingSlot = SceneAABBsSSBOSlot;
 static constexpr u32 s_viewSpaceLightsSSBOBindingSlot = GlobalViewSpaceLightsSSBOSlot;
 static constexpr u32 s_rtSceneASBindingSlot = RTSceneASBindingSlot;
+static constexpr u32 s_rtInstanceHitDataBindingSlot = RTInstanceHitDataBindingSlot;
+static constexpr u32 s_rtSceneVertexBufferBindingSlot = RTSceneVertexBufferBindingSlot;
+static constexpr u32 s_rtSceneIndexBufferBindingSlot = RTSceneIndexBufferBindingSlot;

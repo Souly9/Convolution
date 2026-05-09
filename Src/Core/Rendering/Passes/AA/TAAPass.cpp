@@ -93,6 +93,8 @@ void TAAPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comman
     m_pushConstants.frameIndex = ctx.imageIdx;
     m_pushConstants.resolutionX = data.renderState.renderResolution.x;
     m_pushConstants.resolutionY = data.renderState.renderResolution.y;
+    m_pushConstants.outputResolutionX = data.renderState.swapchainResolution.x;
+    m_pushConstants.outputResolutionY = data.renderState.swapchainResolution.y;
     m_pushConstants.zNear = ctx.zNear;
     m_pushConstants.zFar = ctx.zFar;
     m_pushConstants.velocityRejectionStart = renderState.taaVelocityRejectionStart;
@@ -101,8 +103,8 @@ void TAAPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comman
     m_pushConstants.forceHistory = renderState.taaForceHistory ? 1u : 0u;
     m_pushConstants.resetHistory |= data.renderState.recreatedThisFrame ? 1u : 0u;
 
-    u32 groupCountX = (static_cast<u32>(data.renderState.renderResolution.x) + 7) / 8;
-    u32 groupCountY = (static_cast<u32>(data.renderState.renderResolution.y) + 7) / 8;
+    u32 groupCountX = (static_cast<u32>(data.renderState.swapchainResolution.x) + 7) / 8;
+    u32 groupCountY = (static_cast<u32>(data.renderState.swapchainResolution.y) + 7) / 8;
     u32 groupCountZ = 1;
 
     {
