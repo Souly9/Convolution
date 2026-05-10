@@ -48,7 +48,7 @@ vec3 getCascadeDebugColor(int cascadeIndex)
 float SampleGlobalShadowmaps(vec4 fragWorldPos, float viewDepth, vec3 normal, vec3 lightDir)
 {
     float shadow = 1.0;
-    if ((ubo.debugFlags & 1u) != 0u)
+    if ((ubo.debugFlags & DEBUG_FLAG_SHADOWS_ENABLED) != 0u)
     {
         shadow = computeShadow(fragWorldPos, viewDepth, normal, lightDir);
     }
@@ -85,7 +85,7 @@ void main()
     vec3 V = viewDir;
 
     // 1 = CSM Debug
-    if (debugViewMode == 1)
+    if (debugViewMode == DEBUG_VIEW_MODE_CSM_CASCADES)
     {
         int cascadeIdx = getCascadeIndex(viewDepth);
         vec3 cascadeColor = getCascadeDebugColor(cascadeIdx);
@@ -98,7 +98,7 @@ void main()
         return;
     }
     // 2 = Cluster Debug
-    else if (debugViewMode == 2)
+    else if (debugViewMode == DEBUG_VIEW_MODE_CLUSTERS)
     {
         uint clusterIdx = getClusterIndex(fragPosViewSpace.xyz, ubo.projection);
         float r = fract(sin(float(clusterIdx) * 12.9898 + 78.233) * 43758.5453);
@@ -141,7 +141,7 @@ void main()
 
     // --- Directional Light ---
     float dirLightShadow = SampleGlobalShadowmaps(fragPosWorldSpace, viewDepth, N, dirLightTravelDir);
-    if ((ubo.debugFlags & 2u) != 0u)
+    if ((ubo.debugFlags & DEBUG_FLAG_SSS_ENABLED) != 0u)
     {
         float sss = clamp(texture(GlobalBindlessTextures[nonuniformEXT(shadowmapViewUBO.screenSpaceShadows)], texCoords).r, 0.0, 1.0);
         float contactShadowStrength = 0.9;

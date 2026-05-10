@@ -45,7 +45,9 @@ public:
         // Tone Mapper
         const char* toneMappers[] = {"None", "ACES", "Uncharted", "GT7"};
         // Ensure we don't go out of bounds if state has invalid value
-        int currentToneMapper = mathstl::clamp(renderState.toneMapperType, 0, 3);
+        int currentToneMapper = mathstl::clamp(renderState.toneMapperType,
+                                               static_cast<s32>(ToneMapperType::None),
+                                               static_cast<s32>(ToneMapperType::GT7));
         int uiToneMapper = currentToneMapper;
 
         if (ImGui::Combo("Tone Mapper", &uiToneMapper, toneMappers, IM_ARRAYSIZE(toneMappers)))
@@ -58,7 +60,7 @@ public:
             }
         }
 
-        if (uiToneMapper == 3) // GT7 Settings
+        if (uiToneMapper == static_cast<int>(ToneMapperType::GT7))
         {
             if (ImGui::CollapsingHeader("GT7 Tonemapper Settings"))
             {
@@ -178,8 +180,9 @@ public:
                 "Current Color",
                 "History Color",
                 "History Current Difference"};
-            int currentTAADebugMode =
-                mathstl::clamp(static_cast<int>(renderState.taaDebugMode), 0, IM_ARRAYSIZE(taaDebugModes) - 1);
+            int currentTAADebugMode = mathstl::clamp(static_cast<int>(renderState.taaDebugMode),
+                                                      static_cast<int>(TAADebugMode::Off),
+                                                      static_cast<int>(TAADebugMode::HistoryVelocityMagnitude));
             int uiTAADebugMode = currentTAADebugMode;
             if (ImGui::Combo("TAA Debug View", &uiTAADebugMode, taaDebugModes, IM_ARRAYSIZE(taaDebugModes)))
             {

@@ -37,7 +37,7 @@ private:
     BindlessTextureHandle m_searchTexBindless{0};
     BindlessTextureHandle m_areaTexBindless{0};
 
-    stltype::fixed_vector<IndirectDrawCmdBuf, SWAPCHAIN_IMAGES> m_indirectCmdBuffers;
+    stltype::fixed_vector<IndirectDrawCmdBuf, SWAPCHAIN_IMAGES> m_indirectCmdBuffers{SWAPCHAIN_IMAGES};
     u32 m_currentFrameIdx{0};
     bool m_outputWritten{true};
 };

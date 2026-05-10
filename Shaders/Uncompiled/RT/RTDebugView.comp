@@ -53,7 +53,7 @@ void main()
     vec4 color = vec4(0.0, 0.0, 0.0, 1.0);
     if (rayQueryGetIntersectionTypeEXT(rayQuery, true) != gl_RayQueryCommittedIntersectionNoneEXT)
     {
-        if (pc.debugMode == 1u)
+        if (pc.debugMode == RT_DEBUG_VIEW_MODE_TLAS)
         {
             uint customIndex = rayQueryGetIntersectionInstanceCustomIndexEXT(rayQuery, true);
             color = vec4(HashColor(customIndex), 1.0);

@@ -33,7 +33,9 @@ public:
 
         const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
         const char* debugModes[] = {"None", "CSM Cascades", "Clusters"};
-        int currentDebugMode = mathstl::clamp(renderState.debugViewMode, 0, 2);
+        int currentDebugMode = mathstl::clamp(renderState.debugViewMode,
+                                              static_cast<s32>(DebugViewMode::None),
+                                              static_cast<s32>(DebugViewMode::Clusters));
         int uiDebugMode = currentDebugMode;
 
         if (ImGui::Combo("Debug View Mode", &uiDebugMode, debugModes, IM_ARRAYSIZE(debugModes)))
@@ -71,18 +73,20 @@ public:
             const char* rtDebugViews[] = {"None", "TLAS", "Reflections Only"};
             int uiRTDebugView = 0;
             if (renderState.rt.debugViewEnabled)
-                uiRTDebugView = 1;
+                uiRTDebugView = static_cast<int>(RT_DEBUG_VIEW_MODE_TLAS);
             else if (renderState.rt.reflectionsDebugMode == RTReflectionDebugMode::ReflectionsOnly)
-                uiRTDebugView = 2;
+                uiRTDebugView = static_cast<int>(RT_DEBUG_VIEW_MODE_REFLECTIONS_ONLY);
 
             if (ImGui::Combo("Debug View", &uiRTDebugView, rtDebugViews, IM_ARRAYSIZE(rtDebugViews)))
             {
                 g_pApplicationState->RegisterUpdateFunction(
                     [uiRTDebugView](ApplicationState& state)
                     {
-                        state.renderState.rt.debugViewEnabled = uiRTDebugView == 1;
+                        state.renderState.rt.debugViewEnabled = uiRTDebugView == static_cast<int>(RT_DEBUG_VIEW_MODE_TLAS);
                         state.renderState.rt.reflectionsDebugMode =
-                            uiRTDebugView == 2 ? RTReflectionDebugMode::ReflectionsOnly : RTReflectionDebugMode::None;
+                            uiRTDebugView == static_cast<int>(RT_DEBUG_VIEW_MODE_REFLECTIONS_ONLY)
+                                ? RTReflectionDebugMode::ReflectionsOnly
+                                : RTReflectionDebugMode::None;
                     });
             }
 

@@ -97,31 +97,6 @@ void main()
 
     vec3 historyColor = SampleHistoryBilinearHDR(historyUV, resolution);
 
-    if (pushConstants.forceHistory != 0u)
-    {
-        StoreColor(pixelCoord, vec4(historyColor, currentColor.a));
-        return;
-    }
-
-    if (pushConstants.debugMode == 1u)
-    {
-        StoreColor(pixelCoord, vec4(currentColor.rgb, currentColor.a));
-        return;
-    }
-
-    if (pushConstants.debugMode == 2u)
-    {
-        StoreColor(pixelCoord, vec4(historyColor, currentColor.a));
-        return;
-    }
-
-    if (pushConstants.debugMode == 3u)
-    {
-        vec3 diff = min(abs(historyColor - currentColor.rgb) * 4.0, vec3(1.0));
-        StoreColor(pixelCoord, vec4(diff, 1.0));
-        return;
-    }
-
     vec3 accumulatedColor = AccumulateHDR(currentColor.rgb, historyColor, 0.95);
     StoreColor(pixelCoord, vec4(accumulatedColor, currentColor.a));
 }

@@ -278,8 +278,6 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
             pPassManager->RecreateShadowMapsPublic(csmCascades, csmResolution);
             m_currentShadowMapState.cascadeCount = csmCascades;
             m_currentShadowMapState.shadowMapExtents = csmResolution;
-
-            pPassManager->RegisterImGuiTexturesPublic();
         }
     }
     if (m_needsToPropagateMainDataUpdate && m_dataToBePreProcessed.IsEmpty())

@@ -7,15 +7,13 @@
 #include "ClusteredShading/TileAssignmentComputePass.h"
 #include "Compositing/CompositPass.h"
 #include "Core/Global/FrameGlobals.h"
+#include "Core/Global/State/States.h"
 #include "Core/Rendering/Core/Defines/GlobalBuffers.h"
 #include "Core/Rendering/Core/GPUTimingQuery.h"
 #include "Core/Rendering/Core/Nvidia/StreamlineManager.h"
 #include "Core/Rendering/Core/ShaderManager.h"
 #include "Core/Rendering/Core/Synchronization.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
-#include "Core/Rendering/Core/Utils/DeleteQueue.h"
-#include "Core/Rendering/Vulkan/VkTextureManager.h"
-#include "Core/Rendering/Vulkan/Utils/VkEnumHelpers.h"
 #include "DebugShapePass.h"
 #include "ImGuiPass.h"
 #include "PreProcess/DepthPrePass.h"
@@ -30,9 +28,7 @@
 #include "RT/RTDebugViewPass.h"
 #include "RT/RTReflectionsPass.h"
 #include "Core/Rendering/Core/ProfilingUtils.h"
-#include "vulkan/vulkan_core.h"
 #include <cstring>
-#include <imgui/backends/imgui_impl_vulkan.h>
 
 using namespace RenderPasses;
 
@@ -99,39 +95,6 @@ void PassManager::InitPassesAndImGui()
     RecreateResizeDependentResources(FrameGlobals::GetSwapChainExtent(), true);
 }
 
-void PassManager::CreateDepthAttachment()
-{
-    if (m_depthTextureHandle != 0)
-        g_pTexManager->FreeTexture(m_depthTextureHandle);
-    if (m_lastFrameDepthTextureHandle != 0)
-        g_pTexManager->FreeTexture(m_lastFrameDepthTextureHandle);
-
-    DepthBufferAttachmentInfo depthAttachmentInfo{};
-    depthAttachmentInfo.format = DEPTH_BUFFER_FORMAT;
-
-    DynamicTextureRequest depthRequest{};
-    depthRequest.handle = g_pTexManager->GenerateHandle();
-    depthRequest.extents =
-        DirectX::XMUINT3(m_renderState.renderResolution.x, m_renderState.renderResolution.y, 1);
-    depthRequest.format = DEPTH_BUFFER_FORMAT;
-    depthRequest.usage = Usage::Sampled | Usage::DepthAttachment | Usage::TransferDst | Usage::TransferSrc;
-    depthRequest.isPersistent = true;
-    depthRequest.AddName("Main Depth Buffer");
-
-    m_depthTextureHandle = depthRequest.handle;
-    m_pDepthTexture = static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(depthRequest));
-    m_depthBindlessHandle = g_pTexManager->MakeTextureBindless(depthRequest.handle, depthRequest.isPersistent);
-
-    depthRequest.handle = g_pTexManager->GenerateHandle();
-    depthRequest.AddName("Last Frame Depth Buffer");
-    
-    m_lastFrameDepthTextureHandle = depthRequest.handle;
-    m_pLastFrameDepthTexture = static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(depthRequest));
-    m_lastFrameDepthBindlessHandle = g_pTexManager->MakeTextureBindless(depthRequest.handle, depthRequest.isPersistent);
-
-    m_globalRendererAttachments.depthAttachment = DepthAttachment::Create(depthAttachmentInfo, m_pDepthTexture);
-}
-
 bool PassManager::NeedsResizeDependentResourceRecreate(const mathstl::Vector2& swapchainResolution) const
 {
     const auto& appRenderState = g_pApplicationState->GetCurrentApplicationState().renderState;
@@ -170,20 +133,10 @@ void PassManager::RecreateResizeDependentResources(const mathstl::Vector2& swapc
         shadowMapState.shadowMapExtents = csmResolution;
     }
 
-    // 2. Recreate Main Pass Resolve Attachment
-    ColorAttachmentInfo colorAttachmentInfo{};
-    colorAttachmentInfo.format = SWAPCHAIN_FORMAT;
-    colorAttachmentInfo.finalLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
-    auto colorAttachment = ColorAttachment::Create(colorAttachmentInfo);
-
-    m_globalRendererAttachments.colorAttachments[ColorAttachmentType::GBufferColor].clear();
-    m_globalRendererAttachments.colorAttachments[ColorAttachmentType::GBufferColor].push_back(colorAttachment);
-
-    // 3. Recreate Depth
-    CreateDepthAttachment();
-
-    // 4. Recreate G-Buffers (updates descriptors internally)
-    RecreateGbuffers(m_renderState.renderResolution, m_renderState.swapchainResolution);
+    m_imguiRegistry.ReleaseGBufferIdsForNextFrame();
+    m_transitionRecorder.ResetTemporalState();
+    m_renderTargetManager.Recreate(m_renderState.renderResolution, m_renderState.swapchainResolution);
+    m_renderTargetManager.GetAttachments().directionalLightShadowMap = m_shadowMapManager.GetShadowMap();
     m_rtResourceManager.Recreate(m_renderState.renderResolution);
 
     // 5. Update Main Pass Data with new handles
@@ -211,6 +164,13 @@ void PassManager::RecreateResizeDependentResources(const mathstl::Vector2& swapc
         ++idx;
     }
 
+    UpdateGBufferUBO(m_mainPassData[m_currentSwapChainIdx]);
+    for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
+    {
+        m_frameResourceManager.GetFrameRendererContext(i).gbufferPostProcessDescriptor->WriteBufferUpdate(
+            m_frameResourceManager.GetGBufferPostProcessUBO(), s_globalGbufferPostProcessUBOSlot);
+    }
+
     g_pTexManager->PostRender();
 
     // 6. First creation owns full pass setup; later render-size changes only refresh cached resize state.
@@ -220,19 +180,20 @@ void PassManager::RecreateResizeDependentResources(const mathstl::Vector2& swapc
         {
             if (m_passesInitialized)
             {
-                pPass->RecreateResolutionDependentResources(m_globalRendererAttachments, m_resourceManager);
+                pPass->RecreateResolutionDependentResources(m_renderTargetManager.GetAttachments(), m_resourceManager);
             }
             else
             {
-                pPass->Init(m_globalRendererAttachments, m_resourceManager);
+                pPass->Init(m_renderTargetManager.GetAttachments(), m_resourceManager);
             }
         }
     }
     m_passesInitialized = true;
 
     // 7. Update UI Descriptors
-    RegisterImGuiTextures();
-    UpdateImGuiGbufferTextures();
+    m_imguiRegistry.RegisterShadowMapTextures(m_shadowMapManager.GetShadowMap());
+    m_imguiRegistry.RegisterGBufferTextures(m_renderTargetManager.GetGBuffer(),
+                                            m_renderTargetManager.GetScreenSpaceShadowTexture());
 }
 
 bool PassManager::AnyPassWantsToRender() const
@@ -251,10 +212,10 @@ bool PassManager::AnyPassWantsToRender() const
 void PassManager::PrepareMainPassDataForFrame(MainPassData& mainPassData, FrameRendererContext& ctx, u32 frameIdx)
 {
     mainPassData.pResourceManager = &m_resourceManager;
-    mainPassData.pGbuffer = &m_gbuffer;
+    mainPassData.pGbuffer = &m_renderTargetManager.GetGBuffer();
     mainPassData.mainView.descriptorSet = ctx.sharedDataUBODescriptor;
     mainPassData.renderState = m_renderState;
-    mainPassData.directionalLightShadowMap = m_globalRendererAttachments.directionalLightShadowMap;
+    mainPassData.directionalLightShadowMap = m_shadowMapManager.GetShadowMap();
     mainPassData.cascades = m_frameResourceManager.GetShadowMapState().cascadeCount;
     mainPassData.depthBufferBindlessHandle = mainPassData.temporalResources.currentDepthHandle;
     mainPassData.pMainDepthTexture = mainPassData.temporalResources.pCurrentDepthTexture;
@@ -277,31 +238,34 @@ void PassManager::PrepareMainPassDataForFrame(MainPassData& mainPassData, FrameR
     mainPassData.rtReflectionsTextureHandle = rtReflections.bindlessHandle;
     mainPassData.rtReflectedSceneColorTextureHandle = rtReflectedSceneColor.bindlessHandle;
 
-    mainPassData.pSMAAEdgesTexture = m_pSMAAEdgesTexture;
-    mainPassData.pSMAABlendTexture = m_pSMAABlendTexture;
-    mainPassData.smaaEdges = m_smaaEdgesBindlessHandle;
-    mainPassData.smaaBlend = m_smaaBlendBindlessHandle;
+    mainPassData.pScreenSpaceShadowTexture = m_renderTargetManager.GetScreenSpaceShadowTexture();
+    mainPassData.screenSpaceShadows = m_renderTargetManager.GetScreenSpaceShadowBindlessHandle();
+    mainPassData.pSMAAEdgesTexture = m_renderTargetManager.GetSMAAEdgesTexture();
+    mainPassData.pSMAABlendTexture = m_renderTargetManager.GetSMAABlendTexture();
+    mainPassData.smaaEdges = m_renderTargetManager.GetSMAAEdgesBindlessHandle();
+    mainPassData.smaaBlend = m_renderTargetManager.GetSMAABlendBindlessHandle();
 
-    ctx.pDLSSExposureTexture = m_pDLSSExposureTexture;
+    ctx.pDLSSExposureTexture = m_renderTargetManager.GetDLSSExposureTexture();
 }
 
 void PassManager::UpdateTemporalResources(MainPassData& mainPassData)
 {
     auto& temporal = mainPassData.temporalResources;
-    temporal.pCurrentColorTexture = m_gbuffer.Get(GBufferTextureType::GBufferThisFrameColor);
-    temporal.pTemporalCurrentColorTexture = m_gbuffer.Get(GBufferTextureType::GBufferTemporalCurrentColor);
-    temporal.pHistoryColorTexture = m_gbuffer.Get(GBufferTextureType::GBufferLastFrameColor);
-    temporal.pResolveTexture = m_gbuffer.Get(GBufferTextureType::GBufferResolve);
-    temporal.pPostAAColorTexture = m_gbuffer.Get(GBufferTextureType::GBufferPostAAColor);
-    temporal.pCurrentDepthTexture = m_pDepthTexture;
-    temporal.pHistoryDepthTexture = m_pLastFrameDepthTexture;
-    temporal.currentColorHandle = m_gbuffer.GetHandle(GBufferTextureType::GBufferThisFrameColor);
-    temporal.temporalCurrentColorHandle = m_gbuffer.GetHandle(GBufferTextureType::GBufferTemporalCurrentColor);
-    temporal.historyColorHandle = m_gbuffer.GetHandle(GBufferTextureType::GBufferLastFrameColor);
-    temporal.resolveHandle = m_gbuffer.GetHandle(GBufferTextureType::GBufferResolve);
-    temporal.postAAColorHandle = m_gbuffer.GetHandle(GBufferTextureType::GBufferPostAAColor);
-    temporal.currentDepthHandle = m_depthBindlessHandle;
-    temporal.historyDepthHandle = m_lastFrameDepthBindlessHandle;
+    auto& gbuffer = m_renderTargetManager.GetGBuffer();
+    temporal.pCurrentColorTexture = gbuffer.Get(GBufferTextureType::GBufferThisFrameColor);
+    temporal.pTemporalCurrentColorTexture = gbuffer.Get(GBufferTextureType::GBufferTemporalCurrentColor);
+    temporal.pHistoryColorTexture = gbuffer.Get(GBufferTextureType::GBufferLastFrameColor);
+    temporal.pResolveTexture = gbuffer.Get(GBufferTextureType::GBufferResolve);
+    temporal.pPostAAColorTexture = gbuffer.Get(GBufferTextureType::GBufferPostAAColor);
+    temporal.pCurrentDepthTexture = m_renderTargetManager.GetDepthTexture();
+    temporal.pHistoryDepthTexture = m_renderTargetManager.GetLastFrameDepthTexture();
+    temporal.currentColorHandle = gbuffer.GetHandle(GBufferTextureType::GBufferThisFrameColor);
+    temporal.temporalCurrentColorHandle = gbuffer.GetHandle(GBufferTextureType::GBufferTemporalCurrentColor);
+    temporal.historyColorHandle = gbuffer.GetHandle(GBufferTextureType::GBufferLastFrameColor);
+    temporal.resolveHandle = gbuffer.GetHandle(GBufferTextureType::GBufferResolve);
+    temporal.postAAColorHandle = gbuffer.GetHandle(GBufferTextureType::GBufferPostAAColor);
+    temporal.currentDepthHandle = m_renderTargetManager.GetDepthBindlessHandle();
+    temporal.historyDepthHandle = m_renderTargetManager.GetLastFrameDepthBindlessHandle();
 }
 
 void PassManager::InitFrameContexts()
@@ -383,18 +347,20 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
     }
 
     stltype::fixed_vector<const Texture*, 8> gbufferTextures;
-    m_gbuffer.GetGeometryOutputTextures(gbufferTextures);
+    auto& gbuffer = m_renderTargetManager.GetGBuffer();
+    auto& attachments = m_renderTargetManager.GetAttachments();
+    gbuffer.GetGeometryOutputTextures(gbufferTextures);
 
     stltype::fixed_vector<const Texture*, 16> allColorTextures;
     allColorTextures.assign(gbufferTextures.begin(), gbufferTextures.end());
-    allColorTextures.push_back(m_gbuffer.Get(GBufferTextureType::GBufferThisFrameColor));
-    if (m_pSMAAEdgesTexture != nullptr)
+    allColorTextures.push_back(gbuffer.Get(GBufferTextureType::GBufferThisFrameColor));
+    if (m_renderTargetManager.GetSMAAEdgesTexture() != nullptr)
     {
-        allColorTextures.push_back(m_pSMAAEdgesTexture);
+        allColorTextures.push_back(m_renderTargetManager.GetSMAAEdgesTexture());
     }
-    if (m_pSMAABlendTexture != nullptr)
+    if (m_renderTargetManager.GetSMAABlendTexture() != nullptr)
     {
-        allColorTextures.push_back(m_pSMAABlendTexture);
+        allColorTextures.push_back(m_renderTargetManager.GetSMAABlendTexture());
     }
     allColorTextures.push_back(ctx.pCurrentSwapchainTexture);
 
@@ -415,12 +381,6 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
 
     auto pendingFlips = m_resourceManager.PopPendingVisibleInstanceIndices();
 
-    stltype::fixed_vector<u64, SWAPCHAIN_IMAGES> priorCompositeValues;
-    for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
-    {
-        priorCompositeValues.push_back(m_frameResourceManager.GetFrameRendererContext(i).nextTimelineValue);
-    }
-
     u64 computeSignalValue = s_globalTimelineCounter.fetch_add(6);
     u64 depthPassSignalValue = computeSignalValue + 1;
     u64 sssSignalValue = computeSignalValue + 2;
@@ -428,16 +388,6 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
     u64 finalRenderSignalValue = computeSignalValue + 4;
     u64 graphicsTimelineValue = computeSignalValue + 5;
     const u64 submittedTransferValue = g_pQueueHandler->GetLastSubmittedValue(QueueType::Transfer);
-
-    for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
-    {
-        if (priorCompositeValues[i] == 0)
-            continue;
-
-        auto& priorCtx = m_frameResourceManager.GetFrameRendererContext(i);
-        pComputeCmdBuffer->AddTimelineWait(&priorCtx.frameTimeline, priorCompositeValues[i]);
-        pDepthWorkBuffer->AddTimelineWait(&priorCtx.frameTimeline, priorCompositeValues[i]);
-    }
 
     if (submittedTransferValue > 0)
     {
@@ -514,9 +464,9 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
             Profiling::EndScope(pDepthWorkBuffer, &m_gpuTimingQuery, m_instanceBufferUpdateTimingIndex);
         }
 
-        RecordInitialLayoutTransitions(pDepthWorkBuffer, allColorTextures);
+        m_transitionRecorder.RecordInitialLayoutTransitions(pDepthWorkBuffer, allColorTextures, attachments);
         RenderPassGroup(PassType::PreProcess, mainPassData, ctx, pDepthWorkBuffer);
-        RecordDepthToReadOnly(pDepthWorkBuffer);
+        m_transitionRecorder.RecordDepthToReadOnly(pDepthWorkBuffer, attachments);
         pDepthWorkBuffer->AddTimelineSignal(&ctx.frameTimeline, depthPassSignalValue);
         pDepthWorkBuffer->SetWaitStages(SyncStages::TRANSFER |
                                         SyncStages::VERTEX_SHADER |
@@ -535,9 +485,11 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
         if (submittedTransferValue > 0)
             pSSSWorkBuffer->AddTimelineWait(g_pQueueHandler->GetTimelineSemaphore(QueueType::Transfer),
                                             submittedTransferValue);
-        RecordSSSOutputToGeneral(pSSSWorkBuffer);
+        m_transitionRecorder.RecordSSSOutputToGeneral(pSSSWorkBuffer,
+                                                      m_renderTargetManager.GetScreenSpaceShadowTexture());
         RenderPassGroup(PassType::DepthReliantCompute, mainPassData, ctx, pSSSWorkBuffer);
-        RecordSSSOutputToShaderRead(pSSSWorkBuffer);
+        m_transitionRecorder.RecordSSSOutputToShaderRead(pSSSWorkBuffer,
+                                                         m_renderTargetManager.GetScreenSpaceShadowTexture());
 
         pSSSWorkBuffer->AddTimelineWait(&ctx.frameTimeline, depthPassSignalValue);
         pSSSWorkBuffer->SetWaitStages(SyncStages::TRANSFER | SyncStages::COMPUTE_SHADER);
@@ -555,13 +507,13 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
                                                 SyncStages::FRAGMENT_SHADER |
                                                 SyncStages::EARLY_FRAGMENT_TESTS |
                                                 SyncStages::COLOR_ATTACHMENT_OUTPUT);
-        RecordPendingTextureUploadTransitions(pMainGraphicsWorkBuffer);
-        RecordVelocityClear(pMainGraphicsWorkBuffer);
+        m_transitionRecorder.RecordPendingTextureUploadTransitions(pMainGraphicsWorkBuffer);
+        m_transitionRecorder.RecordVelocityClear(pMainGraphicsWorkBuffer, gbuffer);
         RenderPassGroup(PassType::Main, mainPassData, ctx, pMainGraphicsWorkBuffer);
         RenderPassGroup(PassType::Debug, mainPassData, ctx, pMainGraphicsWorkBuffer);
         RenderPassGroup(PassType::Shadow, mainPassData, ctx, pMainGraphicsWorkBuffer);
         
-        RecordGBufferToShaderRead(pMainGraphicsWorkBuffer, gbufferTextures);
+        m_transitionRecorder.RecordGBufferToShaderRead(pMainGraphicsWorkBuffer, gbufferTextures, attachments);
 
         pMainGraphicsWorkBuffer->AddTimelineSignal(&ctx.frameTimeline, mainPassSignalValue);
         pMainGraphicsWorkBuffer->SetSignalStages(SyncStages::COLOR_ATTACHMENT_OUTPUT | SyncStages::DEPTH_OUTPUT);
@@ -587,17 +539,19 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
                                          SyncStages::COLOR_ATTACHMENT_OUTPUT);
         if (mainPassData.renderState.recreatedThisFrame)
         {
-            RecordTemporalColorTargetsToRead(pFinalWorkBuffer);
+            m_transitionRecorder.RecordTemporalColorTargetsToRead(pFinalWorkBuffer, gbuffer);
         }
         if (Nvidia::StreamlineManager::IsDLSSSupported())
         {
-            RecordDLSSExposureUpdate(pFinalWorkBuffer);
+            m_transitionRecorder.RecordDLSSExposureUpdate(pFinalWorkBuffer,
+                                                          m_renderTargetManager.GetDLSSExposureTexture(),
+                                                          m_renderTargetManager.GetDLSSExposureStagingBuffer());
         }
 
         RenderPassGroup(PassType::Lighting, mainPassData, ctx, pFinalWorkBuffer);
 
         // ThisFrameColor to SHADER_READ
-        RecordThisFrameColorToRead(pFinalWorkBuffer);
+        m_transitionRecorder.RecordThisFrameColorToRead(pFinalWorkBuffer, gbuffer);
         m_rtResourceManager.RecordPrepareOutputsForWrite(pFinalWorkBuffer);
         RenderPassGroup(PassType::PostProcess, mainPassData, ctx, pFinalWorkBuffer);
         m_rtResourceManager.RecordOutputsToShaderRead(pFinalWorkBuffer);
@@ -606,38 +560,43 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
         const bool taaModeActive = appRenderState.aaType == AntialiasingType::TAA_SMAA;
         const bool dlssModeActive = appRenderState.aaType == AntialiasingType::DLSS;
         const bool seedHistoryFromCurrentColor = taaModeActive && appRenderState.taaSeedHistoryFromCurrentColor;
-        const bool debugCopyCurrent = taaModeActive && appRenderState.taaDebugMode == 1u;
-        const bool debugCopyHistory = taaModeActive && appRenderState.taaDebugMode == 2u;
+        const bool debugCopyCurrent =
+            taaModeActive && appRenderState.taaDebugMode == static_cast<u32>(TAADebugMode::CurrentColor);
+        const bool debugCopyHistory =
+            taaModeActive && appRenderState.taaDebugMode == static_cast<u32>(TAADebugMode::HistoryColor);
 
         if (taaModeActive || dlssModeActive)
         {
-            RecordTemporalCurrentColorToGeneral(pFinalWorkBuffer);
+            m_transitionRecorder.RecordTemporalCurrentColorToGeneral(pFinalWorkBuffer, gbuffer);
             RenderPassGroup(PassType::TemporalTonemap, mainPassData, ctx, pFinalWorkBuffer);
-            RecordTemporalCurrentColorToRead(pFinalWorkBuffer);
+            m_transitionRecorder.RecordTemporalCurrentColorToRead(pFinalWorkBuffer, gbuffer);
         }
 
         if (taaModeActive)
         {
             if (seedHistoryFromCurrentColor)
             {
-                RecordCopyTextureToResolve(pFinalWorkBuffer, m_gbuffer.Get(GBufferTextureType::GBufferTemporalCurrentColor));
+                m_transitionRecorder.RecordCopyTextureToResolve(
+                    pFinalWorkBuffer, gbuffer, gbuffer.Get(GBufferTextureType::GBufferTemporalCurrentColor));
                 g_pApplicationState->RegisterUpdateFunction(
                     [](ApplicationState& state) { state.renderState.taaSeedHistoryFromCurrentColor = false; });
             }
             else if (debugCopyCurrent)
             {
-                RecordCopyTextureToResolve(pFinalWorkBuffer, m_gbuffer.Get(GBufferTextureType::GBufferTemporalCurrentColor));
+                m_transitionRecorder.RecordCopyTextureToResolve(
+                    pFinalWorkBuffer, gbuffer, gbuffer.Get(GBufferTextureType::GBufferTemporalCurrentColor));
             }
             else if (debugCopyHistory)
             {
-                RecordCopyTextureToResolve(pFinalWorkBuffer, m_gbuffer.Get(GBufferTextureType::GBufferLastFrameColor));
+                m_transitionRecorder.RecordCopyTextureToResolve(
+                    pFinalWorkBuffer, gbuffer, gbuffer.Get(GBufferTextureType::GBufferLastFrameColor));
             }
             else
             {
                 // Resolve is only a TAA target here. DLSS manages its own output transition/write path.
-                RecordResolveToGeneral(pFinalWorkBuffer);
+                m_transitionRecorder.RecordResolveToGeneral(pFinalWorkBuffer, gbuffer);
                 RenderPassGroup(PassType::TAA, mainPassData, ctx, pFinalWorkBuffer);
-                RecordResolveToRead(pFinalWorkBuffer);
+                m_transitionRecorder.RecordResolveToRead(pFinalWorkBuffer, gbuffer);
                 RenderPassGroup(PassType::SMAA, mainPassData, ctx, pFinalWorkBuffer);
             }
         }
@@ -656,7 +615,7 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
     {
         pPresentTransitionBuffer->AddTimelineWait(&ctx.frameTimeline, finalRenderSignalValue);
         pPresentTransitionBuffer->SetWaitStages(SyncStages::ALL_COMMANDS);
-        RecordSwapchainToPresent(pPresentTransitionBuffer);
+        m_transitionRecorder.RecordSwapchainToPresent(pPresentTransitionBuffer, ctx.pCurrentSwapchainTexture);
         pPresentTransitionBuffer->AddSignalSemaphore(&ctx.pPresentLayoutTransitionSignalSemaphore);
         pPresentTransitionBuffer->AddTimelineSignal(&ctx.frameTimeline, graphicsTimelineValue);
         pPresentTransitionBuffer->SetSignalStages(SyncStages::ALL_COMMANDS);
@@ -674,13 +633,14 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
 void PassManager::UpdateGBufferUBO(const MainPassData& data)
 {
     const auto& temporal = data.temporalResources;
+    auto& gbuffer = m_renderTargetManager.GetGBuffer();
     UBO::GBufferPostProcessUBO gbufferUBO{};
-    gbufferUBO.gbufferAlbedoIdx = m_gbuffer.GetHandle(GBufferTextureType::GBufferAlbedo);
-    gbufferUBO.gbufferNormalIdx = m_gbuffer.GetHandle(GBufferTextureType::GBufferNormal);
-    gbufferUBO.gbufferTexCoordMatIdx = m_gbuffer.GetHandle(GBufferTextureType::TexCoordMatData);
-    gbufferUBO.gbufferDebugIdx = m_gbuffer.GetHandle(GBufferTextureType::GBufferDebug);
-    gbufferUBO.gbufferVelocityIdx = m_gbuffer.GetHandle(GBufferTextureType::GBufferVelocity);
-    gbufferUBO.lastFrameVelocityIdx = m_gbuffer.GetHandle(GBufferTextureType::GBufferLastFrameVelocity);
+    gbufferUBO.gbufferAlbedoIdx = gbuffer.GetHandle(GBufferTextureType::GBufferAlbedo);
+    gbufferUBO.gbufferNormalIdx = gbuffer.GetHandle(GBufferTextureType::GBufferNormal);
+    gbufferUBO.gbufferTexCoordMatIdx = gbuffer.GetHandle(GBufferTextureType::TexCoordMatData);
+    gbufferUBO.gbufferDebugIdx = gbuffer.GetHandle(GBufferTextureType::GBufferDebug);
+    gbufferUBO.gbufferVelocityIdx = gbuffer.GetHandle(GBufferTextureType::GBufferVelocity);
+    gbufferUBO.lastFrameVelocityIdx = gbuffer.GetHandle(GBufferTextureType::GBufferLastFrameVelocity);
     gbufferUBO.depthBufferIdx = temporal.currentDepthHandle;
     gbufferUBO.lastFrameColorBufferIdx = temporal.historyColorHandle;
     gbufferUBO.lastFrameDepthIdx = temporal.historyDepthHandle;
@@ -693,8 +653,8 @@ void PassManager::UpdateGBufferUBO(const MainPassData& data)
     const auto& appRenderState = g_pApplicationState->GetCurrentApplicationState().renderState;
     const bool taaModeActive = appRenderState.aaType == AntialiasingType::TAA_SMAA;
     const bool taaDebugOrSeed = appRenderState.taaSeedHistoryFromCurrentColor ||
-                                appRenderState.taaDebugMode == 1u ||
-                                appRenderState.taaDebugMode == 2u;
+                                appRenderState.taaDebugMode == static_cast<u32>(TAADebugMode::CurrentColor) ||
+                                appRenderState.taaDebugMode == static_cast<u32>(TAADebugMode::HistoryColor);
     gbufferUBO.finalTemporalColorBufferIdx =
         (taaModeActive && !taaDebugOrSeed && temporal.postAAColorHandle != 0)
             ? temporal.postAAColorHandle
@@ -721,320 +681,6 @@ void PassManager::UpdateGBufferUBO(const MainPassData& data)
     memcpy(m_frameResourceManager.GetMappedGBufferPostProcessUBO(),
            &gbufferUBO,
            sizeof(UBO::GBufferPostProcessUBO));
-}
-
-void PassManager::RecordInitialLayoutTransitions(CommandBuffer* pCmdBuffer,
-                                                 const stltype::fixed_vector<const Texture*, 16>& allGbufferAndSwapchain)
-{
-    stltype::vector<const Texture*> colorTextures;
-    colorTextures.reserve(allGbufferAndSwapchain.size());
-    for (const auto* pTexture : allGbufferAndSwapchain)
-    {
-        if (pTexture != nullptr)
-        {
-            colorTextures.push_back(pTexture);
-        }
-    }
-    if (!colorTextures.empty())
-    {
-        ImageLayoutTransitionCmd colorCmd(colorTextures);
-        colorCmd.oldLayout = ImageLayout::UNDEFINED;
-        colorCmd.newLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
-        VkTextureManager::SetLayoutBarrierMasks(colorCmd, ImageLayout::UNDEFINED, ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
-        pCmdBuffer->RecordCommand(colorCmd);
-    }
-
-    stltype::fixed_vector<const Texture*, 2> depthTextures;
-    if (m_globalRendererAttachments.depthAttachment.GetTexture() != nullptr)
-    {
-        depthTextures.push_back(m_globalRendererAttachments.depthAttachment.GetTexture());
-    }
-    if (m_globalRendererAttachments.directionalLightShadowMap.pTexture)
-    {
-        depthTextures.push_back(m_globalRendererAttachments.directionalLightShadowMap.pTexture);
-    }
-
-    if (!depthTextures.empty())
-    {
-        ImageLayoutTransitionCmd depthCmd(stltype::vector<const Texture*>(depthTextures.begin(), depthTextures.end()));
-        depthCmd.oldLayout = ImageLayout::UNDEFINED;
-        depthCmd.newLayout = ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-        VkTextureManager::SetLayoutBarrierMasks(
-            depthCmd, ImageLayout::UNDEFINED, ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
-        pCmdBuffer->RecordCommand(depthCmd);
-    }
-}
-
-void PassManager::RecordPendingTextureUploadTransitions(CommandBuffer* pCmdBuffer)
-{
-    const auto pendingTextures = g_pTexManager->PopPendingGraphicsShaderReadTransitions();
-    if (pendingTextures.empty())
-        return;
-
-    stltype::vector<const Texture*> textures;
-    textures.reserve(pendingTextures.size());
-    for (const auto* pTexture : pendingTextures)
-    {
-        textures.push_back(pTexture);
-    }
-
-    ImageLayoutTransitionCmd cmd(textures);
-    cmd.oldLayout = ImageLayout::TRANSFER_DST_OPTIMAL;
-    cmd.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::TRANSFER_DST_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-    pCmdBuffer->RecordCommand(cmd);
-}
-
-void PassManager::RecordGBufferToShaderRead(CommandBuffer* pCmdBuffer,
-                                            const stltype::fixed_vector<const Texture*, 8>& gbufferTextures)
-{
-    ImageLayoutTransitionCmd colorCmd(stltype::vector<const Texture*>(gbufferTextures.begin(), gbufferTextures.end()));
-    colorCmd.oldLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
-    colorCmd.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(colorCmd, ImageLayout::COLOR_ATTACHMENT_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-    pCmdBuffer->RecordCommand(colorCmd);
-
-    if (const auto* pShadowMap = m_globalRendererAttachments.directionalLightShadowMap.pTexture)
-    {
-        ImageLayoutTransitionCmd shadowCmd(pShadowMap);
-        shadowCmd.oldLayout = ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-        shadowCmd.newLayout = ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-        VkTextureManager::SetLayoutBarrierMasks(shadowCmd, ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
-        pCmdBuffer->RecordCommand(shadowCmd);
-    }
-
-}
-
-void PassManager::RecordVelocityClear(CommandBuffer* pCmdBuffer)
-{
-    RecordClearColorTexture(pCmdBuffer,
-                            m_gbuffer.Get(GBufferTextureType::GBufferVelocity),
-                            ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                            ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
-}
-
-void PassManager::RecordDepthToReadOnly(CommandBuffer* pCmdBuffer)
-{
-    ImageLayoutTransitionCmd depthCmd(m_globalRendererAttachments.depthAttachment.GetTexture());
-    depthCmd.oldLayout = ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-    depthCmd.newLayout = ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(depthCmd, ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
-    pCmdBuffer->RecordCommand(depthCmd);
-}
-
-void PassManager::RecordSSSOutputToGeneral(CommandBuffer* pCmdBuffer)
-{
-    if (!m_pScreenSpaceShadowTexture) return;
-    ImageLayoutTransitionCmd cmd(m_pScreenSpaceShadowTexture);
-    cmd.oldLayout = ImageLayout::UNDEFINED;
-    cmd.newLayout = ImageLayout::GENERAL;
-    VkTextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::UNDEFINED, ImageLayout::GENERAL);
-    pCmdBuffer->RecordCommand(cmd);
-}
-
-void PassManager::RecordSSSOutputToShaderRead(CommandBuffer* pCmdBuffer)
-{
-    if (!m_pScreenSpaceShadowTexture) return;
-    ImageLayoutTransitionCmd cmd(m_pScreenSpaceShadowTexture);
-    cmd.oldLayout = ImageLayout::GENERAL;
-    cmd.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::GENERAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-    cmd.dstStage = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
-    cmd.dstAccessMask = 0;
-    pCmdBuffer->RecordCommand(cmd);
-}
-
-void PassManager::RecordDLSSExposureUpdate(CommandBuffer* pCmdBuffer)
-{
-    if (!m_pDLSSExposureTexture)
-        return;
-
-    const float exposureValue = g_pApplicationState->GetCurrentApplicationState().renderState.exposure;
-    m_dlssExposureStagingBuffer.CopyToMapped(&exposureValue, sizeof(exposureValue));
-
-    ImageLayoutTransitionCmd exposureToTransfer(m_pDLSSExposureTexture);
-    exposureToTransfer.oldLayout =
-        m_dlssExposureTextureInitialized ? ImageLayout::SHADER_READ_ONLY_OPTIMAL : ImageLayout::UNDEFINED;
-    exposureToTransfer.newLayout = ImageLayout::TRANSFER_DST_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(exposureToTransfer,
-                                            exposureToTransfer.oldLayout,
-                                            ImageLayout::TRANSFER_DST_OPTIMAL);
-    if (m_dlssExposureTextureInitialized)
-        exposureToTransfer.srcStage = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT;
-    pCmdBuffer->RecordCommand(exposureToTransfer);
-
-    ImageBufferCopyCmd copyExposure(&m_dlssExposureStagingBuffer, m_pDLSSExposureTexture);
-    copyExposure.imageExtent = {1, 1, 1};
-    copyExposure.aspectFlagBits = VK_IMAGE_ASPECT_COLOR_BIT;
-    pCmdBuffer->RecordCommand(copyExposure);
-
-    ImageLayoutTransitionCmd exposureToRead(m_pDLSSExposureTexture);
-    exposureToRead.oldLayout = ImageLayout::TRANSFER_DST_OPTIMAL;
-    exposureToRead.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(exposureToRead,
-                                            ImageLayout::TRANSFER_DST_OPTIMAL,
-                                            ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-    exposureToRead.dstStage = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT;
-    pCmdBuffer->RecordCommand(exposureToRead);
-
-    m_dlssExposureTextureInitialized = true;
-}
-
-void PassManager::RecordThisFrameColorToRead(CommandBuffer* pCmdBuffer)
-{
-    ImageLayoutTransitionCmd cmd(m_gbuffer.Get(GBufferTextureType::GBufferThisFrameColor));
-    cmd.oldLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
-    cmd.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::COLOR_ATTACHMENT_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-    pCmdBuffer->RecordCommand(cmd);
-}
-
-void PassManager::RecordTemporalCurrentColorToGeneral(CommandBuffer* pCmdBuffer)
-{
-    ImageLayoutTransitionCmd cmd(m_gbuffer.Get(GBufferTextureType::GBufferTemporalCurrentColor));
-    cmd.oldLayout = m_temporalCurrentColorWritten ? ImageLayout::SHADER_READ_ONLY_OPTIMAL : ImageLayout::UNDEFINED;
-    cmd.newLayout = ImageLayout::GENERAL;
-    VkTextureManager::SetLayoutBarrierMasks(cmd, cmd.oldLayout, ImageLayout::GENERAL);
-    pCmdBuffer->RecordCommand(cmd);
-}
-
-void PassManager::RecordTemporalCurrentColorToRead(CommandBuffer* pCmdBuffer)
-{
-    ImageLayoutTransitionCmd cmd(m_gbuffer.Get(GBufferTextureType::GBufferTemporalCurrentColor));
-    cmd.oldLayout = ImageLayout::GENERAL;
-    cmd.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::GENERAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-    pCmdBuffer->RecordCommand(cmd);
-    m_temporalCurrentColorWritten = true;
-}
-
-void PassManager::RecordResolveToGeneral(CommandBuffer* pCmdBuffer)
-{
-    Texture* pResolve = m_gbuffer.Get(GBufferTextureType::GBufferResolve);
-    const ImageLayout oldLayout =
-        m_temporalResolveWrites < 2 ? ImageLayout::UNDEFINED : ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-    if (m_temporalResolveWrites < 2)
-    {
-        RecordClearColorTexture(pCmdBuffer, pResolve, oldLayout, ImageLayout::GENERAL);
-    }
-    else
-    {
-        ImageLayoutTransitionCmd cmd(pResolve);
-        cmd.oldLayout = oldLayout;
-        cmd.newLayout = ImageLayout::GENERAL;
-        VkTextureManager::SetLayoutBarrierMasks(cmd, oldLayout, ImageLayout::GENERAL);
-        pCmdBuffer->RecordCommand(cmd);
-    }
-}
-
-void PassManager::RecordResolveToRead(CommandBuffer* pCmdBuffer)
-{
-    ImageLayoutTransitionCmd cmd(m_gbuffer.Get(GBufferTextureType::GBufferResolve));
-    cmd.oldLayout = ImageLayout::GENERAL;
-    cmd.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::GENERAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-    pCmdBuffer->RecordCommand(cmd);
-    ++m_temporalResolveWrites;
-}
-
-void PassManager::RecordTemporalColorTargetsToRead(CommandBuffer* pCmdBuffer)
-{
-    RecordClearColorTexture(pCmdBuffer,
-                            m_gbuffer.Get(GBufferTextureType::GBufferLastFrameColor),
-                            ImageLayout::UNDEFINED,
-                            ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-    RecordClearColorTexture(pCmdBuffer,
-                            m_gbuffer.Get(GBufferTextureType::GBufferResolve),
-                            ImageLayout::UNDEFINED,
-                            ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-    RecordClearColorTexture(pCmdBuffer,
-                            m_gbuffer.Get(GBufferTextureType::GBufferPostAAColor),
-                            ImageLayout::UNDEFINED,
-                            ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-    m_temporalResolveWrites = 2;
-}
-
-void PassManager::RecordCopyTextureToResolve(CommandBuffer* pCmdBuffer, Texture* pSourceTexture)
-{
-    Texture* pResolve = m_gbuffer.Get(GBufferTextureType::GBufferResolve);
-    const ImageLayout oldResolveLayout =
-        m_temporalResolveWrites < 2 ? ImageLayout::UNDEFINED : ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-
-    ImageLayoutTransitionCmd sourceToCopy(pSourceTexture);
-    sourceToCopy.oldLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-    sourceToCopy.newLayout = ImageLayout::TRANSFER_SRC_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(
-        sourceToCopy, ImageLayout::SHADER_READ_ONLY_OPTIMAL, ImageLayout::TRANSFER_SRC_OPTIMAL);
-    pCmdBuffer->RecordCommand(sourceToCopy);
-
-    ImageLayoutTransitionCmd resolveToCopy(pResolve);
-    resolveToCopy.oldLayout = oldResolveLayout;
-    resolveToCopy.newLayout = ImageLayout::TRANSFER_DST_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(resolveToCopy, oldResolveLayout, ImageLayout::TRANSFER_DST_OPTIMAL);
-    pCmdBuffer->RecordCommand(resolveToCopy);
-
-    const auto sourceExtents = pSourceTexture->GetInfo().extents;
-    const auto resolveExtents = pResolve->GetInfo().extents;
-    if (sourceExtents.x == resolveExtents.x && sourceExtents.y == resolveExtents.y)
-    {
-        ImageToImageCopyCmd copyCmd(pSourceTexture, pResolve);
-        pCmdBuffer->RecordCommand(copyCmd);
-    }
-    else
-    {
-        ImageToImageBlitCmd blitCmd(pSourceTexture, pResolve);
-        pCmdBuffer->RecordCommand(blitCmd);
-    }
-
-    ImageLayoutTransitionCmd sourceToRead(pSourceTexture);
-    sourceToRead.oldLayout = ImageLayout::TRANSFER_SRC_OPTIMAL;
-    sourceToRead.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(
-        sourceToRead, ImageLayout::TRANSFER_SRC_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-    pCmdBuffer->RecordCommand(sourceToRead);
-
-    ImageLayoutTransitionCmd resolveToRead(pResolve);
-    resolveToRead.oldLayout = ImageLayout::TRANSFER_DST_OPTIMAL;
-    resolveToRead.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(
-        resolveToRead, ImageLayout::TRANSFER_DST_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-    pCmdBuffer->RecordCommand(resolveToRead);
-
-    ++m_temporalResolveWrites;
-}
-
-void PassManager::RecordClearColorTexture(CommandBuffer* pCmdBuffer,
-                                          Texture* pTexture,
-                                          ImageLayout oldLayout,
-                                          ImageLayout finalLayout)
-{
-    ImageLayoutTransitionCmd toTransfer(pTexture);
-    toTransfer.oldLayout = oldLayout;
-    toTransfer.newLayout = ImageLayout::TRANSFER_DST_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(toTransfer, oldLayout, ImageLayout::TRANSFER_DST_OPTIMAL);
-    pCmdBuffer->RecordCommand(toTransfer);
-
-    ClearColorImageCmd clearCmd(pTexture);
-    clearCmd.color.float32[0] = 0.0f;
-    clearCmd.color.float32[1] = 0.0f;
-    clearCmd.color.float32[2] = 0.0f;
-    clearCmd.color.float32[3] = 0.0f;
-    pCmdBuffer->RecordCommand(clearCmd);
-
-    ImageLayoutTransitionCmd toFinal(pTexture);
-    toFinal.oldLayout = ImageLayout::TRANSFER_DST_OPTIMAL;
-    toFinal.newLayout = finalLayout;
-    VkTextureManager::SetLayoutBarrierMasks(toFinal, ImageLayout::TRANSFER_DST_OPTIMAL, finalLayout);
-    pCmdBuffer->RecordCommand(toFinal);
-}
-
-void PassManager::RecordSwapchainToPresent(CommandBuffer* pCmdBuffer)
-{
-    ImageLayoutTransitionCmd cmd(m_frameResourceManager.GetFrameRendererContext(m_currentSwapChainIdx).pCurrentSwapchainTexture);
-    cmd.oldLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
-    cmd.newLayout = ImageLayout::PRESENT_SRC_KHR;
-    VkTextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::COLOR_ATTACHMENT_OPTIMAL, ImageLayout::PRESENT_SRC_KHR);
-    pCmdBuffer->RecordCommand(cmd);
 }
 
 void PassManager::Init()
@@ -1128,179 +774,14 @@ void PassManager::SetLightDeltaForFrame(stltype::vector<LightDeltaUpdate>&& upda
 void PassManager::SetSharedData(RenderView&& mainView, u32 frameIdx) { m_frameResourceManager.SetSharedData(std::move(mainView), frameIdx); }
 void PassManager::PreProcessDataForCurrentFrame(u32 frameIdx, u64 jitterFrameNumber)
 {
-    // Rotate per-frame history targets before building any frame descriptors/state.
-    m_gbuffer.FlipHistoryBuffers();
-    stltype::swap(m_pDepthTexture, m_pLastFrameDepthTexture);
-    stltype::swap(m_depthBindlessHandle, m_lastFrameDepthBindlessHandle);
-    m_globalRendererAttachments.depthAttachment.SetTexture(m_pDepthTexture);
+    m_renderTargetManager.RotateHistory();
     for (auto& mainPassData : m_mainPassData)
     {
         UpdateTemporalResources(mainPassData);
     }
+    m_imguiRegistry.PublishGBufferTextureState(m_renderTargetManager.GetGBuffer());
 
     m_frameResourceManager.PreProcessDataForCurrentFrame(frameIdx, jitterFrameNumber, m_currentSwapChainIdx, this);
-}
-
-void PassManager::RecreateGbuffers(const mathstl::Vector2& renderResolution, const mathstl::Vector2& outputResolution)
-{
-    m_renderState.recreatedThisFrame = true;
-    m_temporalResolveWrites = 0;
-    m_temporalCurrentColorWritten = false;
-    g_pApplicationState->RegisterUpdateFunction(
-        [](ApplicationState& state) { state.renderState.renderTargetsRecreatedThisFrame = true; });
-    auto& gbuffer = m_gbuffer;
-    stltype::vector<TextureHandle> oldTextureHandles;
-    stltype::vector<u64> oldImGuiIDs = stltype::move(m_gbufferImGuiIDs);
-    DynamicTextureRequest baseRequest{};
-    baseRequest.extents = DirectX::XMUINT3(renderResolution.x, renderResolution.y, 1);
-    baseRequest.usage = Usage::GBuffer | Usage::TransferSrc | Usage::TransferDst;
-    baseRequest.isPersistent = true;
-
-    struct GBufferTexDef {
-        GBufferTextureType type;
-        const char* name;
-        Usage extraUsage = Usage::None;
-        bool nearest = true;
-        bool outputSized = false;
-    };
-    
-    static const GBufferTexDef defs[] = {
-        { GBufferTextureType::GBufferAlbedo, "GBuffer Albedo" },
-        { GBufferTextureType::GBufferNormal, "GBuffer Normal" },
-        { GBufferTextureType::TexCoordMatData, "GBuffer UV Material Data" },
-        { GBufferTextureType::GBufferDebug, "GBuffer Debug" },
-        { GBufferTextureType::GBufferVelocity, "GBuffer Velocity", Usage::None, false },
-        { GBufferTextureType::GBufferLastFrameVelocity, "GBuffer Last Frame Velocity", Usage::None, false },
-        { GBufferTextureType::GBufferLastFrameColor, "GBuffer Last Frame Color", Usage::Storage, false, true },
-        { GBufferTextureType::GBufferThisFrameColor, "GBuffer This Frame Color", Usage::Storage, false },
-        { GBufferTextureType::GBufferTemporalCurrentColor, "GBuffer Temporal Current Color", Usage::Storage | Usage::Sampled, false },
-        { GBufferTextureType::GBufferResolve, "GBuffer Resolve", Usage::Storage | Usage::Sampled, false, true },
-        { GBufferTextureType::GBufferPostAAColor, "GBuffer Post AA Color", Usage::Storage | Usage::Sampled, false, true }
-    };
-
-    for (const auto& def : defs)
-    {
-        const TextureHandle oldHandle = gbuffer.GetTextureHandle(def.type);
-        if (oldHandle != 0)
-        {
-            oldTextureHandles.push_back(oldHandle);
-            gbuffer.ClearTextureHandle(def.type);
-        }
-
-        DynamicTextureRequest req = baseRequest;
-        if (def.outputSized)
-            req.extents = DirectX::XMUINT3(outputResolution.x, outputResolution.y, 1);
-        req.format = gbuffer.GetFormat(def.type);
-        req.handle = g_pTexManager->GenerateHandle();
-        req.usage |= def.extraUsage;
-        req.AddName(def.name);
-        if (def.nearest) {
-            req.samplerInfo.minFilter = TextureFilter::NEAREST;
-            req.samplerInfo.magFilter = TextureFilter::NEAREST;
-        }
-        
-        gbuffer.Set(def.type, static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(req)));
-        gbuffer.SetTextureHandle(def.type, req.handle);
-        gbuffer.SetHandle(def.type, g_pTexManager->MakeTextureBindless(req.handle, true));
-    }
-
-    DynamicTextureRequest sssRequest = baseRequest;
-    sssRequest.format = TexFormat::R8_UNORM;
-    sssRequest.handle = g_pTexManager->GenerateHandle();
-    sssRequest.AddName("Screen Space Shadows");
-    sssRequest.usage = Usage::Storage | Usage::Sampled;
-    if (m_pScreenSpaceShadowTexture) oldTextureHandles.push_back(m_screenSpaceShadowsTextureHandle);
-    m_pScreenSpaceShadowTexture = static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(sssRequest));
-    m_screenSpaceShadowsTextureHandle = sssRequest.handle;
-    m_screenSpaceShadowBindlessHandle = g_pTexManager->MakeTextureBindless(sssRequest.handle, true);
-    m_globalRendererAttachments.pScreenSpaceShadowTexture = m_pScreenSpaceShadowTexture;
-
-    DynamicTextureRequest smaaEdgeReq = baseRequest;
-    smaaEdgeReq.extents = DirectX::XMUINT3(outputResolution.x, outputResolution.y, 1);
-    smaaEdgeReq.format = TexFormat::R8G8_UNORM;
-    smaaEdgeReq.handle = g_pTexManager->GenerateHandle();
-    smaaEdgeReq.AddName("SMAA Edges");
-    smaaEdgeReq.usage = Usage::GBuffer | Usage::Storage | Usage::Sampled;
-    if (m_pSMAAEdgesTexture) oldTextureHandles.push_back(m_smaaEdgesTextureHandle);
-    m_pSMAAEdgesTexture = static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(smaaEdgeReq));
-    m_smaaEdgesTextureHandle = smaaEdgeReq.handle;
-    m_smaaEdgesBindlessHandle = g_pTexManager->MakeTextureBindless(smaaEdgeReq.handle, true);
-
-    DynamicTextureRequest smaaBlendReq = baseRequest;
-    smaaBlendReq.extents = DirectX::XMUINT3(outputResolution.x, outputResolution.y, 1);
-    smaaBlendReq.format = TexFormat::R8G8B8A8_UNORM;
-    smaaBlendReq.handle = g_pTexManager->GenerateHandle();
-    smaaBlendReq.AddName("SMAA Blend Weights");
-    smaaBlendReq.usage = Usage::GBuffer | Usage::Storage | Usage::Sampled;
-    if (m_pSMAABlendTexture) oldTextureHandles.push_back(m_smaaBlendTextureHandle);
-    m_pSMAABlendTexture = static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(smaaBlendReq));
-    m_smaaBlendTextureHandle = smaaBlendReq.handle;
-    m_smaaBlendBindlessHandle = g_pTexManager->MakeTextureBindless(smaaBlendReq.handle, true);
-
-    m_globalRendererAttachments.pSMAAEdgesTexture = m_pSMAAEdgesTexture;
-    m_globalRendererAttachments.pSMAABlendTexture = m_pSMAABlendTexture;
-
-    if (m_dlssExposureTextureHandle != 0)
-    {
-        g_pTexManager->FreeTexture(m_dlssExposureTextureHandle);
-        m_dlssExposureTextureHandle = 0;
-        m_pDLSSExposureTexture = nullptr;
-    }
-
-    if (Nvidia::StreamlineManager::IsDLSSSupported())
-    {
-        DynamicTextureRequest exposureReq{};
-        exposureReq.extents = {1, 1, 1};
-        exposureReq.handle = g_pTexManager->GenerateHandle();
-        exposureReq.format = TexFormat::R32_FLOAT;
-        exposureReq.usage = Usage::Sampled | Usage::TransferDst;
-        exposureReq.isPersistent = true;
-        exposureReq.hasMipMaps = false;
-        exposureReq.mipLevels = 1;
-        exposureReq.createSampler = false;
-        exposureReq.AddName("DLSS Exposure");
-        m_pDLSSExposureTexture = static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(exposureReq));
-        m_dlssExposureTextureHandle = exposureReq.handle;
-        m_dlssExposureTextureInitialized = false;
-        m_dlssExposureStagingBuffer.EnsureCapacity(sizeof(float));
-    }
-
-    for (auto& passData : m_mainPassData) {
-        passData.pScreenSpaceShadowTexture = m_pScreenSpaceShadowTexture;
-        passData.screenSpaceShadows = m_screenSpaceShadowBindlessHandle;
-        passData.pSMAAEdgesTexture = m_pSMAAEdgesTexture;
-        passData.pSMAABlendTexture = m_pSMAABlendTexture;
-        passData.smaaEdges = m_smaaEdgesBindlessHandle;
-        passData.smaaBlend = m_smaaBlendBindlessHandle;
-        UpdateTemporalResources(passData);
-    }
-
-    UpdateGBufferUBO(m_mainPassData[m_currentSwapChainIdx]);
-    for (u32 i = 0; i < SWAPCHAIN_IMAGES; i++)
-        m_frameResourceManager.GetFrameRendererContext(i).gbufferPostProcessDescriptor->WriteBufferUpdate(m_frameResourceManager.GetGBufferPostProcessUBO(), s_globalGbufferPostProcessUBOSlot);
-
-    if (!oldTextureHandles.empty() || !oldImGuiIDs.empty())
-    {
-        g_pDeleteQueue->RegisterDeleteForNextFrame(
-            [oldTextureHandles = stltype::move(oldTextureHandles), oldImGuiIDs = stltype::move(oldImGuiIDs)]() mutable
-            {
-                for (const auto id : oldImGuiIDs)
-                {
-                    if (id != 0)
-                    {
-                        ImGui_ImplVulkan_RemoveTexture(reinterpret_cast<VkDescriptorSet>(id));
-                    }
-                }
-
-                for (const auto handle : oldTextureHandles)
-                {
-                    if (handle != 0)
-                    {
-                        g_pTexManager->FreeTexture(handle);
-                    }
-                }
-            });
-    }
 }
 
 bool PassManager::BlockUntilPassesFinished(u32 frameIdx)
@@ -1351,125 +832,14 @@ void PassManager::RecreateShadowMaps(u32 cascades, const mathstl::Vector2& exten
     m_renderState.recreatedThisFrame = true;
     g_pApplicationState->RegisterUpdateFunction(
         [](ApplicationState& state) { state.renderState.renderTargetsRecreatedThisFrame = true; });
-    auto& csm = m_globalRendererAttachments.directionalLightShadowMap;
-    const TextureHandle oldHandle = csm.handle;
-    auto oldCascadeViews = stltype::move(csm.cascadeViews);
-    auto oldImGuiIDs = stltype::move(m_csmCascadeImGuiIDs);
-    if (oldHandle != 0 || !oldCascadeViews.empty() || !oldImGuiIDs.empty())
-    {
-        g_pDeleteQueue->RegisterDeleteForNextFrame(
-            [oldHandle, oldCascadeViews = stltype::move(oldCascadeViews), oldImGuiIDs = stltype::move(oldImGuiIDs)]() mutable
-            {
-                for (const auto id : oldImGuiIDs)
-                {
-                    if (id != 0)
-                    {
-                        ImGui_ImplVulkan_RemoveTexture(reinterpret_cast<VkDescriptorSet>(id));
-                    }
-                }
-
-                for (const auto view : oldCascadeViews)
-                {
-                    if (view != VK_NULL_HANDLE)
-                    {
-                        vkDestroyImageView(VkGlobals::GetLogicalDevice(), view, nullptr);
-                    }
-                }
-
-                if (oldHandle != 0)
-                {
-                    g_pTexManager->FreeTexture(oldHandle);
-                }
-            });
-    }
-
-    csm.cascades = cascades;
-    csm.format = DEPTH_BUFFER_FORMAT;
-    DynamicTextureRequest req{};
-    req.AddName("Directional Light CSM");
-    req.isPersistent = true;
-    csm.handle = req.handle = g_pTexManager->GenerateHandle();
-    req.extents = DirectX::XMUINT3(extents.x, extents.y, cascades);
-    req.format = csm.format;
-    req.usage = Usage::ShadowMap;
-    req.samplerInfo.wrapU = req.samplerInfo.wrapV = req.samplerInfo.wrapW = TextureWrapMode::CLAMP_TO_BORDER;
-    csm.pTexture = static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(req));
-    csm.bindlessHandle = g_pTexManager->MakeTextureBindless(req.handle, true);
-
-    csm.cascadeViews.resize(cascades, VK_NULL_HANDLE);
-
-    for (u32 i = 0; i < cascades; ++i) {
-        VkImageViewCreateInfo viewInfo{ VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
-        viewInfo.image = csm.pTexture->GetImage();
-        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        viewInfo.format = Conv(csm.format);
-        viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-        viewInfo.subresourceRange.baseMipLevel = 0;
-        viewInfo.subresourceRange.levelCount = 1;
-        viewInfo.subresourceRange.baseArrayLayer = i;
-        viewInfo.subresourceRange.layerCount = 1;
-        vkCreateImageView(VkGlobals::GetLogicalDevice(), &viewInfo, nullptr, &csm.cascadeViews[i]);
-    }
-
-    UBO::ShadowMapUBO shadowMapUBO{};
-    shadowMapUBO.directionalShadowMapIdx = csm.bindlessHandle;
-    std::memcpy(m_frameResourceManager.GetMappedShadowMapUBO(), &shadowMapUBO, sizeof(shadowMapUBO));
-    for (u32 i = 0; i < SWAPCHAIN_IMAGES; i++)
-        m_frameResourceManager.GetFrameRendererContext(i).gbufferPostProcessDescriptor->WriteBufferUpdate(m_frameResourceManager.GetShadowMapUBO(), s_shadowmapUBOBindingSlot);
+    m_imguiRegistry.ReleaseShadowMapIdsForNextFrame();
+    m_shadowMapManager.Recreate(cascades, extents, m_frameResourceManager);
+    m_renderTargetManager.GetAttachments().directionalLightShadowMap = m_shadowMapManager.GetShadowMap();
 
     auto& shadowPasses = m_passes.at(PassType::Shadow);
     for (auto& pass : shadowPasses) if (auto* cp = dynamic_cast<CSMPass*>(pass.get())) cp->SetCascadeCount(cascades);
-}
-
-void PassManager::RegisterImGuiTextures()
-{
-    m_csmCascadeImGuiIDs.clear();
-    const auto& csm = m_globalRendererAttachments.directionalLightShadowMap;
-    if (!csm.pTexture || csm.cascadeViews.empty()) {
-        g_pApplicationState->RegisterUpdateFunction([](ApplicationState& state) { state.renderState.csmCascadeImGuiIDs.clear(); });
-        return;
+    if (m_passesInitialized)
+    {
+        m_imguiRegistry.RegisterShadowMapTextures(m_shadowMapManager.GetShadowMap());
     }
-    for (auto view : csm.cascadeViews) {
-        if (view == VK_NULL_HANDLE) continue;
-        m_csmCascadeImGuiIDs.push_back(reinterpret_cast<u64>(ImGui_ImplVulkan_AddTexture(csm.pTexture->GetSampler(), view, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL)));
-    }
-    g_pApplicationState->RegisterUpdateFunction([ids = m_csmCascadeImGuiIDs](ApplicationState& state) { state.renderState.csmCascadeImGuiIDs = ids; });
-}
-
-void PassManager::UpdateImGuiGbufferTextures()
-{
-    m_gbufferImGuiIDs.clear();
-    auto addTex = [&](GBufferTextureType type) {
-        auto* t = m_gbuffer.Get(type);
-        return reinterpret_cast<u64>(ImGui_ImplVulkan_AddTexture(t->GetSampler(), t->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL));
-    };
-    m_gbufferImGuiIDs.push_back(addTex(GBufferTextureType::GBufferNormal));
-    m_gbufferImGuiIDs.push_back(addTex(GBufferTextureType::GBufferAlbedo));
-    m_gbufferImGuiIDs.push_back(reinterpret_cast<u64>(ImGui_ImplVulkan_AddTexture(m_pScreenSpaceShadowTexture->GetSampler(), m_pScreenSpaceShadowTexture->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)));
-
-    Texture* pVelocityA = m_gbuffer.Get(GBufferTextureType::GBufferVelocity);
-    u64 velocityIdA = addTex(GBufferTextureType::GBufferVelocity);
-    u64 velocityIdB = addTex(GBufferTextureType::GBufferLastFrameVelocity);
-    m_gbufferImGuiIDs.push_back(velocityIdA);
-
-    m_gbufferImGuiIDs.push_back(addTex(GBufferTextureType::GBufferThisFrameColor));
-    
-    Texture* pHistoryColorA = m_gbuffer.Get(GBufferTextureType::GBufferLastFrameColor);
-    u64 historyColorIdA = addTex(GBufferTextureType::GBufferLastFrameColor);
-    u64 historyColorIdB = addTex(GBufferTextureType::GBufferResolve);
-    m_gbufferImGuiIDs.push_back(historyColorIdA);
-    m_gbufferImGuiIDs.push_back(historyColorIdB);
-    m_gbufferImGuiIDs.push_back(addTex(GBufferTextureType::GBufferPostAAColor));
-
-    g_pApplicationState->RegisterUpdateFunction(
-        [this, pVelocityA, velocityIdA, velocityIdB, pHistoryColorA, historyColorIdA, historyColorIdB](auto& state) {
-        state.renderState.csmCascadeImGuiIDs = m_csmCascadeImGuiIDs;
-        state.renderState.gbufferImGuiIDs = m_gbufferImGuiIDs;
-        const bool velocitySwapped = m_gbuffer.Get(GBufferTextureType::GBufferVelocity) != pVelocityA;
-        state.renderState.gbufferImGuiIDs[3] = velocitySwapped ? velocityIdB : velocityIdA;
-
-        const bool colorSwapped = m_gbuffer.Get(GBufferTextureType::GBufferLastFrameColor) != pHistoryColorA;
-        state.renderState.gbufferImGuiIDs[5] = colorSwapped ? historyColorIdB : historyColorIdA;
-        state.renderState.gbufferImGuiIDs[6] = colorSwapped ? historyColorIdA : historyColorIdB;
-    });
 }

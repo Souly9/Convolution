@@ -1,6 +1,7 @@
 #pragma once
 #include "Core/Rendering/Core/Defines/DescriptorLayoutDefines.h"
 #include "Core/Rendering/Core/RenderingForwardDecls.h"
+#include "Core/Rendering/Core/RenderTargetManager.h"
 #include "Core/Rendering/Core/Synchronization.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
 #include "Core/Rendering/Core/Shader.h"
@@ -18,7 +19,6 @@ enum class VertexAttributes;
 namespace RenderPasses
 {
 struct PassMeshData;
-struct RendererAttachmentInfo;
 struct FrameRendererContext;
 struct MainPassData;
 

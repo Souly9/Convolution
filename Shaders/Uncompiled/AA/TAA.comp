@@ -183,7 +183,7 @@ void main()
     vec4 currentColor = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.temporalCurrentColorBufferIdx)], uv);
     bool hasValidCurrentColor = !any(lessThan(currentColor.rgb, vec3(0.0)));
 
-    if (pushConstants.debugMode == 2u)
+    if (pushConstants.debugMode == TAA_DEBUG_MODE_HISTORY_COLOR)
     {
         vec3 color = hasHistory ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
         imageStore(GlobalBindlessImages[nonuniformEXT(gbufferUBO.gbufferResolveIdx)], pixelCoord, vec4(color, 1.0));
@@ -192,7 +192,7 @@ void main()
 
     if (any(lessThan(currentColor.rgb, vec3(0.0))) || !hasHistory)
     {
-        if (pushConstants.debugMode == 1u)
+        if (pushConstants.debugMode == TAA_DEBUG_MODE_CURRENT_COLOR)
         {
             vec3 color = hasValidCurrentColor ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 0.0, 1.0);
             imageStore(GlobalBindlessImages[nonuniformEXT(gbufferUBO.gbufferResolveIdx)], pixelCoord, vec4(color, 1.0));
@@ -233,20 +233,20 @@ void main()
     vec3 aabbMax = mean + stddev * Gamma;
     vec3 clampedCurrent = clamp(currentRGB, aabbMin, aabbMax);
 
-    if (pushConstants.debugMode == 1u)
+    if (pushConstants.debugMode == TAA_DEBUG_MODE_CURRENT_COLOR)
     {
         imageStore(
             GlobalBindlessImages[nonuniformEXT(gbufferUBO.gbufferResolveIdx)], pixelCoord, vec4(vec3(velocityRejection), 1.0));
         return;
     }
-    if (pushConstants.debugMode == 3u)
+    if (pushConstants.debugMode == TAA_DEBUG_MODE_HISTORY_CURRENT_DIFF)
     {
         float velocityMagnitude = clamp(length(historyVelocityPixels) / 32.0, 0.0, 1.0);
         imageStore(
             GlobalBindlessImages[nonuniformEXT(gbufferUBO.gbufferResolveIdx)], pixelCoord, vec4(vec3(velocityMagnitude), 1.0));
         return;
     }
-    if (pushConstants.debugMode == 4u)
+    if (pushConstants.debugMode == TAA_DEBUG_MODE_VELOCITY_MAGNITUDE)
     {
         vec2 historyVelocityPixels =
             textureLod(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.lastFrameVelocityIdx)], prevUV, 0.0).rg;
@@ -257,7 +257,7 @@ void main()
             vec4(vec3(historyVelocityMagnitude), 1.0));
         return;
     }
-    if (pushConstants.debugMode == 5u)
+    if (pushConstants.debugMode == TAA_DEBUG_MODE_HISTORY_VELOCITY_MAGNITUDE)
     {
         vec2 previousVelocityPixels =
             textureLod(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.lastFrameVelocityIdx)], prevUV, 0.0).rg;
@@ -276,5 +276,4 @@ void main()
     vec4 finalColor = vec4(finalRgb, currentColor.a);
     imageStore(
         GlobalBindlessImages[nonuniformEXT(gbufferUBO.gbufferResolveIdx)], pixelCoord, finalColor);
-    return;
 }

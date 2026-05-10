@@ -39,7 +39,7 @@ void main()
     else
     {
         uint aaType = GET_AA_TYPE(ubo.debugFlags);
-        if (aaType == 1u || aaType == 3u) // AntialiasingType::TAA_SMAA or DLSS
+        if (aaType == AA_TYPE_TAA_SMAA || aaType == AA_TYPE_DLSS)
         {
             vec3 temporalColor = texture(GlobalBindlessTextures[gbufferUBO.finalTemporalColorBufferIdx], texCoords).xyz;
             finalHDRColor = InverseReinhardFromTemporal(temporalColor);
@@ -54,9 +54,9 @@ void main()
     int toneMapperType = ubo.toneMapperType;
     vec3 finalLDRColor = finalHDRColor;
 
-    if (toneMapperType == 1)
+    if (toneMapperType == TONE_MAPPER_ACES)
         finalLDRColor = AcesTMO(finalHDRColor);
-    else if (toneMapperType == 2)
+    else if (toneMapperType == TONE_MAPPER_UNCHARTED)
         finalLDRColor = Uncharted2TMO(finalHDRColor);
     else
         finalLDRColor = GT7TMO(finalHDRColor);

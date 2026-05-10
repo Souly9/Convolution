@@ -7,16 +7,19 @@
 #include "Core/Rendering/Core/Defines/LightDefines.h"
 #include "Core/Rendering/Core/GPUTimingQuery.h"
 #include "Core/Events/EventSystem.h"
+#include "Core/Rendering/Core/FrameTransitionRecorder.h"
 #include "Core/Rendering/Core/FrameResourceManager.h"
+#include "Core/Rendering/Core/RenderTargetManager.h"
+#include "Core/Rendering/Core/RenderTextureImGuiRegistry.h"
 #include "Core/Rendering/Core/RT/RTResourceManager.h"
 #include "Core/Rendering/Core/RT/RTSceneManager.h"
 #include "Core/Rendering/Core/ShadowMaps.h"
+#include "Core/Rendering/Core/ShadowMapManager.h"
 #include "Core/Rendering/Core/SharedResourceManager.h"
 #include "Core/Rendering/Core/View.h"
 #include "Core/Rendering/Core/Buffer.h"
 #include <SimpleMath/SimpleMath.h>
 #include "EASTL/fixed_vector.h"
-#include "GBuffer.h"
 class SharedResourceManager;
 
 namespace RenderPasses
@@ -172,22 +175,6 @@ struct ComputeFrameContext
 
 
 
-enum class ColorAttachmentType
-{
-    GBufferColor,
-};
-
-struct RendererAttachmentInfo
-{
-    GBufferInfo gbuffer;
-    CascadedShadowMap directionalLightShadowMap;
-    stltype::hash_map<ColorAttachmentType, stltype::vector<ColorAttachment>> colorAttachments;
-    DepthAttachment depthAttachment;
-    Texture* pScreenSpaceShadowTexture{nullptr};
-    Texture* pSMAAEdgesTexture{nullptr};
-    Texture* pSMAABlendTexture{nullptr};
-};
-
 struct InstancedMeshDataInfo
 {
     u32 instanceCount;
@@ -207,7 +194,6 @@ public:
     ~PassManager();
 
     void Init();
-    void RecreateGbuffers(const mathstl::Vector2& renderResolution, const mathstl::Vector2& outputResolution);
     bool NeedsResizeDependentResourceRecreate(const mathstl::Vector2& swapchainResolution) const;
     void RecreateResizeDependentResources(const mathstl::Vector2& swapchainResolution, bool swapchainRecreated);
 
@@ -248,7 +234,7 @@ public:
     }
     ::SharedResourceManager& GetResourceManager() { return m_resourceManager; }
     void RecreateShadowMapsPublic(u32 cascades, const mathstl::Vector2& extents) { RecreateShadowMaps(cascades, extents); }
-    void RegisterImGuiTexturesPublic() { RegisterImGuiTextures(); }
+    void RegisterImGuiTexturesPublic() { m_imguiRegistry.RegisterShadowMapTextures(m_shadowMapManager.GetShadowMap()); }
     void PreProcessMeshDataPublic(const stltype::vector<PassMeshData>& meshes, u32 lastFrame, u32 curFrame) { PreProcessMeshData(meshes, lastFrame, curFrame); }
     void TransferPassDataPublic(PassGeometryData&& passData, u32 frameIdx) { TransferPassData(std::move(passData), frameIdx); }
 
@@ -266,9 +252,6 @@ protected:
     void PreProcessMeshData(const stltype::vector<PassMeshData>& meshes, u32 lastFrame, u32 curFrame);
 
     void RecreateShadowMaps(u32 cascades, const mathstl::Vector2& extents);
-    void RegisterImGuiTextures();
-    void UpdateImGuiGbufferTextures();
-
     // Helpers to split large Init / ExecutePasses
     void InitResourceManagerAndCallbacks();
     void CreatePassObjectsAndLayouts();
@@ -287,30 +270,6 @@ protected:
     void UpdateGBufferUBO(const MainPassData& data);
 
     // Inline layout transition helpers — record directly into pCmdBuffer
-    void RecordInitialLayoutTransitions(CommandBuffer* pCmdBuffer,
-                                        const stltype::fixed_vector<const Texture*, 16>& allGbufferAndSwapchain);
-    void RecordPendingTextureUploadTransitions(CommandBuffer* pCmdBuffer);
-    void RecordGBufferToShaderRead(CommandBuffer* pCmdBuffer,
-                                   const stltype::fixed_vector<const Texture*, 8>& gbufferTextures);
-    void RecordVelocityClear(CommandBuffer* pCmdBuffer);
-    void RecordUIToShaderRead(CommandBuffer* pCmdBuffer, const Texture* pUITexture);
-    void RecordDepthToReadOnly(CommandBuffer* pCmdBuffer);
-    void RecordThisFrameColorToRead(CommandBuffer* pCmdBuffer);
-    void RecordTemporalCurrentColorToGeneral(CommandBuffer* pCmdBuffer);
-    void RecordTemporalCurrentColorToRead(CommandBuffer* pCmdBuffer);
-    void RecordResolveToGeneral(CommandBuffer* pCmdBuffer);
-    void RecordResolveToRead(CommandBuffer* pCmdBuffer);
-    void RecordTemporalColorTargetsToRead(CommandBuffer* pCmdBuffer);
-    void RecordCopyTextureToResolve(CommandBuffer* pCmdBuffer, Texture* pSourceTexture);
-    void RecordClearColorTexture(CommandBuffer* pCmdBuffer,
-                                 Texture* pTexture,
-                                 ImageLayout oldLayout,
-                                 ImageLayout finalLayout);
-    void RecordSSSOutputToGeneral(CommandBuffer* pCmdBuffer);
-    void RecordSSSOutputToShaderRead(CommandBuffer* pCmdBuffer);
-    void RecordDLSSExposureUpdate(CommandBuffer* pCmdBuffer);
-    void RecordSwapchainToPresent(CommandBuffer* pCmdBuffer);
-
 private:
 
     // GPU timing query
@@ -321,11 +280,10 @@ private:
     RT::RTSceneManager m_rtSceneManager;
     RT::RTResourceManager m_rtResourceManager;
     FrameResourceManager m_frameResourceManager;
-
-    // Only need one gbuffer
-    GBuffer m_gbuffer;
-    u32 m_temporalResolveWrites{0};
-    bool m_temporalCurrentColorWritten{false};
+    RenderTargetManager m_renderTargetManager;
+    ShadowMapManager m_shadowMapManager;
+    RenderTextureImGuiRegistry m_imguiRegistry;
+    FrameTransitionRecorder m_transitionRecorder;
 
     // Pass data for each frame
     stltype::hash_map<PassType, stltype::vector<stltype::unique_ptr<ConvolutionRenderPass>>> m_passes{};
@@ -337,46 +295,11 @@ private:
     GraphicsFrameContext m_graphicsFrameCtx;
     ComputeFrameContext m_computeFrameCtx;
 
-    // Global attachment infos for all passes like gbuffer, depth buffer or
-    // swapchain textures
-    RendererAttachmentInfo m_globalRendererAttachments;
-
-    // Depth texture created during Init and used later for attachments/ImGui
-    Texture* m_pDepthTexture{nullptr};
-    Texture* m_pLastFrameDepthTexture{nullptr};
-    TextureHandle m_depthTextureHandle{0};
-    TextureHandle m_lastFrameDepthTextureHandle{0};
-
     u32 m_currentSwapChainIdx{0};
-
-    void CreateDepthAttachment();
-
-
-
-    stltype::vector<u64> m_csmCascadeImGuiIDs{};
-    stltype::vector<u64> m_gbufferImGuiIDs{};
 
     u32 m_currentFrame{0};
     bool m_needsToPropagateMainDataUpdate{false};
     u32 m_frameIdxToPropagate{0};
-    BindlessTextureHandle m_depthBindlessHandle{0};
-    BindlessTextureHandle m_lastFrameDepthBindlessHandle{0};
-    Texture* m_pScreenSpaceShadowTexture{nullptr};
-    TextureHandle m_screenSpaceShadowsTextureHandle{0};
-    BindlessTextureHandle m_screenSpaceShadowBindlessHandle{0};
-
-    Texture* m_pSMAAEdgesTexture{nullptr};
-    TextureHandle m_smaaEdgesTextureHandle{0};
-    BindlessTextureHandle m_smaaEdgesBindlessHandle{0};
-
-    Texture* m_pSMAABlendTexture{nullptr};
-    TextureHandle m_smaaBlendTextureHandle{0};
-    BindlessTextureHandle m_smaaBlendBindlessHandle{0};
-
-    Texture* m_pDLSSExposureTexture{nullptr};
-    TextureHandle m_dlssExposureTextureHandle{0};
-    StagingBuffer m_dlssExposureStagingBuffer{};
-    bool m_dlssExposureTextureInitialized{false};
     bool m_passesInitialized{false};
     u32 m_instanceBufferUpdateTimingIndex;
     u32 m_clearTileCountersTimingIndex{UINT32_MAX};

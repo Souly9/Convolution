@@ -1,6 +1,7 @@
 #include "TAAPass.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Global/FrameGlobals.h"
+#include "Core/Global/State/States.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
 #include "Core/Rendering/Core/SharedResourceManager.h"
 #include "Core/Rendering/Core/ShaderManager.h"

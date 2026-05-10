@@ -20,6 +20,17 @@ enum class DebugFlags : u32
     CullFrustum = 1 << 0,
 };
 MAKE_FLAG_ENUM(DebugFlags)
+
+enum class TAADebugMode : u32
+{
+    Off = 0,
+    CurrentColor = 1,
+    HistoryColor = 2,
+    HistoryCurrentDifference = 3,
+    VelocityMagnitude = 4,
+    HistoryVelocityMagnitude = 5,
+};
+
 enum class AntialiasingType : u32
 {
     None = 0,
@@ -28,10 +39,25 @@ enum class AntialiasingType : u32
     DLSS = 3
 };
 
+enum class DebugViewMode : s32
+{
+    None = 0,
+    CSMCascades = 1,
+    Clusters = 2,
+};
+
 enum class RTReflectionDebugMode : u32
 {
     None = 0,
     ReflectionsOnly = 1,
+};
+
+enum class ToneMapperType : s32
+{
+    None = 0,
+    ACES = 1,
+    Uncharted = 2,
+    GT7 = 3,
 };
 
 struct GUIState : public stltype::bitset<32>
@@ -74,7 +100,7 @@ struct RendererState
     stltype::string physicalRenderDeviceName{};
     AntialiasingType aaType{AntialiasingType::TAA_SMAA};
     bool dlssSupported{false};
-    u32 taaDebugMode{0};
+    u32 taaDebugMode{static_cast<u32>(TAADebugMode::Off)};
     bool taaForceHistory{false};
     bool taaSeedHistoryFromCurrentColor{false};
     f32 taaVelocityRejectionStart{0.5f};
@@ -86,7 +112,7 @@ struct RendererState
 
     // Tonemapping
     f32 exposure{1.0f};
-    s32 toneMapperType{3}; // 0 = None, 1 = ACES, 2 = Uncharted, 3 = GT7
+    s32 toneMapperType{static_cast<s32>(ToneMapperType::GT7)};
     f32 gt7PaperWhite{100.0f};
     f32 gt7ReferenceLuminance{300.0f};
     f32 ambientIntensity{0.05f};
@@ -99,7 +125,7 @@ struct RendererState
     u32 directionalLightCascades{CSM_INITIAL_CASCADES};
     mathstl::Vector2 csmResolution{CSM_DEFAULT_RES};
     f32 csmLambda{0.7f};
-    s32 debugViewMode{0}; // 0 = None, 1 = CSM, 2 = Cluster Debug
+    s32 debugViewMode{static_cast<s32>(DebugViewMode::None)};
     u32 debugFlags{0};
     bool shadowsEnabled{true};
     bool sssEnabled{true};
