@@ -19,6 +19,8 @@
 #include "Utils/VkEnumHelpers.h"
 #include <EASTL/set.h>
 #include <GLFW/glfw3.h>
+#include "Core/Global/Utils/MathFunctions.h"
+
 
 PFN_vkSetDebugUtilsObjectNameEXT vkSetDebugUtilsObjectName = VK_NULL_HANDLE;
 PFN_vkCmdSetCheckpointNV vkCmdSetCheckpoint = VK_NULL_HANDLE;
@@ -789,7 +791,7 @@ void RenderBackendImpl<Vulkan>::PublishDLSSSupport(bool supported) const
             state.renderState.dlssSupported = supported;
             if (!supported && state.renderState.aaType == AntialiasingType::DLSS)
             {
-                state.renderState.aaType = AntialiasingType::TAA_SMAA;
+                state.renderState.aaType = AntialiasingType::SMAA;
             }
         });
 }
@@ -807,10 +809,10 @@ void RenderBackendImpl<Vulkan>::PublishRTSupport(bool supported) const
     g_pApplicationState->RegisterUpdateFunction(
         [supported](ApplicationState& state)
         {
-            state.renderState.rt.enabled = supported;
+            mathstl::setFlag(state.renderState.debugFlags, (u32)DebugFlags::RTEnabled, supported);
             if (!supported)
             {
-                state.renderState.rt.debugViewEnabled = false;
+                mathstl::setFlag(state.renderState.debugFlags, (u32)DebugFlags::RTDebugEnabled, false);
             }
         });
 }

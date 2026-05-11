@@ -110,8 +110,6 @@ private:
     void UpdateInstanceBuffer(const Mesh& mesh);
     void UpdateSceneGeometryBuffer(const Mesh& mesh);
 
-    ProfiledLockable(CustomMutex, m_bufferUpdateMutex);
-
     BufferData m_sceneGeometryBuffers;
     // Seperating the debug stuff to update it easier and so on, not sure about it
     // though...
@@ -145,13 +143,13 @@ private:
     stltype::hash_map<const Mesh*, MeshHandle> m_meshHandles;
     stltype::hash_map<const Mesh*, MeshHandle> m_debugMeshHandles;
 
-
     stltype::hash_set<const Mesh*> m_residentMeshes;
     stltype::vector<const Mesh*> m_pendingVisibleMeshes;
     stltype::hash_map<const Mesh*, stltype::vector<u32>> m_meshToInstanceIdx;
 
-    ProfiledLockable(CustomMutex, m_pendingVisibilityMutex);
     stltype::vector<u32> m_pendingVisibleInstanceIndices;
+    mutable ProfiledLockable(CustomMutex, m_geometryStateMutex);
+    mutable ProfiledLockable(CustomMutex, m_residencyStateMutex);
 
 public:
     stltype::vector<u32> PopPendingVisibleInstanceIndices();

@@ -1,6 +1,7 @@
 #include "RTReflectionsPass.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Global/State/ApplicationState.h"
+#include "Core/Global/Utils/MathFunctions.h"
 #include "Core/Rendering/Core/Defines/BindingSlots.h"
 #include "Core/Rendering/Core/RT/RTSceneManager.h"
 #include "Core/Rendering/Core/SharedResourceManager.h"
@@ -142,8 +143,9 @@ void RTReflectionsPass::RebuildInternalData(const stltype::vector<PassMeshData>&
 
 bool RTReflectionsPass::WantsToRender() const
 {
-    const auto& rtState = g_pApplicationState->GetCurrentApplicationState().renderState.rt;
-    return rtState.enabled && rtState.reflectionsEnabled;
+    const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+    return mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
+           mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTReflectionsEnabled);
 }
 
 void RTReflectionsPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)

@@ -166,15 +166,6 @@ SceneNode Convert(const aiScene* pScene)
     }
     //ThreadPool pool(8);
     ConvertScene(nullptr, pScene, pScene->mRootNode, rootEntity);
-    g_pApplicationState->RegisterUpdateFunction(
-        [](ApplicationState& state)
-        {
-            g_pEntityManager->MarkComponentDirty({}, ECS::ComponentID<ECS::Components::Transform>::ID);
-            g_pEntityManager->MarkComponentDirty({}, ECS::ComponentID<ECS::Components::RenderComponent>::ID);
-            g_pEntityManager->MarkComponentDirty({}, ECS::ComponentID<ECS::Components::Light>::ID);
-            g_pMaterialManager->MarkMaterialsDirty();
-        });
-    
     g_pQueueHandler->DispatchAllRequests();
     return SceneNode{rootEntity};
 }

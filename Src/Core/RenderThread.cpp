@@ -30,6 +30,7 @@ void RenderThread::WaitForGameThreadAndPreviousFrame()
 
 bool RenderThread::HandleResizeAtFrameStart()
 {
+    ScopedZone("Handle Resize");
     const bool swapchainResizeRequested = m_swapchainRecreationRequested.exchange(false, std::memory_order_acq_rel);
     const bool renderTargetsResizeRequested =
         m_passManager->NeedsResizeDependentResourceRecreate(FrameGlobals::GetSwapChainExtent());

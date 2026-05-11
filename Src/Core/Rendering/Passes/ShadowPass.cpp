@@ -122,10 +122,10 @@ void CSMPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comman
         const auto transformSSBOSet = data.bufferDescriptors.at(UBO::DescriptorContentsType::GlobalInstanceData);
         const auto texArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessTextureArray);
         cmd.descriptorSets = {texArraySet,
-                              ctx.sharedDataUBODescriptor,
-                               transformSSBOSet,
-                               passCtx.m_perObjectDescriptor,
-                               ctx.shadowViewUBODescriptor};
+                               ctx.sharedDataUBODescriptor,
+                                transformSSBOSet,
+                                passCtx.m_perObjectDescriptor,
+                                ctx.shadowViewUBODescriptor};
     }
     cmdBegin.drawCmdBuffer = &cmdBuf;
     StartRenderPassProfilingScope(pCmdBuffer);
@@ -188,7 +188,7 @@ void CSMPass::CreateSharedDescriptorLayout()
 
 bool CSMPass::WantsToRender() const
 {
-    return NeedToRender(m_indirectCmdBuffers[m_currentFrameIdx]) && g_pApplicationState->GetCurrentApplicationState().renderState.shadowsEnabled;
+    return NeedToRender(m_indirectCmdBuffers[m_currentFrameIdx]) && mathstl::isFlagSet(g_pApplicationState->GetCurrentApplicationState().renderState.debugFlags, (u32)DebugFlags::ShadowsEnabled);
 }
 
 void CSMPass::SetCascadeCount(u32 cascades)
@@ -233,8 +233,8 @@ void CSMPass::ComputeLightViewProjMatrices(
     lightDirection.Normalize();
 
     mathstl::Vector3 up = (std::abs(lightDirection.Dot(mathstl::Vector3(0, 1, 0))) > 0.999f)
-                              ? mathstl::Vector3(0, 0, 1)
-                              : mathstl::Vector3(0, 1, 0);
+                               ? mathstl::Vector3(0, 0, 1)
+                               : mathstl::Vector3(0, 1, 0);
 
     // NDC frustum corners (Vulkan: Z 0..1, XY -1..1)
     constexpr mathstl::Vector3 ndcCorners[8] = {

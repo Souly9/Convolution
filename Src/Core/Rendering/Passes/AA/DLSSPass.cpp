@@ -59,10 +59,7 @@ void CopyMatrixToStreamline(sl::float4x4& dst, const mathstl::Matrix& src)
     static_assert(sizeof(sl::float4x4) == sizeof(float) * 16, "Unexpected Streamline matrix size");
     static_assert(sizeof(mathstl::Matrix) == sizeof(sl::float4x4), "mathstl::Matrix must match Streamline matrix ABI");
 
-    // Streamline expects row-major matrices in CPU memory. Our camera matrices are consumed
-    // by GLSL as column-vector transforms, so transpose before uploading to Streamline.
-    const mathstl::Matrix rowMajor = src.Transpose();
-    std::memcpy(&dst, &rowMajor, sizeof(dst));
+    std::memcpy(&dst, &src, sizeof(dst));
 }
 
 mathstl::Vector3 GetNormalizedOrFallback(mathstl::Vector3 value, const mathstl::Vector3& fallback)
@@ -243,8 +240,13 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     CopyMatrixToStreamline(slConst.prevClipToClip, streamlinePrevClipToClip);
 
     const mathstl::Vector2 streamlineJitter = ResolveStreamlineJitter(data.renderState);
+    // Negate jitter signs: 
+    // - Internal X-jitter subtracts from projection, shifting image left (negative shift).
+    // - Internal Y-jitter adds to projection, but SL Y-axis is flipped relative to our internal Y-up,
+    //   effectively inverting the shift direction SL sees in the matrix.
     slConst.jitterOffset = {streamlineJitter.x, streamlineJitter.y};
-    slConst.mvecScale = {1.0f / static_cast<float>(inputExtents.x), 1.0f / static_cast<float>(inputExtents.y)};
+    // Normalize to [-1, 1] range. Negate Y-scale because our velocity buffer uses Y-up (Math.h:28).
+    slConst.mvecScale = {1.0f / static_cast<float>(inputExtents.x), -1.0f / static_cast<float>(inputExtents.y)};
     slConst.cameraPinholeOffset = {0.0f, 0.0f};
     const mathstl::Vector3 streamlineCameraUp =
         GetNormalizedOrFallback(cameraData.up, mathstl::Vector3::Up);

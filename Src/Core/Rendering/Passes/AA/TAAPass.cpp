@@ -2,6 +2,7 @@
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Global/FrameGlobals.h"
 #include "Core/Global/State/States.h"
+#include "Core/Global/Utils/MathFunctions.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
 #include "Core/Rendering/Core/SharedResourceManager.h"
 #include "Core/Rendering/Core/ShaderManager.h"
@@ -101,7 +102,7 @@ void TAAPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comman
     m_pushConstants.velocityRejectionStart = renderState.taaVelocityRejectionStart;
     m_pushConstants.velocityRejectionEnd = renderState.taaVelocityRejectionEnd;
     m_pushConstants.debugMode = currentDebugMode;
-    m_pushConstants.forceHistory = renderState.taaForceHistory ? 1u : 0u;
+    m_pushConstants.forceHistory = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::TAAForceHistory) ? 1u : 0u;
     m_pushConstants.resetHistory |= data.renderState.recreatedThisFrame ? 1u : 0u;
 
     u32 groupCountX = (static_cast<u32>(data.renderState.swapchainResolution.x) + 7) / 8;

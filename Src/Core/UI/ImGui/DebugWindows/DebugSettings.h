@@ -12,116 +12,128 @@ public:
     void DrawWindow(f32 dt)
     {
         ScopedZone("DebugSettingsWindow");
-        bool drawDebugMeshes = m_drawDebugMeshes;
-        ImGui::Begin("Debug Settings", &m_isOpen);
-        ImGui::Checkbox("Draw debug meshes", &drawDebugMeshes);
-
-        if (ImGui::Button("Hot Reload Shaders"))
-        {
-            DEBUG_LOG("Hot reloading shaders...");
-            g_pEventSystem->OnShaderHotReload({});
-        }
-
-        bool showClusterAABBs = g_pApplicationState->GetCurrentApplicationState().renderState.showClusterAABBs;
-        if (ImGui::Checkbox("Show Cluster AABBs", &showClusterAABBs))
-        {
-            g_pApplicationState->RegisterUpdateFunction(
-                [showClusterAABBs](auto& state) { 
-                    state.renderState.showClusterAABBs = showClusterAABBs;
-                });
-        }
-
         const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
-        const char* debugModes[] = {"None", "CSM Cascades", "Clusters"};
-        int currentDebugMode = mathstl::clamp(renderState.debugViewMode,
-                                              static_cast<s32>(DebugViewMode::None),
-                                              static_cast<s32>(DebugViewMode::Clusters));
-        int uiDebugMode = currentDebugMode;
+        
+        ImGui::Begin("Debug Settings", &m_isOpen);
 
-        if (ImGui::Combo("Debug View Mode", &uiDebugMode, debugModes, IM_ARRAYSIZE(debugModes)))
+        if (ImGui::CollapsingHeader("General Debug", ImGuiTreeNodeFlags_DefaultOpen))
         {
-            if (uiDebugMode != currentDebugMode)
+            bool drawDebugMeshes = m_drawDebugMeshes;
+            if (ImGui::Checkbox("Draw debug meshes", &drawDebugMeshes))
             {
-                g_pApplicationState->RegisterUpdateFunction([uiDebugMode](ApplicationState& state)
-                                                            { state.renderState.debugViewMode = uiDebugMode; });
+                m_drawDebugMeshes = drawDebugMeshes;
+                g_pApplicationState->RegisterUpdateFunction(
+                    [&](auto& state)
+                    {
+                        state.renderDebugMeshes = m_drawDebugMeshes;
+                        g_pEntityManager->MarkComponentDirty({},
+                                                             ECS::ComponentID<ECS::Components::DebugRenderComponent>::ID);
+                    });
             }
-        }
-        bool debugCulling = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::CullFrustum);
-        if (ImGui::Checkbox("Debug Culling", &debugCulling))
-        {
-            g_pApplicationState->RegisterUpdateFunction(
-                [debugCulling](ApplicationState& state)
-                { mathstl::setFlag(state.renderState.debugFlags, (u32)DebugFlags::CullFrustum, debugCulling); });
-        }
 
-        if (ImGui::CollapsingHeader("Ray Tracing", ImGuiTreeNodeFlags_DefaultOpen))
-        {
-            bool rtEnabled = renderState.rt.enabled;
-            if (ImGui::Checkbox("Enable Ray Tracing", &rtEnabled))
+            if (ImGui::Button("Hot Reload Shaders"))
+            {
+                DEBUG_LOG("Hot reloading shaders...");
+                g_pEventSystem->OnShaderHotReload({});
+            }
+
+            bool debugCulling = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::CullFrustum);
+            if (ImGui::Checkbox("Debug Culling", &debugCulling))
             {
                 g_pApplicationState->RegisterUpdateFunction(
-                    [rtEnabled](ApplicationState& state) { state.renderState.rt.enabled = rtEnabled; });
+                    [debugCulling](ApplicationState& state)
+                    { mathstl::setFlag(state.renderState.debugFlags, (u32)DebugFlags::CullFrustum, debugCulling); });
+            }
+        }
+
+        if (ImGui::CollapsingHeader("View Debug"))
+        {
+            const char* debugModes[] = {"None", "CSM Cascades", "Clusters"};
+            int currentDebugMode = mathstl::clamp(renderState.debugViewMode,
+                                                  static_cast<s32>(DebugViewMode::None),
+                                                  static_cast<s32>(DebugViewMode::Clusters));
+            int uiDebugMode = currentDebugMode;
+
+            if (ImGui::Combo("Debug View Mode", &uiDebugMode, debugModes, IM_ARRAYSIZE(debugModes)))
+            {
+                if (uiDebugMode != currentDebugMode)
+                {
+                    g_pApplicationState->RegisterUpdateFunction([uiDebugMode](ApplicationState& state)
+                                                                { state.renderState.debugViewMode = uiDebugMode; });
+                }
             }
 
-            bool rtReflections = renderState.rt.reflectionsEnabled;
-            if (ImGui::Checkbox("Ray-Traced Reflections", &rtReflections))
+            const char* taaDebugModes[] = {
+                "Off",
+                "Current Color",
+                "History Color",
+                "History Current Difference",
+                "Velocity Magnitude",
+                "History Velocity Magnitude"};
+            int currentTAADebugMode = mathstl::clamp(static_cast<int>(renderState.taaDebugMode),
+                                                      static_cast<int>(TAADebugMode::Off),
+                                                      static_cast<int>(TAADebugMode::HistoryVelocityMagnitude));
+            int uiTAADebugMode = currentTAADebugMode;
+            if (ImGui::Combo("TAA Debug View", &uiTAADebugMode, taaDebugModes, IM_ARRAYSIZE(taaDebugModes)))
+            {
+                if (uiTAADebugMode != currentTAADebugMode)
+                {
+                    g_pApplicationState->RegisterUpdateFunction(
+                        [uiTAADebugMode](ApplicationState& state)
+                        { state.renderState.taaDebugMode = static_cast<u32>(uiTAADebugMode); });
+                }
+            }
+
+            bool taaForceHistory = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::TAAForceHistory);
+            if (ImGui::Checkbox("TAA Force History", &taaForceHistory))
+            {
+                g_pApplicationState->RegisterUpdateFunction([taaForceHistory](ApplicationState& state)
+                                                            { mathstl::setFlag(state.renderState.debugFlags, (u32)DebugFlags::TAAForceHistory, taaForceHistory); });
+            }
+        }
+
+        if (ImGui::CollapsingHeader("Clustered Lighting Debug"))
+        {
+            bool showClusterAABBs = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::ShowClusterAABBs);
+            if (ImGui::Checkbox("Show Cluster AABBs", &showClusterAABBs))
             {
                 g_pApplicationState->RegisterUpdateFunction(
-                    [rtReflections](ApplicationState& state) { state.renderState.rt.reflectionsEnabled = rtReflections; });
+                    [showClusterAABBs](auto& state) { 
+                        mathstl::setFlag(state.renderState.debugFlags, (u32)DebugFlags::ShowClusterAABBs, showClusterAABBs);
+                    });
             }
 
+            ImGui::Text("Total Clusters: %u", renderState.totalClusterCount);
+            ImGui::Text("Avg Lights/Cluster: %.2f", renderState.avgLightsPerCluster);
+        }
+
+        if (ImGui::CollapsingHeader("Ray Tracing Debug"))
+        {
             const char* rtDebugViews[] = {"None", "TLAS", "Reflections Only"};
             int uiRTDebugView = 0;
-            if (renderState.rt.debugViewEnabled)
-                uiRTDebugView = static_cast<int>(RT_DEBUG_VIEW_MODE_TLAS);
+            if (mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTDebugEnabled))
+                uiRTDebugView = 1; // TLAS
             else if (renderState.rt.reflectionsDebugMode == RTReflectionDebugMode::ReflectionsOnly)
-                uiRTDebugView = static_cast<int>(RT_DEBUG_VIEW_MODE_REFLECTIONS_ONLY);
+                uiRTDebugView = 2; // Reflections Only
 
-            if (ImGui::Combo("Debug View", &uiRTDebugView, rtDebugViews, IM_ARRAYSIZE(rtDebugViews)))
+            if (ImGui::Combo("RT Debug View", &uiRTDebugView, rtDebugViews, IM_ARRAYSIZE(rtDebugViews)))
             {
                 g_pApplicationState->RegisterUpdateFunction(
                     [uiRTDebugView](ApplicationState& state)
                     {
-                        state.renderState.rt.debugViewEnabled = uiRTDebugView == static_cast<int>(RT_DEBUG_VIEW_MODE_TLAS);
+                        mathstl::setFlag(state.renderState.debugFlags, (u32)DebugFlags::RTDebugEnabled, uiRTDebugView == 1);
                         state.renderState.rt.reflectionsDebugMode =
-                            uiRTDebugView == static_cast<int>(RT_DEBUG_VIEW_MODE_REFLECTIONS_ONLY)
-                                ? RTReflectionDebugMode::ReflectionsOnly
-                                : RTReflectionDebugMode::None;
+                            uiRTDebugView == 2 ? RTReflectionDebugMode::ReflectionsOnly : RTReflectionDebugMode::None;
                     });
             }
 
-            bool globalReflectanceOverride = renderState.rt.globalReflectanceOverrideEnabled;
-            if (ImGui::Checkbox("Override Material Reflectance", &globalReflectanceOverride))
-            {
-                g_pApplicationState->RegisterUpdateFunction(
-                    [globalReflectanceOverride](ApplicationState& state)
-                    { state.renderState.rt.globalReflectanceOverrideEnabled = globalReflectanceOverride; });
-            }
-
-            float globalReflectance = mathstl::clamp(renderState.rt.globalMaterialReflectance, 0.0f, 1.0f);
-            if (ImGui::SliderFloat("Global Material Reflectance", &globalReflectance, 0.0f, 1.0f, "%.2f"))
-            {
-                g_pApplicationState->RegisterUpdateFunction(
-                    [globalReflectance](ApplicationState& state)
-                    { state.renderState.rt.globalMaterialReflectance = globalReflectance; });
-            }
-
+            ImGui::Separator();
+            ImGui::Text("RT Stats:");
             ImGui::Text("Pending BLAS: %u", renderState.rt.pendingBlasCount);
             ImGui::Text("Resident RT Instances: %u", renderState.rt.residentInstanceCount);
         }
-        ImGui::End();
 
-        if (drawDebugMeshes != m_drawDebugMeshes)
-        {
-            m_drawDebugMeshes = drawDebugMeshes;
-            g_pApplicationState->RegisterUpdateFunction(
-                [&](auto& state)
-                {
-                    state.renderDebugMeshes = m_drawDebugMeshes;
-                    g_pEntityManager->MarkComponentDirty({},
-                                                         ECS::ComponentID<ECS::Components::DebugRenderComponent>::ID);
-                });
-        }
+        ImGui::End();
     }
 
 protected:

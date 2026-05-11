@@ -104,5 +104,6 @@ const SpirVBinary& ShaderManager::GetShader(const stltype::string_view& relative
         return it->second;
     }
     DEBUG_ASSERT(false);
-    return {};
+    static const SpirVBinary emptyShader{};
+    return emptyShader;
 }

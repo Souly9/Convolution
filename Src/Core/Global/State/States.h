@@ -17,7 +17,14 @@ class Scene;
 enum class DebugFlags : u32
 {
     None = 0,
-    CullFrustum = 1 << 0,
+    ShadowsEnabled = 1 << 0,
+    SSSEnabled = 1 << 1,
+    RTDebugEnabled = 1 << 2,
+    RTEnabled = 1 << 3,
+    RTReflectionsEnabled = 1 << 4,
+    ShowClusterAABBs = 1 << 5,
+    TAAForceHistory = 1 << 6,
+    CullFrustum = 1 << 7,
 };
 MAKE_FLAG_ENUM(DebugFlags)
 
@@ -35,7 +42,7 @@ enum class AntialiasingType : u32
 {
     None = 0,
     TAA_SMAA = 1,
-    FXAA = 2,
+    SMAA = 2,
     DLSS = 3
 };
 
@@ -83,25 +90,21 @@ struct RendererState
 {
     struct RTState
     {
-        bool enabled{false};
-        bool debugViewEnabled{false};
-        bool reflectionsEnabled{true};
-        bool globalReflectanceOverrideEnabled{false};
         u32 debugMode{1};
         RTReflectionDebugMode reflectionsDebugMode{RTReflectionDebugMode::None};
         f32 globalMaterialReflectance{1.0f};
         u32 pendingBlasCount{0};
         u32 residentInstanceCount{0};
+        bool globalReflectanceOverrideEnabled{false}; // Kept for UI logic, but can be flag later
     } rt;
 
     stltype::vector<u64> gbufferImGuiIDs{};
     u64 depthbufferImGuiID{};
     stltype::vector<u64> csmCascadeImGuiIDs{}; // Per-cascade ImGui texture IDs
     stltype::string physicalRenderDeviceName{};
-    AntialiasingType aaType{AntialiasingType::TAA_SMAA};
+    AntialiasingType aaType{AntialiasingType::SMAA};
     bool dlssSupported{false};
     u32 taaDebugMode{static_cast<u32>(TAADebugMode::Off)};
-    bool taaForceHistory{false};
     bool taaSeedHistoryFromCurrentColor{false};
     f32 taaVelocityRejectionStart{0.5f};
     f32 taaVelocityRejectionEnd{4.0f};
@@ -126,9 +129,7 @@ struct RendererState
     mathstl::Vector2 csmResolution{CSM_DEFAULT_RES};
     f32 csmLambda{0.7f};
     s32 debugViewMode{static_cast<s32>(DebugViewMode::None)};
-    u32 debugFlags{0};
-    bool shadowsEnabled{true};
-    bool sssEnabled{true};
+    u32 debugFlags{static_cast<u32>(DebugFlags::ShadowsEnabled) | static_cast<u32>(DebugFlags::SSSEnabled) | static_cast<u32>(DebugFlags::RTEnabled) | static_cast<u32>(DebugFlags::RTReflectionsEnabled)};
 
     // Clustered lighting settings
     DirectX::XMINT3 clusterCount{16, 9, 24};
@@ -137,7 +138,6 @@ struct RendererState
     // Clustered lighting debug stats
     u32 totalClusterCount{0};
     f32 avgLightsPerCluster{0.0f};
-    bool showClusterAABBs{false};
 
     // GPU timing stats
     stltype::vector<PassTimingStat> passTimings{};

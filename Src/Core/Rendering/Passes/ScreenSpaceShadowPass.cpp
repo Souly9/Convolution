@@ -1,5 +1,6 @@
 #include "ScreenSpaceShadowPass.h"
 #include "Core/Global/GlobalVariables.h"
+#include "Core/Global/Utils/MathFunctions.h"
 #include "Core/Rendering/Core/SharedResourceManager.h"
 #include "Core/Rendering/Core/Pipeline.h"
 #include "PassManager.h"
@@ -63,7 +64,7 @@ void ScreenSpaceShadowPass::RebuildInternalData(const stltype::vector<PassMeshDa
 
 bool ScreenSpaceShadowPass::WantsToRender() const
 {
-    return g_pApplicationState->GetCurrentApplicationState().renderState.sssEnabled;
+    return mathstl::isFlagSet(g_pApplicationState->GetCurrentApplicationState().renderState.debugFlags, (u32)DebugFlags::SSSEnabled);
 }
 
 void ScreenSpaceShadowPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)

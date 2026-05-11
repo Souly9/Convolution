@@ -1,5 +1,6 @@
 #include "ClusterDebugPass.h"
 #include "Core/Global/GlobalVariables.h"
+#include "Core/Global/Utils/MathFunctions.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
 #include "Core/Rendering/Vulkan/Utils/VkDescriptorLayoutUtils.h"
 #include "Core/Rendering/Core/Pipeline.h"
@@ -112,7 +113,7 @@ void ClusterDebugPass::Render(const MainPassData& data, FrameRendererContext& ct
     ScopedZone("ClusterDebugPass::Render");
     
     const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
-    if (!renderState.showClusterAABBs)
+    if (!mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::ShowClusterAABBs))
         return;
         
     u32 totalClusters = renderState.totalClusterCount;
@@ -165,6 +166,5 @@ void ClusterDebugPass::Render(const MainPassData& data, FrameRendererContext& ct
 
 bool ClusterDebugPass::WantsToRender() const
 {
-    return g_pApplicationState->GetCurrentApplicationState().renderState.showClusterAABBs;
+    return mathstl::isFlagSet(g_pApplicationState->GetCurrentApplicationState().renderState.debugFlags, (u32)DebugFlags::ShowClusterAABBs);
 }
-

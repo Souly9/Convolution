@@ -108,9 +108,6 @@ void FrameResourceManager::BuildSharedDataForView(const RenderView& mainView,
 
     // Debug state flags
     ubo.debugFlags = renderState.debugFlags;
-    RenderFlags::SetFlag(ubo.debugFlags, DEBUG_FLAG_SHADOWS_ENABLED, renderState.shadowsEnabled);
-    RenderFlags::SetFlag(ubo.debugFlags, DEBUG_FLAG_SSS_ENABLED, renderState.sssEnabled);
-    RenderFlags::SetFlag(ubo.debugFlags, DEBUG_FLAG_RT_DEBUG_ENABLED, renderState.rt.debugViewEnabled);
     ubo.debugViewMode = renderState.debugViewMode;
     ubo.exposure = renderState.exposure;
     ubo.toneMapperType = renderState.toneMapperType;
@@ -176,7 +173,7 @@ void FrameResourceManager::CreatePassObjectsAndLayouts()
         DescriptorLayoutUtils::CreateOneDescriptorSetForAll({PipelineDescriptorLayout(UBO::BufferType::View)});
     m_gbufferPostProcessLayout =
         DescriptorLayoutUtils::CreateOneDescriptorSetForAll({PipelineDescriptorLayout(UBO::BufferType::GBufferUBO),
-                                                              PipelineDescriptorLayout(UBO::BufferType::ShadowmapUBO)});
+                                                               PipelineDescriptorLayout(UBO::BufferType::ShadowmapUBO)});
     m_shadowViewUBOLayout = DescriptorLayoutUtils::CreateOneDescriptorSetForAll(
         {PipelineDescriptorLayout(UBO::BufferType::ShadowmapViewUBO)});
 
@@ -311,13 +308,13 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
         mathstl::Matrix viewProj{};
         mathstl::Vector2 jitter{};
         BuildSharedDataForView(mainView,
-                               passManagerRenderState.renderResolution,
-                               jitterFrameNumber,
-                               m_currentSharedDataUBO,
-                               viewMat,
-                               viewProj,
-                               jitter,
-                               ctx.cameraData);
+                                passManagerRenderState.renderResolution,
+                                jitterFrameNumber,
+                                m_currentSharedDataUBO,
+                                viewMat,
+                                viewProj,
+                                jitter,
+                                ctx.cameraData);
         pPassManager->SetRenderJitter(jitter);
 
         UpdateSharedDataUBO(&m_currentSharedDataUBO, sizeof(UBO::SharedDataUBO), currentSwapChainIdx);
@@ -369,8 +366,9 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
             float scale = (float)sliceCount / logRatio;
             float bias = -std::log(zNear) * scale;
 
+            bool shadowsEnabled = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::ShadowsEnabled);
             data.ClusterValues =
-                mathstl::Vector4(scale, bias, (float)sliceCount, renderState.shadowsEnabled ? 1.0f : 0.0f);
+                mathstl::Vector4(scale, bias, (float)sliceCount, shadowsEnabled ? 1.0f : 0.0f);
             data.ClusterSize = mathstl::Vector4((float)renderState.clusterCount.x,
                                                 (float)renderState.clusterCount.y,
                                                 (float)renderState.clusterCount.z,

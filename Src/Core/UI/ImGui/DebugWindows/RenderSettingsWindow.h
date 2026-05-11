@@ -26,44 +26,41 @@ public:
 
         ImGui::Begin("Render Settings", &m_isOpen);
 
-        // Exposure
-        ImGui::Text("HDR Settings");
-        if (ImGui::SliderFloat("Exposure", &exposure, 0.1f, 10.0f))
+        if (ImGui::CollapsingHeader("HDR Settings", ImGuiTreeNodeFlags_DefaultOpen))
         {
-            g_pApplicationState->RegisterUpdateFunction([exposure](ApplicationState& state)
-                                                        { state.renderState.exposure = exposure; });
-            needsUpdate = true;
-        }
-
-        if (ImGui::SliderFloat("Ambient Intensity", &ambientIntensity, 0.0f, 1.0f))
-        {
-            g_pApplicationState->RegisterUpdateFunction([ambientIntensity](ApplicationState& state)
-                                                        { state.renderState.ambientIntensity = ambientIntensity; });
-            needsUpdate = true;
-        }
-
-        // Tone Mapper
-        const char* toneMappers[] = {"None", "ACES", "Uncharted", "GT7"};
-        // Ensure we don't go out of bounds if state has invalid value
-        int currentToneMapper = mathstl::clamp(renderState.toneMapperType,
-                                               static_cast<s32>(ToneMapperType::None),
-                                               static_cast<s32>(ToneMapperType::GT7));
-        int uiToneMapper = currentToneMapper;
-
-        if (ImGui::Combo("Tone Mapper", &uiToneMapper, toneMappers, IM_ARRAYSIZE(toneMappers)))
-        {
-            if (uiToneMapper != currentToneMapper)
+            if (ImGui::SliderFloat("Exposure", &exposure, 0.1f, 10.0f))
             {
-                g_pApplicationState->RegisterUpdateFunction([uiToneMapper](ApplicationState& state)
-                                                            { state.renderState.toneMapperType = uiToneMapper; });
+                g_pApplicationState->RegisterUpdateFunction([exposure](ApplicationState& state)
+                                                            { state.renderState.exposure = exposure; });
                 needsUpdate = true;
             }
-        }
 
-        if (uiToneMapper == static_cast<int>(ToneMapperType::GT7))
-        {
-            if (ImGui::CollapsingHeader("GT7 Tonemapper Settings"))
+            if (ImGui::SliderFloat("Ambient Intensity", &ambientIntensity, 0.0f, 1.0f))
             {
+                g_pApplicationState->RegisterUpdateFunction([ambientIntensity](ApplicationState& state)
+                                                            { state.renderState.ambientIntensity = ambientIntensity; });
+                needsUpdate = true;
+            }
+
+            const char* toneMappers[] = {"None", "ACES", "Uncharted", "GT7"};
+            int currentToneMapper = mathstl::clamp(renderState.toneMapperType,
+                                                   static_cast<s32>(ToneMapperType::None),
+                                                   static_cast<s32>(ToneMapperType::GT7));
+            int uiToneMapper = currentToneMapper;
+
+            if (ImGui::Combo("Tone Mapper", &uiToneMapper, toneMappers, IM_ARRAYSIZE(toneMappers)))
+            {
+                if (uiToneMapper != currentToneMapper)
+                {
+                    g_pApplicationState->RegisterUpdateFunction([uiToneMapper](ApplicationState& state)
+                                                                { state.renderState.toneMapperType = uiToneMapper; });
+                    needsUpdate = true;
+                }
+            }
+
+            if (uiToneMapper == static_cast<int>(ToneMapperType::GT7))
+            {
+                ImGui::Indent();
                 float paperWhite = renderState.gt7PaperWhite;
                 float refLuminance = renderState.gt7ReferenceLuminance;
 
@@ -80,26 +77,27 @@ public:
                         { state.renderState.gt7ReferenceLuminance = refLuminance; });
                     needsUpdate = true;
                 }
+                ImGui::Unindent();
             }
         }
-        ImGui::Separator();
+
         if (ImGui::CollapsingHeader("Shadow Settings"))
         {
-            bool shadowsEnabled = renderState.shadowsEnabled;
+            bool shadowsEnabled = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::ShadowsEnabled);
             if (ImGui::Checkbox("CSM Shadows Enabled", &shadowsEnabled))
             {
                 g_pApplicationState->RegisterUpdateFunction([shadowsEnabled](ApplicationState& state)
-                                                            { state.renderState.shadowsEnabled = shadowsEnabled; });
+                                                            { mathstl::setFlag(state.renderState.debugFlags, (u32)DebugFlags::ShadowsEnabled, shadowsEnabled); });
                 needsUpdate = true;
             }
-            bool sssEnabled = renderState.sssEnabled;
+            bool sssEnabled = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::SSSEnabled);
             if (ImGui::Checkbox("Screen Space Shadows Enabled", &sssEnabled))
             {
                 g_pApplicationState->RegisterUpdateFunction([sssEnabled](ApplicationState& state)
-                                                            { state.renderState.sssEnabled = sssEnabled; });
+                                                            { mathstl::setFlag(state.renderState.debugFlags, (u32)DebugFlags::SSSEnabled, sssEnabled); });
                 needsUpdate = true;
             }
-            // CSM Resolution selector
+            
             const char* resolutionOptions[] = {"512", "1024", "2048", "4096", "8192", "16384"};
             const int resolutionValues[] = {512, 1024, 2048, 4096, 8192, 16384};
             int currentRes = static_cast<int>(renderState.csmResolution.x);
@@ -136,20 +134,58 @@ public:
                 needsUpdate = true;
             }
         }
-        ImGui::Separator();
+
+        if (ImGui::CollapsingHeader("Ray Tracing Settings"))
+        {
+            bool rtEnabled = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTEnabled);
+            if (ImGui::Checkbox("Enable Ray Tracing", &rtEnabled))
+            {
+                g_pApplicationState->RegisterUpdateFunction(
+                    [rtEnabled](ApplicationState& state) { mathstl::setFlag(state.renderState.debugFlags, (u32)DebugFlags::RTEnabled, rtEnabled); });
+            }
+
+            bool rtReflections = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTReflectionsEnabled);
+            if (ImGui::Checkbox("Ray-Traced Reflections", &rtReflections))
+            {
+                g_pApplicationState->RegisterUpdateFunction(
+                    [rtReflections](ApplicationState& state) { mathstl::setFlag(state.renderState.debugFlags, (u32)DebugFlags::RTReflectionsEnabled, rtReflections); });
+            }
+
+            bool globalReflectanceOverride = renderState.rt.globalReflectanceOverrideEnabled;
+            if (ImGui::Checkbox("Override Material Reflectance", &globalReflectanceOverride))
+            {
+                g_pApplicationState->RegisterUpdateFunction(
+                    [globalReflectanceOverride](ApplicationState& state)
+                    { state.renderState.rt.globalReflectanceOverrideEnabled = globalReflectanceOverride; });
+            }
+
+            if (globalReflectanceOverride)
+            {
+                ImGui::Indent();
+                float globalReflectance = mathstl::clamp(renderState.rt.globalMaterialReflectance, 0.0f, 1.0f);
+                if (ImGui::SliderFloat("Global Material Reflectance", &globalReflectance, 0.0f, 1.0f, "%.2f"))
+                {
+                    g_pApplicationState->RegisterUpdateFunction(
+                        [globalReflectance](ApplicationState& state)
+                        { state.renderState.rt.globalMaterialReflectance = globalReflectance; });
+                }
+                ImGui::Unindent();
+            }
+        }
+
         if (ImGui::CollapsingHeader("Antialiasing Settings"))
         {
-            const char* aaTypesWithDLSS[] = {"None", "TAA + SMAA", "FXAA", "DLSS"};
-            const char* aaTypesWithoutDLSS[] = {"None", "TAA + SMAA", "FXAA"};
+            const char* aaTypesWithDLSS[] = {"None", "SMAA", "TAA + SMAA", "DLSS"};
+            const char* aaTypesWithoutDLSS[] = {"None", "SMAA", "TAA + SMAA"};
             const AntialiasingType aaValuesWithDLSS[] = {
                 AntialiasingType::None,
+                AntialiasingType::SMAA,
                 AntialiasingType::TAA_SMAA,
-                AntialiasingType::FXAA,
                 AntialiasingType::DLSS};
             const AntialiasingType aaValuesWithoutDLSS[] = {
                 AntialiasingType::None,
-                AntialiasingType::TAA_SMAA,
-                AntialiasingType::FXAA};
+                AntialiasingType::SMAA,
+                AntialiasingType::TAA_SMAA};
             const char** aaTypes = renderState.dlssSupported ? aaTypesWithDLSS : aaTypesWithoutDLSS;
             const AntialiasingType* aaValues = renderState.dlssSupported ? aaValuesWithDLSS : aaValuesWithoutDLSS;
             const int aaTypeCount = renderState.dlssSupported ? IM_ARRAYSIZE(aaTypesWithDLSS) : IM_ARRAYSIZE(aaTypesWithoutDLSS);
@@ -175,58 +211,35 @@ public:
                 }
             }
 
-            const char* taaDebugModes[] = {
-                "Off",
-                "Current Color",
-                "History Color",
-                "History Current Difference"};
-            int currentTAADebugMode = mathstl::clamp(static_cast<int>(renderState.taaDebugMode),
-                                                      static_cast<int>(TAADebugMode::Off),
-                                                      static_cast<int>(TAADebugMode::HistoryVelocityMagnitude));
-            int uiTAADebugMode = currentTAADebugMode;
-            if (ImGui::Combo("TAA Debug View", &uiTAADebugMode, taaDebugModes, IM_ARRAYSIZE(taaDebugModes)))
+            if (currentAA == AntialiasingType::TAA_SMAA)
             {
-                if (uiTAADebugMode != currentTAADebugMode)
+                ImGui::Indent();
+                if (ImGui::Button("Seed History From Current Color"))
                 {
                     g_pApplicationState->RegisterUpdateFunction(
-                        [uiTAADebugMode](ApplicationState& state)
-                        { state.renderState.taaDebugMode = static_cast<u32>(uiTAADebugMode); });
+                        [](ApplicationState& state) { state.renderState.taaSeedHistoryFromCurrentColor = true; });
+                }
+
+                float taaVelocityRejectionStart = renderState.taaVelocityRejectionStart;
+                float taaVelocityRejectionEnd = renderState.taaVelocityRejectionEnd;
+                if (ImGui::SliderFloat("Velocity Rejection Start", &taaVelocityRejectionStart, 0.0f, 64.0f, "%.3f px"))
+                {
+                    g_pApplicationState->RegisterUpdateFunction(
+                        [taaVelocityRejectionStart](ApplicationState& state)
+                        { state.renderState.taaVelocityRejectionStart = taaVelocityRejectionStart; });
                     needsUpdate = true;
                 }
-            }
-
-            bool taaForceHistory = renderState.taaForceHistory;
-            if (ImGui::Checkbox("TAA Force History", &taaForceHistory))
-            {
-                g_pApplicationState->RegisterUpdateFunction([taaForceHistory](ApplicationState& state)
-                                                            { state.renderState.taaForceHistory = taaForceHistory; });
-                needsUpdate = true;
-            }
-
-            if (currentAA == AntialiasingType::TAA_SMAA && ImGui::Button("Seed History From Current Color"))
-            {
-                g_pApplicationState->RegisterUpdateFunction(
-                    [](ApplicationState& state) { state.renderState.taaSeedHistoryFromCurrentColor = true; });
-            }
-
-            float taaVelocityRejectionStart = renderState.taaVelocityRejectionStart;
-            float taaVelocityRejectionEnd = renderState.taaVelocityRejectionEnd;
-            if (ImGui::SliderFloat("TAA Velocity Rejection Start", &taaVelocityRejectionStart, 0.0f, 64.0f, "%.3f px"))
-            {
-                g_pApplicationState->RegisterUpdateFunction(
-                    [taaVelocityRejectionStart](ApplicationState& state)
-                    { state.renderState.taaVelocityRejectionStart = taaVelocityRejectionStart; });
-                needsUpdate = true;
-            }
-            if (ImGui::SliderFloat("TAA Velocity Rejection End", &taaVelocityRejectionEnd, 0.0f, 64.0f, "%.3f px"))
-            {
-                g_pApplicationState->RegisterUpdateFunction(
-                    [taaVelocityRejectionEnd](ApplicationState& state)
-                    { state.renderState.taaVelocityRejectionEnd = taaVelocityRejectionEnd; });
-                needsUpdate = true;
+                if (ImGui::SliderFloat("Velocity Rejection End", &taaVelocityRejectionEnd, 0.0f, 64.0f, "%.3f px"))
+                {
+                    g_pApplicationState->RegisterUpdateFunction(
+                        [taaVelocityRejectionEnd](ApplicationState& state)
+                        { state.renderState.taaVelocityRejectionEnd = taaVelocityRejectionEnd; });
+                    needsUpdate = true;
+                }
+                ImGui::Unindent();
             }
         }
-        ImGui::Separator();
+
         if (ImGui::CollapsingHeader("Upscaling Settings"))
         {
             const char* resolutionOptions[] = {"100%", "75%", "50%", "25%"};
@@ -253,30 +266,31 @@ public:
                 }
             }
         }
-        ImGui::Separator();
-        ImGui::Text("Clustered Lighting");
 
-        int clusterX = renderState.clusterCount.x;
-        int clusterY = renderState.clusterCount.y;
-        int clusterZ = renderState.clusterCount.z;
+        if (ImGui::CollapsingHeader("Clustered Lighting Settings"))
+        {
+            int clusterX = renderState.clusterCount.x;
+            int clusterY = renderState.clusterCount.y;
+            int clusterZ = renderState.clusterCount.z;
 
-        if (ImGui::SliderInt("Cluster X", &clusterX, 4, 32))
-        {
-            g_pApplicationState->RegisterUpdateFunction([clusterX](ApplicationState& state)
-                                                        { state.renderState.clusterCount.x = clusterX; });
-            needsUpdate = true;
-        }
-        if (ImGui::SliderInt("Cluster Y", &clusterY, 4, 32))
-        {
-            g_pApplicationState->RegisterUpdateFunction([clusterY](ApplicationState& state)
-                                                        { state.renderState.clusterCount.y = clusterY; });
-            needsUpdate = true;
-        }
-        if (ImGui::SliderInt("Cluster Z", &clusterZ, 8, 64))
-        {
-            g_pApplicationState->RegisterUpdateFunction([clusterZ](ApplicationState& state)
-                                                        { state.renderState.clusterCount.z = clusterZ; });
-            needsUpdate = true;
+            if (ImGui::SliderInt("Cluster X", &clusterX, 4, 32))
+            {
+                g_pApplicationState->RegisterUpdateFunction([clusterX](ApplicationState& state)
+                                                            { state.renderState.clusterCount.x = clusterX; });
+                needsUpdate = true;
+            }
+            if (ImGui::SliderInt("Cluster Y", &clusterY, 4, 32))
+            {
+                g_pApplicationState->RegisterUpdateFunction([clusterY](ApplicationState& state)
+                                                            { state.renderState.clusterCount.y = clusterY; });
+                needsUpdate = true;
+            }
+            if (ImGui::SliderInt("Cluster Z", &clusterZ, 8, 64))
+            {
+                g_pApplicationState->RegisterUpdateFunction([clusterZ](ApplicationState& state)
+                                                            { state.renderState.clusterCount.z = clusterZ; });
+                needsUpdate = true;
+            }
         }
 
         if (needsUpdate)

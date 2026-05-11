@@ -3,9 +3,9 @@
 #extension GL_ARB_shading_language_include : enable
 
 #define GBufferUBOSet 2
-#include "../Globals/Bindless.h"
-#include "../Globals/Common.h"
-#include "../Globals/GBuffer/GBufferSampling.h"
+#include "../../Globals/Bindless.h"
+#include "../../Globals/Common.h"
+#include "../../Globals/GBuffer/GBufferSampling.h"
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 

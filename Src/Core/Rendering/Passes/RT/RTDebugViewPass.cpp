@@ -1,6 +1,7 @@
 #include "RTDebugViewPass.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Global/State/ApplicationState.h"
+#include "Core/Global/Utils/MathFunctions.h"
 #include "Core/Rendering/Core/Defines/BindingSlots.h"
 #include "Core/Rendering/Core/RT/RTSceneManager.h"
 #include "Core/Rendering/Core/ShaderManager.h"
@@ -94,8 +95,9 @@ void RTDebugViewPass::RebuildInternalData(const stltype::vector<PassMeshData>& m
 
 bool RTDebugViewPass::WantsToRender() const
 {
-    const auto& rtState = g_pApplicationState->GetCurrentApplicationState().renderState.rt;
-    return rtState.enabled && rtState.debugViewEnabled;
+    const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+    return mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
+           mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTDebugEnabled);
 }
 
 void RTDebugViewPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)

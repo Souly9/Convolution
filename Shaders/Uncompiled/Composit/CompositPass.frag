@@ -44,6 +44,10 @@ void main()
             vec3 temporalColor = texture(GlobalBindlessTextures[gbufferUBO.finalTemporalColorBufferIdx], texCoords).xyz;
             finalHDRColor = InverseReinhardFromTemporal(temporalColor);
         }
+        else if (aaType == AA_TYPE_SMAA)
+        {
+            finalHDRColor = texture(GlobalBindlessTextures[gbufferUBO.finalTemporalColorBufferIdx], texCoords).xyz;
+        }
         else
         {
             finalHDRColor = texture(GlobalBindlessTextures[gbufferUBO.thisFrameColorBufferIdx], texCoords).xyz;

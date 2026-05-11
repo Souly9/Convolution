@@ -106,7 +106,7 @@ void SMAAPass::BuildPipelines()
 bool SMAAPass::WantsToRender() const
 {
     const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
-    return renderState.aaType == AntialiasingType::TAA_SMAA;
+    return renderState.aaType == AntialiasingType::SMAA || renderState.aaType == AntialiasingType::TAA_SMAA;
 }
 
 void SMAAPass::CreateSharedDescriptorLayout()

@@ -7,13 +7,16 @@
 #include "ClusteredShading/TileAssignmentComputePass.h"
 #include "Compositing/CompositPass.h"
 #include "Core/Global/FrameGlobals.h"
+#include "Core/Global/State/ApplicationState.h"
 #include "Core/Global/State/States.h"
+#include "Core/Global/Utils/MathFunctions.h"
 #include "Core/Rendering/Core/Defines/GlobalBuffers.h"
 #include "Core/Rendering/Core/GPUTimingQuery.h"
 #include "Core/Rendering/Core/Nvidia/StreamlineManager.h"
 #include "Core/Rendering/Core/ShaderManager.h"
 #include "Core/Rendering/Core/Synchronization.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
+#include "Core/SceneGraph/Scene.h"
 #include "DebugShapePass.h"
 #include "ImGuiPass.h"
 #include "PreProcess/DepthPrePass.h"
@@ -28,7 +31,6 @@
 #include "RT/RTDebugViewPass.h"
 #include "RT/RTReflectionsPass.h"
 #include "Core/Rendering/Core/ProfilingUtils.h"
-#include <cstring>
 
 using namespace RenderPasses;
 
@@ -47,13 +49,25 @@ void PassManager::InitResourceManagerAndCallbacks()
 {
     m_resourceManager.Init();
     m_rtSceneManager.Init(&m_resourceManager, VkGlobals::GetQueueFamilyIndices().graphicsFamily.value());
+    auto registerSceneGeometry = [this]()
+    {
+        m_rtSceneManager.Reset();
+        m_resourceManager.UploadSceneGeometry(g_pMeshManager->GetMeshes());
+        m_rtSceneManager.RegisterSceneMeshes(g_pMeshManager->GetMeshes());
+    };
+
     g_pEventSystem->AddSceneLoadedEventCallback(
-        [this](const SceneLoadedEventData&)
+        [registerSceneGeometry](const SceneLoadedEventData&)
         {
-            m_rtSceneManager.Reset();
-            m_resourceManager.UploadSceneGeometry(g_pMeshManager->GetMeshes());
-            m_rtSceneManager.RegisterSceneMeshes(g_pMeshManager->GetMeshes());
+            registerSceneGeometry();
         });
+
+    const Scene* pCurrentScene = g_pApplicationState->GetCurrentScene();
+    if (pCurrentScene != nullptr && pCurrentScene->IsFullyLoaded())
+    {
+        registerSceneGeometry();
+    }
+
     g_pEventSystem->AddShaderHotReloadEventCallback([this](const auto&) { RebuildPipelinesForAllPasses(); });
 
     // Create pass objects
@@ -97,6 +111,7 @@ void PassManager::InitPassesAndImGui()
 
 bool PassManager::NeedsResizeDependentResourceRecreate(const mathstl::Vector2& swapchainResolution) const
 {
+    // kind of a sanity check so we dont need to track events with bools but also not perfect
     const auto& appRenderState = g_pApplicationState->GetCurrentApplicationState().renderState;
     const auto desiredRenderResolution = CalculateRenderResolution(swapchainResolution, appRenderState.upscalingPercentage);
     return swapchainResolution.x != m_renderState.swapchainResolution.x ||
@@ -123,7 +138,7 @@ void PassManager::RecreateResizeDependentResources(const mathstl::Vector2& swapc
             state.renderState.renderTargetsRecreatedThisFrame = true;
         });
 
-    // 1. Recreate Shadow Maps
+    // Recreate Shadow Maps
     {
         const auto csmCascades = renderState.directionalLightCascades;
         const auto csmResolution = renderState.csmResolution;
@@ -139,7 +154,7 @@ void PassManager::RecreateResizeDependentResources(const mathstl::Vector2& swapc
     m_renderTargetManager.GetAttachments().directionalLightShadowMap = m_shadowMapManager.GetShadowMap();
     m_rtResourceManager.Recreate(m_renderState.renderResolution);
 
-    // 5. Update Main Pass Data with new handles
+    // Update Main Pass Data with new handles
     u32 idx = 0;
     for (auto& mainPassData : m_mainPassData)
     {
@@ -173,7 +188,8 @@ void PassManager::RecreateResizeDependentResources(const mathstl::Vector2& swapc
 
     g_pTexManager->PostRender();
 
-    // 6. First creation owns full pass setup; later render-size changes only refresh cached resize state.
+    // First creation owns full pass setup; later render-size changes only refresh cached resize state
+    // TODO: FIX THIS AND REMOVE THE BOOL
     for (auto& [type, passes] : m_passes)
     {
         for (auto& pPass : passes)
@@ -190,7 +206,7 @@ void PassManager::RecreateResizeDependentResources(const mathstl::Vector2& swapc
     }
     m_passesInitialized = true;
 
-    // 7. Update UI Descriptors
+    // Update UI Descriptors
     m_imguiRegistry.RegisterShadowMapTextures(m_shadowMapManager.GetShadowMap());
     m_imguiRegistry.RegisterGBufferTextures(m_renderTargetManager.GetGBuffer(),
                                             m_renderTargetManager.GetScreenSpaceShadowTexture());
@@ -389,18 +405,11 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
     u64 graphicsTimelineValue = computeSignalValue + 5;
     const u64 submittedTransferValue = g_pQueueHandler->GetLastSubmittedValue(QueueType::Transfer);
 
-    if (submittedTransferValue > 0)
-    {
-        auto* pTransferTimeline = g_pQueueHandler->GetTimelineSemaphore(QueueType::Transfer);
-        pComputeCmdBuffer->AddTimelineWait(pTransferTimeline, submittedTransferValue);
-        pDepthWorkBuffer->AddTimelineWait(pTransferTimeline, submittedTransferValue);
-        pMainGraphicsWorkBuffer->AddTimelineWait(pTransferTimeline, submittedTransferValue);
-    }
 
     // Dispatch early async compute work
     {
         RenderPassGroup(PassType::LightTransformCompute, mainPassData, ctx, pComputeCmdBuffer);
-
+        // Clearing previous frame tile buffer, just to make sure
         {
             Profiling::StartScope(pComputeCmdBuffer, &m_gpuTimingQuery, m_clearTileCountersTimingIndex, "Clearing Previous Tile Data");
 
@@ -422,7 +431,7 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
 
             Profiling::EndScope(pComputeCmdBuffer, &m_gpuTimingQuery, m_clearTileCountersTimingIndex);
         }
-
+        // Computing the tiles and their lights, split into three to alleviate register and memory pressure and not check all lights for every cluster
         RenderPassGroup(PassType::TileAssignmentCompute, mainPassData, ctx, pComputeCmdBuffer);
         RenderPassGroup(PassType::ClusterGenCompute, mainPassData, ctx, pComputeCmdBuffer);
 
@@ -558,6 +567,7 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
 
         const auto& appRenderState = g_pApplicationState->GetCurrentApplicationState().renderState;
         const bool taaModeActive = appRenderState.aaType == AntialiasingType::TAA_SMAA;
+        const bool smaaModeActive = appRenderState.aaType == AntialiasingType::SMAA;
         const bool dlssModeActive = appRenderState.aaType == AntialiasingType::DLSS;
         const bool seedHistoryFromCurrentColor = taaModeActive && appRenderState.taaSeedHistoryFromCurrentColor;
         const bool debugCopyCurrent =
@@ -599,6 +609,12 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
                 m_transitionRecorder.RecordResolveToRead(pFinalWorkBuffer, gbuffer);
                 RenderPassGroup(PassType::SMAA, mainPassData, ctx, pFinalWorkBuffer);
             }
+        }
+        else if (smaaModeActive)
+        {
+            m_transitionRecorder.RecordCopyTextureToResolve(
+                pFinalWorkBuffer, gbuffer, gbuffer.Get(GBufferTextureType::GBufferThisFrameColor));
+            RenderPassGroup(PassType::SMAA, mainPassData, ctx, pFinalWorkBuffer);
         }
 
         RenderPassGroup(PassType::DLSS, mainPassData, ctx, pFinalWorkBuffer);
@@ -652,16 +668,19 @@ void PassManager::UpdateGBufferUBO(const MainPassData& data)
 
     const auto& appRenderState = g_pApplicationState->GetCurrentApplicationState().renderState;
     const bool taaModeActive = appRenderState.aaType == AntialiasingType::TAA_SMAA;
+    const bool smaaModeActive = appRenderState.aaType == AntialiasingType::SMAA;
     const bool taaDebugOrSeed = appRenderState.taaSeedHistoryFromCurrentColor ||
                                 appRenderState.taaDebugMode == static_cast<u32>(TAADebugMode::CurrentColor) ||
                                 appRenderState.taaDebugMode == static_cast<u32>(TAADebugMode::HistoryColor);
     gbufferUBO.finalTemporalColorBufferIdx =
-        (taaModeActive && !taaDebugOrSeed && temporal.postAAColorHandle != 0)
+        (((taaModeActive && !taaDebugOrSeed) || smaaModeActive) && temporal.postAAColorHandle != 0)
             ? temporal.postAAColorHandle
             : temporal.resolveHandle;
 
     const auto& rtState = appRenderState.rt;
-    const bool rtReflectionsRequested = rtState.enabled && rtState.reflectionsEnabled;
+    const bool rtReflectionsRequested =
+        mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
+        mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTReflectionsEnabled);
     const bool useRTReflections = rtReflectionsRequested &&
                                   data.pRTSceneManager != nullptr &&
                                   data.pRTSceneManager->HasReadyTLAS(m_currentSwapChainIdx);
