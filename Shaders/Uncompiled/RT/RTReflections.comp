@@ -101,7 +101,7 @@ bool TraceAndShadeTLAS(vec3 rayOrigin, vec3 rayDir, out vec3 reflectedRadiance)
     vec3 indirectLighting = hitSurface.baseColor * ubo.ambientIntensity;
     vec3 emissive = SampleMaterialEmissive(hitMaterial, materialUV);
 
-    reflectedRadiance = (directLighting + indirectLighting + emissive) * ubo.exposure;
+    reflectedRadiance = (directLighting + indirectLighting + emissive);
     return true;
 }
 

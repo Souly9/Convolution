@@ -57,7 +57,12 @@ struct GBuffer : public GBufferInfo
 {
     void GetGeometryOutputTextures(stltype::fixed_vector<const Texture*, 8>& outTextures)
     {
-        outTextures = {m_pPositionTexture, m_pNormalTexture, m_pGbufferUVMatTexture, m_pDebugTexture, m_pVelocityTexture};
+        outTextures = {
+            m_pPositionTexture,
+            m_pNormalTexture,
+            m_pGbufferUVMatTexture,
+            m_pDebugTexture,
+            m_velocityFrameTargets[m_currentHistoryFrameSlot].pTexture};
     }
 
     Texture* Get(GBufferTextureType type)
@@ -68,13 +73,13 @@ struct GBuffer : public GBufferInfo
             case GBufferTextureType::GBufferNormal: return m_pNormalTexture;
             case GBufferTextureType::TexCoordMatData: return m_pGbufferUVMatTexture;
             case GBufferTextureType::GBufferDebug: return m_pDebugTexture;
-            case GBufferTextureType::GBufferVelocity: return m_pVelocityTexture;
-            case GBufferTextureType::GBufferLastFrameVelocity: return m_pLastFrameVelocityTexture;
-            case GBufferTextureType::GBufferLastFrameColor: return m_pLastFrameColorTexture;
+            case GBufferTextureType::GBufferVelocity: return m_velocityFrameTargets[m_currentHistoryFrameSlot].pTexture;
+            case GBufferTextureType::GBufferLastFrameVelocity: return m_velocityFrameTargets[GetPreviousHistoryFrameSlot()].pTexture;
+            case GBufferTextureType::GBufferLastFrameColor: return m_temporalResolveFrameTargets[GetPreviousHistoryFrameSlot()].pTexture;
             case GBufferTextureType::GBufferThisFrameColor: return m_pThisFrameColorTexture;
             case GBufferTextureType::GBufferTemporalCurrentColor: return m_pTemporalCurrentColorTexture;
             case GBufferTextureType::GBufferLastFrameDepth: return m_pLastFrameDepthTexture;
-            case GBufferTextureType::GBufferResolve: return m_pResolveTexture;
+            case GBufferTextureType::GBufferResolve: return m_temporalResolveFrameTargets[m_currentHistoryFrameSlot].pTexture;
             case GBufferTextureType::GBufferPostAAColor: return m_pPostAAColorTexture;
             default:
                 DEBUG_ASSERT(false);
@@ -91,13 +96,17 @@ struct GBuffer : public GBufferInfo
             case GBufferTextureType::GBufferNormal: m_pNormalTexture = pTexture; break;
             case GBufferTextureType::TexCoordMatData: m_pGbufferUVMatTexture = pTexture; break;
             case GBufferTextureType::GBufferDebug: m_pDebugTexture = pTexture; break;
-            case GBufferTextureType::GBufferVelocity: m_pVelocityTexture = pTexture; break;
-            case GBufferTextureType::GBufferLastFrameVelocity: m_pLastFrameVelocityTexture = pTexture; break;
-            case GBufferTextureType::GBufferLastFrameColor: m_pLastFrameColorTexture = pTexture; break;
+            case GBufferTextureType::GBufferVelocity: m_velocityFrameTargets[m_currentHistoryFrameSlot].pTexture = pTexture; break;
+            case GBufferTextureType::GBufferLastFrameVelocity:
+                m_velocityFrameTargets[GetPreviousHistoryFrameSlot()].pTexture = pTexture;
+                break;
+            case GBufferTextureType::GBufferLastFrameColor:
+                m_temporalResolveFrameTargets[GetPreviousHistoryFrameSlot()].pTexture = pTexture;
+                break;
             case GBufferTextureType::GBufferThisFrameColor: m_pThisFrameColorTexture = pTexture; break;
             case GBufferTextureType::GBufferTemporalCurrentColor: m_pTemporalCurrentColorTexture = pTexture; break;
             case GBufferTextureType::GBufferLastFrameDepth: m_pLastFrameDepthTexture = pTexture; break;
-            case GBufferTextureType::GBufferResolve: m_pResolveTexture = pTexture; break;
+            case GBufferTextureType::GBufferResolve: m_temporalResolveFrameTargets[m_currentHistoryFrameSlot].pTexture = pTexture; break;
             case GBufferTextureType::GBufferPostAAColor: m_pPostAAColorTexture = pTexture; break;
             default: DEBUG_ASSERT(false); break;
         }
@@ -111,29 +120,80 @@ struct GBuffer : public GBufferInfo
             case GBufferTextureType::GBufferNormal: m_hNormal = handle; break;
             case GBufferTextureType::TexCoordMatData: m_hTexCoordMat = handle; break;
             case GBufferTextureType::GBufferDebug: m_hDebug = handle; break;
-            case GBufferTextureType::GBufferVelocity: m_hVelocity = handle; break;
-            case GBufferTextureType::GBufferLastFrameVelocity: m_hLastFrameVelocity = handle; break;
-            case GBufferTextureType::GBufferLastFrameColor: m_hLastFrameColor = handle; break;
+            case GBufferTextureType::GBufferVelocity: m_velocityFrameTargets[m_currentHistoryFrameSlot].bindlessHandle = handle; break;
+            case GBufferTextureType::GBufferLastFrameVelocity:
+                m_velocityFrameTargets[GetPreviousHistoryFrameSlot()].bindlessHandle = handle;
+                break;
+            case GBufferTextureType::GBufferLastFrameColor:
+                m_temporalResolveFrameTargets[GetPreviousHistoryFrameSlot()].bindlessHandle = handle;
+                break;
             case GBufferTextureType::GBufferThisFrameColor: m_hThisFrameColor = handle; break;
             case GBufferTextureType::GBufferTemporalCurrentColor: m_hTemporalCurrentColor = handle; break;
             case GBufferTextureType::GBufferLastFrameDepth: m_hLastFrameDepth = handle; break;
-            case GBufferTextureType::GBufferResolve: m_hResolve = handle; break;
+            case GBufferTextureType::GBufferResolve: m_temporalResolveFrameTargets[m_currentHistoryFrameSlot].bindlessHandle = handle; break;
             case GBufferTextureType::GBufferPostAAColor: m_hPostAAColor = handle; break;
         }
     }
 
     void SetTextureHandle(GBufferTextureType type, TextureHandle handle)
     {
+        switch (type)
+        {
+            case GBufferTextureType::GBufferVelocity:
+                m_velocityFrameTargets[m_currentHistoryFrameSlot].textureHandle = handle;
+                return;
+            case GBufferTextureType::GBufferLastFrameVelocity:
+                m_velocityFrameTargets[GetPreviousHistoryFrameSlot()].textureHandle = handle;
+                return;
+            case GBufferTextureType::GBufferLastFrameColor:
+                m_temporalResolveFrameTargets[GetPreviousHistoryFrameSlot()].textureHandle = handle;
+                return;
+            case GBufferTextureType::GBufferResolve:
+                m_temporalResolveFrameTargets[m_currentHistoryFrameSlot].textureHandle = handle;
+                return;
+            default:
+                break;
+        }
         m_textureHandles[static_cast<u32>(type)] = handle;
     }
 
     TextureHandle GetTextureHandle(GBufferTextureType type) const
     {
+        switch (type)
+        {
+            case GBufferTextureType::GBufferVelocity:
+                return m_velocityFrameTargets[m_currentHistoryFrameSlot].textureHandle;
+            case GBufferTextureType::GBufferLastFrameVelocity:
+                return m_velocityFrameTargets[GetPreviousHistoryFrameSlot()].textureHandle;
+            case GBufferTextureType::GBufferLastFrameColor:
+                return m_temporalResolveFrameTargets[GetPreviousHistoryFrameSlot()].textureHandle;
+            case GBufferTextureType::GBufferResolve:
+                return m_temporalResolveFrameTargets[m_currentHistoryFrameSlot].textureHandle;
+            default:
+                break;
+        }
         return m_textureHandles[static_cast<u32>(type)];
     }
 
     void ClearTextureHandle(GBufferTextureType type)
     {
+        switch (type)
+        {
+            case GBufferTextureType::GBufferVelocity:
+                m_velocityFrameTargets[m_currentHistoryFrameSlot].textureHandle = 0;
+                return;
+            case GBufferTextureType::GBufferLastFrameVelocity:
+                m_velocityFrameTargets[GetPreviousHistoryFrameSlot()].textureHandle = 0;
+                return;
+            case GBufferTextureType::GBufferLastFrameColor:
+                m_temporalResolveFrameTargets[GetPreviousHistoryFrameSlot()].textureHandle = 0;
+                return;
+            case GBufferTextureType::GBufferResolve:
+                m_temporalResolveFrameTargets[m_currentHistoryFrameSlot].textureHandle = 0;
+                return;
+            default:
+                break;
+        }
         m_textureHandles[static_cast<u32>(type)] = 0;
     }
 
@@ -145,55 +205,102 @@ struct GBuffer : public GBufferInfo
             case GBufferTextureType::GBufferNormal: return m_hNormal;
             case GBufferTextureType::TexCoordMatData: return m_hTexCoordMat;
             case GBufferTextureType::GBufferDebug: return m_hDebug;
-            case GBufferTextureType::GBufferVelocity: return m_hVelocity;
-            case GBufferTextureType::GBufferLastFrameVelocity: return m_hLastFrameVelocity;
-            case GBufferTextureType::GBufferLastFrameColor: return m_hLastFrameColor;
+            case GBufferTextureType::GBufferVelocity: return m_velocityFrameTargets[m_currentHistoryFrameSlot].bindlessHandle;
+            case GBufferTextureType::GBufferLastFrameVelocity:
+                return m_velocityFrameTargets[GetPreviousHistoryFrameSlot()].bindlessHandle;
+            case GBufferTextureType::GBufferLastFrameColor:
+                return m_temporalResolveFrameTargets[GetPreviousHistoryFrameSlot()].bindlessHandle;
             case GBufferTextureType::GBufferThisFrameColor: return m_hThisFrameColor;
             case GBufferTextureType::GBufferTemporalCurrentColor: return m_hTemporalCurrentColor;
             case GBufferTextureType::GBufferLastFrameDepth: return m_hLastFrameDepth;
-            case GBufferTextureType::GBufferResolve: return m_hResolve;
+            case GBufferTextureType::GBufferResolve:
+                return m_temporalResolveFrameTargets[m_currentHistoryFrameSlot].bindlessHandle;
             case GBufferTextureType::GBufferPostAAColor: return m_hPostAAColor;
         }
         return 0;
     }
 
-    void FlipHistoryBuffers()
+    void SelectHistoryFrame(u32 frameSlot)
     {
-        stltype::swap(m_pLastFrameColorTexture, m_pResolveTexture);
-        stltype::swap(m_hLastFrameColor, m_hResolve);
-        stltype::swap(m_textureHandles[static_cast<u32>(GBufferTextureType::GBufferLastFrameColor)],
-                      m_textureHandles[static_cast<u32>(GBufferTextureType::GBufferResolve)]);
-        stltype::swap(m_pLastFrameVelocityTexture, m_pVelocityTexture);
-        stltype::swap(m_hLastFrameVelocity, m_hVelocity);
-        stltype::swap(m_textureHandles[static_cast<u32>(GBufferTextureType::GBufferLastFrameVelocity)],
-                      m_textureHandles[static_cast<u32>(GBufferTextureType::GBufferVelocity)]);
+        m_currentHistoryFrameSlot = frameSlot % SWAPCHAIN_IMAGES;
+    }
+
+    void SetVelocityFrameTarget(u32 frameSlot,
+                                Texture* pTexture,
+                                TextureHandle textureHandle,
+                                BindlessTextureHandle bindlessHandle)
+    {
+        DEBUG_ASSERT(pTexture != nullptr);
+        auto& target = m_velocityFrameTargets[frameSlot % SWAPCHAIN_IMAGES];
+        target.pTexture = pTexture;
+        target.textureHandle = textureHandle;
+        target.bindlessHandle = bindlessHandle;
+    }
+
+    void SetTemporalResolveFrameTarget(u32 frameSlot,
+                                       Texture* pTexture,
+                                       TextureHandle textureHandle,
+                                       BindlessTextureHandle bindlessHandle)
+    {
+        DEBUG_ASSERT(pTexture != nullptr);
+        auto& target = m_temporalResolveFrameTargets[frameSlot % SWAPCHAIN_IMAGES];
+        target.pTexture = pTexture;
+        target.textureHandle = textureHandle;
+        target.bindlessHandle = bindlessHandle;
+    }
+
+    TextureHandle GetVelocityFrameTextureHandle(u32 frameSlot) const
+    {
+        return m_velocityFrameTargets[frameSlot % SWAPCHAIN_IMAGES].textureHandle;
+    }
+
+    TextureHandle GetTemporalResolveFrameTextureHandle(u32 frameSlot) const
+    {
+        return m_temporalResolveFrameTargets[frameSlot % SWAPCHAIN_IMAGES].textureHandle;
+    }
+
+    void ClearVelocityFrameTextureHandle(u32 frameSlot)
+    {
+        m_velocityFrameTargets[frameSlot % SWAPCHAIN_IMAGES].textureHandle = 0;
+    }
+
+    void ClearTemporalResolveFrameTextureHandle(u32 frameSlot)
+    {
+        m_temporalResolveFrameTargets[frameSlot % SWAPCHAIN_IMAGES].textureHandle = 0;
     }
 
 private:
+    struct FrameTextureTarget
+    {
+        Texture* pTexture{nullptr};
+        TextureHandle textureHandle{0};
+        BindlessTextureHandle bindlessHandle{0};
+    };
+
+    u32 GetPreviousHistoryFrameSlot() const
+    {
+        return (m_currentHistoryFrameSlot == 0) ? (SWAPCHAIN_IMAGES - 1) : (m_currentHistoryFrameSlot - 1);
+    }
+
     Texture* m_pPositionTexture{nullptr};
     Texture* m_pNormalTexture{nullptr};
     Texture* m_pGbufferUVMatTexture{nullptr};
     Texture* m_pDebugTexture{nullptr};
-    Texture* m_pVelocityTexture{nullptr};
-    Texture* m_pLastFrameVelocityTexture{nullptr};
-    Texture* m_pLastFrameColorTexture{nullptr};
     Texture* m_pThisFrameColorTexture{nullptr};
     Texture* m_pTemporalCurrentColorTexture{nullptr};
     Texture* m_pLastFrameDepthTexture{nullptr};
-    Texture* m_pResolveTexture{nullptr};
     Texture* m_pPostAAColorTexture{nullptr};
 
     BindlessTextureHandle m_hAlbedo{0};
     BindlessTextureHandle m_hNormal{0};
     BindlessTextureHandle m_hTexCoordMat{0};
     BindlessTextureHandle m_hDebug{0};
-    BindlessTextureHandle m_hVelocity{0};
-    BindlessTextureHandle m_hLastFrameVelocity{0};
-    BindlessTextureHandle m_hLastFrameColor{0};
     BindlessTextureHandle m_hThisFrameColor{0};
     BindlessTextureHandle m_hTemporalCurrentColor{0};
     BindlessTextureHandle m_hLastFrameDepth{0};
-    BindlessTextureHandle m_hResolve{0};
     BindlessTextureHandle m_hPostAAColor{0};
+    u32 m_currentHistoryFrameSlot{0};
+    stltype::array<FrameTextureTarget, SWAPCHAIN_IMAGES> m_velocityFrameTargets{};
+    stltype::array<FrameTextureTarget, SWAPCHAIN_IMAGES> m_temporalResolveFrameTargets{};
     stltype::array<TextureHandle, GBufferTextureTypeCount> m_textureHandles{};
 };

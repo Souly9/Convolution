@@ -1,6 +1,9 @@
+#define GLFW_INCLUDE_VULKAN
+#ifdef _WIN32
+#define GLFW_EXPOSE_NATIVE_WIN32
+#endif
 #include "Core/Global/FrameGlobals.h"
 #include "vulkan/vulkan_core.h"
-#define GLFW_INCLUDE_VULKAN
 #include "VulkanBackend.h"
 #include "Core/Events/EventSystem.h"
 #include "Core/Global/State/ApplicationState.h"
@@ -19,6 +22,9 @@
 #include "Utils/VkEnumHelpers.h"
 #include <EASTL/set.h>
 #include <GLFW/glfw3.h>
+#ifdef _WIN32
+#include <GLFW/glfw3native.h>
+#endif
 #include "Core/Global/Utils/MathFunctions.h"
 
 
@@ -56,6 +62,22 @@ bool HasExtension(const stltype::vector<VkExtensionProperties>& extensions, cons
     return false;
 }
 
+#ifdef _WIN32
+struct Win32SurfaceCreateInfoKHR
+{
+    VkStructureType sType;
+    const void* pNext;
+    VkFlags flags;
+    HINSTANCE hinstance;
+    HWND hwnd;
+};
+
+extern "C" VKAPI_ATTR VkResult VKAPI_CALL vkCreateWin32SurfaceKHR(VkInstance instance,
+                                                                   const void* pCreateInfo,
+                                                                   const VkAllocationCallbacks* pAllocator,
+                                                                   VkSurfaceKHR* pSurface);
+#endif
+
 void RemoveExtension(stltype::vector<const char*>& extensions, const char* name)
 {
     auto it = extensions.begin();
@@ -80,7 +102,8 @@ void NormalizeBufferDeviceAddressExtensions(stltype::vector<const char*>& extens
 
 bool RenderBackendImpl<Vulkan>::Init(uint32_t screenWidth, uint32_t screenHeight, stltype::string_view title)
 {
-    m_dlssSupportAvailable = Nvidia::StreamlineManager::EarlyInit();
+    m_dlssSupportAvailable =
+        Nvidia::StreamlineManager::IsEarlyInitialized() || Nvidia::StreamlineManager::EarlyInit();
 
     if (!CreateInstance(screenWidth, screenHeight, title))
     {
@@ -982,7 +1005,15 @@ void RenderBackendImpl<Vulkan>::CreateSwapChainImages()
 
 bool RenderBackendImpl<Vulkan>::CreateSurface()
 {
+#ifdef _WIN32
+    Win32SurfaceCreateInfoKHR surfaceInfo{};
+    surfaceInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
+    surfaceInfo.hinstance = GetModuleHandle(nullptr);
+    surfaceInfo.hwnd = glfwGetWin32Window(g_pWindowManager->GetWindow());
+    return vkCreateWin32SurfaceKHR(m_instance, &surfaceInfo, nullptr, &m_surface) == VK_SUCCESS;
+#else
     return glfwCreateWindowSurface(m_instance, g_pWindowManager->GetWindow(), nullptr, &m_surface) == VK_SUCCESS;
+#endif
 }
 
 bool RenderBackendImpl<Vulkan>::CreateGraphicsPipeline()

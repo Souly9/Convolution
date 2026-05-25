@@ -239,6 +239,11 @@ bool StreamlineManager::EarlyInit()
     return true;
 }
 
+bool StreamlineManager::IsEarlyInitialized()
+{
+    return g_slInitialized;
+}
+
 bool StreamlineManager::Init()
 {
     if (s_initialized)

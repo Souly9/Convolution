@@ -24,5 +24,8 @@ public:
     void Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer) override;
 
     bool WantsToRender() const override;
+
+private:
+    mutable bool m_wasActive{false};
 };
 } // namespace RenderPasses

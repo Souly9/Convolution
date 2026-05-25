@@ -46,7 +46,7 @@ void main()
 
     vec4 localPosition = vec4(inPosition, 1.0);
     OUT.unjitteredClipPos = ubo.viewProjection * worldMat * localPosition;
-    OUT.jitteredClipPos = ubo.jitteredProjection * worldMat * localPosition;
+    OUT.jitteredClipPos = ApplyFrameJitter(OUT.unjitteredClipPos);
     OUT.prevUnjitteredClipPos =
         ubo.prevViewProjection * prevGlobalTransformSSBO.prevModelMatrices[transformIdx] * localPosition;
     gl_Position = IsVisible(iData) ? OUT.jitteredClipPos : vec4(0.0 / 0.0);

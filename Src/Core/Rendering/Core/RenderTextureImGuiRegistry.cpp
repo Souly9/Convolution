@@ -89,6 +89,7 @@ void RenderTextureImGuiRegistry::RegisterGBufferTextures(GBuffer& gbuffer, Textu
     m_gbufferImGuiIDs.push_back(m_velocityIdA);
 
     m_gbufferImGuiIDs.push_back(addTex(GBufferTextureType::GBufferThisFrameColor));
+    m_gbufferImGuiIDs.push_back(addTex(GBufferTextureType::GBufferTemporalCurrentColor));
 
     m_pHistoryColorA = gbuffer.Get(GBufferTextureType::GBufferLastFrameColor);
     m_historyColorIdA = addTex(GBufferTextureType::GBufferLastFrameColor);
@@ -109,14 +110,14 @@ void RenderTextureImGuiRegistry::PublishGBufferTextureState(GBuffer& gbuffer)
             state.renderState.csmCascadeImGuiIDs = m_csmCascadeImGuiIDs;
             state.renderState.gbufferImGuiIDs = m_gbufferImGuiIDs;
 
-            if (state.renderState.gbufferImGuiIDs.size() < 7)
+            if (state.renderState.gbufferImGuiIDs.size() < 8)
                 return;
 
             const bool velocitySwapped = pGbuffer->Get(GBufferTextureType::GBufferVelocity) != m_pVelocityA;
             state.renderState.gbufferImGuiIDs[3] = velocitySwapped ? m_velocityIdB : m_velocityIdA;
 
             const bool colorSwapped = pGbuffer->Get(GBufferTextureType::GBufferLastFrameColor) != m_pHistoryColorA;
-            state.renderState.gbufferImGuiIDs[5] = colorSwapped ? m_historyColorIdB : m_historyColorIdA;
-            state.renderState.gbufferImGuiIDs[6] = colorSwapped ? m_historyColorIdA : m_historyColorIdB;
+            state.renderState.gbufferImGuiIDs[6] = colorSwapped ? m_historyColorIdB : m_historyColorIdA;
+            state.renderState.gbufferImGuiIDs[7] = colorSwapped ? m_historyColorIdA : m_historyColorIdB;
         });
 }

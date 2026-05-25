@@ -4,8 +4,10 @@ vec4 DepthToWorldSpace(vec2 texCoords, float fragmentDepth, mat4 invViewProjecti
 {
     vec4 clipSpacePosition;
     clipSpacePosition.x = texCoords.x * 2.0 - 1.0;
-    clipSpacePosition.y = texCoords.y * 2.0 - 1.0;
-    clipSpacePosition.y = -clipSpacePosition.y;
+    clipSpacePosition.y = 1.0 - texCoords.y * 2.0;
+    vec2 jitterNdc = ubo.jitterOffset * 2.0 / ubo.renderResolution;
+    jitterNdc.y *= -1.0;
+    clipSpacePosition.xy -= jitterNdc;
     clipSpacePosition.z = fragmentDepth;
     clipSpacePosition.w = 1.0;
 
@@ -23,9 +25,5 @@ FUNC_QUALIFIER vec2 ComputeVelocity(vec4 currClipPos, vec4 prevClipPos)
     vec2 currNDC = ClipToNDC(currClipPos);
     vec2 prevNDC = ClipToNDC(prevClipPos);
 
-    vec2 currUV = currNDC * 0.5 + 0.5;
-    vec2 prevUV = prevNDC * 0.5 + 0.5;
-    currUV.y = 1.0 - currUV.y;
-    prevUV.y = 1.0 - prevUV.y;
-    return (prevUV - currUV) * ubo.renderResolution;
+    return (prevNDC - currNDC) * 0.5;
 }

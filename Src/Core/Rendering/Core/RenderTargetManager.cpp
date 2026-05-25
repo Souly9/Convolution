@@ -37,9 +37,9 @@ void RenderTargetManager::Recreate(const mathstl::Vector2& renderResolution, con
     }
 }
 
-void RenderTargetManager::RotateHistory()
+void RenderTargetManager::RotateHistory(u32 frameSlot)
 {
-    m_gbuffer.FlipHistoryBuffers();
+    m_gbuffer.SelectHistoryFrame(frameSlot);
     stltype::swap(m_pDepthTexture, m_pLastFrameDepthTexture);
     stltype::swap(m_depthBindlessHandle, m_lastFrameDepthBindlessHandle);
     m_attachments.depthAttachment.SetTexture(m_pDepthTexture);
@@ -101,15 +101,11 @@ void RenderTargetManager::RecreateGBufferTextures(const mathstl::Vector2& render
         {GBufferTextureType::GBufferNormal, "GBuffer Normal"},
         {GBufferTextureType::TexCoordMatData, "GBuffer UV Material Data"},
         {GBufferTextureType::GBufferDebug, "GBuffer Debug"},
-        {GBufferTextureType::GBufferVelocity, "GBuffer Velocity", Usage::None, false},
-        {GBufferTextureType::GBufferLastFrameVelocity, "GBuffer Last Frame Velocity", Usage::None, false},
-        {GBufferTextureType::GBufferLastFrameColor, "GBuffer Last Frame Color", Usage::Storage, false, true},
         {GBufferTextureType::GBufferThisFrameColor, "GBuffer This Frame Color", Usage::Storage, false},
         {GBufferTextureType::GBufferTemporalCurrentColor,
          "GBuffer Temporal Current Color",
          Usage::Storage | Usage::Sampled,
          false},
-        {GBufferTextureType::GBufferResolve, "GBuffer Resolve", Usage::Storage | Usage::Sampled, false, true},
         {GBufferTextureType::GBufferPostAAColor, "GBuffer Post AA Color", Usage::Storage | Usage::Sampled, false, true}};
 
     for (const auto& def : defs)
@@ -137,6 +133,47 @@ void RenderTargetManager::RecreateGBufferTextures(const mathstl::Vector2& render
         m_gbuffer.Set(def.type, static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(req)));
         m_gbuffer.SetTextureHandle(def.type, req.handle);
         m_gbuffer.SetHandle(def.type, g_pTexManager->MakeTextureBindless(req.handle, true));
+    }
+
+    for (u32 frameSlot = 0; frameSlot < SWAPCHAIN_IMAGES; ++frameSlot)
+    {
+        const TextureHandle oldVelocityHandle = m_gbuffer.GetVelocityFrameTextureHandle(frameSlot);
+        if (oldVelocityHandle != 0)
+        {
+            oldTextureHandles.push_back(oldVelocityHandle);
+            m_gbuffer.ClearVelocityFrameTextureHandle(frameSlot);
+        }
+
+        DynamicTextureRequest velocityReq = baseRequest;
+        velocityReq.format = m_gbuffer.GetFormat(GBufferTextureType::GBufferVelocity);
+        velocityReq.handle = g_pTexManager->GenerateHandle();
+        velocityReq.samplerInfo.minFilter = TextureFilter::LINEAR;
+        velocityReq.samplerInfo.magFilter = TextureFilter::LINEAR;
+        velocityReq.AddName(stltype::string("GBuffer Velocity Frame ") + stltype::to_string(frameSlot));
+        m_gbuffer.SetVelocityFrameTarget(frameSlot,
+                                         static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(velocityReq)),
+                                         velocityReq.handle,
+                                         g_pTexManager->MakeTextureBindless(velocityReq.handle, true));
+
+        const TextureHandle oldResolveHandle = m_gbuffer.GetTemporalResolveFrameTextureHandle(frameSlot);
+        if (oldResolveHandle != 0)
+        {
+            oldTextureHandles.push_back(oldResolveHandle);
+            m_gbuffer.ClearTemporalResolveFrameTextureHandle(frameSlot);
+        }
+
+        DynamicTextureRequest resolveReq = baseRequest;
+        resolveReq.extents = DirectX::XMUINT3(outputResolution.x, outputResolution.y, 1);
+        resolveReq.format = m_gbuffer.GetFormat(GBufferTextureType::GBufferResolve);
+        resolveReq.handle = g_pTexManager->GenerateHandle();
+        resolveReq.usage |= Usage::Storage | Usage::Sampled;
+        resolveReq.samplerInfo.minFilter = TextureFilter::LINEAR;
+        resolveReq.samplerInfo.magFilter = TextureFilter::LINEAR;
+        resolveReq.AddName(stltype::string("GBuffer Temporal Resolve Frame ") + stltype::to_string(frameSlot));
+        m_gbuffer.SetTemporalResolveFrameTarget(frameSlot,
+                                                static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(resolveReq)),
+                                                resolveReq.handle,
+                                                g_pTexManager->MakeTextureBindless(resolveReq.handle, true));
     }
 }
 

@@ -156,7 +156,7 @@ void main()
     float ambientIntensity = ubo.ambientIntensity;
     vec3 indirectLighting = materialAlbedo * ambientIntensity;
 
-    vec3 finalHDRColor = (directLighting + indirectLighting + emissive) * ubo.exposure;
+    vec3 finalHDRColor = (directLighting + indirectLighting + emissive);
 
     outColor = vec4(finalHDRColor, 1.0);
 }

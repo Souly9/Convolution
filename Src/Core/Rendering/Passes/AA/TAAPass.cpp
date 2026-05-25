@@ -99,6 +99,10 @@ void TAAPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comman
     m_pushConstants.outputResolutionY = data.renderState.swapchainResolution.y;
     m_pushConstants.zNear = ctx.zNear;
     m_pushConstants.zFar = ctx.zFar;
+    m_pushConstants.currentJitterX = data.renderState.jitter.x;
+    m_pushConstants.currentJitterY = data.renderState.jitter.y;
+    m_pushConstants.previousJitterX = data.renderState.previousJitter.x;
+    m_pushConstants.previousJitterY = data.renderState.previousJitter.y;
     m_pushConstants.velocityRejectionStart = renderState.taaVelocityRejectionStart;
     m_pushConstants.velocityRejectionEnd = renderState.taaVelocityRejectionEnd;
     m_pushConstants.debugMode = currentDebugMode;

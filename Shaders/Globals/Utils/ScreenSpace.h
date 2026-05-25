@@ -12,9 +12,8 @@ FUNC_QUALIFIER bool IsUVInBounds(vec2 uv)
 FUNC_QUALIFIER vec2 ProjectWorldToUV(vec3 worldPos, mat4 viewProjection)
 {
     vec4 clip = viewProjection * vec4(worldPos, 1.0);
-    vec2 uv = (clip.xy / clip.w) * 0.5 + 0.5;
-    uv.y = 1.0 - uv.y;
-    return uv;
+    vec2 ndc = clip.xy / clip.w;
+    return vec2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
 }
 #endif
 

@@ -54,7 +54,9 @@ void main()
         }
     }
 
-    // Tone Mapping
+    finalHDRColor *= ubo.exposure;
+ 
+     // Tone Mapping
     int toneMapperType = ubo.toneMapperType;
     vec3 finalLDRColor = finalHDRColor;
 

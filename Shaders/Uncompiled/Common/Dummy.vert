@@ -32,5 +32,5 @@ void main()
     OUT.fragTexCoord = inTexCoord0;
 
     vec4 localPosition = vec4(inPosition, 1.0);
-    gl_Position = ubo.jitteredProjection * worldMat * localPosition;
+    gl_Position = ApplyFrameJitter(ubo.viewProjection * worldMat * localPosition);
 }

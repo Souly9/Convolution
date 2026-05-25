@@ -45,8 +45,7 @@ float sampleShadowCascade(int cascadeIndex, vec4 fragWorldPos, vec3 normal, vec3
     vec4 fragPosLightSpace = shadowmapViewUBO.csmViewMatrices[cascadeIndex] * fragWorldPos;
     vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
 
-    projCoords.x = projCoords.x * 0.5 + 0.5;
-    projCoords.y = 1.0 - (projCoords.y * 0.5 + 0.5);
+    projCoords.xy = vec2(projCoords.x * 0.5 + 0.5, 0.5 - projCoords.y * 0.5);
 
     if (projCoords.z > 1.0 || projCoords.z < 0.0 || projCoords.x < 0.0 || projCoords.x > 1.0 || projCoords.y < 0.0 ||
         projCoords.y > 1.0)

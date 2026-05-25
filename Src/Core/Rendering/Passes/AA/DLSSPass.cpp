@@ -18,15 +18,6 @@ namespace
 constexpr bool kForceStaticCameraDebug = false;
 constexpr bool kForceZeroMotionVectorsDebug = false;
 
-enum class StreamlineJitterDebugMode
-{
-    Current,
-    Previous,
-    Delta
-};
-
-constexpr StreamlineJitterDebugMode kStreamlineJitterDebugMode = StreamlineJitterDebugMode::Current;
-
 struct StreamlineTagDesc
 {
     sl::BufferType type{};
@@ -70,20 +61,6 @@ mathstl::Vector3 GetNormalizedOrFallback(mathstl::Vector3 value, const mathstl::
     return value;
 }
 
-mathstl::Vector2 ResolveStreamlineJitter(const MainPassData::PassManagerRenderState& renderState)
-{
-    switch (kStreamlineJitterDebugMode)
-    {
-        case StreamlineJitterDebugMode::Previous:
-            return renderState.previousJitter;
-        case StreamlineJitterDebugMode::Delta:
-            return renderState.jitter - renderState.previousJitter;
-        case StreamlineJitterDebugMode::Current:
-        default:
-            return renderState.jitter;
-    }
-}
-
 sl::DLSSMode ResolveDLSSModeForRenderScale(const mathstl::Vector2& renderResolution,
                                            const mathstl::Vector2& swapchainResolution)
 {
@@ -114,7 +91,10 @@ void DLSSPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResource
 bool DLSSPass::WantsToRender() const
 {
     const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
-    return Nvidia::StreamlineManager::IsDLSSSupported() && renderState.aaType == AntialiasingType::DLSS;
+    const bool wantsToRender = Nvidia::StreamlineManager::IsDLSSSupported() && renderState.aaType == AntialiasingType::DLSS;
+    if (!wantsToRender)
+        m_wasActive = false;
+    return wantsToRender;
 }
 
 void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
@@ -175,10 +155,14 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     // Transition layouts for DLSS
     // ColorOut should be in GENERAL for writing
     {
+        const ImageLayout oldColorOutLayout = (data.renderState.recreatedThisFrame || !m_wasActive)
+                                              ? ImageLayout::UNDEFINED
+                                              : ImageLayout::SHADER_READ_ONLY_OPTIMAL;
+
         ImageLayoutTransitionCmd colorOutGen(pColorOut);
-        colorOutGen.oldLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
+        colorOutGen.oldLayout = oldColorOutLayout;
         colorOutGen.newLayout = ImageLayout::GENERAL;
-        VkTextureManager::SetLayoutBarrierMasks(colorOutGen, ImageLayout::SHADER_READ_ONLY_OPTIMAL, ImageLayout::GENERAL);
+        VkTextureManager::SetLayoutBarrierMasks(colorOutGen, oldColorOutLayout, ImageLayout::GENERAL);
         pCmdBuffer->RecordCommand(colorOutGen);
     }
     const auto restoreColorOutReadLayout = [&]() {
@@ -224,29 +208,28 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     // Camera constants
     sl::Constants slConst{};
     const auto& cameraData = ctx.cameraData;
-    // Streamline consumes Vulkan clip space; the renderer flips Vulkan Y at the viewport boundary.
-    const mathstl::Matrix clipYFlip = mathstl::Matrix::CreateScale(1.0f, -1.0f, 1.0f);
-    const mathstl::Matrix streamlineViewToClip = cameraData.viewToClip * clipYFlip;
-    const mathstl::Matrix streamlineClipToView = clipYFlip * cameraData.clipToView;
     const mathstl::Matrix clipToPrevClip =
         kForceStaticCameraDebug ? mathstl::Matrix::Identity : cameraData.clipToPrevClip;
     const mathstl::Matrix prevClipToClip =
         kForceStaticCameraDebug ? mathstl::Matrix::Identity : cameraData.prevClipToClip;
-    const mathstl::Matrix streamlineClipToPrevClip = clipYFlip * clipToPrevClip * clipYFlip;
-    const mathstl::Matrix streamlinePrevClipToClip = clipYFlip * prevClipToClip * clipYFlip;
-    CopyMatrixToStreamline(slConst.cameraViewToClip, streamlineViewToClip);
-    CopyMatrixToStreamline(slConst.clipToCameraView, streamlineClipToView);
-    CopyMatrixToStreamline(slConst.clipToPrevClip, streamlineClipToPrevClip);
-    CopyMatrixToStreamline(slConst.prevClipToClip, streamlinePrevClipToClip);
 
-    const mathstl::Vector2 streamlineJitter = ResolveStreamlineJitter(data.renderState);
-    // Negate jitter signs: 
-    // - Internal X-jitter subtracts from projection, shifting image left (negative shift).
-    // - Internal Y-jitter adds to projection, but SL Y-axis is flipped relative to our internal Y-up,
-    //   effectively inverting the shift direction SL sees in the matrix.
+    const mathstl::Vector2 streamlineJitter = cameraData.jitterOffset;
+
+    mathstl::Matrix jitteredProj = cameraData.viewToClip;
+    if (data.renderState.renderResolution.x > 0.0f && data.renderState.renderResolution.y > 0.0f)
+    {
+        jitteredProj.m[2][0] += streamlineJitter.x * 2.0f / data.renderState.renderResolution.x;
+        jitteredProj.m[2][1] += streamlineJitter.y * -2.0f / data.renderState.renderResolution.y;
+    }
+
+    CopyMatrixToStreamline(slConst.cameraViewToClip, jitteredProj);
+    CopyMatrixToStreamline(slConst.clipToCameraView, cameraData.clipToView);
+    CopyMatrixToStreamline(slConst.clipToLensClip, mathstl::Matrix::Identity);
+    CopyMatrixToStreamline(slConst.clipToPrevClip, clipToPrevClip);
+    CopyMatrixToStreamline(slConst.prevClipToClip, prevClipToClip);
+
     slConst.jitterOffset = {streamlineJitter.x, streamlineJitter.y};
-    // Normalize to [-1, 1] range. Negate Y-scale because our velocity buffer uses Y-up (Math.h:28).
-    slConst.mvecScale = {1.0f / static_cast<float>(inputExtents.x), -1.0f / static_cast<float>(inputExtents.y)};
+    slConst.mvecScale = {1.0f, -1.0f};
     slConst.cameraPinholeOffset = {0.0f, 0.0f};
     const mathstl::Vector3 streamlineCameraUp =
         GetNormalizedOrFallback(cameraData.up, mathstl::Vector3::Up);
@@ -266,7 +249,8 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     slConst.depthInverted = sl::Boolean::eTrue;
     slConst.cameraMotionIncluded = sl::Boolean::eTrue;
     slConst.motionVectors3D = sl::Boolean::eFalse;
-    const bool shouldReset = data.renderState.recreatedThisFrame || Nvidia::StreamlineManager::ConsumeDLSSResetFlag();
+    const bool shouldReset =
+        !m_wasActive || data.renderState.recreatedThisFrame || Nvidia::StreamlineManager::ConsumeDLSSResetFlag();
     slConst.reset = shouldReset ? sl::Boolean::eTrue : sl::Boolean::eFalse;
     slConst.motionVectorsJittered = sl::Boolean::eFalse;
 
@@ -353,6 +337,7 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
         restoreColorOutReadLayout();
         return;
     }
+    m_wasActive = true;
     pCmdBuffer->RecordCommand(streamlineCmd);
     EndRenderPassProfilingScope(pCmdBuffer);
 

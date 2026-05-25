@@ -85,6 +85,7 @@ public:
     static void SetDLSSDebugState(const DLSSDebugState& state);
 
     static bool IsAvailable() { return s_initialized; }
+    static bool IsEarlyInitialized();
     static bool IsDLSSSupported();
     static bool IsDLSSDebugUIAvailable();
 

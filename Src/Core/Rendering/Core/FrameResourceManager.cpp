@@ -19,6 +19,18 @@
 
 namespace RenderPasses
 {
+namespace
+{
+int ResolveJitterPhaseCount(const mathstl::Vector2& renderResolution,
+                            const RendererState& renderState)
+{
+    if (renderState.aaType != AntialiasingType::DLSS || renderResolution.x <= 0.0f || renderResolution.y <= 0.0f)
+        return 32;
+
+    const f32 scaleRatio = renderState.swapchainResolution.x / renderResolution.x;
+    return stltype::max(1, static_cast<int>(8.0f * scaleRatio * scaleRatio + 0.5f));
+}
+}
 
 void FrameResourceManager::BuildSharedDataForView(const RenderView& mainView,
                                                   const mathstl::Vector2& renderResolution,
@@ -92,12 +104,10 @@ void FrameResourceManager::BuildSharedDataForView(const RenderView& mainView,
     if (renderState.aaType == AntialiasingType::TAA_SMAA ||
         renderState.aaType == AntialiasingType::DLSS)
     {
-        auto jitteredProj = projMat;
-        jitter = GenerateR2Jitter(static_cast<int>(jitterFrameNumber));
-        jitteredProj._31 -= 2.0f * jitter.x / renderResolution.x;
-        jitteredProj._32 += 2.0f * jitter.y / renderResolution.y;
-        ubo.jitteredProjection = viewMat * jitteredProj;
-        ubo.jitteredViewProjectionInverse = ubo.jitteredProjection.Invert();
+        jitter = GenerateR2Jitter(static_cast<int>(jitterFrameNumber),
+                                  ResolveJitterPhaseCount(renderResolution, renderState));
+        ubo.jitteredProjection = viewProj;
+        ubo.jitteredViewProjectionInverse = viewProj.Invert();
     }
     else
     {
@@ -105,6 +115,8 @@ void FrameResourceManager::BuildSharedDataForView(const RenderView& mainView,
         ubo.jitteredProjection = viewProj;
         ubo.jitteredViewProjectionInverse = viewProj.Invert();
     }
+    ubo.jitterOffset = jitter;
+    cameraData.jitterOffset = jitter;
 
     // Debug state flags
     ubo.debugFlags = renderState.debugFlags;

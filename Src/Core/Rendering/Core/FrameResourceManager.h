@@ -39,6 +39,7 @@ struct FrameCameraData
     mathstl::Matrix clipToView{mathstl::Matrix::Identity};
     mathstl::Matrix clipToPrevClip{mathstl::Matrix::Identity};
     mathstl::Matrix prevClipToClip{mathstl::Matrix::Identity};
+    mathstl::Vector2 jitterOffset{mathstl::Vector2::Zero};
     mathstl::Vector3 position{mathstl::Vector3::Zero};
     mathstl::Vector3 up{0.0f, 1.0f, 0.0f};
     mathstl::Vector3 right{1.0f, 0.0f, 0.0f};

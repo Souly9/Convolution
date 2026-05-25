@@ -793,7 +793,7 @@ void PassManager::SetLightDeltaForFrame(stltype::vector<LightDeltaUpdate>&& upda
 void PassManager::SetSharedData(RenderView&& mainView, u32 frameIdx) { m_frameResourceManager.SetSharedData(std::move(mainView), frameIdx); }
 void PassManager::PreProcessDataForCurrentFrame(u32 frameIdx, u64 jitterFrameNumber)
 {
-    m_renderTargetManager.RotateHistory();
+    m_renderTargetManager.RotateHistory(frameIdx);
     for (auto& mainPassData : m_mainPassData)
     {
         UpdateTemporalResources(mainPassData);

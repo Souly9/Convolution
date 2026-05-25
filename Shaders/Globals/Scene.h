@@ -91,6 +91,7 @@ STRUCTDECL(SharedDataUBO)
     STRUCTFIELD(mat4, prevJitteredProjection)
     STRUCTFIELD(vec4, viewPos)
     STRUCTFIELD(vec2, renderResolution)
+    STRUCTFIELD(vec2, jitterOffset)
 
     // Debug & Global settings
     STRUCTFIELD(uint, debugFlags)
@@ -109,6 +110,14 @@ layout(scalar, set = SharedDataUBOSet, binding = SharedDataUBOBindingSlot) unifo
 {
     SharedDataUBO ubo;
 };
+
+vec4 ApplyFrameJitter(vec4 clipPos)
+{
+    vec2 jitterNdc = ubo.jitterOffset * 2.0 / ubo.renderResolution;
+    jitterNdc.y *= -1;
+    clipPos.xy += jitterNdc * clipPos.w;
+    return clipPos;
+}
 #endif
 
 #ifndef __cplusplus
@@ -121,5 +130,3 @@ mat3 AdjugateFromWorldMat(mat4 m)
 #endif
 #endif // SHADERS_SCENE_H
  
-
-

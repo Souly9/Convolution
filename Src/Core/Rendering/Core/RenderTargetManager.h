@@ -28,7 +28,7 @@ class RenderTargetManager
 {
 public:
     void Recreate(const mathstl::Vector2& renderResolution, const mathstl::Vector2& outputResolution);
-    void RotateHistory();
+    void RotateHistory(u32 frameSlot);
 
     GBuffer& GetGBuffer() { return m_gbuffer; }
     const GBuffer& GetGBuffer() const { return m_gbuffer; }

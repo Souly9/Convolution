@@ -115,17 +115,38 @@ vec4 SampleHistoryCatmullRom(vec2 sampleUV, vec2 resolution)
     return color / max(weightSum, 0.0001);
 }
 
-vec2 ApplyVelocityDeadzone(vec2 velocityPixels)
+vec2 MotionToHistoryUVDelta(vec2 motion)
 {
-    const float deadzonePixels = 0.001;
-    return vec2(abs(velocityPixels.x) < deadzonePixels ? 0.0 : velocityPixels.x,
-                abs(velocityPixels.y) < deadzonePixels ? 0.0 : velocityPixels.y);
+    return vec2(motion.x, -motion.y);
 }
 
-vec2 GetClosestDepthVelocity(vec2 uv, vec2 resolution)
+vec2 JitterToHistoryUVDelta(vec2 resolution)
+{
+    vec2 currentJitter = vec2(pushConstants.currentJitterX, pushConstants.currentJitterY);
+    vec2 previousJitter = vec2(pushConstants.previousJitterX, pushConstants.previousJitterY);
+    return (previousJitter - currentJitter) / resolution;
+}
+
+vec2 MotionToPixelVelocity(vec2 motion, vec2 resolution)
+{
+    return MotionToHistoryUVDelta(motion) * resolution;
+}
+
+vec2 ApplyMotionDeadzone(vec2 motion, vec2 resolution)
+{
+    const float deadzonePixels = 0.001;
+    vec2 velocityPixels = MotionToPixelVelocity(motion, resolution);
+    if (abs(velocityPixels.x) < deadzonePixels)
+        motion.x = 0.0;
+    if (abs(velocityPixels.y) < deadzonePixels)
+        motion.y = 0.0;
+    return motion;
+}
+
+vec2 GetClosestDepthMotion(vec2 uv, vec2 resolution)
 {
     float closestDepth = -1.0;
-    vec2 closestVelocity = vec2(0.0);
+    vec2 closestMotion = vec2(0.0);
     ivec2 baseCoord = ivec2(clamp(uv * resolution, vec2(0.0), resolution - vec2(1.0)));
     ivec2 resolutionPixels = ivec2(resolution);
     for (int y = -1; y <= 1; ++y)
@@ -137,21 +158,21 @@ vec2 GetClosestDepthVelocity(vec2 uv, vec2 resolution)
             if (depth > closestDepth)
             {
                 closestDepth = depth;
-                closestVelocity =
-                    texelFetch(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.gbufferVelocityIdx)], sampleCoord, 0).rg;
+                closestMotion = texelFetch(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.gbufferVelocityIdx)], sampleCoord, 0).rg;
             }
         }
     }
-    return closestVelocity;
+    return closestMotion;
 }
 
-float VelocityRejectionAmount(vec2 currentVelocityPixels, vec2 historyUV)
+float VelocityRejectionAmount(vec2 currentMotion, vec2 historyUV, vec2 resolution)
 {
     if (!IsUVInBounds(historyUV))
         return 1.0;
 
-    vec2 historyVelocityPixels =
-        textureLod(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.lastFrameVelocityIdx)], historyUV, 0.0).rg;
+    vec2 historyMotion = textureLod(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.lastFrameVelocityIdx)], historyUV, 0.0).rg;
+    vec2 currentVelocityPixels = MotionToPixelVelocity(currentMotion, resolution);
+    vec2 historyVelocityPixels = MotionToPixelVelocity(historyMotion, resolution);
     float velocityDiff = length(currentVelocityPixels - historyVelocityPixels);
     float rejectionStart = min(pushConstants.velocityRejectionStart, pushConstants.velocityRejectionEnd);
     float rejectionEnd = max(pushConstants.velocityRejectionStart, pushConstants.velocityRejectionEnd);
@@ -168,10 +189,11 @@ void main()
 
     vec2 uv = (vec2(pixelCoord) + 0.5) / outputResolution;
     vec2 invRes = 1.0 / resolution;
+    vec2 jitterHistoryDelta = JitterToHistoryUVDelta(resolution);
 
-    vec2 velocityPixels = GetClosestDepthVelocity(uv, resolution);
-    vec2 historyVelocityPixels = ApplyVelocityDeadzone(velocityPixels);
-    vec2 prevUV = uv + historyVelocityPixels * invRes;
+    vec2 motion = GetClosestDepthMotion(uv, resolution);
+    vec2 historyMotion = ApplyMotionDeadzone(motion, resolution);
+    vec2 prevUV = uv + MotionToHistoryUVDelta(historyMotion) + jitterHistoryDelta;
     bool hasHistory = pushConstants.resetHistory == 0u && IsUVInBounds(prevUV);
 
     vec4 currentColor = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.temporalCurrentColorBufferIdx)], uv);
@@ -197,7 +219,13 @@ void main()
     }
 
     vec4 historyColor = SampleHistoryCatmullRom(prevUV, outputResolution);
-    float velocityRejection = VelocityRejectionAmount(historyVelocityPixels, prevUV);
+    float velocityRejection = VelocityRejectionAmount(historyMotion, prevUV, resolution);
+
+    if (pushConstants.forceHistory != 0u)
+    {
+        imageStore(GlobalBindlessImages[nonuniformEXT(gbufferUBO.gbufferResolveIdx)], pixelCoord, historyColor);
+        return;
+    }
 
     vec3 currentYCoCg = RGBToYCoCg(currentColor.rgb);
     vec3 historyYCoCg = RGBToYCoCg(historyColor.rgb);
