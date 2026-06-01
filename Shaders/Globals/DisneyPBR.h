@@ -3,9 +3,6 @@
 
 // Disney BRDF model based on: https://github.com/wdas/brdf/blob/main/src/brdfs/disney.brdf
 
-const float PI = 3.14159265358979323846;
-const float InvPi = 1.0 / PI;
-const float MIN_DENOMINATOR = 0.000001;
 
 struct SurfaceParameters {
     vec3 baseColor;

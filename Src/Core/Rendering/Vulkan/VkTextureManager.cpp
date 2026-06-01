@@ -105,12 +105,22 @@ void VkTextureManager::SetPlaceholder(TextureHandle handle)
     for (u32 i = 0; i < MAX_BINDLESS_TEXTURES; ++i)
     {
         if (pTex->GetInfo().extents.z > 1)
+        {
             m_bindlessDescriptorSet->WriteBindlessTextureUpdate(pTex, i, s_globalBindlessArrayTextureBufferBindingSlot);
+            m_combinedBindlessDescriptorSet->WriteBindlessTextureUpdate(
+                pTex, i, s_globalBindlessArrayTextureBufferBindingSlot);
+        }
         else
+        {
             m_bindlessDescriptorSet->WriteBindlessTextureUpdate(pTex, i);
+            m_combinedBindlessDescriptorSet->WriteBindlessTextureUpdate(pTex, i);
+        }
 
         if ((u32)pTex->GetInfo().usage & (u32)Usage::Storage)
+        {
             m_bindlessImageDescriptorSet->WriteBindlessImageUpdate(pTex, i, s_globalBindlessImageBufferBindingSlot);
+            m_combinedBindlessDescriptorSet->WriteBindlessImageUpdate(pTex, i, s_globalBindlessImageBufferBindingSlot);
+        }
     }
 
     m_lastBindlessTextureWriteIdx = 1;
@@ -199,14 +209,25 @@ void VkTextureManager::PostRender()
 
             const u32 targetIdx = mappedIt->second;
             if (pTex->GetInfo().extents.z > 1)
+            {
                 m_bindlessDescriptorSet->WriteBindlessTextureUpdate(
                     pTex, targetIdx, s_globalBindlessArrayTextureBufferBindingSlot);
+                m_combinedBindlessDescriptorSet->WriteBindlessTextureUpdate(
+                    pTex, targetIdx, s_globalBindlessArrayTextureBufferBindingSlot);
+            }
             else
+            {
                 m_bindlessDescriptorSet->WriteBindlessTextureUpdate(pTex, targetIdx);
+                m_combinedBindlessDescriptorSet->WriteBindlessTextureUpdate(pTex, targetIdx);
+            }
 
             if ((u32)pTex->GetInfo().usage & (u32)Usage::Storage)
+            {
                 m_bindlessImageDescriptorSet->WriteBindlessImageUpdate(
                     pTex, targetIdx, s_globalBindlessImageBufferBindingSlot);
+                m_combinedBindlessDescriptorSet->WriteBindlessImageUpdate(
+                    pTex, targetIdx, s_globalBindlessImageBufferBindingSlot);
+            }
 
             pTex->SetStatus(TextureStatus::Ready);
             wroteAny = true;
@@ -769,8 +790,10 @@ void VkTextureManager::EnqueueAsyncTextureTransfer(StagingBufferVulkan* pStaging
         cmd.aspectFlagBits = (u32)flagBit;
         cmd.mipLevel = mip;
 
-        u32 width = std::max(1u, pTex->m_info.extents.x >> mip);
-        u32 height = std::max(1u, pTex->m_info.extents.y >> mip);
+        u32 width = pTex->m_info.extents.x >> mip;
+        if (width < 1u) width = 1u;
+        u32 height = pTex->m_info.extents.y >> mip;
+        if (height < 1u) height = 1u;
 
         cmd.imageExtent.x = width;
         cmd.imageExtent.y = height;
@@ -1293,6 +1316,17 @@ void VkTextureManager::CreateBindlessDescriptorSet()
             m_bindlessDescriptorPool.CreateDescriptorSet(m_bindlessImageDescriptorSetLayout.GetRef());
         m_bindlessImageDescriptorSet->SetBindingSlot(s_globalBindlessImageBufferBindingSlot);
         m_bindlessImageDescriptorSet->SetName("Global Bindless Image Descriptor Set");
+
+        m_combinedBindlessDescriptorSetLayout = DescriptorLayoutUtils::CreateOneDescriptorSetForAll(
+            {PipelineDescriptorLayout(Bindless::BindlessType::GlobalTextures),
+             PipelineDescriptorLayout(Bindless::BindlessType::GlobalArrayTextures),
+             PipelineDescriptorLayout(Bindless::BindlessType::GlobalImages)});
+        m_combinedBindlessDescriptorSetLayout.SetName("Combined Bindless Layout");
+
+        m_combinedBindlessDescriptorSet =
+            m_bindlessDescriptorPool.CreateDescriptorSet(m_combinedBindlessDescriptorSetLayout.GetRef());
+        m_combinedBindlessDescriptorSet->SetBindingSlot(s_globalBindlessTextureBufferBindingSlot);
+        m_combinedBindlessDescriptorSet->SetName("Combined Bindless Descriptor Set");
     }
 }
 

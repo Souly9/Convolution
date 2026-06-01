@@ -6,6 +6,7 @@
 #include "Core/Global/Utils/MathFunctions.h"
 #include "Core/ECS/EntityManager.h"
 #include "Core/ECS/Components/View.h"
+#include "Core/Rendering/Vulkan/XeSS/XeSSManager.h"
 #include "InfoWindow.h"
 
 class RenderSettingsWindow : public ImGuiWindow
@@ -175,20 +176,27 @@ public:
 
         if (ImGui::CollapsingHeader("Antialiasing Settings"))
         {
-            const char* aaTypesWithDLSS[] = {"None", "SMAA", "TAA + SMAA", "DLSS"};
-            const char* aaTypesWithoutDLSS[] = {"None", "SMAA", "TAA + SMAA"};
-            const AntialiasingType aaValuesWithDLSS[] = {
-                AntialiasingType::None,
-                AntialiasingType::SMAA,
-                AntialiasingType::TAA_SMAA,
-                AntialiasingType::DLSS};
-            const AntialiasingType aaValuesWithoutDLSS[] = {
-                AntialiasingType::None,
-                AntialiasingType::SMAA,
-                AntialiasingType::TAA_SMAA};
-            const char** aaTypes = renderState.dlssSupported ? aaTypesWithDLSS : aaTypesWithoutDLSS;
-            const AntialiasingType* aaValues = renderState.dlssSupported ? aaValuesWithDLSS : aaValuesWithoutDLSS;
-            const int aaTypeCount = renderState.dlssSupported ? IM_ARRAYSIZE(aaTypesWithDLSS) : IM_ARRAYSIZE(aaTypesWithoutDLSS);
+            stltype::fixed_vector<const char*, 5> aaTypes;
+            stltype::fixed_vector<AntialiasingType, 5> aaValues;
+            aaTypes.push_back("None");
+            aaValues.push_back(AntialiasingType::None);
+            aaTypes.push_back("SMAA");
+            aaValues.push_back(AntialiasingType::SMAA);
+            aaTypes.push_back("TAA + SMAA");
+            aaValues.push_back(AntialiasingType::TAA_SMAA);
+
+            if (renderState.dlssSupported)
+            {
+                aaTypes.push_back("DLSS");
+                aaValues.push_back(AntialiasingType::DLSS);
+            }
+            if (VulkanXeSS::XeSSManager::IsSupported())
+            {
+                aaTypes.push_back("XeSS");
+                aaValues.push_back(AntialiasingType::XeSS);
+            }
+
+            const int aaTypeCount = static_cast<int>(aaTypes.size());
             AntialiasingType currentAA = renderState.aaType;
             int uiAAType = 0;
             for (int i = 0; i < aaTypeCount; ++i)
@@ -200,7 +208,7 @@ public:
                 }
             }
 
-            if (ImGui::Combo("AA Method", &uiAAType, aaTypes, aaTypeCount))
+            if (ImGui::Combo("AA Method", &uiAAType, aaTypes.data(), aaTypeCount))
             {
                 const AntialiasingType selectedAA = aaValues[uiAAType];
                 if (selectedAA != currentAA)

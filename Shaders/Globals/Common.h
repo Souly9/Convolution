@@ -38,6 +38,26 @@
 #define RTSceneVertexBufferBindingSlot  3
 #define RTSceneIndexBufferBindingSlot   4
 
+// Canonical descriptor set indices (C++ and shader side must agree)
+#ifndef BindlessSet
+#define BindlessSet          0
+#endif
+#ifndef SharedDataUBOSet
+#define SharedDataUBOSet     1
+#endif
+#ifndef TransformSSBOSet
+#define TransformSSBOSet     2
+#endif
+#ifndef GBufferUBOSet
+#define GBufferUBOSet        3
+#endif
+#ifndef TileArraySet
+#define TileArraySet         4
+#endif
+#ifndef RTSceneASSet
+#define RTSceneASSet         5
+#endif
+
 #define DEBUG_FLAG_SHADOWS_ENABLED (1 << 0)
 #define DEBUG_FLAG_SSS_ENABLED     (1 << 1)
 #define DEBUG_FLAG_RT_DEBUG_ENABLED (1 << 2)
@@ -46,6 +66,8 @@
 #define DEBUG_FLAG_SHOW_CLUSTER_AABBS (1 << 5)
 #define DEBUG_FLAG_TAA_FORCE_HISTORY (1 << 6)
 #define DEBUG_FLAG_CULL_FRUSTUM      (1 << 7)
+#define DEBUG_FLAG_RTAO_ENABLED      (1 << 8)
+#define DEBUG_FLAG_DISABLE_CLUSTER_CULLING (1 << 16)
 
 #define DEBUG_VIEW_MODE_NONE          0
 #define DEBUG_VIEW_MODE_CSM_CASCADES  1
@@ -61,6 +83,7 @@
 #define AA_TYPE_TAA_SMAA 1u
 #define AA_TYPE_SMAA     2u
 #define AA_TYPE_DLSS     3u
+#define AA_TYPE_XESS     4u
 
 #define RT_DEBUG_VIEW_MODE_NONE 0u
 #define RT_DEBUG_VIEW_MODE_TLAS  1u

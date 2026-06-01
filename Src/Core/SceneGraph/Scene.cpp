@@ -1,5 +1,5 @@
 #include "Scene.h"
-#include <cmath>
+#include "Core/Global/Utils/MathFunctions.h"
 #include "Core/ECS/Components/Light.h"
 #include "Core/ECS/EntityManager.h"
 #include "Core/Events/EventSystem.h"
@@ -29,8 +29,12 @@ void Scene::Unload()
 void Scene::FinishLoad(SceneNode root)
 {
     m_sceneRoot = root;
-    g_pEventSystem->OnSceneLoaded({});
     m_isLoaded = true;
+    g_pApplicationState->RegisterUpdateFunction(
+        [](ApplicationState&)
+        {
+            g_pEventSystem->OnSceneLoaded({});
+        });
     g_pApplicationState->RegisterUpdateFunction(
         [](ApplicationState& state)
         {
@@ -43,55 +47,48 @@ void Scene::FinishLoad(SceneNode root)
 
 void Scene::CreateTestLights(const mathstl::Vector3& centerPos, u32 gridSize, f32 spacing, ECS::Entity parent)
 {
-    constexpr f32 LIGHT_RANGE = 30.5f;
+    const f32 lightRange = spacing * 1.5f; 
     constexpr f32 LIGHT_INTENSITY = 5.0f;
 
-    const f32 offset = spacing * 0.5f;
+    const f32 offset = (gridSize - 1) * spacing * 0.5f;
  
     for (u32 x = 0; x < gridSize; ++x)
     {
-        for (u32 y = 0; y < gridSize; ++y)
+        for (u32 z = 0; z < gridSize; ++z)
         {
-            for (u32 z = 0; z < gridSize; ++z)
+            const f32 jitterAmount = spacing * 0.4f; 
+            const f32 jitterX = mathstl::sin(static_cast<f32>(x * 12.989 + z * 151.718)) * jitterAmount;
+            const f32 jitterY = mathstl::sin(static_cast<f32>(x * 39.346 + z * 83.155)) * 0.5f;
+            const f32 jitterZ = mathstl::sin(static_cast<f32>(x * 27.171 + z * 49.373)) * jitterAmount;
+
+            mathstl::Vector3 lightPos(centerPos.x + x * spacing - offset + jitterX,
+                                      centerPos.y + jitterY,
+                                      centerPos.z + z * spacing - offset + jitterZ);
+
+            auto lightEntity = g_pEntityManager->CreateEntity(lightPos);
+
+            ECS::Components::Light lightComp{};
+            lightComp.type = ECS::Components::LightType::Point;
+            lightComp.range = lightRange;
+            lightComp.intensity = LIGHT_INTENSITY;
+
+            f32 r = static_cast<f32>(x) / (gridSize - 1);
+            f32 g = 0.5f;
+            f32 b = static_cast<f32>(z) / (gridSize - 1);
+            lightComp.color = mathstl::Vector4(r, g, b, 1.0f);
+
+            g_pEntityManager->AddComponent(lightEntity, lightComp);
+
+            if (parent.IsValid())
             {
-                // Add some deterministic irregularity to the grid
-                // Using sine waves based on integer coordinates to create a "random" but stable offset
-                const f32 jitterAmount = spacing * 0.45f; // Slight randomness, keep mostly within grid cell
-                const f32 jitterX = std::sin(static_cast<f32>(x * 12.989 + y * 78.233 + z * 151.718)) * jitterAmount;
-                const f32 jitterY = std::sin(static_cast<f32>(x * 39.346 + y * 11.135 + z * 83.155)) * jitterAmount;
-                const f32 jitterZ = std::sin(static_cast<f32>(x * 27.171 + y * 61.562 + z * 49.373)) * jitterAmount;
-
-                mathstl::Vector3 lightPos(centerPos.x + x * spacing - offset + jitterX,
-                                          centerPos.y + y * spacing - offset + 2.0f + jitterY,
-                                          centerPos.z + z * spacing - offset + jitterZ);
-
-                auto lightEntity = g_pEntityManager->CreateEntity(lightPos);
-
-                ECS::Components::Light lightComp{};
-                lightComp.type = ECS::Components::LightType::Point;
-                lightComp.range = LIGHT_RANGE;
-                lightComp.intensity = LIGHT_INTENSITY;
-
-                // Rainbow gradient based on position
-                f32 r = static_cast<f32>(x) / (gridSize - 1);
-                f32 g = static_cast<f32>(y) / (gridSize - 1);
-                f32 b = static_cast<f32>(z) / (gridSize - 1);
-                lightComp.color = mathstl::Vector4(r, g, b, 1.0f);
-
-                g_pEntityManager->AddComponent(lightEntity, lightComp);
-
-                if (parent.IsValid())
-                {
-                    auto* pTrans = g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(lightEntity);
-                    pTrans->parent = parent;
-                }
+                auto* pTrans = g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(lightEntity);
+                pTrans->parent = parent;
             }
         }
     }
 
-    DEBUG_LOGF("[Scene] Created {} test lights in {}x{}x{} grid",
-               gridSize * gridSize * gridSize,
-               gridSize,
+    DEBUG_LOGF("[Scene] Created {} test lights in {}x{} 2D grid",
+               gridSize * gridSize,
                gridSize,
                gridSize);
 }

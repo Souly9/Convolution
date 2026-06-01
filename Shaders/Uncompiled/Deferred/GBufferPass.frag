@@ -44,4 +44,8 @@ void main()
     StoreNormalAndMaterialInGBuffer(N, IN.matIdx);
     StoreTexCoordInGBuffer(IN.fragTexCoord);
     StoreVelocityInGBuffer(velocity);
+
+    vec3 materialAlbedo = mat.baseColor.rgb * fragTexSample.rgb;
+    SurfaceParameters surface = BuildMaterialSurface(mat, IN.fragTexCoord, materialAlbedo);
+    outRoughness = surface.roughness;
 }

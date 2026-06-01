@@ -1,6 +1,7 @@
 #pragma once
 #include "Core/ECS/Components/Camera.h"
 #include "Core/Global/CommonGlobals.h"
+#include "Core/Rendering/Core/Nvidia/StreamlineManager.h"
 #include "Core/Global/Utils/MathFunctions.h"
 #include "InfoWindow.h"
 #include "Core/Global/Profiling.h"
@@ -103,6 +104,15 @@ public:
                     });
             }
 
+            bool disableCulling = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::DisableClusterCulling);
+            if (ImGui::Checkbox("Disable Light Culling (Force All Lights)", &disableCulling))
+            {
+                g_pApplicationState->RegisterUpdateFunction(
+                    [disableCulling](auto& state) {
+                        mathstl::setFlag(state.renderState.debugFlags, (u32)DebugFlags::DisableClusterCulling, disableCulling);
+                    });
+            }
+
             ImGui::Text("Total Clusters: %u", renderState.totalClusterCount);
             ImGui::Text("Avg Lights/Cluster: %.2f", renderState.avgLightsPerCluster);
         }
@@ -124,6 +134,80 @@ public:
                         mathstl::setFlag(state.renderState.debugFlags, (u32)DebugFlags::RTDebugEnabled, uiRTDebugView == 1);
                         state.renderState.rt.reflectionsDebugMode =
                             uiRTDebugView == 2 ? RTReflectionDebugMode::ReflectionsOnly : RTReflectionDebugMode::None;
+                    });
+            }
+
+            int uiRaysPerPixel = static_cast<int>(renderState.rt.reflectionsRaysPerPixel);
+            if (ImGui::SliderInt("Rays Per Pixel", &uiRaysPerPixel, 1, 6))
+            {
+                g_pApplicationState->RegisterUpdateFunction(
+                    [uiRaysPerPixel](ApplicationState& state)
+                    {
+                        state.renderState.rt.reflectionsRaysPerPixel = static_cast<u32>(uiRaysPerPixel);
+                    });
+            }
+
+            bool uiUseRayReconstruction = renderState.rt.reflectionsUseRayReconstruction;
+            const bool dlssRRSupported = Nvidia::StreamlineManager::IsDLSSRRSupported();
+            if (!dlssRRSupported)
+            {
+                ImGui::BeginDisabled();
+            }
+            if (ImGui::Checkbox("Ray Reconstruction (DLSS 3.5)", &uiUseRayReconstruction))
+            {
+                g_pApplicationState->RegisterUpdateFunction(
+                    [uiUseRayReconstruction](ApplicationState& state)
+                    {
+                        state.renderState.rt.reflectionsUseRayReconstruction = uiUseRayReconstruction;
+                    });
+            }
+            if (!dlssRRSupported)
+            {
+                ImGui::EndDisabled();
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "(Unsupported)");
+            }
+
+            ImGui::Separator();
+            ImGui::Text("RTAO Settings:");
+
+            bool uiRTAOEnabled = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTAOEnabled);
+            if (ImGui::Checkbox("Enable RTAO", &uiRTAOEnabled))
+            {
+                g_pApplicationState->RegisterUpdateFunction(
+                    [uiRTAOEnabled](ApplicationState& state)
+                    {
+                        mathstl::setFlag(state.renderState.debugFlags, (u32)DebugFlags::RTAOEnabled, uiRTAOEnabled);
+                    });
+            }
+
+            int uiAORaysPerPixel = static_cast<int>(renderState.rt.aoRaysPerPixel);
+            if (ImGui::SliderInt("AO Rays Per Pixel", &uiAORaysPerPixel, 1, 16))
+            {
+                g_pApplicationState->RegisterUpdateFunction(
+                    [uiAORaysPerPixel](ApplicationState& state)
+                    {
+                        state.renderState.rt.aoRaysPerPixel = static_cast<u32>(uiAORaysPerPixel);
+                    });
+            }
+
+            float uiAORadius = renderState.rt.aoRadius;
+            if (ImGui::SliderFloat("AO Radius", &uiAORadius, 0.1f, 10.0f))
+            {
+                g_pApplicationState->RegisterUpdateFunction(
+                    [uiAORadius](ApplicationState& state)
+                    {
+                        state.renderState.rt.aoRadius = uiAORadius;
+                    });
+            }
+
+            float uiAOIntensity = renderState.rt.aoIntensity;
+            if (ImGui::SliderFloat("AO Intensity", &uiAOIntensity, 0.1f, 5.0f))
+            {
+                g_pApplicationState->RegisterUpdateFunction(
+                    [uiAOIntensity](ApplicationState& state)
+                    {
+                        state.renderState.rt.aoIntensity = uiAOIntensity;
                     });
             }
 

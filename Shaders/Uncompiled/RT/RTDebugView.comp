@@ -5,13 +5,10 @@
 #extension GL_EXT_ray_tracing : require
 #extension GL_EXT_ray_query : require
 
-#define SharedDataUBOSet 2
-#define RTSceneASSet     3
-
 #include "../../Globals/Bindless.h"
 #include "../../Globals/Common.h"
-#include "../../Globals/Scene.h"
 #include "../../Globals/PushConstants.h"
+#include "../../Globals/Scene.h"
 #include "../../Globals/Utils/Math.h"
 
 layout(set = RTSceneASSet, binding = RTSceneASBindingSlot) uniform accelerationStructureEXT sceneTLAS;

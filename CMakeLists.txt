@@ -113,7 +113,7 @@ FetchContent_Declare(IMGUI GIT_REPOSITORY "https://github.com/ocornut/imgui.git"
 FetchContent_Declare(DIRECTXMATH GIT_REPOSITORY "https://github.com/microsoft/DirectXMath.git" GIT_TAG "58f045a6caaaad6ce15049bba3cd075ed419c85e" SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/DirectXMath")
 FetchContent_Declare(ASSIMP GIT_REPOSITORY "https://github.com/assimp/assimp.git" GIT_TAG "ec563823b63c084101e947278f451268da80529d" SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/Assimp")
 FetchContent_Declare(TRACY GIT_REPOSITORY "https://github.com/wolfpld/tracy" GIT_TAG "v0.12.2" SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/Tracy")
-FetchContent_Declare(ImGuizmo GIT_REPOSITORY "https://github.com/CedricGuillemet/ImGuizmo" GIT_TAG "master" SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/ImGuizmo")
+FetchContent_Declare(ImGuizmo GIT_REPOSITORY "https://github.com/CedricGuillemet/ImGuizmo" GIT_TAG "1.83" SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/ImGuizmo")
 
 set(EXTERNAL_HEADERS 
     "SimpleMath/SimpleMath.h|https://raw.githubusercontent.com/microsoft/DirectXTK/main/Inc/SimpleMath.h"
@@ -178,9 +178,11 @@ if(WIN32 AND EXISTS "${AFTERMATH_SDK_LIB}")
     set(CONV_WITH_AFTERMATH_SDK ON)
 endif()
 set(STREAMLINE_INTERPOSER_LIB "${CMAKE_SOURCE_DIR}/External/additional_libs/NVStreamline/sl.interposer.lib")
-set(CONV_WITH_STREAMLINE_INTERPOSER_LIB OFF)
-if(WIN32 AND EXISTS "${STREAMLINE_INTERPOSER_LIB}")
-    set(CONV_WITH_STREAMLINE_INTERPOSER_LIB ON)
+set(CONV_WITH_STREAMLINE_INTERPOSER_LIB ON)
+set(XESS_LIB "${CMAKE_SOURCE_DIR}/External/additional_libs/XeSS/libxess.lib")
+set(CONV_WITH_XESS OFF)
+if(WIN32 AND EXISTS "${XESS_LIB}")
+    set(CONV_WITH_XESS ON)
 endif()
 set(IMGUI_SOURCE
     "${CMAKE_SOURCE_DIR}/External/imgui/imgui.cpp"
@@ -199,6 +201,8 @@ target_include_directories(ImGui PUBLIC
    SYSTEM
 	"${Vulkan_INCLUDE_DIRS}"
 )
+target_compile_definitions(ImGui PUBLIC IMGUI_DEFINE_MATH_OPERATORS)
+target_compile_options(ImGui PRIVATE "/FI${CMAKE_SOURCE_DIR}/Src/ImGuiCompatibility.h")
 target_link_libraries(ImGui PRIVATE glfw)
 
 add_compile_definitions(CONV_DEBUG)
@@ -263,6 +267,9 @@ endif()
 if(CONV_WITH_STREAMLINE_INTERPOSER_LIB)
     list(APPEND LIBS ${STREAMLINE_INTERPOSER_LIB})
 endif()
+if(CONV_WITH_XESS)
+    list(APPEND LIBS ${XESS_LIB})
+endif()
 
 link_directories(${CMAKE_SOURCE_DIR}/External/additional_libs)
 
@@ -321,11 +328,12 @@ set(STREAMLINE_ROOT "${CMAKE_SOURCE_DIR}/External/additional_libs/NVStreamline")
 set(STREAMLINE_DEVELOPMENT_ROOT "${STREAMLINE_ROOT}/development")
 set(STREAMLINE_DEVELOPMENT_CONFIG "$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>")
 
+if(CONV_WITH_STREAMLINE_INTERPOSER_LIB)
 set(STREAMLINE_SL_DLLS
     sl.interposer.dll
     sl.common.dll
     sl.dlss.dll
-    sl.imgui.dll
+    sl.dlss_d.dll
 )
 foreach(FILE_NAME IN LISTS STREAMLINE_SL_DLLS)
     set(PRODUCTION_FILE "${STREAMLINE_ROOT}/${FILE_NAME}")
@@ -342,6 +350,7 @@ endforeach()
 
 set(STREAMLINE_SHARED_DLLS
     nvngx_dlss.dll
+    nvngx_dlssd.dll
     NvLowLatencyVk.dll
 )
 foreach(FILE_NAME IN LISTS STREAMLINE_SHARED_DLLS)
@@ -374,13 +383,7 @@ foreach(FILE_NAME IN LISTS STREAMLINE_CONFIG_FILES)
             "$<TARGET_FILE_DIR:${NAME}>/${FILE_NAME}"
     )
 endforeach()
-
-add_custom_target(
-    ${NAME}Utilities
-    ${CONV_UTILITY_COMMANDS}
-    COMMENT "Staging runtime resources, debugger helpers, and optional SDK runtimes"
-    VERBATIM
-)
+endif()
 
 set_target_properties(${NAME} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CONV_OUTPUT_BASE_DIR}"
@@ -408,11 +411,16 @@ SYSTEM
     "${CMAKE_SOURCE_DIR}/External/Aftermath/include"
     "${CMAKE_SOURCE_DIR}/External/smaa"
     "${CMAKE_SOURCE_DIR}/External/additional_libs/NVStreamline"
+    "${CMAKE_SOURCE_DIR}/External/additional_libs/XeSS/inc"
 )
 
 if(CONV_WITH_STREAMLINE_INTERPOSER_LIB AND MSVC)
     target_link_libraries(${NAME} PRIVATE delayimp)
     target_link_options(${NAME} PRIVATE "/DELAYLOAD:sl.interposer.dll")
+endif()
+if(CONV_WITH_XESS AND MSVC)
+    target_link_libraries(${NAME} PRIVATE delayimp)
+    target_link_options(${NAME} PRIVATE "/DELAYLOAD:libxess.dll")
 endif()
 
 target_compile_definitions(${NAME} PRIVATE 
@@ -421,6 +429,8 @@ target_compile_definitions(${NAME} PRIVATE
     $<$<NOT:$<BOOL:${CONV_ENABLE_TRACY_PROFILING}>>:PROFILING_ENABLED=0>
     $<$<BOOL:${CONV_WITH_AFTERMATH_SDK}>:CONV_WITH_AFTERMATH_SDK=1>
     $<$<NOT:$<BOOL:${CONV_WITH_AFTERMATH_SDK}>>:CONV_WITH_AFTERMATH_SDK=0>
+    $<$<BOOL:${CONV_WITH_STREAMLINE_INTERPOSER_LIB}>:CONV_WITH_STREAMLINE=1>
+    $<$<NOT:$<BOOL:${CONV_WITH_STREAMLINE_INTERPOSER_LIB}>>:CONV_WITH_STREAMLINE=0>
     NOMINMAX
     # Set Vulkan target version to 1.3 to help avoid promoted extension warnings
     VK_API_VERSION_1_3=1

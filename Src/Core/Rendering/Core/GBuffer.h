@@ -16,10 +16,11 @@ enum class GBufferTextureType
     GBufferTemporalCurrentColor,
     GBufferLastFrameDepth,
     GBufferResolve,
-    GBufferPostAAColor
+    GBufferPostAAColor,
+    GBufferRoughness
 };
 
-inline constexpr u32 GBufferTextureTypeCount = static_cast<u32>(GBufferTextureType::GBufferPostAAColor) + 1;
+inline constexpr u32 GBufferTextureTypeCount = static_cast<u32>(GBufferTextureType::GBufferRoughness) + 1;
 
 struct GBufferInfo
 {
@@ -46,6 +47,8 @@ struct GBufferInfo
                 return TexFormat::R16G16B16A16_FLOAT;
             case GBufferTextureType::GBufferLastFrameDepth:
                 return TexFormat::D32_SFLOAT;
+            case GBufferTextureType::GBufferRoughness:
+                return TexFormat::R8_UNORM;
             default:
                 DEBUG_ASSERT(false);
                 return TexFormat::UNDEFINED;
@@ -81,6 +84,7 @@ struct GBuffer : public GBufferInfo
             case GBufferTextureType::GBufferLastFrameDepth: return m_pLastFrameDepthTexture;
             case GBufferTextureType::GBufferResolve: return m_temporalResolveFrameTargets[m_currentHistoryFrameSlot].pTexture;
             case GBufferTextureType::GBufferPostAAColor: return m_pPostAAColorTexture;
+            case GBufferTextureType::GBufferRoughness: return m_pRoughnessTexture;
             default:
                 DEBUG_ASSERT(false);
                 return nullptr;
@@ -108,6 +112,7 @@ struct GBuffer : public GBufferInfo
             case GBufferTextureType::GBufferLastFrameDepth: m_pLastFrameDepthTexture = pTexture; break;
             case GBufferTextureType::GBufferResolve: m_temporalResolveFrameTargets[m_currentHistoryFrameSlot].pTexture = pTexture; break;
             case GBufferTextureType::GBufferPostAAColor: m_pPostAAColorTexture = pTexture; break;
+            case GBufferTextureType::GBufferRoughness: m_pRoughnessTexture = pTexture; break;
             default: DEBUG_ASSERT(false); break;
         }
     }
@@ -132,6 +137,7 @@ struct GBuffer : public GBufferInfo
             case GBufferTextureType::GBufferLastFrameDepth: m_hLastFrameDepth = handle; break;
             case GBufferTextureType::GBufferResolve: m_temporalResolveFrameTargets[m_currentHistoryFrameSlot].bindlessHandle = handle; break;
             case GBufferTextureType::GBufferPostAAColor: m_hPostAAColor = handle; break;
+            case GBufferTextureType::GBufferRoughness: m_hRoughness = handle; break;
         }
     }
 
@@ -216,6 +222,7 @@ struct GBuffer : public GBufferInfo
             case GBufferTextureType::GBufferResolve:
                 return m_temporalResolveFrameTargets[m_currentHistoryFrameSlot].bindlessHandle;
             case GBufferTextureType::GBufferPostAAColor: return m_hPostAAColor;
+            case GBufferTextureType::GBufferRoughness: return m_hRoughness;
         }
         return 0;
     }
@@ -224,6 +231,14 @@ struct GBuffer : public GBufferInfo
     {
         m_currentHistoryFrameSlot = frameSlot % SWAPCHAIN_IMAGES;
     }
+
+    u32 GetCurrentHistoryFrameSlot() const { return m_currentHistoryFrameSlot; }
+
+    Texture* GetTemporalResolveTexture(u32 frameSlot) const
+    {
+        return m_temporalResolveFrameTargets[frameSlot % SWAPCHAIN_IMAGES].pTexture;
+    }
+
 
     void SetVelocityFrameTarget(u32 frameSlot,
                                 Texture* pTexture,
@@ -290,6 +305,7 @@ private:
     Texture* m_pTemporalCurrentColorTexture{nullptr};
     Texture* m_pLastFrameDepthTexture{nullptr};
     Texture* m_pPostAAColorTexture{nullptr};
+    Texture* m_pRoughnessTexture{nullptr};
 
     BindlessTextureHandle m_hAlbedo{0};
     BindlessTextureHandle m_hNormal{0};
@@ -299,6 +315,7 @@ private:
     BindlessTextureHandle m_hTemporalCurrentColor{0};
     BindlessTextureHandle m_hLastFrameDepth{0};
     BindlessTextureHandle m_hPostAAColor{0};
+    BindlessTextureHandle m_hRoughness{0};
     u32 m_currentHistoryFrameSlot{0};
     stltype::array<FrameTextureTarget, SWAPCHAIN_IMAGES> m_velocityFrameTargets{};
     stltype::array<FrameTextureTarget, SWAPCHAIN_IMAGES> m_temporalResolveFrameTargets{};

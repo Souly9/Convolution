@@ -1,11 +1,8 @@
 #ifndef UNREALPBR_H
 #define UNREALPBR_H
-
+#include "Utils/Math.h"
 // Unreal Engine PBR BRDF model
 // Based on: https://blog.selfshadow.com/publications/s2013-shading-course/karis/s2013_pbs_epic_notes.pdf
-
-const float PI = 3.14159265358979323846;
-const float InvPi = 1.0 / PI;
 
 struct SurfaceParameters {
     vec3 baseColor;

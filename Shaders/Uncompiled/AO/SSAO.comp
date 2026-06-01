@@ -3,11 +3,8 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_EXT_scalar_block_layout : enable
 
-#define SharedDataUBOSet     1
-#define GBufferUBOSet        2
-
-#include "../../Globals/Common.h"
-#include "../../Globals/Scene.h"
+#define SharedDataUBOSet 1
+#define GBufferUBOSet    2
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
@@ -15,7 +12,8 @@ layout(push_constant) uniform PushConstants
 {
     uint objectCount;
     // float frustumPlanes[6]; // Or similar
-} pc;
+}
+pc;
 
 void main()
 {

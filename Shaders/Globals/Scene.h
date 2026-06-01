@@ -93,6 +93,12 @@ STRUCTDECL(SharedDataUBO)
     STRUCTFIELD(vec2, renderResolution)
     STRUCTFIELD(vec2, jitterOffset)
 
+    // CSM shadow parameters
+    STRUCTFIELD_ARRAY(mat4, csmViewMatrices, 16)
+    STRUCTFIELD_ARRAY(vec4, cascadeSplits, 4)
+    STRUCTFIELD(int, cascadeCount)
+    STRUCTFIELD(BindlessTextureHandle, screenSpaceShadows)
+
     // Debug & Global settings
     STRUCTFIELD(uint, debugFlags)
     STRUCTFIELD(int, debugViewMode)

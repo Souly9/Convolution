@@ -63,13 +63,10 @@ struct FrameRendererContext
 
     Texture* pCurrentSwapchainTexture{nullptr};
 
-    DescriptorSet::Ptr shadowViewUBODescriptor{nullptr};
     DescriptorSet::Ptr tileArraySSBODescriptor{nullptr};
     DescriptorSet::Ptr sharedDataUBODescriptor{nullptr};
     DescriptorSet::Ptr gbufferPostProcessDescriptor{nullptr};
 
-    UniformBuffer* pShadowViewUBO{nullptr};
-    GPUMappedMemoryHandle pMappedShadowViewUBO{nullptr};
     GPUMappedMemoryHandle pMappedSharedDataUBO{nullptr};
 
     StorageBuffer* pClusterGridBuffer{nullptr};
@@ -147,6 +144,8 @@ public:
                                        u32 currentSwapChainIdx,
                                        PassManager* pPassManager);
 
+    void ClearGeometryCaches();
+
     void SetEntityMeshDataForFrame(EntityMeshDataMap&& data, u32 frameIdx);
     void SetEntityTransformDataForFrame(TransformSystemData&& data, u32 frameIdx);
     void SetLightDataForFrame(PointLightVector&& data, DirLightVector&& dirLights, u32 frameIdx);
@@ -155,7 +154,6 @@ public:
     void SetSharedData(RenderView&& mainView, u32 frameIdx);
 
     void UpdateSharedDataUBO(const void* data, size_t size, u32 frameIdx);
-    void UpdateShadowViewUBO(const UBO::ShadowmapViewUBO& data, u32 frameIdx);
     void UpdateLightClusterSSBO(const UBO::LightClusterSSBO& data, u32 numLights, u32 frameIdx);
 
     void DispatchSSBOTransfer(
@@ -173,17 +171,12 @@ public:
     UniformBuffer& GetLightUniformsUBO() { return m_lightUniformsUBO; }
     UniformBuffer& GetGBufferPostProcessUBO() { return m_gbufferPostProcessUBO; }
     UniformBuffer& GetShadowMapUBO() { return m_shadowMapUBO; }
-    UniformBuffer& GetShadowViewUBO(u32 frameIdx = 0) { return m_shadowViewUBOs[frameIdx % SWAPCHAIN_IMAGES]; }
     StorageBuffer& GetClusterGridSSBO() { return m_clusterGridSSBO; }
 
     GPUMappedMemoryHandle GetMappedSharedDataUBOBuffer() const { return m_mappedSharedDataUBOBuffer; }
     GPUMappedMemoryHandle GetMappedLightUniformsUBO() const { return m_mappedLightUniformsUBO; }
     GPUMappedMemoryHandle GetMappedGBufferPostProcessUBO() const { return m_mappedGBufferPostProcessUBO; }
     GPUMappedMemoryHandle GetMappedShadowMapUBO() const { return m_mappedShadowMapUBO; }
-    GPUMappedMemoryHandle GetMappedShadowViewUBO(u32 frameIdx = 0) const
-    {
-        return m_mappedShadowViewUBOs[frameIdx % SWAPCHAIN_IMAGES];
-    }
 
     UBO::LightClusterSSBO& GetLightCluster() { return *m_lightCluster; }
     ShadowMapState& GetShadowMapState() { return m_currentShadowMapState; }
@@ -209,22 +202,17 @@ private:
     UniformBuffer m_lightUniformsUBO;
     UniformBuffer m_gbufferPostProcessUBO;
     UniformBuffer m_shadowMapUBO;
-    stltype::fixed_vector<UniformBuffer, SWAPCHAIN_IMAGES> m_shadowViewUBOs =
-        stltype::fixed_vector<UniformBuffer, SWAPCHAIN_IMAGES>(SWAPCHAIN_IMAGES);
     stltype::unique_ptr<UBO::LightClusterSSBO> m_lightCluster;
 
     GPUMappedMemoryHandle m_mappedSharedDataUBOBuffer{nullptr};
     GPUMappedMemoryHandle m_mappedLightUniformsUBO{nullptr};
     GPUMappedMemoryHandle m_mappedGBufferPostProcessUBO{nullptr};
     GPUMappedMemoryHandle m_mappedShadowMapUBO{nullptr};
-    stltype::fixed_vector<GPUMappedMemoryHandle, SWAPCHAIN_IMAGES> m_mappedShadowViewUBOs =
-        stltype::fixed_vector<GPUMappedMemoryHandle, SWAPCHAIN_IMAGES>(SWAPCHAIN_IMAGES);
 
     DescriptorPool m_descriptorPool;
     DescriptorSetLayout m_clusterGridSSBOLayout;
     DescriptorSetLayoutVulkan m_lightClusterSSBOLayout;
     DescriptorSetLayoutVulkan m_sharedDataUBOLayout;
-    DescriptorSetLayoutVulkan m_shadowViewUBOLayout;
     DescriptorSetLayout m_gbufferPostProcessLayout;
 
     stltype::fixed_vector<FrameRendererContext, SWAPCHAIN_IMAGES> m_frameRendererContexts =

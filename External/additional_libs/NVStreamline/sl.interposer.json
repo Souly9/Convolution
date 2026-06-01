@@ -1,8 +1,8 @@
 {
   "enableInterposer": true,
   "useDXGIProxy": false,
-  "loadAllFeatures": false,
-  "loadSpecificFeatures": [0, 9999],
+  "loadAllFeatures": true,
+  "loadSpecificFeatures": [0, 1001, 9999],
   "showConsole": false,
   // Log levels are off, on, verbose
   "logLevel": 2,

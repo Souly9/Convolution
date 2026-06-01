@@ -508,7 +508,7 @@
 #endif
 
 #ifndef SMAA_DECODE_VELOCITY
-#define SMAA_DECODE_VELOCITY(sample) sample.rg
+#define SMAA_DECODE_VELOCITY(sample) (sample.rg * float2(0.5, -0.5))
 #endif
 
 //-----------------------------------------------------------------------------

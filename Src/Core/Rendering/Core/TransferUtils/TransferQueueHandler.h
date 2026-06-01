@@ -140,7 +140,7 @@ private:
     stltype::vector<InFlightBatch> m_inFlightBatches;
     stltype::hash_map<QueueType, stltype::hash_map<u64, stltype::vector<stltype::function<void()>>>> m_timelineCallbacks;
 
-    u32 m_maxTransferCommandsPerFrame{64};
+    u32 m_maxTransferCommandsPerFrame{256};
     std::atomic<u64> m_pendingTransferSignalValue{1};
     bool m_keepRunning{false};
 

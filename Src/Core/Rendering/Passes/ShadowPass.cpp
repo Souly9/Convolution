@@ -3,6 +3,7 @@
 #include "Core/Global/Profiling.h"
 #include "Core/Global/State/ApplicationState.h"
 #include "Core/Global/Utils/MathFunctions.h"
+#include "Core/Rendering/Core/Defines/DescriptorLayoutPresets.h"
 #include "EASTL/algorithm.h"
 #include "SimpleMath/SimpleMath.h"
 #include "Utils/RenderPassUtils.h"
@@ -124,8 +125,7 @@ void CSMPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comman
         cmd.descriptorSets = {texArraySet,
                                ctx.sharedDataUBODescriptor,
                                 transformSSBOSet,
-                                passCtx.m_perObjectDescriptor,
-                                ctx.shadowViewUBODescriptor};
+                                passCtx.m_perObjectDescriptor};
     }
     cmdBegin.drawCmdBuffer = &cmdBuf;
     StartRenderPassProfilingScope(pCmdBuffer);
@@ -134,36 +134,6 @@ void CSMPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comman
         pCmdBuffer->RecordCommand(cmdBegin);
         BinRenderDataCmd geomBufferCmd(sceneGeometryBuffers.GetVertexBuffer(), sceneGeometryBuffers.GetIndexBuffer());
         pCmdBuffer->RecordCommand(geomBufferCmd);
-
-        const auto& csmView = data.csmViews[0];
-        stltype::array<f32, 16> splits{};
-
-        UBO::ShadowmapViewUBO uboData{};
-        const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
-        f32 aspectRatio = data.mainView.viewport.width / data.mainView.viewport.height;
-        ComputeLightViewProjMatrices(data.cascades,
-                                     ctx.zNear,
-                                     ctx.zFar,
-                                     renderState.csmLambda,
-                                     data.mainView.fov,
-                                     aspectRatio,
-                                     data.mainCamViewMatrix,
-                                     data.mainCamInvViewProj,
-                                     csmView.dir,
-                                     splits,
-                                     uboData.csmViewMatrices,
-                                     (u32)extents.x);
-
-        uboData.cascadeCount = (s32)data.cascades;
-        uboData.screenSpaceShadows = data.screenSpaceShadows;
-        for (u32 i = 0; i < 4; ++i)
-        {
-            uboData.cascadeSplits[i] =
-                mathstl::Vector4(splits[i * 4 + 0], splits[i * 4 + 1], splits[i * 4 + 2], splits[i * 4 + 3]);
-        }
-        memcpy(ctx.pMappedShadowViewUBO, &uboData, sizeof(UBO::ShadowmapViewUBO));
-
-        ctx.shadowViewUBODescriptor->WriteBufferUpdate(*ctx.pShadowViewUBO, s_shadowmapViewUBOBindingSlot);
         pCmdBuffer->RecordCommand(cmd);
 
         pCmdBuffer->RecordCommand(EndRenderingCmd{});
@@ -173,17 +143,10 @@ void CSMPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comman
 
 void CSMPass::CreateSharedDescriptorLayout()
 {
-    // Don't need them but also doesn't hurt, might help GPU to better cache the first two which are needed basically
-    // everywhere else
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalTextures, 0));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalArrayTextures, 0));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::View, 1));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::TransformSSBO, 2));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::GlobalObjectDataSSBOs, 2));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::InstanceDataSSBO, 2));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::PrevTransformSSBO, 2));
+    AppendLayoutPreset(DescriptorPresets::Bindless());
+    AppendLayoutPreset(DescriptorPresets::View());
+    AppendLayoutPreset(DescriptorPresets::GlobalInstanceData());
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::PerPassObjectSSBO, 3));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::ShadowmapViewUBO, 4));
 }
 
 bool CSMPass::WantsToRender() const
@@ -232,7 +195,7 @@ void CSMPass::ComputeLightViewProjMatrices(
     mathstl::Vector3 lightDirection = lightDir;
     lightDirection.Normalize();
 
-    mathstl::Vector3 up = (std::abs(lightDirection.Dot(mathstl::Vector3(0, 1, 0))) > 0.999f)
+    mathstl::Vector3 up = (mathstl::abs(lightDirection.Dot(mathstl::Vector3(0, 1, 0))) > 0.999f)
                                ? mathstl::Vector3(0, 0, 1)
                                : mathstl::Vector3(0, 1, 0);
 
@@ -290,8 +253,8 @@ void CSMPass::ComputeLightViewProjMatrices(
         mathstl::Vector3 centerLightSpace = mathstl::Vector3::Transform(center, lightView);
 
         // Snap to texel grid
-        centerLightSpace.x = std::floor(centerLightSpace.x);
-        centerLightSpace.y = std::floor(centerLightSpace.y);
+        centerLightSpace.x = mathstl::floor(centerLightSpace.x);
+        centerLightSpace.y = mathstl::floor(centerLightSpace.y);
 
         center = mathstl::Vector3::Transform(centerLightSpace, lightView.Invert());
 

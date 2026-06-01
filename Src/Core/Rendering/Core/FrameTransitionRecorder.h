@@ -4,7 +4,10 @@
 class FrameTransitionRecorder
 {
 public:
-    void ResetTemporalState();
+    void RecordTemporalResourceInitialLayouts(CommandBuffer* pCmdBuffer,
+                                              GBuffer& gbuffer,
+                                              Texture* pDLSSExposureTexture,
+                                              StagingBuffer& dlssExposureStagingBuffer);
     void RecordInitialLayoutTransitions(CommandBuffer* pCmdBuffer,
                                         const stltype::fixed_vector<const Texture*, 16>& allGbufferAndSwapchain,
                                         const RenderPasses::RendererAttachmentInfo& attachments);
@@ -19,7 +22,6 @@ public:
     void RecordTemporalCurrentColorToRead(CommandBuffer* pCmdBuffer, GBuffer& gbuffer);
     void RecordResolveToGeneral(CommandBuffer* pCmdBuffer, GBuffer& gbuffer);
     void RecordResolveToRead(CommandBuffer* pCmdBuffer, GBuffer& gbuffer);
-    void RecordTemporalColorTargetsToRead(CommandBuffer* pCmdBuffer, GBuffer& gbuffer);
     void RecordCopyTextureToResolve(CommandBuffer* pCmdBuffer, GBuffer& gbuffer, Texture* pSourceTexture);
     void RecordClearColorTexture(CommandBuffer* pCmdBuffer,
                                  Texture* pTexture,
@@ -31,9 +33,4 @@ public:
                                   Texture* pDLSSExposureTexture,
                                   StagingBuffer& dlssExposureStagingBuffer);
     void RecordSwapchainToPresent(CommandBuffer* pCmdBuffer, Texture* pSwapchainTexture);
-
-private:
-    u32 m_temporalResolveWrites{0};
-    bool m_temporalCurrentColorWritten{false};
-    bool m_dlssExposureTextureInitialized{false};
 };

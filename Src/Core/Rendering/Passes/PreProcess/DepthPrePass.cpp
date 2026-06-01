@@ -22,10 +22,10 @@ void DepthPrePass::BuildPipelines()
         CreateAttachmentInfo({m_mainRenderingData.colorAttachments}, m_mainRenderingData.depthAttachment);
     info.depthCompareOp = kDepthWriteCompareOp;
     info.depthWriteEnable = true;
-    //info.rasterizerInfo.cullmode = CullMode::BACK;
-    
-    m_mainPSO =
-        PSO(ShaderCollection{&mainVert, &mainFrag}, PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions}, info);
+    // info.rasterizerInfo.cullmode = CullMode::BACK;
+
+    m_mainPSO = PSO(
+        ShaderCollection{&mainVert, &mainFrag}, PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions}, info);
 }
 
 void DepthPrePass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager)
@@ -72,10 +72,10 @@ void DepthPrePass::RebuildInternalData(const stltype::vector<PassMeshData>& mesh
         const auto& meshHandle = mesh.meshData.meshResourceHandle;
 
         cmdBuf.AddIndexedDrawCmd(meshHandle.indexCount,
-                                              1, // TODO: instanced rendering
-                                              meshHandle.indexBufferOffset,
-                                              meshHandle.vertBufferOffset,
-                                              instanceOffset);
+                                 1, // TODO: instanced rendering
+                                 meshHandle.indexBufferOffset,
+                                 meshHandle.vertBufferOffset,
+                                 instanceOffset);
         instanceDataIndices.emplace_back(mesh.meshData.instanceDataIdx);
         ++instanceOffset;
     }
@@ -96,7 +96,9 @@ void DepthPrePass::Render(const MainPassData& data, FrameRendererContext& ctx, C
 
     stltype::vector<ColorAttachment> colorAttachments;
     m_mainRenderingData.depthAttachment.SetTexture(data.pMainDepthTexture);
-    BeginRenderingCmd cmdBegin{&m_mainPSO, ToRenderAttachmentInfos(colorAttachments), ToRenderAttachmentInfo(m_mainRenderingData.depthAttachment)};
+    BeginRenderingCmd cmdBegin{&m_mainPSO,
+                               ToRenderAttachmentInfos(colorAttachments),
+                               ToRenderAttachmentInfo(m_mainRenderingData.depthAttachment)};
     cmdBegin.extents = extents;
     cmdBegin.viewport = data.mainView.viewport;
 
@@ -128,15 +130,10 @@ void DepthPrePass::Render(const MainPassData& data, FrameRendererContext& ctx, C
 
 void DepthPrePass::CreateSharedDescriptorLayout()
 {
-    // Don't need them but also doesn't hurt, might help GPU to better cache the first two which are needed basically
-    // everywhere else
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalTextures, 0));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalArrayTextures, 0));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::View, 1));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::TransformSSBO, 2));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::GlobalObjectDataSSBOs, 2));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::InstanceDataSSBO, 2));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::PrevTransformSSBO, 2));
+    m_sharedDescriptors.clear();
+    AppendLayoutPreset(DescriptorPresets::Bindless());
+    AppendLayoutPreset(DescriptorPresets::View());
+    AppendLayoutPreset(DescriptorPresets::GlobalInstanceData());
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::PerPassObjectSSBO, 3));
 }
 
@@ -144,4 +141,3 @@ bool DepthPrePass::WantsToRender() const
 {
     return NeedToRender(m_indirectCmdBuffers[m_currentFrameIdx]);
 }
-

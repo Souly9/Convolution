@@ -1,3 +1,5 @@
+#ifndef MATH_H
+#define MATH_H
 #include "Types.h"
 
 vec4 DepthToWorldSpace(vec2 texCoords, float fragmentDepth, mat4 invViewProjection)
@@ -25,5 +27,7 @@ FUNC_QUALIFIER vec2 ComputeVelocity(vec4 currClipPos, vec4 prevClipPos)
     vec2 currNDC = ClipToNDC(currClipPos);
     vec2 prevNDC = ClipToNDC(prevClipPos);
 
-    return (prevNDC - currNDC) * 0.5;
+    return currNDC - prevNDC;
 }
+
+#endif // MATH_H

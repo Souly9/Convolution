@@ -213,6 +213,10 @@ public:
     {
         return m_bindlessImageDescriptorSet;
     }
+    DescriptorSetVulkan* GetCombinedBindlessDescriptorSet()
+    {
+        return m_combinedBindlessDescriptorSet;
+    }
 
     static void SetLayoutBarrierMasks(ImageLayoutTransitionCmd& transitionCmd,
                                       const ImageLayout oldLayout,
@@ -253,6 +257,8 @@ protected:
     DescriptorSetLayoutVulkan m_bindlessDescriptorSetLayout;
     DescriptorSetVulkan* m_bindlessImageDescriptorSet{nullptr};
     DescriptorSetLayoutVulkan m_bindlessImageDescriptorSetLayout;
+    DescriptorSetVulkan* m_combinedBindlessDescriptorSet{nullptr};
+    DescriptorSetLayoutVulkan m_combinedBindlessDescriptorSetLayout;
     stltype::vector<TextureHandle> m_texturesToMakeBindless;
     stltype::vector<TextureHandle> m_persistentTexturesToMakeBindless;
     stltype::vector<Texture*> m_pendingGraphicsShaderReadTransitions;

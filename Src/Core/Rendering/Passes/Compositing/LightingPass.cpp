@@ -9,8 +9,7 @@ LightingPass::LightingPass() : GenericGeometryPass("LightingPass")
     CreateSharedDescriptorLayout();
 }
 
-void LightingPass::Init(RendererAttachmentInfo& attachmentInfo,
-                                      const SharedResourceManager& resourceManager)
+void LightingPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager)
 {
     ScopedZone("LightingPass::Init");
 
@@ -28,8 +27,8 @@ void LightingPass::RecreateResolutionDependentResources(RendererAttachmentInfo& 
     ScopedZone("LightingPass::RecreateResolutionDependentResources");
 
     const auto& gbufferInfo = attachmentInfo.gbuffer;
-    const auto gbufferColorAttachment =
-        CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBufferThisFrameColor), LoadOp::CLEAR, nullptr);
+    const auto gbufferColorAttachment = CreateDefaultColorAttachment(
+        gbufferInfo.GetFormat(GBufferTextureType::GBufferThisFrameColor), LoadOp::CLEAR, nullptr);
     m_mainRenderingData.colorAttachments = {gbufferColorAttachment};
 
     InitBaseData(attachmentInfo);
@@ -50,16 +49,15 @@ void LightingPass::BuildPipelines()
 }
 
 void LightingPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
-                                                     FrameRendererContext& previousFrameCtx,
-                                                     u32 thisFrameNum)
+                                       FrameRendererContext& previousFrameCtx,
+                                       u32 thisFrameNum)
 {
     m_currentFrameIdx = thisFrameNum % SWAPCHAIN_IMAGES;
     auto& cmdBuf = m_indirectCmdBuffers.at(m_currentFrameIdx);
     cmdBuf.EmptyCmds();
     const auto pFullScreenQuadMesh = g_pMeshManager->GetPrimitiveMesh(MeshManager::PrimitiveType::Quad);
     const auto meshHandle = previousFrameCtx.pResourceManager->GetMeshHandle(pFullScreenQuadMesh);
-    cmdBuf.AddIndexedDrawCmd(
-        meshHandle.indexCount, 1, meshHandle.indexBufferOffset, meshHandle.vertBufferOffset, 0);
+    cmdBuf.AddIndexedDrawCmd(meshHandle.indexCount, 1, meshHandle.indexBufferOffset, meshHandle.vertBufferOffset, 0);
     RebuildPerObjectBuffer({0});
     cmdBuf.FillCmds();
 }
@@ -88,7 +86,7 @@ void LightingPass::Render(const MainPassData& data, FrameRendererContext& ctx, C
         return;
     }
     BinRenderDataCmd geomBufferCmd(sceneGeometryBuffers.GetVertexBuffer(), sceneGeometryBuffers.GetIndexBuffer());
-    
+
     auto& cmdBuf = m_indirectCmdBuffers[m_currentFrameIdx];
     GenericIndirectDrawCmd cmd{&m_mainPSO, cmdBuf};
     cmd.drawCount = cmdBuf.GetDrawCmdNum();
@@ -103,8 +101,7 @@ void LightingPass::Render(const MainPassData& data, FrameRendererContext& ctx, C
                               data.mainView.descriptorSet,
                               transformSSBOSet,
                               tileArraySSBOSet,
-                              gbufferUBO,
-                              ctx.shadowViewUBODescriptor};
+                              gbufferUBO};
     }
     StartRenderPassProfilingScope(pCmdBuffer);
     pCmdBuffer->RecordCommand(cmdBegin);
@@ -127,7 +124,6 @@ void LightingPass::CreateSharedDescriptorLayout()
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::LightUniformsUBO, 3));
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::GBufferUBO, 4));
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::ShadowmapUBO, 4));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::ShadowmapViewUBO, 5));
     // m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::PerPassObjectSSBO, 4));
 }
 

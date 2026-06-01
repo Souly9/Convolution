@@ -21,9 +21,9 @@ void DescriptorPoolVulkan::Create(const DescriptorPoolCreateInfo& createInfo)
     if (createInfo.enableBindlessTextureDescriptors)
     {
         poolSizes.push_back(
-            CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_BINDLESS_TEXTURES * 2));
+            CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_BINDLESS_TEXTURES * 4));
         poolSizes.push_back(
-            CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, MAX_BINDLESS_TEXTURES));
+            CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, MAX_BINDLESS_TEXTURES * 2));
     }
     if (createInfo.enableStorageBufferDescriptors)
     {

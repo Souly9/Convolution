@@ -26,6 +26,8 @@ STRUCTDECL(GBufferPostProcessUBO)
     STRUCTFIELD(BindlessTextureHandle, rtReflectedSceneColorIdx)
     STRUCTFIELD(BindlessTextureHandle, temporalCurrentColorBufferIdx)
     STRUCTFIELD(BindlessTextureHandle, finalTemporalColorBufferIdx)
+    STRUCTFIELD(BindlessTextureHandle, rtaoIdx)
+    STRUCTFIELD(BindlessTextureHandle, deferredLightingColorIdx)
 STRUCTEND()
 
 STRUCTDECL(ShadowMapUBO)

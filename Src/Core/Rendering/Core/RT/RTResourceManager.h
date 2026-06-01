@@ -11,6 +11,7 @@ enum class RTTextureType : u8
     DebugView = 0,
     Reflections,
     ReflectedSceneColor,
+    RTAO,
     Count
 };
 
@@ -30,6 +31,9 @@ public:
 
     void RecordPrepareOutputsForWrite(CommandBuffer* pCmdBuffer);
     void RecordOutputsToShaderRead(CommandBuffer* pCmdBuffer);
+    void RecordTransition(CommandBuffer* pCmdBuffer,
+                          RTTextureResource& resource,
+                          ImageLayout newLayout);
 
     const RTTextureResource& Get(RTTextureType type) const;
     RTTextureResource& Get(RTTextureType type);
@@ -43,9 +47,6 @@ private:
     void RecordClearToLayout(CommandBuffer* pCmdBuffer,
                              RTTextureResource& resource,
                              ImageLayout finalLayout);
-    void RecordTransition(CommandBuffer* pCmdBuffer,
-                          RTTextureResource& resource,
-                          ImageLayout newLayout);
 
     stltype::fixed_vector<RTTextureResource, static_cast<u32>(RTTextureType::Count)> m_resources{
         static_cast<u32>(RTTextureType::Count)};

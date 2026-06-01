@@ -3,26 +3,26 @@
 #include "Core/Rendering/Core/ShaderManager.h"
 #include "Core/Rendering/RenderLayer.h"
 #include "Core/Rendering/Vulkan/VkGlobals.h"
+#include "Core/Rendering/Vulkan/VkProfiler.h"
 #include "Scenes/BistroExteriorScene.h"
 #include "Scenes/ClusteredLightingScene.h"
 #include "Scenes/SampleScene.h"
 #include "Scenes/SponzaScene.h"
 #include "StaticBehaviors/StaticBehaviorCollection.h"
 #include "TimeData.h"
+#include "vulkan/vulkan_core.h"
 #include <GLFW/glfw3.h>
 #include <imgui/backends/imgui_impl_glfw.h>
 #include <imgui/backends/imgui_impl_vulkan.h>
 #include <imgui/imgui.h>
-#include "Core/Rendering/Vulkan/VkProfiler.h"
-#include "vulkan/vulkan_core.h"
 
-
-Application::Application(bool canRender, RenderLayer<RenderAPI>& layer) : m_renderThread(&m_imGuiManager, &layer.GetBackend())
+Application::Application(bool canRender, RenderLayer<RenderAPI>& layer)
+    : m_renderThread(&m_imGuiManager, &layer.GetBackend())
 {
     m_pProfiler = stltype::make_unique<VkProfiler>();
     VkGlobals::SetProfiler(m_pProfiler.get());
     g_pApplicationState = &m_applicationState;
-    
+
     bool bCanRender = layer.InitRenderLayer(
         g_pWindowManager->GetScreenWidth(), g_pWindowManager->GetScreenHeight(), g_pWindowManager->GetTitle());
 
@@ -32,7 +32,8 @@ Application::Application(bool canRender, RenderLayer<RenderAPI>& layer) : m_rend
     g_pTexManager->Init();
 
     // Load placeholder first
-    auto placeholderHandle = g_pTexManager->SubmitAsyncTextureCreation({"Resources\\Textures\\placeholder.png", false, TextureSemantic::BaseColor, true});
+    auto placeholderHandle = g_pTexManager->SubmitAsyncTextureCreation(
+        {"Resources\\Textures\\placeholder.png", false, TextureSemantic::BaseColor, true});
     g_pTexManager->WaitFor(placeholderHandle);
     g_pTexManager->SetPlaceholder(placeholderHandle);
 
@@ -50,7 +51,7 @@ Application::Application(bool canRender, RenderLayer<RenderAPI>& layer) : m_rend
     auto pRenderer = m_renderThread.Start();
     g_pEventSystem->OnAppInit({pRenderer});
     StaticBehaviorCollection::RegisterAllBehaviors();
-    
+
     m_applicationState.ProcessStateUpdates();
     g_pQueueHandler->WaitForFences(~0u);
     Update(0);
@@ -64,16 +65,16 @@ void Application::CreateMainPSO()
 Application::~Application()
 {
     m_renderThread.Stop();
-    
+
     g_mainRenderThreadSyncSemaphore.Post();
     g_frameTimerSemaphore2.Post();
     g_imguiSemaphore.Post();
-    
+
     m_renderThread.ShutdownThread();
     vkDeviceWaitIdle(VkGlobals::GetLogicalDevice());
-    
+
     m_renderThread.CleanUp();
-    
+
     m_pProfiler->Destroy();
     VkGlobals::SetProfiler(nullptr);
 

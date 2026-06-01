@@ -20,6 +20,7 @@ void RTResourceManager::Recreate(const mathstl::Vector2& renderResolution)
     CreateResource(RTTextureType::Reflections, "RT Reflections", renderResolution, TexFormat::R16G16B16A16_FLOAT);
     CreateResource(
         RTTextureType::ReflectedSceneColor, "RT Reflected Scene Color", renderResolution, TexFormat::R16G16B16A16_FLOAT);
+    CreateResource(RTTextureType::RTAO, "RT Ambient Occlusion", renderResolution, TexFormat::R8_UNORM);
 }
 
 void RTResourceManager::Reset()
@@ -48,7 +49,7 @@ void RTResourceManager::CreateResource(RTTextureType type,
     request.extents = DirectX::XMUINT3(static_cast<u32>(renderResolution.x), static_cast<u32>(renderResolution.y), 1);
     request.handle = g_pTexManager->GenerateHandle();
     request.format = format;
-    request.usage = Usage::Storage | Usage::Sampled | Usage::TransferDst;
+    request.usage = Usage::Storage | Usage::Sampled | Usage::TransferDst | Usage::TransferSrc;
     request.isPersistent = true;
     request.AddName(name);
 

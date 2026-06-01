@@ -16,8 +16,7 @@ StaticMainMeshPass::StaticMainMeshPass() : GenericGeometryPass("StaticMainMeshPa
     CreateSharedDescriptorLayout();
 }
 
-void StaticMainMeshPass::Init(RendererAttachmentInfo& attachmentInfo,
-                                            const SharedResourceManager& resourceManager)
+void StaticMainMeshPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager)
 {
     ScopedZone("StaticMeshPass::Init");
 
@@ -34,8 +33,6 @@ void StaticMainMeshPass::RecreateResolutionDependentResources(RendererAttachment
 
     const auto& gbufferInfo = attachmentInfo.gbuffer;
 
-    // const auto gbufferPosition = CreateDefaultColorAttachment(attachmentInfo.swapchainTextures[0].GetInfo().format,
-    // LoadOp::CLEAR, nullptr);
     const auto gbufferPosition =
         CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBufferAlbedo), LoadOp::CLEAR, nullptr);
     const auto gbufferNormal =
@@ -44,10 +41,13 @@ void StaticMainMeshPass::RecreateResolutionDependentResources(RendererAttachment
         gbufferInfo.GetFormat(GBufferTextureType::TexCoordMatData), LoadOp::CLEAR, nullptr);
     const auto gbufferVelocity = CreateDefaultColorAttachment(
         gbufferInfo.GetFormat(GBufferTextureType::GBufferVelocity), LoadOp::CLEAR, nullptr);
+    const auto gbufferRoughness = CreateDefaultColorAttachment(
+        gbufferInfo.GetFormat(GBufferTextureType::GBufferRoughness), LoadOp::CLEAR, nullptr);
 
     m_mainRenderingData.depthAttachment =
         CreateReadOnlyDepthAttachment(LoadOp::LOAD, attachmentInfo.depthAttachment.GetTexture());
-    m_mainRenderingData.colorAttachments = {gbufferPosition, gbufferNormal, gbuffer3, gbufferVelocity};
+    m_mainRenderingData.colorAttachments = {
+        gbufferPosition, gbufferNormal, gbuffer3, gbufferVelocity, gbufferRoughness};
 
     InitBaseData(attachmentInfo);
 }
@@ -60,7 +60,6 @@ void StaticMainMeshPass::BuildPipelines()
     auto mainFrag = Shader("Shaders/GBufferPass.frag.spv", "main");
 
     PipelineInfo info{};
-    // info.descriptorSetLayout.pipelineSpecificDescriptors.emplace_back();
     info.descriptorSetLayout.sharedDescriptors = m_sharedDescriptors;
     info.depthWriteEnable = false;
     info.attachmentInfos =
@@ -88,21 +87,18 @@ void StaticMainMeshPass::RebuildInternalData(const stltype::vector<PassMeshData>
         const auto& meshHandle = mesh.meshData.meshResourceHandle;
 
         cmdBuf.AddIndexedDrawCmd(meshHandle.indexCount,
-                                              1, // TODO: instanced rendering
-                                              meshHandle.indexBufferOffset,
-                                              meshHandle.vertBufferOffset,
-                                              instanceOffset);
+                                 1, // TODO: instanced rendering
+                                 meshHandle.indexBufferOffset,
+                                 meshHandle.vertBufferOffset,
+                                 instanceOffset);
         instanceDataIndices.emplace_back(mesh.meshData.instanceDataIdx);
         ++instanceOffset;
     }
     RebuildPerObjectBuffer(instanceDataIndices);
     cmdBuf.FillCmds();
-    // m_needsBufferSync = true;
 }
 
-void StaticMainMeshPass::Render(const MainPassData& data,
-                                              FrameRendererContext& ctx,
-                                              CommandBuffer* pCmdBuffer)
+void StaticMainMeshPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
 {
     ScopedZone("StaticMeshPass::Render");
 
@@ -114,20 +110,25 @@ void StaticMainMeshPass::Render(const MainPassData& data,
     ColorAttachment gbufferNormal = m_mainRenderingData.colorAttachments[1];
     ColorAttachment gbuffer3 = m_mainRenderingData.colorAttachments[2];
     ColorAttachment gbufferVelocity = m_mainRenderingData.colorAttachments[3];
+    ColorAttachment gbufferRoughness = m_mainRenderingData.colorAttachments[4];
     gbufferPosition.SetTexture(data.pGbuffer->Get(GBufferTextureType::GBufferAlbedo));
     gbufferNormal.SetTexture(data.pGbuffer->Get(GBufferTextureType::GBufferNormal));
     gbuffer3.SetTexture(data.pGbuffer->Get(GBufferTextureType::TexCoordMatData));
     gbufferVelocity.SetTexture(data.pGbuffer->Get(GBufferTextureType::GBufferVelocity));
+    gbufferRoughness.SetTexture(data.pGbuffer->Get(GBufferTextureType::GBufferRoughness));
 
-    stltype::vector<ColorAttachment> colorAttachments = {gbufferPosition, gbufferNormal, gbuffer3, gbufferVelocity};
+    stltype::vector<ColorAttachment> colorAttachments = {
+        gbufferPosition, gbufferNormal, gbuffer3, gbufferVelocity, gbufferRoughness};
 
     const DirectX::XMINT2 extents(data.renderState.renderResolution.x, data.renderState.renderResolution.y);
 
     m_mainRenderingData.depthAttachment.SetTexture(data.pMainDepthTexture);
-    BeginRenderingCmd cmdBegin{&m_mainPSO, ToRenderAttachmentInfos(colorAttachments), ToRenderAttachmentInfo(m_mainRenderingData.depthAttachment)};
+    BeginRenderingCmd cmdBegin{&m_mainPSO,
+                               ToRenderAttachmentInfos(colorAttachments),
+                               ToRenderAttachmentInfo(m_mainRenderingData.depthAttachment)};
     cmdBegin.extents = extents;
     cmdBegin.viewport = data.mainView.viewport;
-    
+
     auto& cmdBuf = m_indirectCmdBuffers[currentFrame];
     GenericIndirectDrawCmd cmd{&m_mainPSO, cmdBuf};
     cmd.drawCount = cmdBuf.GetDrawCmdNum();
@@ -160,13 +161,10 @@ void StaticMainMeshPass::Render(const MainPassData& data,
 
 void StaticMainMeshPass::CreateSharedDescriptorLayout()
 {
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalTextures, 0));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalArrayTextures, 0));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::View, 1));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::TransformSSBO, 2));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::GlobalObjectDataSSBOs, 2));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::InstanceDataSSBO, 2));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::PrevTransformSSBO, 2));
+    m_sharedDescriptors.clear();
+    AppendLayoutPreset(DescriptorPresets::Bindless());
+    AppendLayoutPreset(DescriptorPresets::View());
+    AppendLayoutPreset(DescriptorPresets::GlobalInstanceData());
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::PerPassObjectSSBO, 3));
 }
 
@@ -174,4 +172,3 @@ bool StaticMainMeshPass::WantsToRender() const
 {
     return NeedToRender(m_indirectCmdBuffers[m_currentFrameIdx]);
 }
-

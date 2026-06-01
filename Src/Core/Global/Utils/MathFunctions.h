@@ -1,7 +1,9 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
 
-#include <cmath>
+extern "C" float sinf(float x);
+extern "C" float powf(float base, float exp);
+extern "C" float floorf(float x);
 
 namespace mathstl
 {
@@ -24,9 +26,25 @@ namespace mathstl
     }
 
     template <typename T>
+    constexpr T abs(const T& val)
+    {
+        return (val < 0) ? -val : val;
+    }
+
+    inline float sin(float val)
+    {
+        return ::sinf(val);
+    }
+
+    inline float floor(float val)
+    {
+        return ::floorf(val);
+    }
+
+    template <typename T>
     inline T pow(T base, T exp)
     {
-        return std::pow(base, exp);
+        return static_cast<T>(::powf(static_cast<float>(base), static_cast<float>(exp)));
     }
 
     template <typename T>

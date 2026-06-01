@@ -1,14 +1,13 @@
 #pragma once
-#include "Core/Global/GlobalDefines.h"
+#include "RTComputePassBase.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Global/State/States.h"
-#include "Core/Rendering/Passes/RenderPass.h"
 #include "../../../../Shaders/Globals/PushConstants.h"
 #include "../PassManager.h"
 
 namespace RenderPasses
 {
-class RTReflectionsPass : public ConvolutionRenderPass
+class RTReflectionsPass : public RTComputePassBase
 {
 public:
     RTReflectionsPass();
@@ -24,12 +23,8 @@ public:
 
 protected:
     void CreateSharedDescriptorLayout() override;
-    void CreateTLASDescriptorResources();
 
     ComputePipeline m_computePipeline{};
-    DescriptorPool m_descriptorPool{};
-    DescriptorSetLayout m_tlasDescriptorLayout{};
-    stltype::fixed_vector<DescriptorSet::Ptr, SWAPCHAIN_IMAGES> m_tlasDescriptors{SWAPCHAIN_IMAGES};
     RTReflectionsPushConstants m_pushConstants{};
 };
 } // namespace RenderPasses

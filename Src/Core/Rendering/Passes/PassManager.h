@@ -85,8 +85,12 @@ struct MainPassData
     BindlessTextureHandle rtDebugTextureHandle{0};
     BindlessTextureHandle rtReflectionsTextureHandle{0};
     BindlessTextureHandle rtReflectedSceneColorTextureHandle{0};
+    Texture* pRTAOTexture{nullptr};
+    BindlessTextureHandle rtaoTextureHandle{0};
     u32 cascades{0};
     f32 csmStepSize{0.0f};
+
+    // SMAA Intermediates
 
     // SMAA Intermediates
     Texture* pSMAAEdgesTexture{nullptr};
@@ -108,12 +112,17 @@ enum class PassType
     TAA,         // Temporal Anti-Aliasing
     SMAA,        // Subpixel Morphological Anti-Aliasing
     DLSS,        // Deep Learning Super Sampling
+    DLSS_RR,     // Deep Learning Super Sampling Ray Reconstruction
+    XeSS,        // Intel XeSS
     TemporalTonemap,
     Composite,
     UI,
     Debug,
     Shadow,
     PostProcess, // General post process
+    RTAOCompute,
+    RTReflectionsCompute,
+    RTComposite,
 };
 
 // ============================================================================
@@ -128,15 +137,16 @@ struct PassStage
     stltype::fixed_vector<PassType, 8> groups;
 };
 
-inline const stltype::fixed_vector<PassStage, 11> PASS_SCHEDULE = {
+inline const stltype::fixed_vector<PassStage, 12> PASS_SCHEDULE = {
     PassStage{{PassType::EarlyAsyncCompute}},
     PassStage{{PassType::PreProcess}},
     PassStage{{PassType::DepthReliantCompute}},
     PassStage{{PassType::Main, PassType::Debug, PassType::Shadow}},
     PassStage{{PassType::Lighting}},
-    PassStage{{PassType::PostProcess}},
+    PassStage{{PassType::RTAOCompute, PassType::RTReflectionsCompute}},
+    PassStage{{PassType::RTComposite}},
     PassStage{{PassType::TemporalTonemap}},
-    PassStage{{PassType::TAA, PassType::DLSS}},
+    PassStage{{PassType::TAA, PassType::DLSS, PassType::DLSS_RR, PassType::XeSS}},
     PassStage{{PassType::SMAA}},
     PassStage{{PassType::Composite}},
     PassStage{{PassType::UI}},
@@ -152,13 +162,18 @@ inline bool IsComputePass(PassType type)
            type == PassType::PostProcess ||
            type == PassType::TemporalTonemap ||
            type == PassType::TAA ||
-           type == PassType::DLSS;
+           type == PassType::DLSS ||
+           type == PassType::DLSS_RR ||
+           type == PassType::XeSS ||
+           type == PassType::RTAOCompute ||
+           type == PassType::RTReflectionsCompute;
 }
 
 struct GraphicsFrameContext
 {
     CommandPool cmdPool;
     stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> cmdBuffers{SWAPCHAIN_IMAGES};
+    stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> lightingCmdBuffers{SWAPCHAIN_IMAGES};
     stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> compositeCmdBuffers{SWAPCHAIN_IMAGES};
     stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> presentTransitionCmdBuffers{SWAPCHAIN_IMAGES};
     stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> depthPrePassCmdBuffers{SWAPCHAIN_IMAGES};
@@ -170,6 +185,7 @@ struct ComputeFrameContext
     CommandPool cmdPool;
     stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> cmdBuffers{SWAPCHAIN_IMAGES};
     stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> sssComputeCmdBuffers{SWAPCHAIN_IMAGES};
+    stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> rtComputeCmdBuffers{SWAPCHAIN_IMAGES};
     bool initialized{false};
 };
 
@@ -196,7 +212,6 @@ public:
     void Init();
     bool NeedsResizeDependentResourceRecreate(const mathstl::Vector2& swapchainResolution) const;
     void RecreateResizeDependentResources(const mathstl::Vector2& swapchainResolution, bool swapchainRecreated);
-
     void AddPass(PassType type, stltype::unique_ptr<ConvolutionRenderPass>&& pass);
     void TransferPassData(const PassGeometryData& passData, u32 frameIdx);
 
@@ -211,14 +226,12 @@ public:
                                const DirectionalRenderLight& dirLight, u32 frameIdx);
 
     void SetSharedData(RenderView&& mainView, u32 frameIdx);
-
     void PreProcessDataForCurrentFrame(u32 frameIdx, u64 jitterFrameNumber);
 
     void RegisterDebugCallbacks();
 
     // Delegates down to FrameResourceManager
     void UpdateSharedDataUBO(const void* data, size_t size, u32 frameIdx);
-    void UpdateShadowViewUBO(const UBO::ShadowmapViewUBO& data, u32 frameIdx);
     void UpdateLightClusterSSBO(const UBO::LightClusterSSBO& data, u32 frameIdx);
 
     void DispatchSSBOTransfer(

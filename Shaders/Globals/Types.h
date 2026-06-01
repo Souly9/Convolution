@@ -34,6 +34,10 @@ inline void SetFlag(u32& flags, u32 flag, bool value)
 } // namespace RenderFlags
 #else
 // Definitions for GLSL
+const float PI = 3.14159265358979323846;
+
+const float InvPi = 1.0 / PI;
+const float MIN_DENOMINATOR = 0.000001;
 #define INOUT(type) inout type
 #define FUNC_QUALIFIER
 #define BindlessTextureHandle uint

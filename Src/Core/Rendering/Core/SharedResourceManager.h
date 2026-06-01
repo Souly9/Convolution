@@ -1,4 +1,5 @@
 #pragma once
+#include <EASTL/deque.h>
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Global/Profiling.h"
 #include "Core/Global/ThreadBase.h"
@@ -22,11 +23,18 @@ struct PassMeshData;
 class SharedResourceManager
 {
 public:
+    struct PendingMeshUpload
+    {
+        const Mesh* pMesh;
+    };
+
     void Init();
+    void FlushPendingMeshUploads(u32 frameIdx, u32 maxCount);
 
     // Mainly for batch uploading all the scene geometry at scene load time, no
     // debug geometry
     void UploadSceneGeometry(const stltype::vector<stltype::unique_ptr<Mesh>>& meshes);
+    void ClearGeometryCaches();
 
     // Whenever the scene is updated we need to update the instance data
     // This function is used for non-mesh updates, I assume the scene mesh data
@@ -150,6 +158,9 @@ private:
     stltype::vector<u32> m_pendingVisibleInstanceIndices;
     mutable ProfiledLockable(CustomMutex, m_geometryStateMutex);
     mutable ProfiledLockable(CustomMutex, m_residencyStateMutex);
+
+    stltype::deque<PendingMeshUpload> m_pendingMeshUploads;
+    mutable ProfiledLockable(CustomMutex, m_pendingUploadMutex);
 
 public:
     stltype::vector<u32> PopPendingVisibleInstanceIndices();

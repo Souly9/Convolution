@@ -3,13 +3,13 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_EXT_scalar_block_layout : enable
 
-#define SharedDataUBOSet     0
-#define TileArraySet         1
-#define ClusterGridSet       2
-#define ViewSpaceLightsSet   3
+#define SharedDataUBOSet   0
+#define TileArraySet       1
+#define ClusterGridSet     2
+#define ViewSpaceLightsSet 3
 
-#include "../../Globals/ClusteredShading.h"
 #include "../../Globals/ClusterLightData.h"
+#include "../../Globals/ClusteredShading.h"
 #include "../../Globals/PushConstants.h"
 
 #define X_LOCAL_SIZE 8
@@ -20,7 +20,8 @@ layout(local_size_x = X_LOCAL_SIZE, local_size_y = Y_LOCAL_SIZE, local_size_z = 
 layout(push_constant) uniform PushConstants
 {
     ClusterPushConstants data;
-} pushConstantsBlock;
+}
+pushConstantsBlock;
 
 #define pc pushConstantsBlock.data
 
@@ -47,7 +48,24 @@ void main()
 
     uint clusterIdx = clusterX + clusterY * pc.clusterCount.x + clusterZ * pc.clusterCount.x * pc.clusterCount.y;
 
-    if (!isValidCluster) return;
+    if (!isValidCluster)
+        return;
+
+    uint baseIndex = clusterIdx * MAX_LIGHTS_PER_CLUSTER;
+
+    // Just want to write all lights into one cluster
+    bool disableCulling = (ubo.debugFlags & DEBUG_FLAG_DISABLE_CLUSTER_CULLING) != 0u;
+    if (disableCulling)
+    {
+        uint totalLights = min(pc.numLights, MAX_SCENE_LIGHTS);
+        uint count = min(totalLights, MAX_LIGHTS_PER_CLUSTER - 1);
+        for (uint i = 0; i < count; ++i)
+        {
+            StoreClusterLightIndex(baseIndex, i, i);
+        }
+        StoreClusterLightOffsetAndCount(clusterIdx, baseIndex, count);
+        return;
+    }
 
     vec3 aabbMin = clusterGrid.clusters[clusterIdx].minBounds.xyz;
     vec3 aabbMax = clusterGrid.clusters[clusterIdx].maxBounds.xyz;
@@ -59,13 +77,14 @@ void main()
     uint tileBase = tileIdx * MAX_LIGHTS_PER_TILE;
 
     uint visibleCount = 0;
-    uint baseIndex = clusterIdx * MAX_LIGHTS_PER_CLUSTER;
 
+    // Actual fine culling
     for (uint i = 0; i < tileCount; ++i)
     {
-        if (visibleCount >= MAX_LIGHTS_PER_CLUSTER)
+        if (visibleCount >= MAX_LIGHTS_PER_CLUSTER - 1)
             break;
 
+        // Access coarse culling result
         uint globalLightIdx = viewSpaceLights.tileLightIndices[tileBase + i];
         vec4 vsLight = viewSpaceLights.lights[globalLightIdx];
 
@@ -79,7 +98,7 @@ void main()
         // Fine AABB test
         if (sphereIntersectsAABB(vsLight.xyz, vsLight.w, aabbMin, aabbMax))
         {
-            // Write directly to global memory 
+            // Write directly to global memory
             StoreClusterLightIndex(baseIndex, visibleCount, globalLightIdx);
             visibleCount++;
         }

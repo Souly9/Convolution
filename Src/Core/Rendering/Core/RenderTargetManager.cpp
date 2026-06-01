@@ -106,7 +106,8 @@ void RenderTargetManager::RecreateGBufferTextures(const mathstl::Vector2& render
          "GBuffer Temporal Current Color",
          Usage::Storage | Usage::Sampled,
          false},
-        {GBufferTextureType::GBufferPostAAColor, "GBuffer Post AA Color", Usage::Storage | Usage::Sampled, false, true}};
+        {GBufferTextureType::GBufferPostAAColor, "GBuffer Post AA Color", Usage::Storage | Usage::Sampled, false, true},
+        {GBufferTextureType::GBufferRoughness, "GBuffer Roughness"}};
 
     for (const auto& def : defs)
     {

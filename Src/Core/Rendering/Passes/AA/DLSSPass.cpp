@@ -1,6 +1,7 @@
 #include "DLSSPass.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Global/LogDefines.h"
+#include "Core/Global/Utils/MathFunctions.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
 #include "Core/Rendering/Core/SharedResourceManager.h"
 #include "Core/Rendering/Passes/PassManager.h"
@@ -16,7 +17,6 @@ using namespace RenderPasses;
 namespace
 {
 constexpr bool kForceStaticCameraDebug = false;
-constexpr bool kForceZeroMotionVectorsDebug = false;
 
 struct StreamlineTagDesc
 {
@@ -76,6 +76,10 @@ sl::DLSSMode ResolveDLSSModeForRenderScale(const mathstl::Vector2& renderResolut
 }
 }
 
+// ============================================================================
+// DLSSPass Implementation
+// ============================================================================
+
 DLSSPass::DLSSPass() : ConvolutionRenderPass("DLSSPass")
 {
 }
@@ -91,7 +95,17 @@ void DLSSPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResource
 bool DLSSPass::WantsToRender() const
 {
     const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
-    const bool wantsToRender = Nvidia::StreamlineManager::IsDLSSSupported() && renderState.aaType == AntialiasingType::DLSS;
+    const bool dlssSupported = Nvidia::StreamlineManager::IsDLSSSupported();
+    if (!dlssSupported || renderState.aaType != AntialiasingType::DLSS)
+    {
+        m_wasActive = false;
+        return false;
+    }
+
+    const bool useRayReconstruction = Nvidia::StreamlineManager::IsDLSSRRSupported() &&
+                                      Nvidia::StreamlineManager::GetUseRayReconstructionThisFrame();
+
+    const bool wantsToRender = !useRayReconstruction;
     if (!wantsToRender)
         m_wasActive = false;
     return wantsToRender;
@@ -106,9 +120,17 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     if (!Nvidia::StreamlineManager::GetFrameToken(frameIdx, pFrameToken))
         return;
     
-    // Need: Color (In/Out), Depth, Motion Vectors
-    // The temporal input is already tonemapped to keep DLSS history stable.
-    Texture* pColorIn = data.temporalResources.pTemporalCurrentColorTexture;
+    Texture* pColorIn = data.temporalResources.pCurrentColorTexture;
+    const auto& appRenderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+    const bool useRTReflections = data.pRTSceneManager != nullptr &&
+                                  data.pRTSceneManager->HasReadyTLAS(frameIdx) &&
+                                  mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
+                                  mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTReflectionsEnabled);
+    if (useRTReflections)
+    {
+        pColorIn = data.pRTReflectedSceneColorTexture;
+    }
+
     Texture* pColorOut = data.temporalResources.pResolveTexture;
     Texture* pDepth = data.temporalResources.pCurrentDepthTexture;
     Texture* pMotion = data.pGbuffer->Get(GBufferTextureType::GBufferVelocity);
@@ -119,41 +141,16 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
 
     const auto outputExtents = pColorOut->GetInfo().extents;
     const auto inputExtents = pColorIn->GetInfo().extents;
-    const auto motionExtents = pMotion->GetInfo().extents;
 
     const sl::DLSSMode dlssMode =
         ResolveDLSSModeForRenderScale(data.renderState.renderResolution, data.renderState.swapchainResolution);
+
     if (!Nvidia::StreamlineManager::EnsureDLSSConfigured(outputExtents.x, outputExtents.y, dlssMode))
         return;
     if (Nvidia::StreamlineManager::IsDLSSEvaluateBlocked())
         return;
 
-    if constexpr (kForceZeroMotionVectorsDebug)
-    {
-        ImageLayoutTransitionCmd motionToClear(pMotion);
-        motionToClear.oldLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-        motionToClear.newLayout = ImageLayout::TRANSFER_DST_OPTIMAL;
-        VkTextureManager::SetLayoutBarrierMasks(
-            motionToClear, ImageLayout::SHADER_READ_ONLY_OPTIMAL, ImageLayout::TRANSFER_DST_OPTIMAL);
-        pCmdBuffer->RecordCommand(motionToClear);
-
-        ClearColorImageCmd clearMotion(pMotion);
-        clearMotion.color.float32[0] = 0.0f;
-        clearMotion.color.float32[1] = 0.0f;
-        clearMotion.color.float32[2] = 0.0f;
-        clearMotion.color.float32[3] = 0.0f;
-        pCmdBuffer->RecordCommand(clearMotion);
-
-        ImageLayoutTransitionCmd motionToRead(pMotion);
-        motionToRead.oldLayout = ImageLayout::TRANSFER_DST_OPTIMAL;
-        motionToRead.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-        VkTextureManager::SetLayoutBarrierMasks(
-            motionToRead, ImageLayout::TRANSFER_DST_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-        pCmdBuffer->RecordCommand(motionToRead);
-    }
-
     // Transition layouts for DLSS
-    // ColorOut should be in GENERAL for writing
     {
         const ImageLayout oldColorOutLayout = (data.renderState.recreatedThisFrame || !m_wasActive)
                                               ? ImageLayout::UNDEFINED
@@ -190,15 +187,20 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
         desc.state = static_cast<uint32_t>(GetTaggedLayout(type));
         desc.mipLevels = pVkTex->GetInfo().mipLevels > 0 ? pVkTex->GetInfo().mipLevels : 1u;
         desc.arrayLayers = pVkTex->GetInfo().extents.z > 0 ? pVkTex->GetInfo().extents.z : 1u;
+        if (desc.nativeFormat == 0)
+        {
+            DEBUG_LOG_WARNF("[DLSSPass] Texture format is UNDEFINED for BufferType %d, Engine Format %d", static_cast<int>(type), static_cast<int>(pVkTex->GetInfo().format));
+        }
         tagDescs.push_back(desc);
         return true;
     };
 
-    const bool tagsOk = pushTagDesc(pColorIn, sl::kBufferTypeScalingInputColor) &&
-                        pushTagDesc(pColorOut, sl::kBufferTypeScalingOutputColor) &&
-                        pushTagDesc(pDepth, sl::kBufferTypeDepth) &&
-                        pushTagDesc(pMotion, sl::kBufferTypeMotionVectors) &&
-                        pushTagDesc(pExposure, sl::kBufferTypeExposure);
+    bool tagsOk = pushTagDesc(pColorIn, sl::kBufferTypeScalingInputColor) &&
+                  pushTagDesc(pColorOut, sl::kBufferTypeScalingOutputColor) &&
+                  pushTagDesc(pDepth, sl::kBufferTypeDepth) &&
+                  pushTagDesc(pMotion, sl::kBufferTypeMotionVectors) &&
+                  pushTagDesc(pExposure, sl::kBufferTypeExposure);
+
     if (!tagsOk)
     {
         restoreColorOutReadLayout();
@@ -229,7 +231,7 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     CopyMatrixToStreamline(slConst.prevClipToClip, prevClipToClip);
 
     slConst.jitterOffset = {streamlineJitter.x, streamlineJitter.y};
-    slConst.mvecScale = {1.0f, -1.0f};
+    slConst.mvecScale = {-1.0f, 1.0f};
     slConst.cameraPinholeOffset = {0.0f, 0.0f};
     const mathstl::Vector3 streamlineCameraUp =
         GetNormalizedOrFallback(cameraData.up, mathstl::Vector3::Up);
@@ -282,37 +284,55 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     Nvidia::StreamlineManager::SetDLSSDebugState(debugState);
 
     ExecuteNativeCmd streamlineCmd{};
-    streamlineCmd.callback = [tagDescs, pFrameToken](void* pNativeCmdBuf) mutable {
+    const u32 frameSlot = ctx.imageIdx;
+    streamlineCmd.callback = [tagDescs, pFrameToken, frameSlot](void* pNativeCmdBuf) mutable {
         VkCommandBuffer cmd = reinterpret_cast<VkCommandBuffer>(pNativeCmdBuf);
         sl::ViewportHandle viewportHandle(0);
         if (!pFrameToken)
             return;
 
-        stltype::fixed_vector<sl::Resource, 5> resources;
-        stltype::fixed_vector<sl::ResourceTag, 5> tags;
+        static struct {
+            stltype::fixed_vector<sl::Resource, 5> resources;
+            stltype::fixed_vector<sl::ResourceTag, 5> tags;
+        } s_slData[SWAPCHAIN_IMAGES];
+
+        auto& frameData = s_slData[frameSlot];
+        frameData.resources.clear();
+        frameData.tags.clear();
+        frameData.resources.reserve(tagDescs.size());
+        frameData.tags.reserve(tagDescs.size());
+
         for (const auto& td : tagDescs)
         {
-            sl::Resource& res = resources.emplace_back();
-            res.type = sl::ResourceType::eTex2d;
-            res.native = reinterpret_cast<void*>(td.native);
-            res.view = reinterpret_cast<void*>(td.view);
+            sl::Resource res(
+                sl::ResourceType::eTex2d,
+                reinterpret_cast<void*>(td.native),
+                nullptr,
+                reinterpret_cast<void*>(td.view),
+                td.state
+            );
             res.width = td.width;
             res.height = td.height;
             res.nativeFormat = td.nativeFormat;
             res.usage = td.usage;
-            res.state = td.state;
             res.mipLevels = td.mipLevels;
             res.arrayLayers = td.arrayLayers;
+            res.flags = 0;
 
-            tags.emplace_back(&res, td.type, sl::ResourceLifecycle::eValidUntilPresent);
+            frameData.resources.push_back(res);
+        }
+
+        for (size_t i = 0; i < frameData.resources.size(); ++i)
+        {
+            frameData.tags.emplace_back(&frameData.resources[i], tagDescs[i].type, sl::ResourceLifecycle::eValidUntilPresent);
         }
 
         const sl::Result tagRes =
             Nvidia::StreamlineManager::SetTagForFrame(*pFrameToken,
                                                       viewportHandle,
-                                                      tags.data(),
-                                                      static_cast<uint32_t>(tags.size()),
-                                                      reinterpret_cast<sl::CommandBuffer*>(cmd));
+                                                      frameData.tags.data(),
+                                                      static_cast<u32>(frameData.tags.size()),
+                                                      (sl::CommandBuffer*)cmd);
         auto debugState = Nvidia::StreamlineManager::GetDLSSDebugState();
         debugState.lastTagResult = tagRes;
         Nvidia::StreamlineManager::SetDLSSDebugState(debugState);
@@ -341,6 +361,5 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     pCmdBuffer->RecordCommand(streamlineCmd);
     EndRenderPassProfilingScope(pCmdBuffer);
 
-    // Transition ColorOut back to SHADER_READ for following passes
     restoreColorOutReadLayout();
 }

@@ -25,6 +25,8 @@ enum class DebugFlags : u32
     ShowClusterAABBs = 1 << 5,
     TAAForceHistory = 1 << 6,
     CullFrustum = 1 << 7,
+    RTAOEnabled = 1 << 8,
+    DisableClusterCulling = 1 << 16,
 };
 MAKE_FLAG_ENUM(DebugFlags)
 
@@ -43,7 +45,8 @@ enum class AntialiasingType : u32
     None = 0,
     TAA_SMAA = 1,
     SMAA = 2,
-    DLSS = 3
+    DLSS = 3,
+    XeSS = 4
 };
 
 enum class DebugViewMode : s32
@@ -95,7 +98,12 @@ struct RendererState
         f32 globalMaterialReflectance{1.0f};
         u32 pendingBlasCount{0};
         u32 residentInstanceCount{0};
+        u32 reflectionsRaysPerPixel{1};
         bool globalReflectanceOverrideEnabled{false}; // Kept for UI logic, but can be flag later
+        bool reflectionsUseRayReconstruction{false};
+        u32 aoRaysPerPixel{1};
+        f32 aoRadius{2.0f};
+        f32 aoIntensity{1.0f};
     } rt;
 
     stltype::vector<u64> gbufferImGuiIDs{};
@@ -129,7 +137,8 @@ struct RendererState
     mathstl::Vector2 csmResolution{CSM_DEFAULT_RES};
     f32 csmLambda{0.7f};
     s32 debugViewMode{static_cast<s32>(DebugViewMode::None)};
-    u32 debugFlags{static_cast<u32>(DebugFlags::ShadowsEnabled) | static_cast<u32>(DebugFlags::SSSEnabled) | static_cast<u32>(DebugFlags::RTEnabled) | static_cast<u32>(DebugFlags::RTReflectionsEnabled)};
+    u32 debugFlags{static_cast<u32>(DebugFlags::ShadowsEnabled) | static_cast<u32>(DebugFlags::SSSEnabled) |
+                   static_cast<u32>(DebugFlags::RTEnabled) | static_cast<u32>(DebugFlags::RTReflectionsEnabled)};
 
     // Clustered lighting settings
     DirectX::XMINT3 clusterCount{16, 9, 24};

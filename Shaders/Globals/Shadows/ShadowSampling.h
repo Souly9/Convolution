@@ -10,12 +10,12 @@ float getCascadeSplit(int index)
 {
     int arrayIdx = index / 4;
     int compIdx = index % 4;
-    return shadowmapViewUBO.cascadeSplits[arrayIdx][compIdx];
+    return ubo.cascadeSplits[arrayIdx][compIdx];
 }
 
 int getCascadeIndex(float viewDepth)
 {
-    int cascadeCount = shadowmapViewUBO.cascadeCount;
+    int cascadeCount = ubo.cascadeCount;
 
     for (int j = 0; j < cascadeCount; ++j)
     {
@@ -42,7 +42,7 @@ const vec2 poissonDisk[16] = vec2[](
 
 float sampleShadowCascade(int cascadeIndex, vec4 fragWorldPos, vec3 normal, vec3 lightDir)
 {
-    vec4 fragPosLightSpace = shadowmapViewUBO.csmViewMatrices[cascadeIndex] * fragWorldPos;
+    vec4 fragPosLightSpace = ubo.csmViewMatrices[cascadeIndex] * fragWorldPos;
     vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
 
     projCoords.xy = vec2(projCoords.x * 0.5 + 0.5, 0.5 - projCoords.y * 0.5);
@@ -85,7 +85,7 @@ float computeShadow(vec4 fragWorldPos, float fragViewDepth, vec3 normal, vec3 li
 {
 
     int cascadeIndex = getCascadeIndex(fragViewDepth);
-    int cascadeCount = shadowmapViewUBO.cascadeCount;
+    int cascadeCount = ubo.cascadeCount;
     if (cascadeIndex < 0 || cascadeIndex >= cascadeCount)
         return 1.0;
 
@@ -93,7 +93,7 @@ float computeShadow(vec4 fragWorldPos, float fragViewDepth, vec3 normal, vec3 li
 
     // Fade between cascades
     int nextCascade = cascadeIndex + 1;
-    if (nextCascade < shadowmapViewUBO.cascadeCount)
+    if (nextCascade < ubo.cascadeCount)
     {
         float currentSplit = getCascadeSplit(cascadeIndex);
         float nextSplit = getCascadeSplit(nextCascade);
@@ -113,7 +113,3 @@ float computeShadow(vec4 fragWorldPos, float fragViewDepth, vec3 normal, vec3 li
 }
 
 #endif // SHADERS_SHADOWS_SAMPLING_H
-
-
-
-

@@ -3,11 +3,6 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_EXT_scalar_block_layout : enable
 
-#define SharedDataUBOSet     1
-#define TransformSSBOSet     2
-#define TileArraySet         3
-#define GBufferUBOSet        4
-#define ShadowViewUBOSet     5
 #define PassPerObjectDataSet 10
 
 #include "../../Globals/Common.h"
@@ -120,14 +115,13 @@ void main()
     // Clustered Lighting logic
     uint clusterIdx = getClusterIndex(fragPosViewSpace.xyz, ubo.projection);
 
-    // Read index from lightData (simplified for loop)
-    uint baseIndex = lightData.clusterOffsets[clusterIdx];
-    uint lightCount = lightData.clusterOffsets[clusterIdx + 1] - baseIndex;
-    lightCount = min(lightCount, MAX_LIGHTS_PER_CLUSTER);
+    uint baseIndex = GetClusterLightBaseIndex(clusterIdx);
+    uint lightCount = GetClusterLightCount(baseIndex);
+    lightCount = min(lightCount, MAX_LIGHTS_PER_CLUSTER - 1);
 
     for (uint i = 0; i < lightCount; ++i)
     {
-        uint globalLightIdx = lightData.clusterLightIndices[baseIndex + i];
+        uint globalLightIdx = FetchClusterLightIndex(baseIndex, i);
         Light light = lightData.lights[globalLightIdx];
 
         vec3 lightPos = light.position.xyz;
@@ -143,7 +137,7 @@ void main()
     float dirLightShadow = SampleGlobalShadowmaps(fragPosWorldSpace, viewDepth, N, dirLightTravelDir);
     if ((ubo.debugFlags & DEBUG_FLAG_SSS_ENABLED) != 0u)
     {
-        float sss = clamp(texture(GlobalBindlessTextures[nonuniformEXT(shadowmapViewUBO.screenSpaceShadows)], texCoords).r, 0.0, 1.0);
+        float sss = clamp(texture(GlobalBindlessTextures[nonuniformEXT(ubo.screenSpaceShadows)], texCoords).r, 0.0, 1.0);
         float contactShadowStrength = 0.9;
         dirLightShadow *= mix(1.0, sss, contactShadowStrength);
     }
@@ -160,4 +154,3 @@ void main()
 
     outColor = vec4(finalHDRColor, 1.0);
 }
-

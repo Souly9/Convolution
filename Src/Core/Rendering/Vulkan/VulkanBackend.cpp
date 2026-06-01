@@ -14,6 +14,7 @@
 #include "Core/Rendering/Core/Attachment.h"
 #include "Core/Rendering/Core/Nvidia/StreamlineManager.h"
 #include "Core/Rendering/Core/TextureManager.h"
+#include "Core/Rendering/Vulkan/XeSS/XeSSManager.h"
 #include "Core/Rendering/RenderLayer.h"
 #include "Core/Rendering/Vulkan/BackendDefines.h"
 #include "Core/Rendering/Vulkan/VkRayTracingFunctions.h"
@@ -102,8 +103,7 @@ void NormalizeBufferDeviceAddressExtensions(stltype::vector<const char*>& extens
 
 bool RenderBackendImpl<Vulkan>::Init(uint32_t screenWidth, uint32_t screenHeight, stltype::string_view title)
 {
-    m_dlssSupportAvailable =
-        Nvidia::StreamlineManager::IsEarlyInitialized() || Nvidia::StreamlineManager::EarlyInit();
+    m_dlssSupportAvailable = Nvidia::StreamlineManager::IsEarlyInitialized() || Nvidia::StreamlineManager::EarlyInit();
 
     if (!CreateInstance(screenWidth, screenHeight, title))
     {
@@ -152,6 +152,7 @@ bool RenderBackendImpl<Vulkan>::Init(uint32_t screenWidth, uint32_t screenHeight
         }
     }
     PublishDLSSSupport(dlssSupported);
+    VulkanXeSS::XeSSManager::Initialize();
 
     if (!AcquireDeviceQueues())
     {
@@ -320,6 +321,25 @@ bool RenderBackendImpl<Vulkan>::CreateInstance(uint32_t screenWidth, uint32_t sc
     auto instanceExtensions = stltype::vector<const char*>(glfwExtensions, glfwExtensions + glfwExtensionCount);
     instanceExtensions.insert(instanceExtensions.end(), g_instanceExtensions.begin(), g_instanceExtensions.end());
 
+    uint32_t xessInstanceExtCount = 0;
+    const char* const* xessInstanceExts = nullptr;
+    uint32_t xessMinVkApiVersion = 0;
+    if (xessVKGetRequiredInstanceExtensions(&xessInstanceExtCount, &xessInstanceExts, &xessMinVkApiVersion) == XESS_RESULT_SUCCESS)
+    {
+        for (uint32_t i = 0; i < xessInstanceExtCount; ++i)
+        {
+            if (!HasExtension(instanceExtensions, xessInstanceExts[i]))
+            {
+                DEBUG_LOGF("[VulkanBackend] Enabling XeSS required instance extension: {}", xessInstanceExts[i]);
+                instanceExtensions.push_back(xessInstanceExts[i]);
+            }
+        }
+        if (xessMinVkApiVersion > appInfo.apiVersion)
+        {
+            appInfo.apiVersion = xessMinVkApiVersion;
+        }
+    }
+
     uint32_t extensionCount = 0;
     vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
     stltype::vector<VkExtensionProperties> extensions(extensionCount);
@@ -381,7 +401,11 @@ bool RenderBackendImpl<Vulkan>::CreateInstance(uint32_t screenWidth, uint32_t sc
     }
 #endif
 
-    return Nvidia::StreamlineManager::CreateVulkanInstance(&createInfo, VulkanAllocator(), &m_instance) == VK_SUCCESS;
+    if (m_dlssSupportAvailable)
+    {
+        return Nvidia::StreamlineManager::CreateVulkanInstance(&createInfo, VulkanAllocator(), &m_instance) == VK_SUCCESS;
+    }
+    return vkCreateInstance(&createInfo, VulkanAllocator(), &m_instance) == VK_SUCCESS;
 }
 
 bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
@@ -390,10 +414,25 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
     const bool hasDLSSRequirements =
         m_dlssSupportAvailable && Nvidia::StreamlineManager::GetDLSSFeatureRequirements(dlssRequirements);
 
+    sl::FeatureRequirements dlssRRRequirements{};
+    const bool hasDLSSRRRequirements =
+        m_dlssSupportAvailable && Nvidia::StreamlineManager::GetDLSSRRFeatureRequirements(dlssRRRequirements);
+
     const u32 hostGraphicsQueueCount = 1;
     const u32 hostComputeQueueCount = 1;
-    const u32 slGraphicsQueueCount = hasDLSSRequirements ? dlssRequirements.vkNumGraphicsQueuesRequired : 0;
-    const u32 slComputeQueueCount = hasDLSSRequirements ? dlssRequirements.vkNumComputeQueuesRequired : 0;
+
+    u32 slGraphicsQueueCount = hasDLSSRequirements ? dlssRequirements.vkNumGraphicsQueuesRequired : 0;
+    if (hasDLSSRRRequirements && dlssRRRequirements.vkNumGraphicsQueuesRequired > slGraphicsQueueCount)
+    {
+        slGraphicsQueueCount = dlssRRRequirements.vkNumGraphicsQueuesRequired;
+    }
+
+    u32 slComputeQueueCount = hasDLSSRequirements ? dlssRequirements.vkNumComputeQueuesRequired : 0;
+    if (hasDLSSRRRequirements && dlssRRRequirements.vkNumComputeQueuesRequired > slComputeQueueCount)
+    {
+        slComputeQueueCount = dlssRRRequirements.vkNumComputeQueuesRequired;
+    }
+
     u32 finalGraphicsQueueCount = hostGraphicsQueueCount;
     u32 finalComputeQueueCount = hostComputeQueueCount;
 
@@ -454,7 +493,7 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
         DEBUG_LOG_WARN("Insufficient Vulkan queues for full Streamline DLSS queue requirements");
     }
 
-    if (hasDLSSRequirements)
+    if (hasDLSSRequirements || hasDLSSRRRequirements)
     {
         Nvidia::StreamlineManager::SetVulkanQueueStartIndices(
             finalGraphicsQueueCount > hostGraphicsQueueCount ? hostGraphicsQueueCount : 0,
@@ -477,6 +516,15 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
                 enabledExtensions.push_back(ext);
         }
     }
+    if (hasDLSSRRRequirements)
+    {
+        for (u32 i = 0; i < dlssRRRequirements.vkNumDeviceExtensions; ++i)
+        {
+            const char* ext = dlssRRRequirements.vkDeviceExtensions[i];
+            if (!HasExtension(enabledExtensions, ext))
+                enabledExtensions.push_back(ext);
+        }
+    }
     for (const auto& avail : availableDeviceExtensions)
     {
         if (strcmp(avail.extensionName, VK_EXT_PAGEABLE_DEVICE_LOCAL_MEMORY_EXTENSION_NAME) == 0) hasPageableMemory = true;
@@ -494,6 +542,20 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
     if (hasPageableMemory) enabledExtensions.push_back(VK_EXT_PAGEABLE_DEVICE_LOCAL_MEMORY_EXTENSION_NAME);
     NormalizeBufferDeviceAddressExtensions(enabledExtensions);
 
+    uint32_t xessExtensionCount = 0;
+    const char* const* xessExtensions = nullptr;
+    if (xessVKGetRequiredDeviceExtensions(m_instance, m_physicalDevice, &xessExtensionCount, &xessExtensions) == XESS_RESULT_SUCCESS)
+    {
+        for (uint32_t i = 0; i < xessExtensionCount; ++i)
+        {
+            if (!HasExtension(enabledExtensions, xessExtensions[i]))
+            {
+                DEBUG_LOGF("[VulkanBackend] Enabling XeSS required device extension: {}", xessExtensions[i]);
+                enabledExtensions.push_back(xessExtensions[i]);
+            }
+        }
+    }
+
     // Feature structs
     VkPhysicalDeviceMemoryPriorityFeaturesEXT memFeat{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PRIORITY_FEATURES_EXT, nullptr, VK_TRUE};
     VkPhysicalDevicePageableDeviceLocalMemoryFeaturesEXT pageFeat{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PAGEABLE_DEVICE_LOCAL_MEMORY_FEATURES_EXT, 
@@ -501,8 +563,10 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
     VkPhysicalDeviceVulkan14Features features14{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES, hasPageableMemory ? (void*)&pageFeat : (hasMemoryPriority ? (void*)&memFeat : nullptr), VK_TRUE};
     VkPhysicalDeviceVulkan13Features features13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, &features14, VK_TRUE, VK_TRUE, VK_TRUE, VK_TRUE};
     VkPhysicalDeviceVulkan12Features features12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, &features13, VK_TRUE, VK_TRUE, 0, VK_TRUE, VK_TRUE, VK_TRUE, VK_TRUE, VK_TRUE, VK_TRUE, VK_TRUE, VK_TRUE, 0, 0, VK_TRUE, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, VK_TRUE};
+    VkPhysicalDeviceRayTracingPipelineFeaturesKHR rayTracingPipelineFeatures{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR, &features12, VK_TRUE};
     VkPhysicalDeviceAccelerationStructureFeaturesKHR accelerationStructureFeatures{
-        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR, &features12, VK_TRUE};
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR, &rayTracingPipelineFeatures, VK_TRUE};
     VkPhysicalDeviceRayQueryFeaturesKHR rayQueryFeatures{
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR, &accelerationStructureFeatures, VK_TRUE};
     VkPhysicalDeviceVulkan11Features features11{
@@ -510,8 +574,16 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
         &rayQueryFeatures,
         VK_TRUE};
     VkPhysicalDeviceFeatures2 deviceFeatures2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &features11};
-    vkGetPhysicalDeviceFeatures2(m_physicalDevice, &deviceFeatures2);
-    deviceFeatures2.features.samplerAnisotropy = VK_TRUE;
+
+    void* featuresChain = &deviceFeatures2;
+    if (xessVKGetRequiredDeviceFeatures(m_instance, m_physicalDevice, &featuresChain) != XESS_RESULT_SUCCESS)
+    {
+        DEBUG_LOG_ERR("[VulkanBackend] xessVKGetRequiredDeviceFeatures failed!");
+        featuresChain = &deviceFeatures2;
+    }
+
+    vkGetPhysicalDeviceFeatures2(m_physicalDevice, reinterpret_cast<VkPhysicalDeviceFeatures2*>(featuresChain));
+    reinterpret_cast<VkPhysicalDeviceFeatures2*>(featuresChain)->features.samplerAnisotropy = VK_TRUE;
     features12.bufferDeviceAddress = VK_TRUE;
 
     VkDeviceCreateInfo createInfo{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
@@ -520,14 +592,24 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
     createInfo.enabledExtensionCount = static_cast<u32>(enabledExtensions.size());
     createInfo.ppEnabledExtensionNames = enabledExtensions.data();
 
-    VkDeviceDiagnosticsConfigCreateInfoNV aftermathInfo{VK_STRUCTURE_TYPE_DEVICE_DIAGNOSTICS_CONFIG_CREATE_INFO_NV, &deviceFeatures2, 
+    VkDeviceDiagnosticsConfigCreateInfoNV aftermathInfo{VK_STRUCTURE_TYPE_DEVICE_DIAGNOSTICS_CONFIG_CREATE_INFO_NV, featuresChain, 
         VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_AUTOMATIC_CHECKPOINTS_BIT_NV | VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_RESOURCE_TRACKING_BIT_NV | 
         VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_SHADER_DEBUG_INFO_BIT_NV | VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_SHADER_ERROR_REPORTING_BIT_NV};
 
-    createInfo.pNext = hasAftermath ? (void*)&aftermathInfo : (void*)&deviceFeatures2;
+    createInfo.pNext = hasAftermath ? (void*)&aftermathInfo : featuresChain;
 
-    if (Nvidia::StreamlineManager::CreateVulkanDevice(
-            m_physicalDevice, &createInfo, VulkanAllocator(), &m_logicalDevice) != VK_SUCCESS)
+    VkResult deviceResult;
+    if (m_dlssSupportAvailable)
+    {
+        deviceResult = Nvidia::StreamlineManager::CreateVulkanDevice(
+            m_instance, m_physicalDevice, &createInfo, VulkanAllocator(), &m_logicalDevice);
+    }
+    else
+    {
+        deviceResult = vkCreateDevice(m_physicalDevice, &createInfo, VulkanAllocator(), &m_logicalDevice);
+    }
+
+    if (deviceResult != VK_SUCCESS)
         return false;
 
     if (!RayTracing::LoadFunctions(m_logicalDevice))
@@ -550,22 +632,30 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
 
 bool RenderBackendImpl<Vulkan>::AcquireDeviceQueues()
 {
-    Nvidia::StreamlineManager::GetVulkanDeviceQueue(
-        m_logicalDevice, m_indices.graphicsFamily.value(), 0, &m_graphicsQueue);
+    auto GetQueue = [&](u32 familyIndex, u32 queueIndex, VkQueue* pQueue) {
+        if (m_dlssSupportAvailable)
+        {
+            Nvidia::StreamlineManager::GetVulkanDeviceQueue(m_logicalDevice, familyIndex, queueIndex, pQueue);
+        }
+        else
+        {
+            vkGetDeviceQueue(m_logicalDevice, familyIndex, queueIndex, pQueue);
+        }
+    };
+
+    GetQueue(m_indices.graphicsFamily.value(), 0, &m_graphicsQueue);
 
     if (m_indices.presentFamily == m_indices.graphicsFamily)
         m_presentQueue = m_graphicsQueue;
     else
-        Nvidia::StreamlineManager::GetVulkanDeviceQueue(
-            m_logicalDevice, m_indices.presentFamily.value(), 0, &m_presentQueue);
+        GetQueue(m_indices.presentFamily.value(), 0, &m_presentQueue);
 
     if (m_indices.transferFamily == m_indices.graphicsFamily)
         m_transferQueue = m_graphicsQueue;
     else if (m_indices.transferFamily == m_indices.presentFamily)
         m_transferQueue = m_presentQueue;
     else
-        Nvidia::StreamlineManager::GetVulkanDeviceQueue(
-            m_logicalDevice, m_indices.transferFamily.value(), 0, &m_transferQueue);
+        GetQueue(m_indices.transferFamily.value(), 0, &m_transferQueue);
 
     if (m_indices.computeFamily == m_indices.graphicsFamily)
         m_computeQueue = m_graphicsQueue;
@@ -574,8 +664,7 @@ bool RenderBackendImpl<Vulkan>::AcquireDeviceQueues()
     else if (m_indices.computeFamily == m_indices.transferFamily)
         m_computeQueue = m_transferQueue;
     else
-        Nvidia::StreamlineManager::GetVulkanDeviceQueue(
-            m_logicalDevice, m_indices.computeFamily.value(), 0, &m_computeQueue);
+        GetQueue(m_indices.computeFamily.value(), 0, &m_computeQueue);
 
     return m_graphicsQueue != VK_NULL_HANDLE && m_presentQueue != VK_NULL_HANDLE &&
            m_transferQueue != VK_NULL_HANDLE && m_computeQueue != VK_NULL_HANDLE;
@@ -584,7 +673,14 @@ bool RenderBackendImpl<Vulkan>::AcquireDeviceQueues()
 bool RenderBackendImpl<Vulkan>::PickPhysicalDevice()
 {
     uint32_t deviceCount = 0;
-    vkEnumeratePhysicalDevices(m_instance, &deviceCount, nullptr);
+    if (m_dlssSupportAvailable)
+    {
+        Nvidia::StreamlineManager::EnumeratePhysicalDevices(m_instance, &deviceCount, nullptr);
+    }
+    else
+    {
+        vkEnumeratePhysicalDevices(m_instance, &deviceCount, nullptr);
+    }
 
     if (deviceCount == 0)
     {
@@ -592,7 +688,14 @@ bool RenderBackendImpl<Vulkan>::PickPhysicalDevice()
         return false;
     }
     stltype::vector<VkPhysicalDevice> devices(deviceCount);
-    vkEnumeratePhysicalDevices(m_instance, &deviceCount, devices.data());
+    if (m_dlssSupportAvailable)
+    {
+        Nvidia::StreamlineManager::EnumeratePhysicalDevices(m_instance, &deviceCount, devices.data());
+    }
+    else
+    {
+        vkEnumeratePhysicalDevices(m_instance, &deviceCount, devices.data());
+    }
 
     if (m_dlssSupportAvailable)
     {
@@ -953,7 +1056,7 @@ bool RenderBackendImpl<Vulkan>::CreateSwapChain(VkSwapchainKHR oldSwapchain)
     createInfo.imageColorSpace = surfaceFormat.colorSpace;
     createInfo.imageExtent = Conv(extent);
     createInfo.imageArrayLayers = 1;
-    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT; // TODO: change this if not rendering directly to it
+    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT; // Enable transfer for blits/Streamline
 
     uint32_t queueFamilyIndices[] = {m_indices.graphicsFamily.value(), m_indices.presentFamily.value()};
 

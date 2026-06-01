@@ -1,15 +1,14 @@
 #pragma once
-#include "Core/Global/GlobalDefines.h"
+#include "RTComputePassBase.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Global/State/States.h"
 #include "Core/Rendering/Core/RenderingForwardDecls.h"
-#include "Core/Rendering/Passes/RenderPass.h"
 #include "../../../../Shaders/Globals/PushConstants.h"
 #include "../PassManager.h"
 
 namespace RenderPasses
 {
-class RTDebugViewPass : public ConvolutionRenderPass
+class RTDebugViewPass : public RTComputePassBase
 {
 public:
     RTDebugViewPass();
@@ -25,12 +24,8 @@ public:
 
 protected:
     void CreateSharedDescriptorLayout() override;
-    void CreateTLASDescriptorResources();
 
     ComputePipeline m_computePipeline{};
-    DescriptorPool m_descriptorPool{};
-    DescriptorSetLayout m_tlasDescriptorLayout{};
-    stltype::fixed_vector<DescriptorSet::Ptr, SWAPCHAIN_IMAGES> m_tlasDescriptors{SWAPCHAIN_IMAGES};
     RTDebugViewPushConstants m_pushConstants{};
 };
 } // namespace RenderPasses

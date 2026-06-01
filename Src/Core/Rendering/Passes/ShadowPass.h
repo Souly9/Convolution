@@ -26,8 +26,7 @@ public:
     void SetCascadeCount(u32 cascades);
 
 
-protected:
-    void ComputeLightViewProjMatrices(
+    static void ComputeLightViewProjMatrices(
         u32 cascades,
         f32 mainCamNear,
         f32 mainCamFar,
@@ -40,6 +39,8 @@ protected:
         stltype::array<f32, 16>& splits,
         mathstl::Matrix* lightViewProjMatrices,
         u32 shadowMapSize);
+
+protected:
 
     PSO m_mainPSO;
     // Current cascade count for viewMask calculation

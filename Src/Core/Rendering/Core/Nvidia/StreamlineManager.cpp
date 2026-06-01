@@ -4,13 +4,15 @@
 #include "Core/Global/ThreadBase.h"
 #include "Core/Rendering/Vulkan/VkGlobals.h"
 #include <atomic>
-#include <sl_helpers_vk.h>
 #include <string>
 #ifndef VK_USE_PLATFORM_WIN32_KHR
 #define VK_USE_PLATFORM_WIN32_KHR
 #endif
 #include <vulkan/vulkan.h>
 #include <windows.h>
+
+#if CONV_WITH_STREAMLINE
+#include <sl_helpers_vk.h>
 
 namespace Nvidia
 {
@@ -27,6 +29,17 @@ static sl::DLSSMode g_dlssFailedMode = sl::DLSSMode::eOff;
 static bool g_dlssEvaluateBlocked = false;
 static bool g_dlssNeedsReset = false;
 static bool g_dlssSupported = false;
+static bool g_dlssRRSupported = false;
+static bool g_dlssDConfigured = false;
+static u32 g_dlssDWidth = 0;
+static u32 g_dlssDHeight = 0;
+static sl::DLSSMode g_dlssDMode = sl::DLSSMode::eOff;
+static bool g_dlssDLastConfigureFailed = false;
+static u32 g_dlssDFailedWidth = 0;
+static u32 g_dlssDFailedHeight = 0;
+static sl::DLSSMode g_dlssDFailedMode = sl::DLSSMode::eOff;
+static bool g_dlssDEvaluateBlocked = false;
+static bool g_dlssDNeedsReset = false;
 static bool g_imguiPluginAvailable = false;
 static bool g_imguiSupported = false;
 static HMODULE g_slModule = nullptr;
@@ -62,6 +75,19 @@ static bool DirectoryExists(const wchar_t* path)
 {
     const DWORD attrs = GetFileAttributesW(path);
     return attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY) != 0;
+}
+
+static std::wstring GetExecutableDirectory()
+{
+    wchar_t buffer[MAX_PATH]{};
+    GetModuleFileNameW(nullptr, buffer, MAX_PATH);
+    std::wstring path(buffer);
+    const size_t lastSlash = path.find_last_of(L"\\/");
+    if (lastSlash != std::wstring::npos)
+    {
+        return path.substr(0, lastSlash);
+    }
+    return L".";
 }
 
 static std::wstring GetAbsolutePath(const wchar_t* path)
@@ -206,22 +232,21 @@ bool StreamlineManager::EarlyInit()
     // Call slInit EARLY so interposer can hook Vulkan creation
     sl::Preferences pref{};
     g_imguiPluginAvailable = false;
-    sl::Feature features[] = {sl::kFeatureDLSS};
+    sl::Feature features[] = {sl::kFeatureDLSS, sl::kFeatureDLSS_RR};
     pref.featuresToLoad = features;
-    pref.numFeaturesToLoad = 1u;
+    pref.numFeaturesToLoad = 2u;
     pref.renderAPI = sl::RenderAPI::eVulkan;
     pref.flags |= sl::PreferenceFlags::eUseManualHooking;
     pref.flags |= sl::PreferenceFlags::eUseFrameBasedResourceTagging;
     pref.logMessageCallback = SL_LoggingCallback;
     pref.logLevel = sl::LogLevel::eOff;
-    const std::wstring localPluginPath = GetAbsolutePath(L".");
-    const std::wstring externalPluginPath = GetAbsolutePath(L"External/additional_libs/NVStreamline");
-    const wchar_t* pluginPaths[] = {localPluginPath.c_str(), externalPluginPath.c_str()};
-    if (DirectoryExists(externalPluginPath.c_str()))
-    {
-        pref.pathsToPlugins = pluginPaths;
-        pref.numPathsToPlugins = 2;
-    }
+    const std::wstring exeDir = GetExecutableDirectory();
+    const std::wstring extDir = exeDir + L"/../../External/additional_libs/NVStreamline";
+    const std::wstring resolvedExtDir = GetAbsolutePath(extDir.c_str());
+
+    const wchar_t* pluginPaths[] = { exeDir.c_str(), resolvedExtDir.c_str() };
+    pref.pathsToPlugins = pluginPaths;
+    pref.numPathsToPlugins = DirectoryExists(resolvedExtDir.c_str()) ? 2 : 1;
 
     pref.engine = sl::EngineType::eCustom;
     pref.engineVersion = "1.0.0";
@@ -254,25 +279,45 @@ bool StreamlineManager::Init()
     const auto& context = VkGlobals::GetContext();
     const auto queueFamilies = VkGlobals::GetQueueFamilyIndices();
 
-    sl::VulkanInfo vulkanInfo{};
-    vulkanInfo.instance = context.Instance;
-    vulkanInfo.device = context.Device;
-    vulkanInfo.physicalDevice = context.PhysicalDevice;
-    vulkanInfo.graphicsQueueFamily = queueFamilies.graphicsFamily.value_or(0);
-    vulkanInfo.computeQueueFamily = queueFamilies.computeFamily.value_or(0);
-    vulkanInfo.graphicsQueueIndex = g_slGraphicsQueueStartIndex;
-    vulkanInfo.computeQueueIndex = g_slComputeQueueStartIndex;
-    sl::Result res = slSetVulkanInfo(vulkanInfo);
-    if (res != sl::Result::eOk)
+    sl::Result res = sl::Result::eOk;
+    if (!g_slModule)
     {
-        DEBUG_LOG_WARNF("[StreamlineManager] slSetVulkanInfo failed with error: {}", static_cast<int>(res));
-        Shutdown();
-        return false;
+        sl::VulkanInfo vulkanInfo{};
+        vulkanInfo.instance = context.Instance;
+        vulkanInfo.device = context.Device;
+        vulkanInfo.physicalDevice = context.PhysicalDevice;
+        vulkanInfo.graphicsQueueFamily = queueFamilies.graphicsFamily.value_or(0);
+        vulkanInfo.computeQueueFamily = queueFamilies.computeFamily.value_or(0);
+        vulkanInfo.graphicsQueueIndex = g_slGraphicsQueueStartIndex;
+        vulkanInfo.computeQueueIndex = g_slComputeQueueStartIndex;
+        res = slSetVulkanInfo(vulkanInfo);
+        if (res != sl::Result::eOk)
+        {
+            DEBUG_LOG_WARNF("[StreamlineManager] slSetVulkanInfo failed with error: {}", static_cast<int>(res));
+            Shutdown();
+            return false;
+        }
     }
 
     // Check support
     sl::AdapterInfo adapterInfo{};
     adapterInfo.vkPhysicalDevice = context.PhysicalDevice;
+
+    VkPhysicalDeviceIDProperties physicalDeviceIDProperties{};
+    physicalDeviceIDProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES;
+
+    VkPhysicalDeviceProperties2 physicalDeviceProperties2{};
+    physicalDeviceProperties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+    physicalDeviceProperties2.pNext = &physicalDeviceIDProperties;
+
+    vkGetPhysicalDeviceProperties2(context.PhysicalDevice, &physicalDeviceProperties2);
+
+    if (physicalDeviceIDProperties.deviceLUIDValid)
+    {
+        adapterInfo.deviceLUID = physicalDeviceIDProperties.deviceLUID;
+        adapterInfo.deviceLUIDSizeInBytes = VK_LUID_SIZE;
+    }
+
     res = slIsFeatureSupported(sl::kFeatureDLSS, adapterInfo);
     g_dlssSupported = res == sl::Result::eOk;
     if (res != sl::Result::eOk)
@@ -280,6 +325,17 @@ bool StreamlineManager::Init()
         DEBUG_LOG_WARNF("[StreamlineManager] DLSS feature unsupported on selected adapter: {}", static_cast<int>(res));
         Shutdown();
         return false;
+    }
+
+    res = slIsFeatureSupported(sl::kFeatureDLSS_RR, adapterInfo);
+    g_dlssRRSupported = res == sl::Result::eOk;
+    if (g_dlssRRSupported)
+    {
+        DEBUG_LOG("[StreamlineManager] DLSS Ray Reconstruction (DLSS-RR) is supported on this adapter.");
+    }
+    else
+    {
+        DEBUG_LOG_WARNF("[StreamlineManager] DLSS Ray Reconstruction (DLSS-RR) is not supported on this adapter: error = {}", static_cast<int>(res));
     }
 
     sl::FeatureRequirements dlssRequirements{};
@@ -329,6 +385,17 @@ void StreamlineManager::Shutdown()
     g_dlssEvaluateBlocked = false;
     g_dlssNeedsReset = false;
     g_dlssSupported = false;
+    g_dlssRRSupported = false;
+    g_dlssDConfigured = false;
+    g_dlssDWidth = 0;
+    g_dlssDHeight = 0;
+    g_dlssDMode = sl::DLSSMode::eOff;
+    g_dlssDLastConfigureFailed = false;
+    g_dlssDFailedWidth = 0;
+    g_dlssDFailedHeight = 0;
+    g_dlssDFailedMode = sl::DLSSMode::eOff;
+    g_dlssDEvaluateBlocked = false;
+    g_dlssDNeedsReset = false;
     g_imguiPluginAvailable = false;
     g_imguiSupported = false;
     g_slGraphicsQueueStartIndex = 0;
@@ -352,6 +419,20 @@ bool StreamlineManager::GetDLSSFeatureRequirements(sl::FeatureRequirements& requ
     if (res != sl::Result::eOk)
     {
         DEBUG_LOG_WARNF("[StreamlineManager] slGetFeatureRequirements(DLSS) failed with result: 0x{:X}",
+                        static_cast<u32>(res));
+        return false;
+    }
+    return true;
+}
+
+bool StreamlineManager::GetDLSSRRFeatureRequirements(sl::FeatureRequirements& requirements)
+{
+    if (!g_slInitialized)
+        return false;
+    const sl::Result res = slGetFeatureRequirements(sl::kFeatureDLSS_RR, requirements);
+    if (res != sl::Result::eOk)
+    {
+        DEBUG_LOG_WARNF("[StreamlineManager] slGetFeatureRequirements(DLSS_RR) failed with result: 0x{:X}",
                         static_cast<u32>(res));
         return false;
     }
@@ -390,12 +471,32 @@ VkResult StreamlineManager::CreateVulkanInstance(const VkInstanceCreateInfo* pCr
     return vkCreateInstance(pCreateInfo, pAllocator, pInstance);
 }
 
-VkResult StreamlineManager::CreateVulkanDevice(VkPhysicalDevice physicalDevice,
+VkResult StreamlineManager::CreateVulkanDevice(VkInstance instance,
+                                               VkPhysicalDevice physicalDevice,
                                                const VkDeviceCreateInfo* pCreateInfo,
                                                const VkAllocationCallbacks* pAllocator,
                                                VkDevice* pDevice)
 {
+    static PFN_vkCreateDevice s_pStreamlineProc = nullptr;
+    const auto pStreamlineProc = ResolveStreamlineInstanceProc(instance, "vkCreateDevice", s_pStreamlineProc);
+    if (pStreamlineProc)
+    {
+        return pStreamlineProc(physicalDevice, pCreateInfo, pAllocator, pDevice);
+    }
     return vkCreateDevice(physicalDevice, pCreateInfo, pAllocator, pDevice);
+}
+
+VkResult StreamlineManager::EnumeratePhysicalDevices(VkInstance instance,
+                                                     uint32_t* pPhysicalDeviceCount,
+                                                     VkPhysicalDevice* pPhysicalDevices)
+{
+    static PFN_vkEnumeratePhysicalDevices s_pStreamlineProc = nullptr;
+    const auto pStreamlineProc = ResolveStreamlineInstanceProc(instance, "vkEnumeratePhysicalDevices", s_pStreamlineProc);
+    if (pStreamlineProc)
+    {
+        return pStreamlineProc(instance, pPhysicalDeviceCount, pPhysicalDevices);
+    }
+    return vkEnumeratePhysicalDevices(instance, pPhysicalDeviceCount, pPhysicalDevices);
 }
 
 void StreamlineManager::SetVulkanQueueStartIndices(u32 graphicsQueueIndex, u32 computeQueueIndex)
@@ -604,6 +705,114 @@ bool StreamlineManager::IsDLSSSupported()
 {
     return s_initialized && g_dlssSupported;
 }
+
+bool StreamlineManager::IsDLSSRRSupported()
+{
+    return s_initialized && g_dlssRRSupported;
+}
+
+bool StreamlineManager::SetDLSSDOptions(u32 width, u32 height, sl::DLSSMode mode, const mathstl::Matrix& worldToView, const mathstl::Matrix& viewToWorld)
+{
+    if (!s_initialized)
+        return false;
+
+    sl::DLSSDOptions options{};
+    options.mode = mode;
+    options.outputWidth = width;
+    options.outputHeight = height;
+    options.colorBuffersHDR = sl::Boolean::eTrue;
+    options.normalRoughnessMode = sl::DLSSDNormalRoughnessMode::eUnpacked;
+    
+    // Copy camera matrices
+    std::memcpy(&options.worldToCameraView, &worldToView, sizeof(options.worldToCameraView));
+    std::memcpy(&options.cameraViewToWorld, &viewToWorld, sizeof(options.cameraViewToWorld));
+
+    sl::ViewportHandle viewport(0);
+    const auto res = slDLSSDSetOptions(viewport, options);
+    if (res != sl::Result::eOk)
+    {
+        DEBUG_LOG_WARNF("[StreamlineManager] SetDLSSDOptions failed with result: 0x{:X}", static_cast<u32>(res));
+    }
+    return res == sl::Result::eOk;
+}
+
+bool StreamlineManager::EnsureDLSSDConfigured(u32 width, u32 height, sl::DLSSMode mode, const mathstl::Matrix& worldToView, const mathstl::Matrix& viewToWorld)
+{
+    if (!s_initialized || width == 0 || height == 0)
+        return false;
+
+    const bool configChanged =
+        !g_dlssDConfigured || g_dlssDWidth != width || g_dlssDHeight != height || g_dlssDMode != mode;
+    const bool sameAsLastFailedConfig = g_dlssDLastConfigureFailed && g_dlssDFailedWidth == width &&
+                                        g_dlssDFailedHeight == height && g_dlssDFailedMode == mode;
+    if (!configChanged)
+        return true;
+    if (sameAsLastFailedConfig)
+        return false;
+
+    if (g_dlssDConfigured && !FreeResources(sl::kFeatureDLSS_RR))
+    {
+        DEBUG_LOG_WARN("[StreamlineManager] Failed to free old DLSS-D resources during reconfigure");
+    }
+    g_dlssDConfigured = false;
+
+    if (!SetDLSSDOptions(width, height, mode, worldToView, viewToWorld))
+    {
+        DEBUG_LOG_WARNF("[StreamlineManager] slDLSSDSetOptions failed ({}x{})", width, height);
+        g_dlssDLastConfigureFailed = true;
+        g_dlssDFailedWidth = width;
+        g_dlssDFailedHeight = height;
+        g_dlssDFailedMode = mode;
+        return false;
+    }
+
+    g_dlssDConfigured = true;
+    g_dlssDWidth = width;
+    g_dlssDHeight = height;
+    g_dlssDMode = mode;
+    g_dlssDLastConfigureFailed = false;
+    g_dlssDFailedWidth = 0;
+    g_dlssDFailedHeight = 0;
+    g_dlssDFailedMode = sl::DLSSMode::eOff;
+    g_dlssDEvaluateBlocked = false;
+    g_dlssDNeedsReset = true;
+
+    return true;
+}
+
+bool StreamlineManager::ConsumeDLSSDResetFlag()
+{
+    const bool needsReset = g_dlssDNeedsReset;
+    g_dlssDNeedsReset = false;
+    return needsReset;
+}
+
+bool StreamlineManager::EvaluateDLSSD(VkCommandBuffer cmdBuf, const sl::FrameToken& frameToken)
+{
+    if (!s_initialized)
+        return false;
+    if (g_dlssDEvaluateBlocked)
+        return false;
+
+    sl::ViewportHandle viewport(0);
+    const sl::BaseStructure* inputs[] = {&viewport};
+    const auto res = slEvaluateFeature(sl::kFeatureDLSS_RR, frameToken, inputs, 1, (sl::CommandBuffer*)cmdBuf);
+    if (res != sl::Result::eOk)
+    {
+        DEBUG_LOG_WARNF("[StreamlineManager] EvaluateDLSSD failed with result: 0x{:X}", static_cast<u32>(res));
+        if (res == sl::Result::eErrorNGXFailed)
+        {
+            g_dlssDEvaluateBlocked = true;
+            DEBUG_LOG_WARN("[StreamlineManager] Blocking further DLSS-D evaluate calls for current config to prevent NGX "
+                           "recreation/VRAM growth");
+        }
+    }
+    return res == sl::Result::eOk;
+}
+
+bool StreamlineManager::IsDLSSDConfigured() { return g_dlssDConfigured; }
+bool StreamlineManager::IsDLSSDLastConfigureFailed() { return g_dlssDLastConfigureFailed; }
+bool StreamlineManager::IsDLSSDEvaluateBlocked() { return g_dlssDEvaluateBlocked; }
 
 bool StreamlineManager::IsDLSSDebugUIAvailable()
 {
@@ -825,3 +1034,92 @@ extern "C" VKAPI_ATTR void VKAPI_CALL vkCmdBindDescriptorSets(VkCommandBuffer co
                         pDynamicOffsets);
     }
 }
+#else // CONV_WITH_STREAMLINE == 0
+
+namespace Nvidia
+{
+bool StreamlineManager::s_initialized = false;
+
+bool StreamlineManager::EarlyInit() { return false; }
+bool StreamlineManager::Init() { return false; }
+void StreamlineManager::Shutdown() {}
+
+bool StreamlineManager::GetFrameToken(u32 frameIdx, sl::FrameToken*& pFrameToken) { return false; }
+bool StreamlineManager::GetDLSSFeatureRequirements(sl::FeatureRequirements& requirements) { return false; }
+bool StreamlineManager::GetDLSSRRFeatureRequirements(sl::FeatureRequirements& requirements) { return false; }
+bool StreamlineManager::GetDLSSOptimalSettings(u32 width, u32 height, sl::DLSSMode mode, sl::DLSSOptimalSettings& settings) { return false; }
+bool StreamlineManager::GetDLSSState(sl::DLSSState& state) { return false; }
+
+VkResult StreamlineManager::CreateVulkanInstance(const VkInstanceCreateInfo* pCreateInfo,
+                                                 const VkAllocationCallbacks* pAllocator,
+                                                 VkInstance* pInstance)
+{
+    return vkCreateInstance(pCreateInfo, pAllocator, pInstance);
+}
+
+VkResult StreamlineManager::CreateVulkanDevice(VkInstance instance,
+                                               VkPhysicalDevice physicalDevice,
+                                               const VkDeviceCreateInfo* pCreateInfo,
+                                               const VkAllocationCallbacks* pAllocator,
+                                               VkDevice* pDevice)
+{
+    return vkCreateDevice(physicalDevice, pCreateInfo, pAllocator, pDevice);
+}
+
+VkResult StreamlineManager::EnumeratePhysicalDevices(VkInstance instance,
+                                                     uint32_t* pPhysicalDeviceCount,
+                                                     VkPhysicalDevice* pPhysicalDevices)
+{
+    return vkEnumeratePhysicalDevices(instance, pPhysicalDeviceCount, pPhysicalDevices);
+}
+
+void StreamlineManager::SetVulkanQueueStartIndices(u32 graphicsQueueIndex, u32 computeQueueIndex) {}
+
+void StreamlineManager::GetVulkanDeviceQueue(VkDevice device, u32 queueFamilyIndex, u32 queueIndex, VkQueue* pQueue)
+{
+    vkGetDeviceQueue(device, queueFamilyIndex, queueIndex, pQueue);
+}
+
+bool StreamlineManager::EnsureDLSSConfigured(u32 width, u32 height, sl::DLSSMode mode) { return false; }
+bool StreamlineManager::ConsumeDLSSResetFlag() { return false; }
+bool StreamlineManager::SetDLSSOptions(u32 width, u32 height, sl::DLSSMode mode) { return false; }
+bool StreamlineManager::FreeResources(sl::Feature feature) { return false; }
+
+sl::Result StreamlineManager::SetTagForFrame(const sl::FrameToken& frame,
+                                             const sl::ViewportHandle& viewport,
+                                             const sl::ResourceTag* tags,
+                                             uint32_t numTags,
+                                             sl::CommandBuffer* cmdBuffer)
+{
+    return sl::Result::eErrorNotInitialized;
+}
+
+sl::Result StreamlineManager::SetConstants(const sl::Constants& values,
+                                           const sl::FrameToken& frame,
+                                           const sl::ViewportHandle& viewport)
+{
+    return sl::Result::eErrorNotInitialized;
+}
+
+bool StreamlineManager::EvaluateDLSS(VkCommandBuffer cmdBuf, const sl::FrameToken& frameToken) { return false; }
+bool StreamlineManager::AllocateResources(VkCommandBuffer cmdBuf, sl::Feature feature) { return false; }
+bool StreamlineManager::IsDLSSEvaluateBlocked() { return false; }
+
+bool StreamlineManager::EnsureDLSSDConfigured(u32 width, u32 height, sl::DLSSMode mode, const mathstl::Matrix& worldToView, const mathstl::Matrix& viewToWorld) { return false; }
+bool StreamlineManager::ConsumeDLSSDResetFlag() { return false; }
+bool StreamlineManager::SetDLSSDOptions(u32 width, u32 height, sl::DLSSMode mode, const mathstl::Matrix& worldToView, const mathstl::Matrix& viewToWorld) { return false; }
+bool StreamlineManager::EvaluateDLSSD(VkCommandBuffer cmdBuf, const sl::FrameToken& frameToken) { return false; }
+bool StreamlineManager::IsDLSSDConfigured() { return false; }
+bool StreamlineManager::IsDLSSDLastConfigureFailed() { return false; }
+bool StreamlineManager::IsDLSSDEvaluateBlocked() { return false; }
+
+StreamlineManager::DLSSDebugState StreamlineManager::GetDLSSDebugState() { return {}; }
+void StreamlineManager::SetDLSSDebugState(const DLSSDebugState& state) {}
+
+bool StreamlineManager::IsEarlyInitialized() { return false; }
+bool StreamlineManager::IsDLSSSupported() { return false; }
+bool StreamlineManager::IsDLSSRRSupported() { return false; }
+bool StreamlineManager::IsDLSSDebugUIAvailable() { return false; }
+} // namespace Nvidia
+
+#endif

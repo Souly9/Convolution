@@ -137,6 +137,10 @@ void SharedResourceManager::UploadSceneGeometry(const stltype::vector<stltype::u
         m_pendingRayTracingMeshes.clear();
         m_meshToInstanceIdx.clear();
     }
+    {
+        SimpleScopedGuard lock(m_pendingUploadMutex);
+        m_pendingMeshUploads.clear();
+    }
 
     u64 vertexCount = 0;
     u64 indexCount = 0;
@@ -145,16 +149,16 @@ void SharedResourceManager::UploadSceneGeometry(const stltype::vector<stltype::u
         vertexCount += pMesh->vertices.size();
         indexCount += pMesh->indices.size();
     }
-    DEBUG_LOGF("SharedResourceManager: Uploading scene geometry. Total vertices: {}, Total indices: {}, Mesh count: {}", 
+    DEBUG_LOGF("SharedResourceManager: Uploading scene geometry. Total vertices: {}, Total indices: {}, Mesh count: {}",
                (u32)vertexCount, (u32)indexCount, (u32)meshes.size());
 
     AsyncQueueHandler::MeshTransfer cmd{};
-    stltype::vector<CompleteVertex>& vertices = cmd.vertices;
-    vertices.reserve(vertexCount);
-    stltype::vector<u32> indices = cmd.indices;
-    indices.reserve(indexCount);
+    cmd.vertices.reserve(vertexCount);
+    cmd.indices.reserve(indexCount);
     cmd.pBuffersToFill = &m_sceneGeometryBuffers;
 
+    stltype::vector<const Mesh*> meshPtrs;
+    meshPtrs.reserve(meshes.size());
     {
         SimpleScopedGuard lock(m_geometryStateMutex);
 
@@ -167,48 +171,88 @@ void SharedResourceManager::UploadSceneGeometry(const stltype::vector<stltype::u
 
         for (const auto& pMesh : meshes)
         {
-            if (const auto& it = m_meshHandles.find(pMesh.get()); it != m_meshHandles.end())
-            {
+            if (m_meshHandles.find(pMesh.get()) != m_meshHandles.end())
                 continue;
-            }
+
             MeshResourceData meshData{};
             meshData.indexBufferOffset = m_bufferOffsetData.indexBufferOffset;
             meshData.vertBufferOffset = m_bufferOffsetData.vertBufferOffset;
             meshData.indexCount = pMesh->indices.size();
             meshData.vertCount = pMesh->vertices.size();
 
-            Utils::GenerateDrawCommandForMesh(
-                *pMesh.get(), m_bufferOffsetData.vertBufferOffset, cmd.vertices, cmd.indices);
+            Utils::GenerateDrawCommandForMesh(*pMesh.get(), m_bufferOffsetData.vertBufferOffset, cmd.vertices, cmd.indices);
             m_bufferOffsetData.indexBufferOffset += pMesh->indices.size();
             m_bufferOffsetData.vertBufferOffset += pMesh->vertices.size();
 
             m_meshHandles[pMesh.get()] = meshData;
+            meshPtrs.push_back(pMesh.get());
         }
     }
     cmd.frameIdx = 0;
-    
-    stltype::vector<const Mesh*> meshPtrs;
-    meshPtrs.reserve(meshes.size());
-    for (const auto& pMesh : meshes)
-    {
-        meshPtrs.push_back(pMesh.get());
-    }
 
     cmd.onComplete = [this, meshPtrs = stltype::move(meshPtrs)]()
-                     {
-                         DEBUG_LOG("SharedResourceManager: Scene geometry transfer completed. Marking meshes resident.");
-                         SimpleScopedGuard lock(m_residencyStateMutex);
-                         for (const auto* pMesh : meshPtrs)
-                         {
-                             if (m_residentMeshes.insert(pMesh).second)
-                             {
-                                 m_pendingVisibleMeshes.push_back(pMesh);
-                                 m_pendingRayTracingMeshes.push_back(pMesh);
-                             }
-                         }
-                     };
+    {
+        // RT gets all meshes immediately so BLAS builds can start as GPU data is ready
+        {
+            SimpleScopedGuard lock(m_residencyStateMutex);
+            for (const auto* pMesh : meshPtrs)
+                m_pendingRayTracingMeshes.push_back(pMesh);
+        }
+        // Rendering visibility is streamed via FlushPendingMeshUploads
+        {
+            SimpleScopedGuard lock(m_pendingUploadMutex);
+            for (const auto* pMesh : meshPtrs)
+                m_pendingMeshUploads.push_back({pMesh});
+        }
+    };
 
     g_pQueueHandler->SubmitTransferCommandAsync(cmd);
+}
+
+void SharedResourceManager::ClearGeometryCaches()
+{
+    {
+        SimpleScopedGuard lock(m_residencyStateMutex);
+        m_residentMeshes.clear();
+        m_pendingVisibleMeshes.clear();
+        m_pendingRayTracingMeshes.clear();
+        m_meshToInstanceIdx.clear();
+    }
+    {
+        SimpleScopedGuard lock(m_pendingUploadMutex);
+        m_pendingMeshUploads.clear();
+    }
+    {
+        SimpleScopedGuard lock(m_geometryStateMutex);
+        m_meshHandles.clear();
+    }
+}
+
+void SharedResourceManager::FlushPendingMeshUploads(u32 /*frameIdx*/, u32 maxCount)
+{
+    ScopedZone("SharedResourceManager::FlushPendingMeshUploads");
+
+    stltype::vector<const Mesh*> batch;
+    batch.reserve(maxCount);
+    {
+        SimpleScopedGuard lock(m_pendingUploadMutex);
+        const u32 count = (stltype::min)(maxCount, (u32)m_pendingMeshUploads.size());
+        for (u32 i = 0; i < count; ++i)
+        {
+            batch.push_back(m_pendingMeshUploads.front().pMesh);
+            m_pendingMeshUploads.pop_front();
+        }
+    }
+
+    if (batch.empty())
+        return;
+
+    SimpleScopedGuard lock(m_residencyStateMutex);
+    for (const Mesh* pMesh : batch)
+    {
+        if (m_residentMeshes.insert(pMesh).second)
+            m_pendingVisibleMeshes.push_back(pMesh);
+    }
 }
 
 void SharedResourceManager::UpdateInstanceDataSSBO(stltype::vector<RenderPasses::PassMeshData>& meshes,

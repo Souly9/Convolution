@@ -70,6 +70,10 @@ void GPUMemManager<Vulkan>::FreeMemory(GPUMemoryHandle memory)
 
 void GPUMemManager<Vulkan>::InitializeVMA()
 {
+    VmaVulkanFunctions vulkanFunctions = {};
+    vulkanFunctions.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
+    vulkanFunctions.vkGetDeviceProcAddr = vkGetDeviceProcAddr;
+
     VmaAllocatorCreateInfo allocatorCreateInfo = {};
     allocatorCreateInfo.flags =
         VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT | VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
@@ -77,6 +81,7 @@ void GPUMemManager<Vulkan>::InitializeVMA()
     allocatorCreateInfo.physicalDevice = VK_PHYS_DEVICE;
     allocatorCreateInfo.device = VK_LOGICAL_DEVICE;
     allocatorCreateInfo.instance = VkGlobals::GetContext().Instance;
+    allocatorCreateInfo.pVulkanFunctions = &vulkanFunctions;
 
     vmaCreateAllocator(&allocatorCreateInfo, &s_vmaAllocator);
 }

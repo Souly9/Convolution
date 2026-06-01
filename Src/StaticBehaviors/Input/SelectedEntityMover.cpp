@@ -2,8 +2,7 @@
 #include "Core/ECS/EntityManager.h"
 #include "Core/Events/EventSystem.h"
 #include "Core/Global/GlobalVariables.h"
-#include <cmath>
-
+#include "Core/Global/Utils/MathFunctions.h"
 
 // s_moveVector is basically the movement described in untransformed world space
 // where x is regarded as forward and y is up
@@ -103,9 +102,9 @@ void SelectedEntityMover::OnUpdate(const UpdateEventData& data)
 
     using namespace DirectX;
 
-    const bool hasMove = (abs)(s_moveVector.x) > FLOAT_TOLERANCE || (abs)(s_moveVector.y) > FLOAT_TOLERANCE;
-    const bool hasScroll = (abs)(s_scrollVector.x) > FLOAT_TOLERANCE || (abs)(s_scrollVector.y) > FLOAT_TOLERANCE;
-    const bool hasRotate = (abs)(s_mouseRotateDelta.x) > FLOAT_TOLERANCE || (abs)(s_mouseRotateDelta.y) > FLOAT_TOLERANCE;
+    const bool hasMove = mathstl::abs(s_moveVector.x) > FLOAT_TOLERANCE || mathstl::abs(s_moveVector.y) > FLOAT_TOLERANCE;
+    const bool hasScroll = mathstl::abs(s_scrollVector.x) > FLOAT_TOLERANCE || mathstl::abs(s_scrollVector.y) > FLOAT_TOLERANCE;
+    const bool hasRotate = mathstl::abs(s_mouseRotateDelta.x) > FLOAT_TOLERANCE || mathstl::abs(s_mouseRotateDelta.y) > FLOAT_TOLERANCE;
 
     auto* pCamTransform = g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(data.state.mainCameraEntity);
     if (pCamTransform == nullptr)

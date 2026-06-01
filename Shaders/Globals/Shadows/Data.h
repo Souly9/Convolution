@@ -10,13 +10,4 @@ STRUCTDECL(ShadowmapViewUBO)
     STRUCTFIELD(BindlessTextureHandle, screenSpaceShadows)
 STRUCTEND()
 
-#ifndef __cplusplus
-layout(scalar, set = ShadowViewUBOSet, binding = ShadowMapDataBindingSlot) uniform ShadowmapViewUBOBlock
-{
-    ShadowmapViewUBO shadowmapViewUBO;
-};
-#endif
-
 #endif // SHADERS_SHADOWS_H
- 
-
