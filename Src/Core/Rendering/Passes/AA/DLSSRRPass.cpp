@@ -41,6 +41,8 @@ VkImageLayout GetTaggedLayout(sl::BufferType type)
             return VK_IMAGE_LAYOUT_GENERAL;
         case sl::kBufferTypeDepth:
             return VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+        case sl::kBufferTypeBackbuffer:
+            return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         default:
             return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     }
@@ -162,7 +164,7 @@ void DLSSRRPass::Render(const MainPassData& data, FrameRendererContext& ctx, Com
 
     sl::ViewportHandle viewport(0);
 
-    stltype::fixed_vector<StreamlineTagDesc, 10> tagDescs;
+    stltype::fixed_vector<StreamlineTagDesc, 16> tagDescs;
     auto pushTagDesc = [&](Texture* pTex, sl::BufferType type) {
         if (!pTex) return false;
         TextureVulkan* pVkTex = static_cast<TextureVulkan*>(pTex);
@@ -296,8 +298,8 @@ void DLSSRRPass::Render(const MainPassData& data, FrameRendererContext& ctx, Com
             return;
 
         static struct {
-            stltype::fixed_vector<sl::Resource, 10> resources;
-            stltype::fixed_vector<sl::ResourceTag, 10> tags;
+            stltype::fixed_vector<sl::Resource, 16> resources;
+            stltype::fixed_vector<sl::ResourceTag, 16> tags;
         } s_slData[SWAPCHAIN_IMAGES];
 
         auto& frameData = s_slData[frameSlot];

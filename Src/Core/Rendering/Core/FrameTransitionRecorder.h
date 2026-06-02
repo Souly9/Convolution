@@ -33,5 +33,6 @@ public:
     void RecordDLSSExposureUpdate(CommandBuffer* pCmdBuffer,
                                   Texture* pDLSSExposureTexture,
                                   StagingBuffer& dlssExposureStagingBuffer);
+    void RecordSwapchainToAttachment(CommandBuffer* pCmdBuffer, Texture* pSwapchainTexture);
     void RecordSwapchainToPresent(CommandBuffer* pCmdBuffer, Texture* pSwapchainTexture);
 };

@@ -24,21 +24,12 @@ layout(push_constant) uniform RTAOPushConstantsBlock
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
-uint IgnisHash(uvec2 v)
+float InterleavedGradientNoise(vec2 pixelCoord, uint frameIndex)
 {
-    uint h = v.x * 0x27220A95u + v.y * 0xA9527220u;
-    h = (h ^ (h >> 15)) * 0x11111111u;
-    h = (h ^ (h >> 7)) * 0x22222222u;
-    h = h ^ (h >> 11);
-    return h;
+    pixelCoord += float(frameIndex % 64u) * vec2(0.7548776662466927, 0.5698402909916103);
+    return fract(52.9829189 * fract(dot(pixelCoord, vec2(0.06711056, 0.00583715))));
 }
 
-vec2 GenerateNoise(ivec2 pixelCoord, uint frameIndex)
-{
-    uint h1 = IgnisHash(uvec2(uint(pixelCoord.x) + frameIndex * 13u, uint(pixelCoord.y) + frameIndex * 37u));
-    uint h2 = IgnisHash(uvec2(h1, frameIndex));
-    return vec2(float(h1) / 4294967296.0, float(h2) / 4294967296.0);
-}
 
 vec3 CosineSampleHemisphere(vec2 u, vec3 N)
 {
@@ -99,9 +90,14 @@ void main()
         uint raysCount = min(max(1u, pc.raysPerPixel), 16u);
         float unoccludedCount = 0.0;
 
+        float baseJitter = InterleavedGradientNoise(vec2(pixelCoord), pc.frameIndex);
+
         for (uint r = 0u; r < raysCount; ++r)
         {
-            vec2 noise = GenerateNoise(pixelCoord, pc.frameIndex + r * 1111u);
+            vec2 noise;
+            noise.x = fract(baseJitter + float(r) * 0.6180339887498949);
+            noise.y = fract(baseJitter + float(r) * 0.2447174185242008);
+
             vec3 rayDir = CosineSampleHemisphere(noise, normal);
 
             // Avoid tracing beneath the surface

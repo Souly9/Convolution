@@ -24,6 +24,7 @@
 #include "Core/Rendering/Core/Synchronization.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
 #include "Core/Rendering/Vulkan/VkGlobals.h"
+#include "Core/Rendering/Vulkan/Utils/VkEnumHelpers.h"
 #include "Core/Rendering/Vulkan/XeSS/XeSSManager.h"
 #include "Core/SceneGraph/Scene.h"
 #include "DebugShapePass.h"
@@ -414,7 +415,6 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
     {
         allColorTextures.push_back(m_renderTargetManager.GetSMAABlendTexture());
     }
-    allColorTextures.push_back(ctx.pCurrentSwapchainTexture);
 
     CommandBuffer* pMainGraphicsWorkBuffer = m_graphicsFrameCtx.cmdBuffers[ctx.imageIdx];
     CommandBuffer* pComputeCmdBuffer = m_computeFrameCtx.cmdBuffers[ctx.imageIdx];
@@ -641,6 +641,8 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
                                                          VK_ACCESS_SHADER_WRITE_BIT,
                                                          VK_ACCESS_SHADER_READ_BIT));
 
+        m_transitionRecorder.RecordSwapchainToAttachment(pFinalWorkBuffer, ctx.pCurrentSwapchainTexture);
+
         if (Nvidia::StreamlineManager::IsDLSSSupported())
         {
             m_transitionRecorder.RecordDLSSExposureUpdate(pFinalWorkBuffer,
@@ -727,6 +729,47 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
         RenderPassGroup(PassType::UI, mainPassData, ctx, pFinalWorkBuffer);
 
         m_transitionRecorder.RecordSwapchainToPresent(pFinalWorkBuffer, ctx.pCurrentSwapchainTexture);
+
+        if (Nvidia::StreamlineManager::IsAvailable())
+        {
+            ExecuteNativeCmd streamlineCmd{};
+            const u32 frameSlot = ctx.imageIdx;
+            Texture* pTex = ctx.pCurrentSwapchainTexture;
+            streamlineCmd.callback = [frameSlot, pTex](void* pNativeCmdBuf) mutable
+            {
+                auto cmdBuffer = static_cast<VkCommandBuffer>(pNativeCmdBuf);
+                sl::FrameToken* pFrameToken = nullptr;
+                if (!Nvidia::StreamlineManager::GetFrameToken(frameSlot, pFrameToken) || !pFrameToken)
+                    return;
+
+                static struct {
+                    sl::Resource res;
+                    sl::ResourceTag tags[1];
+                } s_slData[SWAPCHAIN_IMAGES];
+
+                auto& data = s_slData[frameSlot];
+                data.res = sl::Resource(
+                    sl::ResourceType::eTex2d,
+                    (void*)pTex->GetImage(),
+                    nullptr,
+                    (void*)pTex->GetImageView(),
+                    static_cast<uint32_t>(VK_IMAGE_LAYOUT_PRESENT_SRC_KHR)
+                );
+                data.res.width = pTex->GetInfo().extents.x;
+                data.res.height = pTex->GetInfo().extents.y;
+                data.res.nativeFormat = static_cast<uint32_t>(Conv(pTex->GetInfo().format));
+                data.res.usage = Conv(pTex->GetInfo().usage);
+                data.res.mipLevels = pTex->GetInfo().mipLevels > 0 ? pTex->GetInfo().mipLevels : 1u;
+                data.res.arrayLayers = pTex->GetInfo().extents.z > 0 ? pTex->GetInfo().extents.z : 1u;
+                data.res.flags = 0;
+
+                data.tags[0] = sl::ResourceTag(&data.res, sl::kBufferTypeBackbuffer, sl::ResourceLifecycle::eValidUntilPresent);
+
+                sl::ViewportHandle viewportHandle(0);
+                Nvidia::StreamlineManager::SetTagForFrame(*pFrameToken, viewportHandle, data.tags, 1, cmdBuffer);
+            };
+            pFinalWorkBuffer->RecordCommand(streamlineCmd);
+        }
 
         pFinalWorkBuffer->AddSignalSemaphore(&ctx.pPresentLayoutTransitionSignalSemaphore);
         pFinalWorkBuffer->AddTimelineSignal(&ctx.frameTimeline, graphicsTimelineValue);

@@ -1,15 +1,15 @@
 #pragma once
+#include "Core/ECS/Components/Camera.h"
+#include "Core/ECS/Components/Light.h"
+#include "Core/ECS/Components/View.h"
+#include "Core/ECS/EntityManager.h"
+#include "Core/Events/EventSystem.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Global/Profiling.h"
 #include "Core/Global/State/ApplicationState.h"
 #include "Core/Global/Utils/MathFunctions.h"
-#include "Core/ECS/EntityManager.h"
-#include "Core/ECS/Components/View.h"
-#include "Core/ECS/Components/Camera.h"
-#include "Core/ECS/Components/Light.h"
-#include "Core/Events/EventSystem.h"
-#include "Core/Rendering/Vulkan/XeSS/XeSSManager.h"
 #include "Core/Rendering/Core/Nvidia/StreamlineManager.h"
+#include "Core/Rendering/Vulkan/XeSS/XeSSManager.h"
 #include "InfoWindow.h"
 #include <EASTL/vector.h>
 #include <imgui.h>
@@ -29,7 +29,7 @@ public:
             return;
 
         ImGui::SetNextWindowSize(ImVec2(1000.0f, 650.0f), ImGuiCond_FirstUseEver);
-        
+
         ImGui::Begin("Renderer Control Panel", &m_isOpen);
 
         const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
@@ -52,8 +52,8 @@ public:
                             [val](auto& state)
                             {
                                 state.renderDebugMeshes = val;
-                                g_pEntityManager->MarkComponentDirty({},
-                                                                     ECS::ComponentID<ECS::Components::DebugRenderComponent>::ID);
+                                g_pEntityManager->MarkComponentDirty(
+                                    {}, ECS::ComponentID<ECS::Components::DebugRenderComponent>::ID);
                             });
                     }
 
@@ -61,8 +61,10 @@ public:
                     if (ImGui::Checkbox("Debug Frustum Culling", &debugCulling))
                     {
                         g_pApplicationState->RegisterUpdateFunction(
-                            [debugCulling](ApplicationState& state)
-                            { mathstl::setFlag(state.renderState.debugFlags, (u32)DebugFlags::CullFrustum, debugCulling); });
+                            [debugCulling](ApplicationState& state) {
+                                mathstl::setFlag(
+                                    state.renderState.debugFlags, (u32)DebugFlags::CullFrustum, debugCulling);
+                            });
                     }
 
                     if (ImGui::Button("Hot Reload Shaders", ImVec2(-FLT_MIN, 30.0f)))
@@ -71,7 +73,7 @@ public:
                         g_pEventSystem->OnShaderHotReload({});
                     }
                 }
-                
+
                 if (ImGui::CollapsingHeader("HDR Settings", ImGuiTreeNodeFlags_DefaultOpen))
                 {
                     float exposure = renderState.exposure;
@@ -86,8 +88,9 @@ public:
 
                     if (ImGui::SliderFloat("Ambient Intensity", &ambientIntensity, 0.0f, 1.0f))
                     {
-                        g_pApplicationState->RegisterUpdateFunction([ambientIntensity](ApplicationState& state)
-                                                                    { state.renderState.ambientIntensity = ambientIntensity; });
+                        g_pApplicationState->RegisterUpdateFunction(
+                            [ambientIntensity](ApplicationState& state)
+                            { state.renderState.ambientIntensity = ambientIntensity; });
                         needsUpdate = true;
                     }
 
@@ -101,8 +104,9 @@ public:
                     {
                         if (uiToneMapper != currentToneMapper)
                         {
-                            g_pApplicationState->RegisterUpdateFunction([uiToneMapper](ApplicationState& state)
-                                                                        { state.renderState.toneMapperType = uiToneMapper; });
+                            g_pApplicationState->RegisterUpdateFunction(
+                                [uiToneMapper](ApplicationState& state)
+                                { state.renderState.toneMapperType = uiToneMapper; });
                             needsUpdate = true;
                         }
                     }
@@ -115,8 +119,9 @@ public:
 
                         if (ImGui::SliderFloat("Paper White (nits)", &paperWhite, 100.0f, 1000.0f))
                         {
-                            g_pApplicationState->RegisterUpdateFunction([paperWhite](ApplicationState& state)
-                                                                        { state.renderState.gt7PaperWhite = paperWhite; });
+                            g_pApplicationState->RegisterUpdateFunction(
+                                [paperWhite](ApplicationState& state)
+                                { state.renderState.gt7PaperWhite = paperWhite; });
                             needsUpdate = true;
                         }
                         if (ImGui::SliderFloat("Reference Luminance (nits)", &refLuminance, 50.0f, 500.0f))
@@ -135,18 +140,23 @@ public:
                     bool shadowsEnabled = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::ShadowsEnabled);
                     if (ImGui::Checkbox("CSM Shadows Enabled", &shadowsEnabled))
                     {
-                        g_pApplicationState->RegisterUpdateFunction([shadowsEnabled](ApplicationState& state)
-                                                                    { mathstl::setFlag(state.renderState.debugFlags, (u32)DebugFlags::ShadowsEnabled, shadowsEnabled); });
+                        g_pApplicationState->RegisterUpdateFunction(
+                            [shadowsEnabled](ApplicationState& state) {
+                                mathstl::setFlag(
+                                    state.renderState.debugFlags, (u32)DebugFlags::ShadowsEnabled, shadowsEnabled);
+                            });
                         needsUpdate = true;
                     }
                     bool sssEnabled = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::SSSEnabled);
                     if (ImGui::Checkbox("Screen Space Shadows Enabled", &sssEnabled))
                     {
-                        g_pApplicationState->RegisterUpdateFunction([sssEnabled](ApplicationState& state)
-                                                                    { mathstl::setFlag(state.renderState.debugFlags, (u32)DebugFlags::SSSEnabled, sssEnabled); });
+                        g_pApplicationState->RegisterUpdateFunction(
+                            [sssEnabled](ApplicationState& state) {
+                                mathstl::setFlag(state.renderState.debugFlags, (u32)DebugFlags::SSSEnabled, sssEnabled);
+                            });
                         needsUpdate = true;
                     }
-                    
+
                     const char* resolutionOptions[] = {"512", "1024", "2048", "4096", "8192", "16384"};
                     const int resolutionValues[] = {512, 1024, 2048, 4096, 8192, 16384};
                     int currentRes = static_cast<int>(renderState.csmResolution.x);
@@ -159,11 +169,13 @@ public:
                             break;
                         }
                     }
-                    if (ImGui::Combo("Shadowmap Resolution", &currentIdx, resolutionOptions, IM_ARRAYSIZE(resolutionOptions)))
+                    if (ImGui::Combo(
+                            "Shadowmap Resolution", &currentIdx, resolutionOptions, IM_ARRAYSIZE(resolutionOptions)))
                     {
                         f32 newRes = static_cast<f32>(resolutionValues[currentIdx]);
                         g_pApplicationState->RegisterUpdateFunction(
-                            [newRes](auto& state) { state.renderState.csmResolution = mathstl::Vector2(newRes, newRes); });
+                            [newRes](auto& state)
+                            { state.renderState.csmResolution = mathstl::Vector2(newRes, newRes); });
                         needsUpdate = true;
                     }
                     s32 currentCascades = renderState.directionalLightCascades;
@@ -208,24 +220,29 @@ public:
                                                                     { state.renderState.clusterCount.z = clusterZ; });
                         needsUpdate = true;
                     }
-                    
+
                     ImGui::Spacing();
-                    
-                    bool showClusterAABBs = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::ShowClusterAABBs);
+
+                    bool showClusterAABBs =
+                        mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::ShowClusterAABBs);
                     if (ImGui::Checkbox("Show Cluster AABBs", &showClusterAABBs))
                     {
                         g_pApplicationState->RegisterUpdateFunction(
-                            [showClusterAABBs](auto& state) { 
-                                mathstl::setFlag(state.renderState.debugFlags, (u32)DebugFlags::ShowClusterAABBs, showClusterAABBs);
+                            [showClusterAABBs](auto& state) {
+                                mathstl::setFlag(
+                                    state.renderState.debugFlags, (u32)DebugFlags::ShowClusterAABBs, showClusterAABBs);
                             });
                     }
 
-                    bool disableCulling = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::DisableClusterCulling);
+                    bool disableCulling =
+                        mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::DisableClusterCulling);
                     if (ImGui::Checkbox("Disable Light Culling (Force All Lights)", &disableCulling))
                     {
                         g_pApplicationState->RegisterUpdateFunction(
                             [disableCulling](auto& state) {
-                                mathstl::setFlag(state.renderState.debugFlags, (u32)DebugFlags::DisableClusterCulling, disableCulling);
+                                mathstl::setFlag(state.renderState.debugFlags,
+                                                 (u32)DebugFlags::DisableClusterCulling,
+                                                 disableCulling);
                             });
                     }
 
@@ -251,14 +268,19 @@ public:
                     if (ImGui::Checkbox("Enable Ray Tracing", &rtEnabled))
                     {
                         g_pApplicationState->RegisterUpdateFunction(
-                            [rtEnabled](ApplicationState& state) { mathstl::setFlag(state.renderState.debugFlags, (u32)DebugFlags::RTEnabled, rtEnabled); });
+                            [rtEnabled](ApplicationState& state)
+                            { mathstl::setFlag(state.renderState.debugFlags, (u32)DebugFlags::RTEnabled, rtEnabled); });
                     }
 
-                    bool rtReflections = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTReflectionsEnabled);
+                    bool rtReflections =
+                        mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTReflectionsEnabled);
                     if (ImGui::Checkbox("Ray-Traced Reflections", &rtReflections))
                     {
                         g_pApplicationState->RegisterUpdateFunction(
-                            [rtReflections](ApplicationState& state) { mathstl::setFlag(state.renderState.debugFlags, (u32)DebugFlags::RTReflectionsEnabled, rtReflections); });
+                            [rtReflections](ApplicationState& state) {
+                                mathstl::setFlag(
+                                    state.renderState.debugFlags, (u32)DebugFlags::RTReflectionsEnabled, rtReflections);
+                            });
                     }
 
                     bool globalReflectanceOverride = renderState.rt.globalReflectanceOverrideEnabled;
@@ -288,18 +310,20 @@ public:
                     const char* rtDebugViews[] = {"None", "TLAS", "Reflections Only"};
                     int uiRTDebugView = 0;
                     if (mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTDebugEnabled))
-                        uiRTDebugView = 1; 
+                        uiRTDebugView = 1;
                     else if (renderState.rt.reflectionsDebugMode == RTReflectionDebugMode::ReflectionsOnly)
-                        uiRTDebugView = 2; 
+                        uiRTDebugView = 2;
 
                     if (ImGui::Combo("RT Debug View", &uiRTDebugView, rtDebugViews, IM_ARRAYSIZE(rtDebugViews)))
                     {
                         g_pApplicationState->RegisterUpdateFunction(
                             [uiRTDebugView](ApplicationState& state)
                             {
-                                mathstl::setFlag(state.renderState.debugFlags, (u32)DebugFlags::RTDebugEnabled, uiRTDebugView == 1);
-                                state.renderState.rt.reflectionsDebugMode =
-                                    uiRTDebugView == 2 ? RTReflectionDebugMode::ReflectionsOnly : RTReflectionDebugMode::None;
+                                mathstl::setFlag(
+                                    state.renderState.debugFlags, (u32)DebugFlags::RTDebugEnabled, uiRTDebugView == 1);
+                                state.renderState.rt.reflectionsDebugMode = uiRTDebugView == 2
+                                                                                ? RTReflectionDebugMode::ReflectionsOnly
+                                                                                : RTReflectionDebugMode::None;
                             });
                     }
 
@@ -308,9 +332,7 @@ public:
                     {
                         g_pApplicationState->RegisterUpdateFunction(
                             [uiRaysPerPixel](ApplicationState& state)
-                            {
-                                state.renderState.rt.reflectionsRaysPerPixel = static_cast<u32>(uiRaysPerPixel);
-                            });
+                            { state.renderState.rt.reflectionsRaysPerPixel = static_cast<u32>(uiRaysPerPixel); });
                     }
 
                     bool uiUseRayReconstruction = renderState.rt.reflectionsUseRayReconstruction;
@@ -323,9 +345,7 @@ public:
                     {
                         g_pApplicationState->RegisterUpdateFunction(
                             [uiUseRayReconstruction](ApplicationState& state)
-                            {
-                                state.renderState.rt.reflectionsUseRayReconstruction = uiUseRayReconstruction;
-                            });
+                            { state.renderState.rt.reflectionsUseRayReconstruction = uiUseRayReconstruction; });
                     }
                     if (!dlssRRSupported)
                     {
@@ -341,9 +361,9 @@ public:
                     if (ImGui::Checkbox("Enable RTAO", &uiRTAOEnabled))
                     {
                         g_pApplicationState->RegisterUpdateFunction(
-                            [uiRTAOEnabled](ApplicationState& state)
-                            {
-                                mathstl::setFlag(state.renderState.debugFlags, (u32)DebugFlags::RTAOEnabled, uiRTAOEnabled);
+                            [uiRTAOEnabled](ApplicationState& state) {
+                                mathstl::setFlag(
+                                    state.renderState.debugFlags, (u32)DebugFlags::RTAOEnabled, uiRTAOEnabled);
                             });
                     }
 
@@ -352,19 +372,14 @@ public:
                     {
                         g_pApplicationState->RegisterUpdateFunction(
                             [uiAORaysPerPixel](ApplicationState& state)
-                            {
-                                state.renderState.rt.aoRaysPerPixel = static_cast<u32>(uiAORaysPerPixel);
-                            });
+                            { state.renderState.rt.aoRaysPerPixel = static_cast<u32>(uiAORaysPerPixel); });
                     }
 
                     float uiAORadius = renderState.rt.aoRadius;
                     if (ImGui::SliderFloat("AO Radius", &uiAORadius, 0.1f, 10.0f))
                     {
-                        g_pApplicationState->RegisterUpdateFunction(
-                            [uiAORadius](ApplicationState& state)
-                            {
-                                state.renderState.rt.aoRadius = uiAORadius;
-                            });
+                        g_pApplicationState->RegisterUpdateFunction([uiAORadius](ApplicationState& state)
+                                                                    { state.renderState.rt.aoRadius = uiAORadius; });
                     }
 
                     float uiAOIntensity = renderState.rt.aoIntensity;
@@ -372,9 +387,7 @@ public:
                     {
                         g_pApplicationState->RegisterUpdateFunction(
                             [uiAOIntensity](ApplicationState& state)
-                            {
-                                state.renderState.rt.aoIntensity = uiAOIntensity;
-                            });
+                            { state.renderState.rt.aoIntensity = uiAOIntensity; });
                     }
                 }
 
@@ -391,7 +404,7 @@ public:
             if (ImGui::BeginTabItem("AA & Upscaling"))
             {
                 bool needsUpdate = false;
-                
+
                 if (ImGui::CollapsingHeader("Anti-Aliasing Method", ImGuiTreeNodeFlags_DefaultOpen))
                 {
                     stltype::fixed_vector<const char*, 5> aaTypes;
@@ -443,19 +456,22 @@ public:
                         if (ImGui::Button("Seed History From Current Color"))
                         {
                             g_pApplicationState->RegisterUpdateFunction(
-                                [](ApplicationState& state) { state.renderState.taaSeedHistoryFromCurrentColor = true; });
+                                [](ApplicationState& state)
+                                { state.renderState.taaSeedHistoryFromCurrentColor = true; });
                         }
 
                         float taaVelocityRejectionStart = renderState.taaVelocityRejectionStart;
                         float taaVelocityRejectionEnd = renderState.taaVelocityRejectionEnd;
-                        if (ImGui::SliderFloat("Velocity Rejection Start", &taaVelocityRejectionStart, 0.0f, 64.0f, "%.3f px"))
+                        if (ImGui::SliderFloat(
+                                "Velocity Rejection Start", &taaVelocityRejectionStart, 0.0f, 64.0f, "%.3f px"))
                         {
                             g_pApplicationState->RegisterUpdateFunction(
                                 [taaVelocityRejectionStart](ApplicationState& state)
                                 { state.renderState.taaVelocityRejectionStart = taaVelocityRejectionStart; });
                             needsUpdate = true;
                         }
-                        if (ImGui::SliderFloat("Velocity Rejection End", &taaVelocityRejectionEnd, 0.0f, 64.0f, "%.3f px"))
+                        if (ImGui::SliderFloat(
+                                "Velocity Rejection End", &taaVelocityRejectionEnd, 0.0f, 64.0f, "%.3f px"))
                         {
                             g_pApplicationState->RegisterUpdateFunction(
                                 [taaVelocityRejectionEnd](ApplicationState& state)
@@ -470,29 +486,29 @@ public:
                 {
                     const char* debugModes[] = {"None", "CSM Cascades", "Clusters"};
                     int currentDebugMode = mathstl::clamp(renderState.debugViewMode,
-                                                           static_cast<s32>(DebugViewMode::None),
-                                                           static_cast<s32>(DebugViewMode::Clusters));
+                                                          static_cast<s32>(DebugViewMode::None),
+                                                          static_cast<s32>(DebugViewMode::Clusters));
                     int uiDebugMode = currentDebugMode;
 
                     if (ImGui::Combo("Debug View Mode", &uiDebugMode, debugModes, IM_ARRAYSIZE(debugModes)))
                     {
                         if (uiDebugMode != currentDebugMode)
                         {
-                            g_pApplicationState->RegisterUpdateFunction([uiDebugMode](ApplicationState& state)
-                                                                        { state.renderState.debugViewMode = uiDebugMode; });
+                            g_pApplicationState->RegisterUpdateFunction(
+                                [uiDebugMode](ApplicationState& state)
+                                { state.renderState.debugViewMode = uiDebugMode; });
                         }
                     }
 
-                    const char* taaDebugModes[] = {
-                        "Off",
-                        "Current Color",
-                        "History Color",
-                        "History Current Difference",
-                        "Velocity Magnitude",
-                        "History Velocity Magnitude"};
+                    const char* taaDebugModes[] = {"Off",
+                                                   "Current Color",
+                                                   "History Color",
+                                                   "History Current Difference",
+                                                   "Velocity Magnitude",
+                                                   "History Velocity Magnitude"};
                     int currentTAADebugMode = mathstl::clamp(static_cast<int>(renderState.taaDebugMode),
-                                                              static_cast<int>(TAADebugMode::Off),
-                                                              static_cast<int>(TAADebugMode::HistoryVelocityMagnitude));
+                                                             static_cast<int>(TAADebugMode::Off),
+                                                             static_cast<int>(TAADebugMode::HistoryVelocityMagnitude));
                     int uiTAADebugMode = currentTAADebugMode;
                     if (ImGui::Combo("TAA Debug View", &uiTAADebugMode, taaDebugModes, IM_ARRAYSIZE(taaDebugModes)))
                     {
@@ -507,8 +523,11 @@ public:
                     bool taaForceHistory = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::TAAForceHistory);
                     if (ImGui::Checkbox("TAA Force History", &taaForceHistory))
                     {
-                        g_pApplicationState->RegisterUpdateFunction([taaForceHistory](ApplicationState& state)
-                                                                    { mathstl::setFlag(state.renderState.debugFlags, (u32)DebugFlags::TAAForceHistory, taaForceHistory); });
+                        g_pApplicationState->RegisterUpdateFunction(
+                            [taaForceHistory](ApplicationState& state) {
+                                mathstl::setFlag(
+                                    state.renderState.debugFlags, (u32)DebugFlags::TAAForceHistory, taaForceHistory);
+                            });
                     }
                 }
 
@@ -527,23 +546,28 @@ public:
                         }
                     }
 
-                    if (ImGui::Combo("Upscaling Resolution", &currentIdx, resolutionOptions, IM_ARRAYSIZE(resolutionOptions)))
+                    if (ImGui::Combo(
+                            "Upscaling Resolution", &currentIdx, resolutionOptions, IM_ARRAYSIZE(resolutionOptions)))
                     {
                         u32 newPercentage = resolutionValues[currentIdx];
                         if (newPercentage != currentPercentage)
                         {
-                            g_pApplicationState->RegisterUpdateFunction([newPercentage](ApplicationState& state)
-                                                                        { state.renderState.upscalingPercentage = newPercentage; });
+                            g_pApplicationState->RegisterUpdateFunction(
+                                [newPercentage](ApplicationState& state)
+                                { state.renderState.upscalingPercentage = newPercentage; });
                             needsUpdate = true;
                         }
                     }
                 }
 
-                if (renderState.dlssSupported && ImGui::CollapsingHeader("NVIDIA DLSS & Streamline Diagnostics", ImGuiTreeNodeFlags_DefaultOpen))
+                if (renderState.dlssSupported &&
+                    ImGui::CollapsingHeader("NVIDIA DLSS & Streamline Diagnostics", ImGuiTreeNodeFlags_DefaultOpen))
                 {
                     const auto debugState = Nvidia::StreamlineManager::GetDLSSDebugState();
 
-                    ImGui::TextWrapped("NVIDIA Streamline ImGui is loaded as the sl.imgui plugin. Use Ctrl+Shift+Home to toggle the Streamline overlay. The engine hides its own ImGui while that overlay is active so it can receive input.");
+                    ImGui::TextWrapped("NVIDIA Streamline ImGui is loaded as the sl.imgui plugin. Use Ctrl+Shift+Home "
+                                       "to toggle the Streamline overlay. The engine hides its own ImGui while that "
+                                       "overlay is active so it can receive input.");
                     ImGui::Separator();
 
                     ImGui::Text("AA Mode: %s", renderState.aaType == AntialiasingType::DLSS ? "DLSS" : "Not DLSS");
@@ -614,10 +638,12 @@ public:
                         ImVec2 windowSize = ImGui::GetContentRegionAvail();
                         f32 cellWidth = windowSize.x / static_cast<f32>(columns) - 10.0f;
                         f32 cellHeight = cellWidth * 0.5625f;
-                        if (cellHeight < 150.0f) cellHeight = 150.0f;
+                        if (cellHeight < 150.0f)
+                            cellHeight = 150.0f;
                         ImVec2 cellSize = ImVec2(cellWidth, cellHeight);
 
-                        if (ImGui::BeginTable("GBufferGrid", columns, ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_Borders))
+                        if (ImGui::BeginTable(
+                                "GBufferGrid", columns, ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_Borders))
                         {
                             for (const auto& buffer : buffers)
                             {
@@ -646,10 +672,13 @@ public:
                             ImVec2 windowSize = ImGui::GetContentRegionAvail();
                             f32 cellWidth = windowSize.x / static_cast<f32>(columns) - 10.0f;
                             f32 cellHeight = cellWidth * 0.5625f;
-                            if (cellHeight < 150.0f) cellHeight = 150.0f;
+                            if (cellHeight < 150.0f)
+                                cellHeight = 150.0f;
                             ImVec2 cellSize = ImVec2(cellWidth, cellHeight);
 
-                            if (ImGui::BeginTable("RTBufferGrid", columns, ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_Borders))
+                            if (ImGui::BeginTable("RTBufferGrid",
+                                                  columns,
+                                                  ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_Borders))
                             {
                                 for (const auto& buffer : rtBuffers)
                                 {
@@ -687,14 +716,22 @@ private:
     {
         switch (mode)
         {
-            case sl::DLSSMode::eOff: return "Off";
-            case sl::DLSSMode::eMaxPerformance: return "Max Performance";
-            case sl::DLSSMode::eBalanced: return "Balanced";
-            case sl::DLSSMode::eMaxQuality: return "Max Quality";
-            case sl::DLSSMode::eUltraPerformance: return "Ultra Performance";
-            case sl::DLSSMode::eUltraQuality: return "Ultra Quality";
-            case sl::DLSSMode::eDLAA: return "DLAA";
-            default: return "Unknown";
+            case sl::DLSSMode::eOff:
+                return "Off";
+            case sl::DLSSMode::eMaxPerformance:
+                return "Max Performance";
+            case sl::DLSSMode::eBalanced:
+                return "Balanced";
+            case sl::DLSSMode::eMaxQuality:
+                return "Max Quality";
+            case sl::DLSSMode::eUltraPerformance:
+                return "Ultra Performance";
+            case sl::DLSSMode::eUltraQuality:
+                return "Ultra Quality";
+            case sl::DLSSMode::eDLAA:
+                return "DLAA";
+            default:
+                return "Unknown";
         }
     }
 
@@ -702,15 +739,24 @@ private:
     {
         switch (result)
         {
-            case sl::Result::eOk: return "Ok";
-            case sl::Result::eErrorNGXFailed: return "NGX Failed";
-            case sl::Result::eErrorNotInitialized: return "Not Initialized";
-            case sl::Result::eErrorInvalidParameter: return "Invalid Parameter";
-            case sl::Result::eErrorFeatureNotSupported: return "Feature Not Supported";
-            case sl::Result::eErrorMissingConstants: return "Missing Constants";
-            case sl::Result::eErrorInvalidState: return "Invalid State";
-            case sl::Result::eWarnOutOfVRAM: return "Out Of VRAM";
-            default: return "Other";
+            case sl::Result::eOk:
+                return "Ok";
+            case sl::Result::eErrorNGXFailed:
+                return "NGX Failed";
+            case sl::Result::eErrorNotInitialized:
+                return "Not Initialized";
+            case sl::Result::eErrorInvalidParameter:
+                return "Invalid Parameter";
+            case sl::Result::eErrorFeatureNotSupported:
+                return "Feature Not Supported";
+            case sl::Result::eErrorMissingConstants:
+                return "Missing Constants";
+            case sl::Result::eErrorInvalidState:
+                return "Invalid State";
+            case sl::Result::eWarnOutOfVRAM:
+                return "Out Of VRAM";
+            default:
+                return "Other";
         }
     }
 

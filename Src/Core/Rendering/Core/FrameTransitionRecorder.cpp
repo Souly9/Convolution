@@ -330,6 +330,15 @@ void FrameTransitionRecorder::RecordDLSSExposureUpdate(CommandBuffer* pCmdBuffer
     pCmdBuffer->RecordCommand(exposureToRead);
 }
 
+void FrameTransitionRecorder::RecordSwapchainToAttachment(CommandBuffer* pCmdBuffer, Texture* pSwapchainTexture)
+{
+    ImageLayoutTransitionCmd cmd(pSwapchainTexture);
+    cmd.oldLayout = ImageLayout::UNDEFINED;
+    cmd.newLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
+    VkTextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::UNDEFINED, ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+    pCmdBuffer->RecordCommand(cmd);
+}
+
 void FrameTransitionRecorder::RecordSwapchainToPresent(CommandBuffer* pCmdBuffer, Texture* pSwapchainTexture)
 {
     ImageLayoutTransitionCmd cmd(pSwapchainTexture);

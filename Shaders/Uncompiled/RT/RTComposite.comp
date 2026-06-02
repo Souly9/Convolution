@@ -38,23 +38,44 @@ void main()
     if (pc.rtReflectionsTexIdx != 0u)
         currentReflections = texture(GlobalBindlessTextures[nonuniformEXT(pc.rtReflectionsTexIdx)], uv).rgb;
 
-    // 3. Accumulate reflections; AO applied directly per-frame
+    // 3. Temporal Reprojection and Accumulation (Reflections in RGB, RTAO in A)
     vec4 accumulated;
+
+    vec2 velocity = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.gbufferVelocityIdx)], uv).rg;
+    vec2 velocity_uv = velocity * vec2(0.5, -0.5);
+    vec2 uv_prev = uv - velocity_uv;
+
+    bool uv_prev_valid = uv_prev.x >= 0.0 && uv_prev.x <= 1.0 && uv_prev.y >= 0.0 && uv_prev.y <= 1.0;
+
+    vec4 history = vec4(currentReflections, currentAO);
+    if (uv_prev_valid)
+    {
+        history = texture(GlobalBindlessTextures[nonuniformEXT(pc.accumTexIdx)], uv_prev);
+
+        // Depth rejection to prevent ghosting on dynamic objects/camera motion
+        float centerDepth = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.depthBufferIdx)], uv).r;
+        float prevDepth = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.lastFrameDepthIdx)], uv_prev).r;
+        if (abs(centerDepth - prevDepth) > 0.01)
+        {
+            history = vec4(currentReflections, currentAO);
+        }
+    }
+
     if (pc.resetHistory != 0u)
     {
-        accumulated = vec4(currentReflections, 1.0);
+        accumulated = vec4(currentReflections, currentAO);
     }
     else
     {
-        vec4 history = texelFetch(GlobalBindlessTextures[nonuniformEXT(pc.accumTexIdx)], pixelCoord, 0);
         accumulated.rgb = mix(history.rgb, currentReflections, pc.accumRate);
+        accumulated.a = mix(history.a, currentAO, max(pc.accumRate, 0.05));
     }
 
     imageStore(GlobalBindlessImages[nonuniformEXT(pc.accumTexIdx)], pixelCoord, accumulated);
 
-    // 4. Apply AO
+    // 4. Apply AO from temporal accumulation
     if (pc.rtaoTexIdx != 0u)
-        sceneColor *= currentAO;
+        sceneColor *= accumulated.a;
 
     // 5. Add reflections
     if (pc.rtReflectionsTexIdx != 0u)

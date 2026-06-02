@@ -53,6 +53,10 @@ float sampleShadowCascade(int cascadeIndex, vec4 fragWorldPos, vec3 normal, vec3
         return 1.0;
     }
 
+    float baseRadius = 0.0005;
+    float scale = exp2(-float(cascadeIndex));
+    float diskRadius = baseRadius * scale;
+
     vec3 lightToSurfaceDir = normalize(-lightDir);
     float cosTheta = clamp(dot(normalize(normal), lightToSurfaceDir), 0.0, 1.0);
 
@@ -61,13 +65,14 @@ float sampleShadowCascade(int cascadeIndex, vec4 fragWorldPos, vec3 normal, vec3
     // CSM projections use a 2r-wide XY extent and a 9r depth extent, so this converts texels to normalized depth.
     float normalizedDepthPerTexel = 2.0 / (9.0 * shadowMapWidth);
     float biasTexels = mix(0.5, 2.0, 1.0 - cosTheta);
-    float bias = biasTexels * normalizedDepthPerTexel;
+
+    // Scale bias by slope and filter disk radius to prevent self-shadowing on slopes
+    float diskRadiusTexels = diskRadius * shadowMapWidth;
+    float tanTheta = sqrt(1.0 - cosTheta * cosTheta) / max(cosTheta, 0.0001);
+    float bias = (biasTexels + diskRadiusTexels * clamp(tanTheta, 0.0, 3.0)) * normalizedDepthPerTexel;
 
     float currentDepth = (projCoords.z + bias);
     float shadow = 0.0;
-    float baseRadius = 0.0005;
-    float scale = exp2(-float(cascadeIndex));
-    float diskRadius = baseRadius * scale;
     int samples = 16;
     for (int i = 0; i < samples; i++)
     {

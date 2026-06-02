@@ -40,6 +40,8 @@ VkImageLayout GetTaggedLayout(sl::BufferType type)
             return VK_IMAGE_LAYOUT_GENERAL;
         case sl::kBufferTypeDepth:
             return VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+        case sl::kBufferTypeBackbuffer:
+            return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         default:
             return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     }
@@ -127,7 +129,7 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     Texture* pMotion = data.pGbuffer->Get(GBufferTextureType::GBufferVelocity);
     Texture* pExposure = ctx.pDLSSExposureTexture;
 
-    if (!pColorIn || !pColorOut || !pDepth || !pMotion || !pExposure)
+    if (!pColorIn || !pColorOut || !pDepth || !pMotion || !pExposure || !ctx.pCurrentSwapchainTexture)
         return;
 
     const auto outputExtents = pColorOut->GetInfo().extents;
@@ -163,9 +165,18 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
 
     sl::ViewportHandle viewport(0);
 
-    stltype::fixed_vector<StreamlineTagDesc, 5> tagDescs;
+    stltype::fixed_vector<StreamlineTagDesc, 16> tagDescs;
     auto pushTagDesc = [&](Texture* pTex, sl::BufferType type) {
-        if (!pTex) return false;
+        if (!pTex)
+        {
+            StreamlineTagDesc desc{};
+            desc.type = type;
+            desc.native = 0;
+            desc.view = 0;
+            desc.state = static_cast<uint32_t>(GetTaggedLayout(type));
+            tagDescs.push_back(desc);
+            return true;
+        }
         TextureVulkan* pVkTex = static_cast<TextureVulkan*>(pTex);
         StreamlineTagDesc desc{};
         desc.type = type;
@@ -192,7 +203,15 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
                   pushTagDesc(pMotion, sl::kBufferTypeMotionVectors) &&
                   pushTagDesc(pExposure, sl::kBufferTypeExposure);
 
-    if (!tagsOk)
+    if (tagsOk)
+    {
+        pushTagDesc(nullptr, sl::kBufferTypeAlbedo);
+        pushTagDesc(nullptr, sl::kBufferTypeSpecularAlbedo);
+        pushTagDesc(nullptr, sl::kBufferTypeNormals);
+        pushTagDesc(nullptr, sl::kBufferTypeRoughness);
+        pushTagDesc(nullptr, sl::kBufferTypeSpecularHitNoisy);
+    }
+    else
     {
         restoreColorOutReadLayout();
         return;
@@ -283,8 +302,8 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
             return;
 
         static struct {
-            stltype::fixed_vector<sl::Resource, 5> resources;
-            stltype::fixed_vector<sl::ResourceTag, 5> tags;
+            stltype::fixed_vector<sl::Resource, 16> resources;
+            stltype::fixed_vector<sl::ResourceTag, 16> tags;
         } s_slData[SWAPCHAIN_IMAGES];
 
         auto& frameData = s_slData[frameSlot];
@@ -295,27 +314,41 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
 
         for (const auto& td : tagDescs)
         {
-            sl::Resource res(
-                sl::ResourceType::eTex2d,
-                reinterpret_cast<void*>(td.native),
-                nullptr,
-                reinterpret_cast<void*>(td.view),
-                td.state
-            );
-            res.width = td.width;
-            res.height = td.height;
-            res.nativeFormat = td.nativeFormat;
-            res.usage = td.usage;
-            res.mipLevels = td.mipLevels;
-            res.arrayLayers = td.arrayLayers;
-            res.flags = 0;
+            if (td.native == 0 && td.view == 0)
+            {
+                frameData.resources.push_back(sl::Resource(
+                    sl::ResourceType::eTex2d,
+                    nullptr,
+                    nullptr,
+                    nullptr,
+                    td.state
+                ));
+            }
+            else
+            {
+                sl::Resource res(
+                    sl::ResourceType::eTex2d,
+                    reinterpret_cast<void*>(td.native),
+                    nullptr,
+                    reinterpret_cast<void*>(td.view),
+                    td.state
+                );
+                res.width = td.width;
+                res.height = td.height;
+                res.nativeFormat = td.nativeFormat;
+                res.usage = td.usage;
+                res.mipLevels = td.mipLevels;
+                res.arrayLayers = td.arrayLayers;
+                res.flags = 0;
 
-            frameData.resources.push_back(res);
+                frameData.resources.push_back(res);
+            }
         }
 
         for (size_t i = 0; i < frameData.resources.size(); ++i)
         {
-            frameData.tags.emplace_back(&frameData.resources[i], tagDescs[i].type, sl::ResourceLifecycle::eValidUntilPresent);
+            const bool isNull = (tagDescs[i].native == 0 && tagDescs[i].view == 0);
+            frameData.tags.emplace_back(isNull ? nullptr : &frameData.resources[i], tagDescs[i].type, sl::ResourceLifecycle::eValidUntilPresent);
         }
 
         const sl::Result tagRes =
