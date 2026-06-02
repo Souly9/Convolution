@@ -18,9 +18,8 @@ void RTResourceManager::Recreate(const mathstl::Vector2& renderResolution)
     FreeResources();
     CreateResource(RTTextureType::DebugView, "RT Debug View", renderResolution, TexFormat::R16G16B16A16_FLOAT);
     CreateResource(RTTextureType::Reflections, "RT Reflections", renderResolution, TexFormat::R16G16B16A16_FLOAT);
-    CreateResource(
-        RTTextureType::ReflectedSceneColor, "RT Reflected Scene Color", renderResolution, TexFormat::R16G16B16A16_FLOAT);
     CreateResource(RTTextureType::RTAO, "RT Ambient Occlusion", renderResolution, TexFormat::R8_UNORM);
+    CreateResource(RTTextureType::Accumulation, "RT Accumulation", renderResolution, TexFormat::R16G16B16A16_FLOAT);
 }
 
 void RTResourceManager::Reset()
@@ -106,6 +105,23 @@ void RTResourceManager::RecordTransition(CommandBuffer* pCmdBuffer,
     cmd.oldLayout = resource.currentLayout;
     cmd.newLayout = newLayout;
     VkTextureManager::SetLayoutBarrierMasks(cmd, resource.currentLayout, newLayout);
+    pCmdBuffer->RecordCommand(cmd);
+    resource.currentLayout = newLayout;
+}
+
+void RTResourceManager::RecordTransitionComputeOnly(CommandBuffer* pCmdBuffer,
+                                                    RTTextureResource& resource,
+                                                    ImageLayout newLayout)
+{
+    if (resource.pTexture == nullptr || resource.currentLayout == newLayout)
+        return;
+
+    ImageLayoutTransitionCmd cmd(resource.pTexture);
+    cmd.oldLayout = resource.currentLayout;
+    cmd.newLayout = newLayout;
+    VkTextureManager::SetLayoutBarrierMasks(cmd, resource.currentLayout, newLayout);
+    cmd.srcStage &= ~VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+    cmd.dstStage &= ~VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
     pCmdBuffer->RecordCommand(cmd);
     resource.currentLayout = newLayout;
 }

@@ -34,9 +34,9 @@ const static inline stltype::string ENGINE_NAME = "Convolution";
 constexpr static inline u32 FRAMES_IN_FLIGHT = 2u;
 constexpr static inline u32 SWAPCHAIN_IMAGES = 2u;
 constexpr static inline u32 CSM_INITIAL_CASCADES = 3u;
-constexpr static inline mathstl::Vector2 CSM_DEFAULT_RES = mathstl::Vector2(2048.0f, 2048.0f);
+constexpr static inline mathstl::Vector2 CSM_DEFAULT_RES = mathstl::Vector2(4096.0f, 4096.0f);
 constexpr static inline u32 MAX_BINDLESS_TEXTURES = 16536;
-constexpr static inline u32 MAX_MESHES = 4096;
+constexpr static inline u32 MAX_MESHES = 8192;
 
 #define SWAPCHAIN_FORMAT    FrameGlobals::GetSwapChainFormat()
 #define DEPTH_BUFFER_FORMAT TexFormat::D32_SFLOAT
@@ -63,4 +63,3 @@ static inline constexpr f32 FLOAT_TOLERANCE = 0.00001f;
 static inline constexpr f32 AMBIENT_STRENGTH = 0.03f;
 
 static inline u32 CORE_COUNT_AVAILABLE = 8;
-

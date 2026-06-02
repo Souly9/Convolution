@@ -13,7 +13,6 @@ enum class GBufferTextureType
     GBufferLastFrameVelocity,
     GBufferLastFrameColor,
     GBufferThisFrameColor,
-    GBufferTemporalCurrentColor,
     GBufferLastFrameDepth,
     GBufferResolve,
     GBufferPostAAColor,
@@ -41,7 +40,6 @@ struct GBufferInfo
                 return TexFormat::R32G32_FLOAT;
             case GBufferTextureType::GBufferLastFrameColor:
             case GBufferTextureType::GBufferThisFrameColor:
-            case GBufferTextureType::GBufferTemporalCurrentColor:
             case GBufferTextureType::GBufferResolve:
             case GBufferTextureType::GBufferPostAAColor:
                 return TexFormat::R16G16B16A16_FLOAT;
@@ -80,7 +78,6 @@ struct GBuffer : public GBufferInfo
             case GBufferTextureType::GBufferLastFrameVelocity: return m_velocityFrameTargets[GetPreviousHistoryFrameSlot()].pTexture;
             case GBufferTextureType::GBufferLastFrameColor: return m_temporalResolveFrameTargets[GetPreviousHistoryFrameSlot()].pTexture;
             case GBufferTextureType::GBufferThisFrameColor: return m_pThisFrameColorTexture;
-            case GBufferTextureType::GBufferTemporalCurrentColor: return m_pTemporalCurrentColorTexture;
             case GBufferTextureType::GBufferLastFrameDepth: return m_pLastFrameDepthTexture;
             case GBufferTextureType::GBufferResolve: return m_temporalResolveFrameTargets[m_currentHistoryFrameSlot].pTexture;
             case GBufferTextureType::GBufferPostAAColor: return m_pPostAAColorTexture;
@@ -108,7 +105,6 @@ struct GBuffer : public GBufferInfo
                 m_temporalResolveFrameTargets[GetPreviousHistoryFrameSlot()].pTexture = pTexture;
                 break;
             case GBufferTextureType::GBufferThisFrameColor: m_pThisFrameColorTexture = pTexture; break;
-            case GBufferTextureType::GBufferTemporalCurrentColor: m_pTemporalCurrentColorTexture = pTexture; break;
             case GBufferTextureType::GBufferLastFrameDepth: m_pLastFrameDepthTexture = pTexture; break;
             case GBufferTextureType::GBufferResolve: m_temporalResolveFrameTargets[m_currentHistoryFrameSlot].pTexture = pTexture; break;
             case GBufferTextureType::GBufferPostAAColor: m_pPostAAColorTexture = pTexture; break;
@@ -133,7 +129,6 @@ struct GBuffer : public GBufferInfo
                 m_temporalResolveFrameTargets[GetPreviousHistoryFrameSlot()].bindlessHandle = handle;
                 break;
             case GBufferTextureType::GBufferThisFrameColor: m_hThisFrameColor = handle; break;
-            case GBufferTextureType::GBufferTemporalCurrentColor: m_hTemporalCurrentColor = handle; break;
             case GBufferTextureType::GBufferLastFrameDepth: m_hLastFrameDepth = handle; break;
             case GBufferTextureType::GBufferResolve: m_temporalResolveFrameTargets[m_currentHistoryFrameSlot].bindlessHandle = handle; break;
             case GBufferTextureType::GBufferPostAAColor: m_hPostAAColor = handle; break;
@@ -217,7 +212,6 @@ struct GBuffer : public GBufferInfo
             case GBufferTextureType::GBufferLastFrameColor:
                 return m_temporalResolveFrameTargets[GetPreviousHistoryFrameSlot()].bindlessHandle;
             case GBufferTextureType::GBufferThisFrameColor: return m_hThisFrameColor;
-            case GBufferTextureType::GBufferTemporalCurrentColor: return m_hTemporalCurrentColor;
             case GBufferTextureType::GBufferLastFrameDepth: return m_hLastFrameDepth;
             case GBufferTextureType::GBufferResolve:
                 return m_temporalResolveFrameTargets[m_currentHistoryFrameSlot].bindlessHandle;
@@ -302,7 +296,6 @@ private:
     Texture* m_pGbufferUVMatTexture{nullptr};
     Texture* m_pDebugTexture{nullptr};
     Texture* m_pThisFrameColorTexture{nullptr};
-    Texture* m_pTemporalCurrentColorTexture{nullptr};
     Texture* m_pLastFrameDepthTexture{nullptr};
     Texture* m_pPostAAColorTexture{nullptr};
     Texture* m_pRoughnessTexture{nullptr};
@@ -312,7 +305,6 @@ private:
     BindlessTextureHandle m_hTexCoordMat{0};
     BindlessTextureHandle m_hDebug{0};
     BindlessTextureHandle m_hThisFrameColor{0};
-    BindlessTextureHandle m_hTemporalCurrentColor{0};
     BindlessTextureHandle m_hLastFrameDepth{0};
     BindlessTextureHandle m_hPostAAColor{0};
     BindlessTextureHandle m_hRoughness{0};

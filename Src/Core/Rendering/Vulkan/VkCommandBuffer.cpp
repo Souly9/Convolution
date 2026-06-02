@@ -3,8 +3,8 @@
 #include "Core/Rendering/Core/RenderDefinitions.h"
 #include "Core/Rendering/Vulkan/VkProfiler.h"
 #include "Core/Rendering/Vulkan/VkQueryPool.h"
-#include "Core/Rendering/Vulkan/VkTexture.h"
 #include "Core/Rendering/Vulkan/VkRayTracingFunctions.h"
+#include "Core/Rendering/Vulkan/VkTexture.h"
 #include "Core/Rendering/Vulkan/VulkanTraits.h"
 #include "Utils/VkEnumHelpers.h"
 #include "VkGlobals.h"
@@ -349,18 +349,16 @@ static void RecordCommand(ImageToImageBlitCmd& cmd, CBufferVulkan& buffer)
     blitRegion.srcSubresource.baseArrayLayer = cmd.srcBaseLayer;
     blitRegion.srcSubresource.layerCount = cmd.layerCount;
     blitRegion.srcOffsets[0] = {0, 0, 0};
-    blitRegion.srcOffsets[1] = {static_cast<int32_t>(srcExtents.x),
-                                static_cast<int32_t>(srcExtents.y),
-                                static_cast<int32_t>(srcExtents.z)};
+    blitRegion.srcOffsets[1] = {
+        static_cast<int32_t>(srcExtents.x), static_cast<int32_t>(srcExtents.y), static_cast<int32_t>(srcExtents.z)};
 
     blitRegion.dstSubresource.aspectMask = cmd.aspectFlagBits;
     blitRegion.dstSubresource.mipLevel = cmd.dstMipLevel;
     blitRegion.dstSubresource.baseArrayLayer = cmd.dstBaseLayer;
     blitRegion.dstSubresource.layerCount = cmd.layerCount;
     blitRegion.dstOffsets[0] = {0, 0, 0};
-    blitRegion.dstOffsets[1] = {static_cast<int32_t>(dstExtents.x),
-                                static_cast<int32_t>(dstExtents.y),
-                                static_cast<int32_t>(dstExtents.z)};
+    blitRegion.dstOffsets[1] = {
+        static_cast<int32_t>(dstExtents.x), static_cast<int32_t>(dstExtents.y), static_cast<int32_t>(dstExtents.z)};
 
     vkCmdBlitImage(buffer.GetRef(),
                    cmd.srcImage->GetImage(),

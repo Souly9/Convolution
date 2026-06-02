@@ -41,6 +41,7 @@ static TexFormat ChooseTextureFormatForSemantic(TextureSemantic semantic)
             return TexFormat::R8G8B8A8_SRGB;
         case TextureSemantic::Normal:
         case TextureSemantic::Data:
+        case TextureSemantic::Specular:
         case TextureSemantic::Auto:
         default:
             return TexFormat::R8G8B8A8_UNORM;

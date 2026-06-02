@@ -10,8 +10,8 @@ enum class RTTextureType : u8
 {
     DebugView = 0,
     Reflections,
-    ReflectedSceneColor,
     RTAO,
+    Accumulation,
     Count
 };
 
@@ -34,6 +34,9 @@ public:
     void RecordTransition(CommandBuffer* pCmdBuffer,
                           RTTextureResource& resource,
                           ImageLayout newLayout);
+    void RecordTransitionComputeOnly(CommandBuffer* pCmdBuffer,
+                                     RTTextureResource& resource,
+                                     ImageLayout newLayout);
 
     const RTTextureResource& Get(RTTextureType type) const;
     RTTextureResource& Get(RTTextureType type);

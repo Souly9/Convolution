@@ -117,7 +117,6 @@ using QueryPool = QueryPoolVulkan;
 
 // Texture format macro
 #define TEXFORMAT(type) VK_FORMAT_##type
-
 #endif // USE_VULKAN
 
 // Note: Semaphore and Fence are defined via template pattern in Synchronization.h

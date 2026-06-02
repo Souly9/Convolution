@@ -39,14 +39,15 @@ public:
             },
             RequestType::Mesh});
 
-        auto dirLightEnt = g_pEntityManager->CreateEntity(mathstl::Vector3(2, 17, 1));
+        auto dirLightEnt = g_pEntityManager->CreateEntity(mathstl::Vector3(2, 17, 1), "Sun");
         ECS::Components::Light dirLight{.direction = mathstl::Vector3(-0.3f, -11, -6),
                                         .color = mathstl::Vector4(1.0f, 1.0f, 1.0f, 1.0f),
+                                        .intensity = 1.5f,
                                         .type = ECS::Components::LightType::Directional,
                                         .isShadowCaster = true};
         g_pEntityManager->AddComponent(dirLightEnt, dirLight);
 
         auto lightsRootEnt = g_pEntityManager->CreateEntity(mathstl::Vector3(0, 0, 0), "LightsRoot");
-        CreateTestLights(mathstl::Vector3(-20.0f, 1.0f, -15.0f), 40, 10.0f, lightsRootEnt);
+        // CreateTestLights(mathstl::Vector3(-20.0f, 1.0f, -15.0f), 40, 10.0f, lightsRootEnt);
     }
 };

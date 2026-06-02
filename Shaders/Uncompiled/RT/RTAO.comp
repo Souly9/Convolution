@@ -4,12 +4,15 @@
 #extension GL_EXT_scalar_block_layout : enable
 #extension GL_EXT_ray_tracing : require
 #extension GL_EXT_ray_query : require
-
-#define GBufferUBOSet 2
+#define SharedDataUBOSet 1
+#define BindlessImageSet 0
+#define GBufferUBOSet    3
 #include "../../Globals/Bindless.h"
 #include "../../Globals/Common.h"
 #include "../../Globals/GBuffer/GBufferSampling.h"
 #include "../../Globals/PushConstants.h"
+#include "../../Globals/Scene.h"
+#include "../../Globals/Utils/Math.h"
 #include "../../Globals/Utils/ScreenSpace.h"
 
 layout(set = RTSceneASSet, binding = RTSceneASBindingSlot) uniform accelerationStructureEXT sceneTLAS;
@@ -40,8 +43,8 @@ vec2 GenerateNoise(ivec2 pixelCoord, uint frameIndex)
 vec3 CosineSampleHemisphere(vec2 u, vec3 N)
 {
     float phi = 2.0 * PI * u.x;
-    float cosTheta = sqrt(u.y);
-    float sinTheta = sqrt(max(0.0, 1.0 - u.y));
+    float sinTheta = sqrt(u.y);
+    float cosTheta = sqrt(max(0.0, 1.0 - u.y));
 
     vec3 H;
     H.x = cos(phi) * sinTheta;
@@ -58,7 +61,15 @@ vec3 CosineSampleHemisphere(vec2 u, vec3 N)
 bool TraceShadowRay(vec3 rayOrigin, vec3 rayDir, float maxDistance)
 {
     rayQueryEXT rayQuery;
-    rayQueryInitializeEXT(rayQuery, sceneTLAS, gl_RayFlagsOpaqueEXT, 0xFF, rayOrigin, 0.01, rayDir, maxDistance);
+
+    rayQueryInitializeEXT(rayQuery,
+                          sceneTLAS,
+                          gl_RayFlagsOpaqueEXT | gl_RayFlagsTerminateOnFirstHitEXT,
+                          0xFF,
+                          rayOrigin,
+                          0.01,
+                          rayDir,
+                          maxDistance);
 
     while (rayQueryProceedEXT(rayQuery))
     {
@@ -69,4 +80,44 @@ bool TraceShadowRay(vec3 rayOrigin, vec3 rayDir, float maxDistance)
 
 void main()
 {
+    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 resolution = ivec2(ubo.renderResolution);
+    if (pixelCoord.x >= resolution.x || pixelCoord.y >= resolution.y)
+        return;
+
+    vec2 uv = (vec2(pixelCoord) + 0.5) / vec2(ubo.renderResolution);
+    float fragmentDepth = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.depthBufferIdx)], uv).r;
+
+    float ao = 1.0;
+
+    if (pc.hasReadyTLAS != 0u && fragmentDepth > 0.0)
+    {
+        vec4 normalData = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.gbufferNormalIdx)], uv);
+        vec3 normal = normalize(normalData.xyz);
+        vec3 worldPos = DepthToWorldSpace(uv, fragmentDepth, ubo.viewProjectionInverse).xyz;
+
+        uint raysCount = min(max(1u, pc.raysPerPixel), 16u);
+        float unoccludedCount = 0.0;
+
+        for (uint r = 0u; r < raysCount; ++r)
+        {
+            vec2 noise = GenerateNoise(pixelCoord, pc.frameIndex + r * 1111u);
+            vec3 rayDir = CosineSampleHemisphere(noise, normal);
+
+            // Avoid tracing beneath the surface
+            if (dot(normal, rayDir) < 0.0)
+            {
+                rayDir = -rayDir;
+            }
+
+            if (!TraceShadowRay(worldPos + normal * 0.02, rayDir, pc.aoRadius))
+            {
+                unoccludedCount += 1.0;
+            }
+        }
+
+        ao = pow(unoccludedCount / float(raysCount), pc.aoIntensity);
+    }
+
+    imageStore(GlobalBindlessImages[nonuniformEXT(pc.rtaoTexIdx)], pixelCoord, vec4(ao, 0.0, 0.0, 0.0));
 }

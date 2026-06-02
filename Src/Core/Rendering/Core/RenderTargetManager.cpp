@@ -102,10 +102,6 @@ void RenderTargetManager::RecreateGBufferTextures(const mathstl::Vector2& render
         {GBufferTextureType::TexCoordMatData, "GBuffer UV Material Data"},
         {GBufferTextureType::GBufferDebug, "GBuffer Debug"},
         {GBufferTextureType::GBufferThisFrameColor, "GBuffer This Frame Color", Usage::Storage, false},
-        {GBufferTextureType::GBufferTemporalCurrentColor,
-         "GBuffer Temporal Current Color",
-         Usage::Storage | Usage::Sampled,
-         false},
         {GBufferTextureType::GBufferPostAAColor, "GBuffer Post AA Color", Usage::Storage | Usage::Sampled, false, true},
         {GBufferTextureType::GBufferRoughness, "GBuffer Roughness"}};
 

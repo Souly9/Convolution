@@ -89,29 +89,13 @@ void MainMenuBar::DrawMenuBar(f32 dt, ApplicationInfos& appInfos)
             {
                 m_debugInfoWindow.SetOpen(true);
             }
-            if (ImGui::MenuItem("Stats", ""))
+            if (ImGui::MenuItem("Performance Diagnostics", ""))
             {
-                m_statsWindow.SetOpen(true);
+                m_performanceDiagnosticsWindow.SetOpen(true);
             }
-            if (ImGui::MenuItem("GPU Timing", ""))
-            {
-                m_gpuTimingWindow.SetOpen(true);
-            }
-            if (ImGui::MenuItem("Debug Settings", ""))
-            {
-                m_debugSettingsWindow.SetOpen(true);
-            }
-            if (ImGui::MenuItem("Render Settings", ""))
+            if (ImGui::MenuItem("Renderer Control Panel", ""))
             {
                 m_renderSettingsWindow.SetOpen(true);
-            }
-            if (ImGui::MenuItem("GBuffer", ""))
-            {
-                m_gbufferWindow.SetOpen(true);
-            }
-            if (dlssSupported && ImGui::MenuItem("DLSS Debug", ""))
-            {
-                m_dlssDebugWindow.SetOpen(true);
             }
             ImGui::EndMenu();
         }
@@ -123,14 +107,6 @@ void MainMenuBar::DrawMenuBar(f32 dt, ApplicationInfos& appInfos)
         m_debugInfoWindow.DrawWindow(dt, appInfos);
         appInfos.infos.clear();
     }
-    if (m_statsWindow.IsOpen())
-    {
-        m_statsWindow.DrawWindow(dt);
-    }
-    if (m_gpuTimingWindow.IsOpen())
-    {
-        m_gpuTimingWindow.DrawWindow(dt);
-    }
     if (m_selectedEntitiesWindow.IsOpen())
     {
         m_selectedEntitiesWindow.DrawWindow(m_lastUpdateState);
@@ -139,23 +115,12 @@ void MainMenuBar::DrawMenuBar(f32 dt, ApplicationInfos& appInfos)
     {
         m_sceneGraphWindow.DrawWindow(m_lastUpdateState);
     }
-
-    if (m_debugSettingsWindow.IsOpen())
+    if (m_performanceDiagnosticsWindow.IsOpen())
     {
-        m_debugSettingsWindow.DrawWindow(dt);
+        m_performanceDiagnosticsWindow.DrawWindow(dt);
     }
-
     if (m_renderSettingsWindow.IsOpen())
     {
         m_renderSettingsWindow.DrawWindow(dt);
-    }
-
-    if (m_gbufferWindow.IsOpen())
-    {
-        m_gbufferWindow.DrawWindow(dt);
-    }
-    if (dlssSupported && m_dlssDebugWindow.IsOpen())
-    {
-        m_dlssDebugWindow.DrawWindow(dt);
     }
 }

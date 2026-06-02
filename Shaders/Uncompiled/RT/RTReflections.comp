@@ -4,9 +4,9 @@
 #extension GL_EXT_scalar_block_layout : enable
 #extension GL_EXT_ray_tracing : require
 #extension GL_EXT_ray_query : require
-
-
-
+#define BindlessImageSet 0
+#define GBufferUBOSet 3
+#define TileArraySet 4
 #include "../../Globals/Bindless.h"
 #include "../../Globals/ClusterLightData.h"
 #include "../../Globals/Common.h"
@@ -77,6 +77,40 @@ vec3 ImportanceSampleGGX(vec2 Xi, vec3 N, float roughness)
     return normalize(tangent * H.x + bitangent * H.y + N * H.z);
 }
 
+vec2 SampleEquirectangular(vec3 d)
+{
+    float phi = atan(d.z, d.x);
+    float theta = acos(d.y);
+    vec2 uv = vec2((phi + PI) / (2.0 * PI), theta / PI);
+    return uv;
+}
+
+vec3 hdr_clamp_chroma(vec3 color, float maxValue)
+{
+    float peak = max(color.r, max(color.g, color.b));
+    return (peak > maxValue) ? color * (maxValue / peak) : color;
+}
+
+vec3 SampleSkybox(vec3 d)
+{
+    if (ubo.skyboxTextureIdx != 0u)
+    {
+        vec2 uv = SampleEquirectangular(normalize(d));
+        vec3 rawColor = texture(GlobalBindlessTextures[nonuniformEXT(ubo.skyboxTextureIdx)], uv).rgb;
+        
+        // Calibrate raw HDR values (e.g. from 4k skybox) to engine lighting space
+        vec3 scaledColor = rawColor * 0.05;
+        
+        // Preserve color temperature and detail while clipping peak intensity for tonemapping safety
+        return hdr_clamp_chroma(scaledColor, 15.0);
+    }
+    // Fallback analytical sky
+    float dirY = normalize(d).y;
+    vec3 zenithColor = vec3(0.01, 0.05, 0.15);
+    vec3 horizonColor = vec3(0.4, 0.55, 0.7);
+    return mix(horizonColor, zenithColor, max(dirY, 0.0));
+}
+
 bool TraceAndShadeTLAS(vec3 rayOrigin, vec3 rayDir, out vec3 reflectedRadiance, out float hitT)
 {
     reflectedRadiance = vec3(0.0);
@@ -133,6 +167,7 @@ bool TraceAndShadeTLAS(vec3 rayOrigin, vec3 rayDir, out vec3 reflectedRadiance, 
     vec3 lightColor = dirLight.color.xyz * dirLight.color.w;
     vec3 viewDirAtHit = normalize(-rayDir);
     vec3 directLighting = computeDirLight(dirLightTravelDir, viewDirAtHit, hitNormal, lightColor, hitSurface);
+    
     vec3 indirectLighting = hitSurface.baseColor * ubo.ambientIntensity;
     vec3 emissive = SampleMaterialEmissive(hitMaterial, materialUV);
 
@@ -167,6 +202,11 @@ void main()
 
         float reflectionStrength =
             GetReflectionStrength(surface, max(dot(normal, viewDir), 0.0)) * pc.reflectionIntensity;
+        
+        // Fades out RT reflections sharply on rougher surfaces (e.g. concrete, wood)
+        // to prevent skybox over-exposure and graininess, relying instead on soft PBR ambient terms
+        float smoothness = 1.0 - surface.roughness;
+        reflectionStrength *= smoothness * smoothness;
 
         if (reflectionStrength > 0.001)
         {
@@ -199,6 +239,11 @@ void main()
                     totalReflectedRadiance += reflectedRadiance;
                     totalHitDistance += hitT;
                     hitCount++;
+                }
+                else
+                {
+                    // Misses sample the skybox at full brightness
+                    totalReflectedRadiance += SampleSkybox(rayDir);
                 }
             }
 

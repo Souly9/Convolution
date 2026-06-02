@@ -235,6 +235,9 @@ private:
     u32 m_framesToRebuild{0};
 
     ShadowMapState m_currentShadowMapState{};
+
+    TextureHandle m_skyboxTextureHandle{0};
+    BindlessTextureHandle m_skyboxBindlessHandle{0};
 };
 
 } // namespace RenderPasses

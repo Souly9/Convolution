@@ -109,6 +109,7 @@ STRUCTDECL(SharedDataUBO)
     STRUCTFIELD(float, gt7ReferenceLuminance)
     STRUCTFIELD(uint, rtUseGlobalMaterialReflectance)
     STRUCTFIELD(float, rtGlobalMaterialReflectance)
+    STRUCTFIELD(BindlessTextureHandle, skyboxTextureIdx)
 STRUCTEND()
 
 #ifndef __cplusplus

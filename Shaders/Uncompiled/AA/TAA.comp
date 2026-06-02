@@ -156,6 +156,7 @@ void main()
 
     // Depth is reverse-Z (near = 1.0, far = 0.0), so closest depth is the largest value
     float closest_depth = texelFetch(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.depthBufferIdx)], center, 0).r;
+    float center_depth = closest_depth;
     ivec2 closest_pos = center;
 
     for (int dy = -1; dy <= 1; ++dy)
@@ -173,11 +174,20 @@ void main()
             vec3 s_rgb_tm = Tonemap(s_rgb);
             vec3 s_ycocg_tm = RGBToYCoCg(s_rgb_tm);
 
-            m1 += s_ycocg_tm;
-            m2 += s_ycocg_tm * s_ycocg_tm;
-            cmin = min(cmin, s_ycocg_tm);
-            cmax = max(cmax, s_ycocg_tm);
-            count += 1.0f;
+            float z = texelFetch(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.depthBufferIdx)], tap, 0).r;
+            bool center_is_foreground = (center_depth > 0.0);
+            bool tap_is_background = (z <= 0.0);
+
+            // Do not include background colors in the neighborhood stats for a foreground pixel
+            // This prevents the extremely bright HDR skybox from bleeding/ghosting onto foreground geometry edges
+            if (!(center_is_foreground && tap_is_background))
+            {
+                m1 += s_ycocg_tm;
+                m2 += s_ycocg_tm * s_ycocg_tm;
+                cmin = min(cmin, s_ycocg_tm);
+                cmax = max(cmax, s_ycocg_tm);
+                count += 1.0f;
+            }
 
             vec2 d = (vec2(tap) + 0.5f) - p_render;
             float w = ReconstructWeight(dot(d, d));

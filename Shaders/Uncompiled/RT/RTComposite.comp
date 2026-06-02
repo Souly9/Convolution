@@ -1,0 +1,65 @@
+#version 460 core
+#extension GL_ARB_shading_language_include : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_scalar_block_layout : enable
+
+#define BindlessImageSet 0
+#define GBufferUBOSet    3
+
+#include "../../Globals/Bindless.h"
+#include "../../Globals/GBuffer/GBufferSampling.h"
+#include "../../Globals/PushConstants.h"
+
+layout(push_constant) uniform RTCompositePushConstantsBlock
+{
+    RTCompositePushConstants pc;
+};
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+void main()
+{
+    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 renderResolution = imageSize(GlobalBindlessImages[nonuniformEXT(gbufferUBO.deferredLightingColorIdx)]);
+    if (pixelCoord.x >= renderResolution.x || pixelCoord.y >= renderResolution.y)
+        return;
+
+    vec2 uv = (vec2(pixelCoord) + 0.5) / vec2(renderResolution);
+
+    // 1. Sample deferred lighting color
+    vec3 sceneColor = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.deferredLightingColorIdx)], uv).rgb;
+
+    // 2. Sample RT outputs via push-constant indices
+    float currentAO = 1.0;
+    if (pc.rtaoTexIdx != 0u)
+        currentAO = texture(GlobalBindlessTextures[nonuniformEXT(pc.rtaoTexIdx)], uv).r;
+
+    vec3 currentReflections = vec3(0.0);
+    if (pc.rtReflectionsTexIdx != 0u)
+        currentReflections = texture(GlobalBindlessTextures[nonuniformEXT(pc.rtReflectionsTexIdx)], uv).rgb;
+
+    // 3. Accumulate reflections; AO applied directly per-frame
+    vec4 accumulated;
+    if (pc.resetHistory != 0u)
+    {
+        accumulated = vec4(currentReflections, 1.0);
+    }
+    else
+    {
+        vec4 history = texelFetch(GlobalBindlessTextures[nonuniformEXT(pc.accumTexIdx)], pixelCoord, 0);
+        accumulated.rgb = mix(history.rgb, currentReflections, pc.accumRate);
+    }
+
+    imageStore(GlobalBindlessImages[nonuniformEXT(pc.accumTexIdx)], pixelCoord, accumulated);
+
+    // 4. Apply AO
+    if (pc.rtaoTexIdx != 0u)
+        sceneColor *= currentAO;
+
+    // 5. Add reflections
+    if (pc.rtReflectionsTexIdx != 0u)
+        sceneColor += accumulated.rgb;
+
+    imageStore(
+        GlobalBindlessImages[nonuniformEXT(gbufferUBO.deferredLightingColorIdx)], pixelCoord, vec4(sceneColor, 1.0));
+}

@@ -128,7 +128,7 @@ public:
 class IndirectDrawCommandBufferVulkan : public GenBufferVulkan
 {
 public:
-    IndirectDrawCommandBufferVulkan(u64 numOfCommands);
+    explicit IndirectDrawCommandBufferVulkan(u64 numOfCommands);
     IndirectDrawCommandBufferVulkan()
     {
     }

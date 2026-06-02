@@ -177,6 +177,8 @@ void PassManager::RecreateResizeDependentResources(const mathstl::Vector2& swapc
                                                                   m_renderTargetManager.GetDLSSExposureTexture(),
                                                                   m_renderTargetManager.GetDLSSExposureStagingBuffer());
 
+        m_rtResourceManager.RecordOutputsToShaderRead(pInitCmdBuffer);
+
         pInitCmdBuffer->Bake();
         g_pQueueHandler->SubmitCommandBufferThisFrame({pInitCmdBuffer, QueueType::Graphics, 0});
         g_pQueueHandler->DispatchAllRequests();
@@ -240,6 +242,7 @@ void PassManager::RecreateResizeDependentResources(const mathstl::Vector2& swapc
     m_imguiRegistry.RegisterShadowMapTextures(m_shadowMapManager.GetShadowMap());
     m_imguiRegistry.RegisterGBufferTextures(m_renderTargetManager.GetGBuffer(),
                                             m_renderTargetManager.GetScreenSpaceShadowTexture());
+    m_imguiRegistry.RegisterRTTextures(m_rtResourceManager);
 }
 
 bool PassManager::AnyPassWantsToRender() const
@@ -276,16 +279,16 @@ void PassManager::PrepareMainPassDataForFrame(MainPassData& mainPassData, FrameR
     mainPassData.pRTSceneManager = &m_rtSceneManager;
     const auto& rtDebugView = m_rtResourceManager.Get(RT::RTTextureType::DebugView);
     const auto& rtReflections = m_rtResourceManager.Get(RT::RTTextureType::Reflections);
-    const auto& rtReflectedSceneColor = m_rtResourceManager.Get(RT::RTTextureType::ReflectedSceneColor);
     const auto& rtAO = m_rtResourceManager.Get(RT::RTTextureType::RTAO);
+    const auto& rtAccum = m_rtResourceManager.Get(RT::RTTextureType::Accumulation);
     mainPassData.pRTDebugViewTexture = rtDebugView.pTexture;
     mainPassData.pRTReflectionsTexture = rtReflections.pTexture;
-    mainPassData.pRTReflectedSceneColorTexture = rtReflectedSceneColor.pTexture;
     mainPassData.pRTAOTexture = rtAO.pTexture;
+    mainPassData.pRTAccumulationTexture = rtAccum.pTexture;
     mainPassData.rtDebugTextureHandle = rtDebugView.bindlessHandle;
     mainPassData.rtReflectionsTextureHandle = rtReflections.bindlessHandle;
-    mainPassData.rtReflectedSceneColorTextureHandle = rtReflectedSceneColor.bindlessHandle;
     mainPassData.rtaoTextureHandle = rtAO.bindlessHandle;
+    mainPassData.rtAccumulationTextureHandle = rtAccum.bindlessHandle;
 
     mainPassData.pScreenSpaceShadowTexture = m_renderTargetManager.GetScreenSpaceShadowTexture();
     mainPassData.screenSpaceShadows = m_renderTargetManager.GetScreenSpaceShadowBindlessHandle();
@@ -302,14 +305,12 @@ void PassManager::UpdateTemporalResources(MainPassData& mainPassData)
     auto& temporal = mainPassData.temporalResources;
     auto& gbuffer = m_renderTargetManager.GetGBuffer();
     temporal.pCurrentColorTexture = gbuffer.Get(GBufferTextureType::GBufferThisFrameColor);
-    temporal.pTemporalCurrentColorTexture = gbuffer.Get(GBufferTextureType::GBufferTemporalCurrentColor);
     temporal.pHistoryColorTexture = gbuffer.Get(GBufferTextureType::GBufferLastFrameColor);
     temporal.pResolveTexture = gbuffer.Get(GBufferTextureType::GBufferResolve);
     temporal.pPostAAColorTexture = gbuffer.Get(GBufferTextureType::GBufferPostAAColor);
     temporal.pCurrentDepthTexture = m_renderTargetManager.GetDepthTexture();
     temporal.pHistoryDepthTexture = m_renderTargetManager.GetLastFrameDepthTexture();
     temporal.currentColorHandle = gbuffer.GetHandle(GBufferTextureType::GBufferThisFrameColor);
-    temporal.temporalCurrentColorHandle = gbuffer.GetHandle(GBufferTextureType::GBufferTemporalCurrentColor);
     temporal.historyColorHandle = gbuffer.GetHandle(GBufferTextureType::GBufferLastFrameColor);
     temporal.resolveHandle = gbuffer.GetHandle(GBufferTextureType::GBufferResolve);
     temporal.postAAColorHandle = gbuffer.GetHandle(GBufferTextureType::GBufferPostAAColor);
@@ -337,10 +338,6 @@ void PassManager::InitFrameContexts()
             m_graphicsFrameCtx.compositeCmdBuffers[i] =
                 m_graphicsFrameCtx.cmdPool.CreateCommandBuffer(CommandBufferCreateInfo{});
             m_graphicsFrameCtx.compositeCmdBuffers[i]->SetName("Composite Graphics Command Buffer " + numberString);
-            m_graphicsFrameCtx.presentTransitionCmdBuffers[i] =
-                m_graphicsFrameCtx.cmdPool.CreateCommandBuffer(CommandBufferCreateInfo{});
-            m_graphicsFrameCtx.presentTransitionCmdBuffers[i]->SetName("Present Transition Graphics Command Buffer " +
-                                                                       numberString);
             m_graphicsFrameCtx.depthPrePassCmdBuffers[i] =
                 m_graphicsFrameCtx.cmdPool.CreateCommandBuffer(CommandBufferCreateInfo{});
             m_graphicsFrameCtx.depthPrePassCmdBuffers[i]->SetName("Depth Pre-Pass Graphics Command Buffer " +
@@ -409,7 +406,6 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
 
     stltype::fixed_vector<const Texture*, 16> allColorTextures;
     allColorTextures.assign(gbufferTextures.begin(), gbufferTextures.end());
-    allColorTextures.push_back(gbuffer.Get(GBufferTextureType::GBufferThisFrameColor));
     if (m_renderTargetManager.GetSMAAEdgesTexture() != nullptr)
     {
         allColorTextures.push_back(m_renderTargetManager.GetSMAAEdgesTexture());
@@ -423,17 +419,14 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
     CommandBuffer* pMainGraphicsWorkBuffer = m_graphicsFrameCtx.cmdBuffers[ctx.imageIdx];
     CommandBuffer* pComputeCmdBuffer = m_computeFrameCtx.cmdBuffers[ctx.imageIdx];
     CommandBuffer* pDepthWorkBuffer = m_graphicsFrameCtx.depthPrePassCmdBuffers[ctx.imageIdx];
-    CommandBuffer* pPresentTransitionBuffer = m_graphicsFrameCtx.presentTransitionCmdBuffers[ctx.imageIdx];
 
     pMainGraphicsWorkBuffer->ResetBuffer();
     pComputeCmdBuffer->ResetBuffer();
     pDepthWorkBuffer->ResetBuffer();
-    pPresentTransitionBuffer->ResetBuffer();
 
     pMainGraphicsWorkBuffer->SetFrameIdx(ctx.currentFrame);
     pComputeCmdBuffer->SetFrameIdx(ctx.currentFrame);
     pDepthWorkBuffer->SetFrameIdx(ctx.currentFrame);
-    pPresentTransitionBuffer->SetFrameIdx(ctx.currentFrame);
 
     auto pendingFlips = m_resourceManager.PopPendingVisibleInstanceIndices();
 
@@ -567,7 +560,7 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
         g_pQueueHandler->SubmitCommandBufferThisFrame({pMainGraphicsWorkBuffer, QueueType::Graphics, ctx.currentFrame});
     }
 
-    // Lighting Stage
+    // Lighting Stage + RTReflections
     CommandBuffer* pLightingWorkBuffer = m_graphicsFrameCtx.lightingCmdBuffers[ctx.imageIdx];
     pLightingWorkBuffer->ResetBuffer();
     pLightingWorkBuffer->SetFrameIdx(ctx.currentFrame);
@@ -577,26 +570,35 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
         if (submittedTransferValue > 0)
             pLightingWorkBuffer->AddTimelineWait(g_pQueueHandler->GetTimelineSemaphore(QueueType::Transfer),
                                                  submittedTransferValue);
-        pLightingWorkBuffer->SetWaitStages(SyncStages::FRAGMENT_SHADER | SyncStages::COLOR_ATTACHMENT_OUTPUT);
+        pLightingWorkBuffer->SetWaitStages(SyncStages::FRAGMENT_SHADER | SyncStages::COLOR_ATTACHMENT_OUTPUT |
+                                           SyncStages::COMPUTE_SHADER);
 
         // Ensure Compute Queue shader writes (shadows/light grids) are visible to Graphics Queue shader reads
         pLightingWorkBuffer->RecordCommand(GlobalBarrierCmd(SyncStages::COMPUTE_SHADER,
-                                                           SyncStages::FRAGMENT_SHADER,
+                                                           SyncStages::COMPUTE_SHADER,
                                                            VK_ACCESS_SHADER_WRITE_BIT,
                                                            VK_ACCESS_SHADER_READ_BIT));
+
+        // Transition GBufferThisFrameColor to GENERAL layout for compute shader write (discarding previous contents)
+        m_transitionRecorder.RecordThisFrameColorToGeneralDiscard(pLightingWorkBuffer, gbuffer);
 
         RenderPassGroup(PassType::Lighting, mainPassData, ctx, pLightingWorkBuffer);
 
         // GBufferThisFrameColor to SHADER_READ so RTComposite can sample it
         m_transitionRecorder.RecordThisFrameColorToRead(pLightingWorkBuffer, gbuffer);
 
+        // RT Reflections runs after lighting so it can sample GBuffer and depth
+        m_rtResourceManager.RecordTransition(pLightingWorkBuffer, m_rtResourceManager.Get(RT::RTTextureType::Reflections), ImageLayout::GENERAL);
+        RenderPassGroup(PassType::RTReflectionsCompute, mainPassData, ctx, pLightingWorkBuffer);
+        m_rtResourceManager.RecordTransition(pLightingWorkBuffer, m_rtResourceManager.Get(RT::RTTextureType::Reflections), ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+
         pLightingWorkBuffer->AddTimelineSignal(&ctx.frameTimeline, lightingSignalValue);
-        pLightingWorkBuffer->SetSignalStages(SyncStages::COLOR_ATTACHMENT_OUTPUT);
+        pLightingWorkBuffer->SetSignalStages(SyncStages::COLOR_ATTACHMENT_OUTPUT | SyncStages::COMPUTE_SHADER);
         pLightingWorkBuffer->Bake();
         g_pQueueHandler->SubmitCommandBufferThisFrame({pLightingWorkBuffer, QueueType::Graphics, ctx.currentFrame});
     }
 
-    // Async Compute RT Stage (RTAO + Reflections)
+    // Async Compute RT Stage (RTAO, parallel with Lighting)
     CommandBuffer* pRTComputeCmdBuffer = m_computeFrameCtx.rtComputeCmdBuffers[ctx.imageIdx];
     pRTComputeCmdBuffer->ResetBuffer();
     pRTComputeCmdBuffer->SetFrameIdx(ctx.currentFrame);
@@ -604,23 +606,17 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
         pRTComputeCmdBuffer->AddTimelineWait(&ctx.frameTimeline, mainPassSignalValue);
         pRTComputeCmdBuffer->SetWaitStages(SyncStages::COMPUTE_SHADER);
 
-        // 1. Prepare RTAO and Reflections textures for write
         if (mainPassData.pRTAOTexture != nullptr)
         {
-            m_rtResourceManager.RecordTransition(pRTComputeCmdBuffer, m_rtResourceManager.Get(RT::RTTextureType::RTAO), ImageLayout::GENERAL);
+            m_rtResourceManager.RecordTransitionComputeOnly(pRTComputeCmdBuffer, m_rtResourceManager.Get(RT::RTTextureType::RTAO), ImageLayout::GENERAL);
         }
-        m_rtResourceManager.RecordTransition(pRTComputeCmdBuffer, m_rtResourceManager.Get(RT::RTTextureType::Reflections), ImageLayout::GENERAL);
 
-        // 2. Dispatch RT Compute passes
         RenderPassGroup(PassType::RTAOCompute, mainPassData, ctx, pRTComputeCmdBuffer);
-        RenderPassGroup(PassType::RTReflectionsCompute, mainPassData, ctx, pRTComputeCmdBuffer);
 
-        // 3. Transition RT textures to read
         if (mainPassData.pRTAOTexture != nullptr)
         {
-            m_rtResourceManager.RecordTransition(pRTComputeCmdBuffer, m_rtResourceManager.Get(RT::RTTextureType::RTAO), ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+            m_rtResourceManager.RecordTransitionComputeOnly(pRTComputeCmdBuffer, m_rtResourceManager.Get(RT::RTTextureType::RTAO), ImageLayout::SHADER_READ_ONLY_OPTIMAL);
         }
-        m_rtResourceManager.RecordTransition(pRTComputeCmdBuffer, m_rtResourceManager.Get(RT::RTTextureType::Reflections), ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
         pRTComputeCmdBuffer->AddTimelineSignal(&ctx.computeTimeline, rtComputeSignalValue);
         pRTComputeCmdBuffer->SetSignalStages(SyncStages::COMPUTE_SHADER);
@@ -669,9 +665,11 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
         // 1. RT Composite (combines Lighting, RTAO, Reflections)
         if (useRT && !useRayReconstruction)
         {
-            m_rtResourceManager.RecordTransition(pFinalWorkBuffer, m_rtResourceManager.Get(RT::RTTextureType::ReflectedSceneColor), ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+            m_rtResourceManager.RecordTransition(pFinalWorkBuffer, m_rtResourceManager.Get(RT::RTTextureType::Accumulation), ImageLayout::GENERAL);
+            m_transitionRecorder.RecordThisFrameColorToGeneral(pFinalWorkBuffer, gbuffer);
             RenderPassGroup(PassType::RTComposite, mainPassData, ctx, pFinalWorkBuffer);
-            m_rtResourceManager.RecordTransition(pFinalWorkBuffer, m_rtResourceManager.Get(RT::RTTextureType::ReflectedSceneColor), ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+            m_transitionRecorder.RecordThisFrameColorFromGeneralToRead(pFinalWorkBuffer, gbuffer);
+            m_rtResourceManager.RecordTransition(pFinalWorkBuffer, m_rtResourceManager.Get(RT::RTTextureType::Accumulation), ImageLayout::SHADER_READ_ONLY_OPTIMAL);
         }
 
         const bool taaModeActive = appRenderState.aaType == AntialiasingType::TAA_SMAA;
@@ -683,9 +681,7 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
         const bool debugCopyHistory =
             taaModeActive && appRenderState.taaDebugMode == static_cast<u32>(TAADebugMode::HistoryColor);
 
-        Texture* pCurrentSceneColor = (useRT && !useRayReconstruction)
-                                          ? mainPassData.pRTReflectedSceneColorTexture
-                                          : gbuffer.Get(GBufferTextureType::GBufferThisFrameColor);
+        Texture* pCurrentSceneColor = gbuffer.Get(GBufferTextureType::GBufferThisFrameColor);
 
         if (useRayReconstruction)
         {
@@ -730,22 +726,13 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
         RenderPassGroup(PassType::Composite, mainPassData, ctx, pFinalWorkBuffer);
         RenderPassGroup(PassType::UI, mainPassData, ctx, pFinalWorkBuffer);
 
-        pFinalWorkBuffer->AddTimelineSignal(&ctx.frameTimeline, finalRenderSignalValue);
+        m_transitionRecorder.RecordSwapchainToPresent(pFinalWorkBuffer, ctx.pCurrentSwapchainTexture);
+
+        pFinalWorkBuffer->AddSignalSemaphore(&ctx.pPresentLayoutTransitionSignalSemaphore);
+        pFinalWorkBuffer->AddTimelineSignal(&ctx.frameTimeline, graphicsTimelineValue);
         pFinalWorkBuffer->SetSignalStages(SyncStages::ALL_COMMANDS);
         pFinalWorkBuffer->Bake();
         g_pQueueHandler->SubmitCommandBufferThisFrame({pFinalWorkBuffer, QueueType::Graphics, ctx.currentFrame});
-    }
-
-    {
-        pPresentTransitionBuffer->AddTimelineWait(&ctx.frameTimeline, finalRenderSignalValue);
-        pPresentTransitionBuffer->SetWaitStages(SyncStages::ALL_COMMANDS);
-        m_transitionRecorder.RecordSwapchainToPresent(pPresentTransitionBuffer, ctx.pCurrentSwapchainTexture);
-        pPresentTransitionBuffer->AddSignalSemaphore(&ctx.pPresentLayoutTransitionSignalSemaphore);
-        pPresentTransitionBuffer->AddTimelineSignal(&ctx.frameTimeline, graphicsTimelineValue);
-        pPresentTransitionBuffer->SetSignalStages(SyncStages::ALL_COMMANDS);
-        pPresentTransitionBuffer->Bake();
-        g_pQueueHandler->SubmitCommandBufferThisFrame(
-            {pPresentTransitionBuffer, QueueType::Graphics, ctx.currentFrame});
     }
 
     ctx.nextComputeTimelineValue = sssSignalValue;
@@ -771,8 +758,6 @@ void PassManager::UpdateGBufferUBO(const MainPassData& data)
     gbufferUBO.gbufferResolveIdx = temporal.resolveHandle;
     gbufferUBO.rtDebugViewIdx = data.rtDebugTextureHandle;
     gbufferUBO.rtReflectionsIdx = data.rtReflectionsTextureHandle;
-    gbufferUBO.rtReflectedSceneColorIdx = data.rtReflectedSceneColorTextureHandle;
-    gbufferUBO.temporalCurrentColorBufferIdx = temporal.temporalCurrentColorHandle;
     gbufferUBO.rtaoIdx = data.rtaoTextureHandle;
     gbufferUBO.deferredLightingColorIdx = gbuffer.GetHandle(GBufferTextureType::GBufferThisFrameColor);
 
@@ -787,11 +772,20 @@ void PassManager::UpdateGBufferUBO(const MainPassData& data)
     const bool rtReflectionsRequested =
         mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
         mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTReflectionsEnabled);
+    const bool rtaoRequested =
+        mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
+        mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTAOEnabled);
+
     const bool useRTReflections = rtReflectionsRequested && data.pRTSceneManager != nullptr &&
                                   data.pRTSceneManager->HasReadyTLAS(m_currentSwapChainIdx);
+    const bool useRTAO = rtaoRequested && data.pRTSceneManager != nullptr &&
+                         data.pRTSceneManager->HasReadyTLAS(m_currentSwapChainIdx);
+    const bool useRT = useRTReflections || useRTAO;
     const bool useRayReconstruction = Nvidia::StreamlineManager::IsDLSSRRSupported() &&
                                       appRenderState.rt.reflectionsUseRayReconstruction &&
                                       useRTReflections;
+
+    gbufferUBO.thisFrameColorBufferIdx = gbuffer.GetHandle(GBufferTextureType::GBufferThisFrameColor);
 
     Nvidia::StreamlineManager::SetUseRayReconstructionThisFrame(useRayReconstruction);
 
@@ -807,14 +801,6 @@ void PassManager::UpdateGBufferUBO(const MainPassData& data)
     else if (rtReflectionsRequested && rtState.reflectionsDebugMode == RTReflectionDebugMode::ReflectionsOnly)
     {
         gbufferUBO.thisFrameColorBufferIdx = data.rtReflectionsTextureHandle;
-    }
-    else if (useRTReflections)
-    {
-        gbufferUBO.thisFrameColorBufferIdx = data.rtReflectedSceneColorTextureHandle;
-    }
-    else
-    {
-        gbufferUBO.thisFrameColorBufferIdx = temporal.currentColorHandle;
     }
 
     memcpy(m_frameResourceManager.GetMappedGBufferPostProcessUBO(), &gbufferUBO, sizeof(UBO::GBufferPostProcessUBO));

@@ -1,6 +1,8 @@
 #include "SLight.h"
 #include "Core/ECS/Components/Light.h"
 #include "Core/ECS/Components/Transform.h"
+#include "Core/ECS/Components/RenderComponent.h"
+#include "../../../../Shaders/Globals/Material.h"
 #include "Core/ECS/EntityManager.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Global/LogDefines.h"
@@ -48,6 +50,46 @@ void ECS::System::SLight::Process()
                 m_cachedPointLights.push_back(ConvertToRenderLight(pLight, pTransform));
             }
         }
+        // Emissive mesh point light injection
+        const auto& renderComps = g_pEntityManager->GetComponentVector<Components::RenderComponent>();
+        for (const auto& holder : renderComps)
+        {
+            const auto* pRenderComp = &holder.component;
+            if (!pRenderComp || !pRenderComp->pMaterial)
+                continue;
+
+            const auto* pMaterial = pRenderComp->pMaterial;
+            bool hasEmissiveFlag = (pMaterial->flags & (1u << 4)) != 0; // MATERIAL_FLAG_EMISSIVE_BIT
+            bool hasEmissiveColor = (pMaterial->emissive.x > 0.05f || pMaterial->emissive.y > 0.05f || pMaterial->emissive.z > 0.05f);
+            
+            if (hasEmissiveFlag || hasEmissiveColor)
+            {
+                const auto* pTransform = g_pEntityManager->GetComponentUnsafe<Components::Transform>(holder.entity);
+                if (!pTransform)
+                    continue;
+
+                float r = pMaterial->emissive.x;
+                float g = pMaterial->emissive.y;
+                float b = pMaterial->emissive.z;
+                float maxVal = stltype::max(r, stltype::max(g, b));
+                if (maxVal <= 0.05f)
+                    maxVal = 1.0f; // Default fallback
+
+                float intensity = maxVal * 8.0f;
+                float range = stltype::max(5.0f, stltype::min(25.0f, 10.0f * maxVal));
+                
+                mathstl::Vector3 lightColor = maxVal > 0.0001f ? mathstl::Vector3(r / maxVal, g / maxVal, b / maxVal) : mathstl::Vector3(1.f, 1.f, 1.f);
+
+                RenderLight emissiveLight;
+                emissiveLight.position = mathstl::Vector4(pTransform->position.x, pTransform->position.y, pTransform->position.z, 0.0f); // 0.0f = Point light
+                emissiveLight.direction = mathstl::Vector4(0.0f, -1.0f, 0.0f, range);
+                emissiveLight.color = mathstl::Vector4(lightColor.x, lightColor.y, lightColor.z, intensity);
+                emissiveLight.cutoff = mathstl::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
+
+                m_cachedPointLights.push_back(emissiveLight);
+            }
+        }
+
         m_lightDataDirty = true;
     }
     else

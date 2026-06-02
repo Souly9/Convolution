@@ -73,4 +73,13 @@ STRUCTDECL(RTAOPushConstants)
     STRUCTFIELD(float, aoIntensity)
 STRUCTEND()
 
+STRUCTDECL(RTCompositePushConstants)
+    STRUCTFIELD(uint, resetHistory)
+    STRUCTFIELD(float, accumRate)
+    STRUCTFIELD(uint, accumTexIdx)
+    STRUCTFIELD(uint, rtaoTexIdx)
+    STRUCTFIELD(uint, rtReflectionsTexIdx)
+STRUCTEND()
+
 #endif // SHADERS_PUSH_CONSTANTS_H
+

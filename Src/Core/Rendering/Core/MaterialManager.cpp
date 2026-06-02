@@ -11,6 +11,7 @@ MaterialManager::MaterialManager()
     defaultMaterial.pbr2 = mathstl::Vector4(0.0f, 0.0f, 0.0f, 1.0f);
     defaultMaterial.pbr3 = mathstl::Vector4(0.0f, 0.5f, 0.0f, 1.5f);
     defaultMaterial.diffuseTexture = 0;
+    defaultMaterial.specularTexture = 0;
     defaultMaterial.flags = 0;
 
     AllocateMaterial("Default", defaultMaterial);
@@ -21,7 +22,8 @@ static bool CompareMaterials(const Material& m1, const Material& m2)
     return m1.baseColor == m2.baseColor && m1.emissive == m2.emissive && m1.pbr1 == m2.pbr1 && m1.pbr2 == m2.pbr2 &&
            m1.pbr3 == m2.pbr3 && m1.diffuseTexture == m2.diffuseTexture && m1.normalTexture == m2.normalTexture &&
            m1.metallicRoughnessTexture == m2.metallicRoughnessTexture && m1.emissiveTexture == m2.emissiveTexture &&
-           m1.sheenTexture == m2.sheenTexture && m1.clearcoatTexture == m2.clearcoatTexture && m1.flags == m2.flags;
+           m1.sheenTexture == m2.sheenTexture && m1.clearcoatTexture == m2.clearcoatTexture &&
+           m1.specularTexture == m2.specularTexture && m1.flags == m2.flags;
 }
 
 Material* MaterialManager::GetMaterial(const stltype::string& name)

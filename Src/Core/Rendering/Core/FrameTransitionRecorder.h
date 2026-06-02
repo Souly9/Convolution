@@ -18,8 +18,9 @@ public:
     void RecordVelocityClear(CommandBuffer* pCmdBuffer, GBuffer& gbuffer);
     void RecordDepthToReadOnly(CommandBuffer* pCmdBuffer, const RenderPasses::RendererAttachmentInfo& attachments);
     void RecordThisFrameColorToRead(CommandBuffer* pCmdBuffer, GBuffer& gbuffer);
-    void RecordTemporalCurrentColorToGeneral(CommandBuffer* pCmdBuffer, GBuffer& gbuffer);
-    void RecordTemporalCurrentColorToRead(CommandBuffer* pCmdBuffer, GBuffer& gbuffer);
+    void RecordThisFrameColorToGeneral(CommandBuffer* pCmdBuffer, GBuffer& gbuffer);
+    void RecordThisFrameColorToGeneralDiscard(CommandBuffer* pCmdBuffer, GBuffer& gbuffer);
+    void RecordThisFrameColorFromGeneralToRead(CommandBuffer* pCmdBuffer, GBuffer& gbuffer);
     void RecordResolveToGeneral(CommandBuffer* pCmdBuffer, GBuffer& gbuffer);
     void RecordResolveToRead(CommandBuffer* pCmdBuffer, GBuffer& gbuffer);
     void RecordCopyTextureToResolve(CommandBuffer* pCmdBuffer, GBuffer& gbuffer, Texture* pSourceTexture);

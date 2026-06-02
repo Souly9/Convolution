@@ -274,6 +274,7 @@ Material* ExtractMaterial(const aiMaterial* pMaterial)
     loadTexture({aiTextureType_EMISSIVE}, TextureSemantic::Emissive, mat.emissiveTexture, MATERIAL_FLAG_EMISSIVE_BIT);
     loadTexture({aiTextureType_SHEEN}, TextureSemantic::Sheen, mat.sheenTexture, MATERIAL_FLAG_SHEEN_BIT);
     loadTexture({aiTextureType_CLEARCOAT}, TextureSemantic::Clearcoat, mat.clearcoatTexture, MATERIAL_FLAG_CLEARCOAT_BIT);
+    loadTexture({aiTextureType_SPECULAR}, TextureSemantic::Specular, mat.specularTexture, MATERIAL_FLAG_SPECULAR_GLOSSINESS_BIT);
 
     aiColor4D baseColor;
     if (AI_SUCCESS == pMaterial->Get(AI_MATKEY_BASE_COLOR, baseColor))

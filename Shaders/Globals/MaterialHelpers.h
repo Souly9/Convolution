@@ -41,15 +41,18 @@ FUNC_QUALIFIER vec3 ApplyMaterialNormalMap(Material mat, vec2 materialUV, mat3 t
     if (!IsMaterialFlagSet(mat.flags, MATERIAL_FLAG_NORMAL_BIT))
         return fallbackNormal;
 
-    vec3 tangentNormal = texture(GlobalBindlessTextures[nonuniformEXT(mat.normalTexture)], materialUV).xyz * 2.0 - 1.0;
-    if (dot(tangentNormal, tangentNormal) <= 1e-6)
-        return fallbackNormal;
+    vec4 normalSample = texture(GlobalBindlessTextures[nonuniformEXT(mat.normalTexture)], materialUV);
+    vec3 tangentNormal;
+    tangentNormal.xy = normalSample.xy * 2.0 - 1.0;
 
-    vec3 mappedNormal = normalize(tbn * tangentNormal);
     if (IsMaterialFlagSet(mat.flags, MATERIAL_FLAG_FLIPPED_NORMAL_BIT))
     {
-        mappedNormal.y = -mappedNormal.y;
+        tangentNormal.y = -tangentNormal.y;
     }
+
+    tangentNormal.z = sqrt(clamp(1.0 - dot(tangentNormal.xy, tangentNormal.xy), 0.0, 1.0));
+
+    vec3 mappedNormal = normalize(tbn * tangentNormal);
     return mappedNormal;
 }
 
@@ -68,6 +71,14 @@ FUNC_QUALIFIER SurfaceParameters BuildMaterialSurface(Material mat, vec2 materia
         vec3 sampledData = texture(GlobalBindlessTextures[nonuniformEXT(mat.metallicRoughnessTexture)], materialUV).rgb;
         surface.roughness *= sampledData.g;
         surface.metallic *= sampledData.b;
+    }
+
+    if (IsMaterialFlagSet(mat.flags, MATERIAL_FLAG_SPECULAR_GLOSSINESS_BIT))
+    {
+        vec4 specGloss = texture(GlobalBindlessTextures[nonuniformEXT(mat.specularTexture)], materialUV);
+        // specGloss is a packed MR map: R=Metallic (from BGR swizzle), G=Roughness, B=AO
+        surface.roughness = clamp(specGloss.g, 0.045, 1.0);
+        surface.metallic = clamp(specGloss.r, 0.0, 1.0);
     }
 
     if (IsMaterialFlagSet(mat.flags, MATERIAL_FLAG_SHEEN_BIT))

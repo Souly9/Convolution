@@ -1,11 +1,10 @@
 #pragma once
-#include "RenderTraitsMacros.h"
+#include "Attachment.h"
 #include "Core/Rendering/Core/Defines/DescriptorLayoutDefines.h"
 #include "Core/Rendering/Core/RenderingForwardDecls.h"
-#include "Attachment.h" 
 #include "Core/Rendering/Core/Resource.h"
 #include "RenderDefinitions.h"
-
+#include "RenderTraitsMacros.h"
 
 struct ShaderCollection
 {
@@ -113,8 +112,9 @@ public:
 
 #include "Core/Rendering/Core/APITraits.h"
 #ifdef USE_VULKAN
-#include "Core/Rendering/Vulkan/VulkanTraits.h"
 #include "Core/Rendering/Vulkan/VkPipeline.h"
+#include "Core/Rendering/Vulkan/VulkanTraits.h"
+
 #endif
 
 template <typename API>

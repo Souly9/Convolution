@@ -3,6 +3,7 @@
 #include "Core/Global/State/ApplicationState.h"
 #include "Core/Rendering/Core/Texture.h"
 #include "Core/Rendering/Core/Utils/DeleteQueue.h"
+#include "RT/RTResourceManager.h"
 #include <imgui/backends/imgui_impl_vulkan.h>
 #include <vulkan/vulkan_core.h>
 
@@ -31,6 +32,7 @@ void ReleaseImGuiIds(stltype::vector<u64>& ids)
 void RenderTextureImGuiRegistry::ReleaseGBufferIdsForNextFrame()
 {
     ReleaseImGuiIds(m_gbufferImGuiIDs);
+    ReleaseImGuiIds(m_rtImGuiIDs);
     m_pVelocityA = nullptr;
     m_pHistoryColorA = nullptr;
     m_velocityIdA = 0;
@@ -89,7 +91,6 @@ void RenderTextureImGuiRegistry::RegisterGBufferTextures(GBuffer& gbuffer, Textu
     m_gbufferImGuiIDs.push_back(m_velocityIdA);
 
     m_gbufferImGuiIDs.push_back(addTex(GBufferTextureType::GBufferThisFrameColor));
-    m_gbufferImGuiIDs.push_back(addTex(GBufferTextureType::GBufferTemporalCurrentColor));
 
     m_pHistoryColorA = gbuffer.Get(GBufferTextureType::GBufferLastFrameColor);
     m_historyColorIdA = addTex(GBufferTextureType::GBufferLastFrameColor);
@@ -117,7 +118,35 @@ void RenderTextureImGuiRegistry::PublishGBufferTextureState(GBuffer& gbuffer)
             state.renderState.gbufferImGuiIDs[3] = velocitySwapped ? m_velocityIdB : m_velocityIdA;
 
             const bool colorSwapped = pGbuffer->Get(GBufferTextureType::GBufferLastFrameColor) != m_pHistoryColorA;
-            state.renderState.gbufferImGuiIDs[6] = colorSwapped ? m_historyColorIdB : m_historyColorIdA;
-            state.renderState.gbufferImGuiIDs[7] = colorSwapped ? m_historyColorIdA : m_historyColorIdB;
+            state.renderState.gbufferImGuiIDs[5] = colorSwapped ? m_historyColorIdB : m_historyColorIdA;
+            state.renderState.gbufferImGuiIDs[6] = colorSwapped ? m_historyColorIdA : m_historyColorIdB;
+        });
+}
+
+void RenderTextureImGuiRegistry::RegisterRTTextures(const RT::RTResourceManager& rtResourceManager)
+{
+    ReleaseImGuiIds(m_rtImGuiIDs);
+
+    auto addRT = [&](RT::RTTextureType type)
+    {
+        const auto& res = rtResourceManager.Get(type);
+        if (res.pTexture != nullptr && res.pTexture->GetImageView() != VK_NULL_HANDLE)
+        {
+            return reinterpret_cast<u64>(ImGui_ImplVulkan_AddTexture(
+                res.pTexture->GetSampler(),
+                res.pTexture->GetImageView(),
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL));
+        }
+        return static_cast<u64>(0);
+    };
+
+    m_rtImGuiIDs.push_back(addRT(RT::RTTextureType::DebugView));
+    m_rtImGuiIDs.push_back(addRT(RT::RTTextureType::Reflections));
+    m_rtImGuiIDs.push_back(addRT(RT::RTTextureType::RTAO));
+
+    g_pApplicationState->RegisterUpdateFunction(
+        [ids = m_rtImGuiIDs](ApplicationState& state)
+        {
+            state.renderState.rtImGuiIDs = ids;
         });
 }

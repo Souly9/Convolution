@@ -14,6 +14,7 @@
 #include "Core/Rendering/Vulkan/Utils/VkDescriptorLayoutUtils.h"
 #include "Core/Rendering/Vulkan/VkDescriptorPool.h"
 #include "Core/Rendering/Vulkan/VkTexture.h"
+#include "Core/Rendering/Vulkan/VkTextureManager.h"
 #include "Core/WindowManager.h"
 #include <EASTL/algorithm.h>
 
@@ -59,8 +60,9 @@ void FrameResourceManager::BuildSharedDataForView(const RenderView& mainView,
     viewMat = Matrix::CreateLookAt(viewPos, rotatedFocusPos, upVector);
     const f32 nearPlane = stltype::max(mainView.zNear, 0.000001f);
     const f32 farPlane = stltype::max(mainView.zFar, nearPlane + 0.000001f);
-    Matrix projMat = Matrix::CreatePerspectiveFieldOfView(
-        fovRadians, aspectRatio, kUseReversedZDepth ? farPlane : nearPlane, kUseReversedZDepth ? nearPlane : farPlane);
+    Matrix projMat = Matrix::CreatePerspectiveFieldOfView(fovRadians, aspectRatio, farPlane, nearPlane);
+    // projMat.m[2][2] = 1.0f - projMat.m[2][2];
+    // projMat.m[3][2] = -projMat.m[3][2];
     // Previous frame view data
     ubo.prevView = ubo.view;
     ubo.prevProjection = ubo.projection;
@@ -125,6 +127,7 @@ void FrameResourceManager::BuildSharedDataForView(const RenderView& mainView,
     ubo.rtUseGlobalMaterialReflectance = renderState.rt.globalReflectanceOverrideEnabled ? 1u : 0u;
     ubo.rtGlobalMaterialReflectance = renderState.rt.globalMaterialReflectance;
     ubo.debugFlags = (ubo.debugFlags & ~(0xFFu << 8)) | ((u32)renderState.aaType << 8);
+    ubo.skyboxTextureIdx = m_skyboxBindlessHandle;
 }
 
 void FrameResourceManager::Init()
@@ -157,6 +160,10 @@ void FrameResourceManager::Init()
     m_cachedTransformSSBO.resize(MAX_ENTITIES);
     m_cachedPrevTransformSSBO.resize(MAX_ENTITIES);
     m_cachedSceneAABBs.resize(MAX_ENTITIES);
+
+    m_skyboxTextureHandle = g_pTexManager->SubmitAsyncTextureCreation(
+        {"../../Resources/Skyboxes/mpumalanga_veld_puresky_4k.hdr", false, TextureSemantic::Auto, true});
+    m_skyboxBindlessHandle = g_pTexManager->MakeTextureBindless(m_skyboxTextureHandle, true);
 }
 
 void FrameResourceManager::CreatePassObjectsAndLayouts()
@@ -318,26 +325,27 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
             stltype::array<f32, 16> splits{};
             f32 zNear = stltype::max(mainView.zNear, 0.000001f);
             f32 zFar = mainView.zFar;
-            f32 aspectRatio = passManagerRenderState.renderResolution.y > 0.0f
-                                  ? passManagerRenderState.renderResolution.x / passManagerRenderState.renderResolution.y
-                                  : 1.0f;
+            f32 aspectRatio =
+                passManagerRenderState.renderResolution.y > 0.0f
+                    ? passManagerRenderState.renderResolution.x / passManagerRenderState.renderResolution.y
+                    : 1.0f;
 
-            CSMPass::ComputeLightViewProjMatrices(
-                renderState.directionalLightCascades,
-                zNear,
-                zFar,
-                renderState.csmLambda,
-                mainView.fov,
-                aspectRatio,
-                viewMat,
-                viewProj.Invert(),
-                lightDir,
-                splits,
-                m_currentSharedDataUBO.csmViewMatrices,
-                (u32)renderState.csmResolution.x);
+            CSMPass::ComputeLightViewProjMatrices(renderState.directionalLightCascades,
+                                                  zNear,
+                                                  zFar,
+                                                  renderState.csmLambda,
+                                                  mainView.fov,
+                                                  aspectRatio,
+                                                  viewMat,
+                                                  viewProj.Invert(),
+                                                  lightDir,
+                                                  splits,
+                                                  m_currentSharedDataUBO.csmViewMatrices,
+                                                  (u32)renderState.csmResolution.x);
 
             m_currentSharedDataUBO.cascadeCount = (s32)renderState.directionalLightCascades;
-            m_currentSharedDataUBO.screenSpaceShadows = pPassManager->GetMainPassData(currentSwapChainIdx).screenSpaceShadows;
+            m_currentSharedDataUBO.screenSpaceShadows =
+                pPassManager->GetMainPassData(currentSwapChainIdx).screenSpaceShadows;
             for (u32 i = 0; i < 4; ++i)
             {
                 m_currentSharedDataUBO.cascadeSplits[i] =

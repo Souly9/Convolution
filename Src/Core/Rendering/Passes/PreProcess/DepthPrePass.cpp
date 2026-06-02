@@ -20,7 +20,7 @@ void DepthPrePass::BuildPipelines()
     info.descriptorSetLayout.sharedDescriptors = m_sharedDescriptors;
     info.attachmentInfos =
         CreateAttachmentInfo({m_mainRenderingData.colorAttachments}, m_mainRenderingData.depthAttachment);
-    info.depthCompareOp = kDepthWriteCompareOp;
+    info.depthCompareOp = DepthCompareOp::GREATER_OR_EQUAL;
     info.depthWriteEnable = true;
     // info.rasterizerInfo.cullmode = CullMode::BACK;
 

@@ -9,6 +9,7 @@
 #define MATERIAL_FLAG_EMISSIVE_BIT           4
 #define MATERIAL_FLAG_SHEEN_BIT              5
 #define MATERIAL_FLAG_CLEARCOAT_BIT          6
+#define MATERIAL_FLAG_SPECULAR_GLOSSINESS_BIT 7
 
 STRUCTDECL(Material)
     STRUCTFIELD(vec4, baseColor) // RGBA
@@ -22,6 +23,7 @@ STRUCTDECL(Material)
     STRUCTFIELD(uint, emissiveTexture)
     STRUCTFIELD(uint, sheenTexture)
     STRUCTFIELD(uint, clearcoatTexture)
+    STRUCTFIELD(uint, specularTexture)
     STRUCTFIELD(uint, flags)
 STRUCTEND()
 
@@ -39,4 +41,3 @@ FUNC_QUALIFIER void SetMaterialFlag(INOUT(uint) flags, uint bit, bool value)
 }
 
 #endif // SHADERS_MATERIAL_H
- 

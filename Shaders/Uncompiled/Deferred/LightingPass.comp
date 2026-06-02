@@ -3,27 +3,23 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_EXT_scalar_block_layout : enable
 
+#define BindlessImageSet     0
 #define PassPerObjectDataSet 10
 
-#include "../../Globals/Common.h"
 #include "../../Globals/Bindless.h"
-#include "../../Globals/Shadows/Data.h"
-#include "../../Globals/GBuffer/GBufferSampling.h"
-#include "../../Globals/Shadows/ShadowSampling.h"
 #include "../../Globals/ClusterLightData.h"
-#include "../../Globals/MaterialHelpers.h"
-#include "../../Globals/UnrealPBR.h"
+#include "../../Globals/Common.h"
+#include "../../Globals/GBuffer/GBufferSampling.h"
 #include "../../Globals/GeometryPassData.h"
+#include "../../Globals/MaterialHelpers.h"
+#include "../../Globals/Scene.h"
+#include "../../Globals/Shadows/Data.h"
+#include "../../Globals/Shadows/ShadowSampling.h"
 #include "../../Globals/Tonemapping.h"
+#include "../../Globals/UnrealPBR.h"
 #include "../../Globals/Utils/Math.h"
 
-layout(location = 0) in VertexOut
-{
-    vec2 fragTexCoord;
-}
-IN;
-
-layout(location = 0) out vec4 outColor;
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 // CSM debug colors for each cascade layer
 vec3 getCascadeDebugColor(int cascadeIndex)
@@ -40,6 +36,40 @@ vec3 getCascadeDebugColor(int cascadeIndex)
     return cascadeColors[clamp(cascadeIndex, 0, 7)];
 }
 
+vec2 SampleEquirectangular(vec3 d)
+{
+    float phi = atan(d.z, d.x);
+    float theta = acos(d.y);
+    vec2 uv = vec2((phi + PI) / (2.0 * PI), theta / PI);
+    return uv;
+}
+
+vec3 hdr_clamp_chroma(vec3 color, float maxValue)
+{
+    float peak = max(color.r, max(color.g, color.b));
+    return (peak > maxValue) ? color * (maxValue / peak) : color;
+}
+
+vec3 SampleSkybox(vec3 d)
+{
+    if (ubo.skyboxTextureIdx != 0u)
+    {
+        vec2 uv = SampleEquirectangular(normalize(d));
+        vec3 rawColor = texture(GlobalBindlessTextures[nonuniformEXT(ubo.skyboxTextureIdx)], uv).rgb;
+
+        // Calibrate raw HDR values (e.g. from 4k skybox) to engine lighting space
+        vec3 scaledColor = rawColor * 0.05;
+
+        // Preserve color temperature and detail while clipping peak intensity for tonemapping safety
+        return hdr_clamp_chroma(scaledColor, 15.0);
+    }
+    // Fallback analytical sky
+    float dirY = normalize(d).y;
+    vec3 zenithColor = vec3(0.01, 0.05, 0.15);
+    vec3 horizonColor = vec3(0.4, 0.55, 0.7);
+    return mix(horizonColor, zenithColor, max(dirY, 0.0));
+}
+
 float SampleGlobalShadowmaps(vec4 fragWorldPos, float viewDepth, vec3 normal, vec3 lightDir)
 {
     float shadow = 1.0;
@@ -52,9 +82,16 @@ float SampleGlobalShadowmaps(vec4 fragWorldPos, float viewDepth, vec3 normal, ve
 
 void main()
 {
-    vec2 texCoords = IN.fragTexCoord;
-    vec3 albedo = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.gbufferAlbedoIdx)], texCoords).xyz;
-    vec4 gbufferTexCoordMat = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.gbufferTexCoordMatIdx)], texCoords);
+    ivec2 texelCoords = ivec2(gl_GlobalInvocationID.xy);
+    if (texelCoords.x >= int(ubo.renderResolution.x) || texelCoords.y >= int(ubo.renderResolution.y))
+        return;
+
+    vec2 texCoords = (vec2(texelCoords) + 0.5) / ubo.renderResolution;
+
+    vec4 colorBuffer = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.gbufferAlbedoIdx)], texCoords);
+    vec3 albedo = colorBuffer.xyz;
+    vec4 gbufferTexCoordMat =
+        texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.gbufferTexCoordMatIdx)], texCoords);
     vec2 materialUV = gbufferTexCoordMat.xy;
     vec4 fragNormalData = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.gbufferNormalIdx)], texCoords);
     uint fragMatIdx = uint(fragNormalData.w);
@@ -63,9 +100,20 @@ void main()
 
     float fragmentDepth = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.depthBufferIdx)], texCoords).r;
 
+    if (length(fragNormal) < 1e-5f)
+    {
+        vec4 fragPosWorldSpace = DepthToWorldSpace(texCoords, 0.0, ubo.viewProjectionInverse);
+        vec3 rayDir = normalize(fragPosWorldSpace.xyz - ubo.viewPos.xyz);
+        imageStore(GlobalBindlessImages[nonuniformEXT(gbufferUBO.deferredLightingColorIdx)],
+                   texelCoords,
+                   vec4(1.0, 0.0, 0.0, 1.0));
+        return;
+    }
+
     vec4 fragPosWorldSpace = DepthToWorldSpace(texCoords, fragmentDepth, ubo.jitteredViewProjectionInverse);
     mat4 view = ubo.view;
-    vec4 fragPosViewSpace = view * fragPosWorldSpace; // Technically already got it when calculating world from depth but this is fiiine
+    vec4 fragPosViewSpace =
+        view * fragPosWorldSpace; // Technically already got it when calculating world from depth but this is fiiine
 
     vec3 normal = fragNormal;
     vec3 camPos = ubo.viewPos.xyz;
@@ -88,8 +136,9 @@ void main()
         float shadow = computeShadow(fragPosWorldSpace, viewDepth, N, dirLightTravelDir);
         vec3 debugColor = mix(cascadeColor, albedo, shadow);
 
-        outColor.rgb = debugColor;
-        outColor.a = 1.0;
+        imageStore(GlobalBindlessImages[nonuniformEXT(gbufferUBO.deferredLightingColorIdx)],
+                   texelCoords,
+                   vec4(debugColor, 1.0));
         return;
     }
     // 2 = Cluster Debug
@@ -100,8 +149,8 @@ void main()
         float g = fract(sin(float(clusterIdx) * 26.6518 + 12.453) * 21356.1235);
         float b = fract(sin(float(clusterIdx) * 98.3125 + 98.654) * 87541.2356);
 
-        outColor.rgb = vec3(r, g, b);
-        outColor.a = 1.0;
+        imageStore(
+            GlobalBindlessImages[nonuniformEXT(gbufferUBO.deferredLightingColorIdx)], texelCoords, vec4(r, g, b, 1.0));
         return;
     }
 
@@ -128,16 +177,16 @@ void main()
         float lightRange = light.direction.w;
         float lightIntensity = light.color.w;
         vec3 lightColor = light.color.xyz * lightIntensity;
-        
-        directLighting += computePointLight(
-            fragPosWorldSpace.xyz, lightPos, lightRange, V, N, lightColor, surface);
+
+        directLighting += computePointLight(fragPosWorldSpace.xyz, lightPos, lightRange, V, N, lightColor, surface);
     }
 
     // --- Directional Light ---
     float dirLightShadow = SampleGlobalShadowmaps(fragPosWorldSpace, viewDepth, N, dirLightTravelDir);
     if ((ubo.debugFlags & DEBUG_FLAG_SSS_ENABLED) != 0u)
     {
-        float sss = clamp(texture(GlobalBindlessTextures[nonuniformEXT(ubo.screenSpaceShadows)], texCoords).r, 0.0, 1.0);
+        float sss =
+            clamp(texture(GlobalBindlessTextures[nonuniformEXT(ubo.screenSpaceShadows)], texCoords).r, 0.0, 1.0);
         float contactShadowStrength = 0.9;
         dirLightShadow *= mix(1.0, sss, contactShadowStrength);
     }
@@ -152,5 +201,5 @@ void main()
 
     vec3 finalHDRColor = (directLighting + indirectLighting + emissive);
 
-    outColor = vec4(finalHDRColor, 1.0);
+    imageStore(GlobalBindlessImages[nonuniformEXT(gbufferUBO.deferredLightingColorIdx)], texelCoords, colorBuffer);
 }

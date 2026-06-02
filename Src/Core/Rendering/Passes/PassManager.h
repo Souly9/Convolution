@@ -35,14 +35,12 @@ struct MainPassData
     struct TemporalResources
     {
         Texture* pCurrentColorTexture{nullptr};
-        Texture* pTemporalCurrentColorTexture{nullptr};
         Texture* pHistoryColorTexture{nullptr};
         Texture* pResolveTexture{nullptr};
         Texture* pPostAAColorTexture{nullptr};
         Texture* pCurrentDepthTexture{nullptr};
         Texture* pHistoryDepthTexture{nullptr};
         BindlessTextureHandle currentColorHandle{0};
-        BindlessTextureHandle temporalCurrentColorHandle{0};
         BindlessTextureHandle historyColorHandle{0};
         BindlessTextureHandle resolveHandle{0};
         BindlessTextureHandle postAAColorHandle{0};
@@ -81,15 +79,14 @@ struct MainPassData
     RT::RTSceneManager* pRTSceneManager{nullptr};
     Texture* pRTDebugViewTexture{nullptr};
     Texture* pRTReflectionsTexture{nullptr};
-    Texture* pRTReflectedSceneColorTexture{nullptr};
     BindlessTextureHandle rtDebugTextureHandle{0};
     BindlessTextureHandle rtReflectionsTextureHandle{0};
-    BindlessTextureHandle rtReflectedSceneColorTextureHandle{0};
     Texture* pRTAOTexture{nullptr};
     BindlessTextureHandle rtaoTextureHandle{0};
+    Texture* pRTAccumulationTexture{nullptr};
+    BindlessTextureHandle rtAccumulationTextureHandle{0};
     u32 cascades{0};
     f32 csmStepSize{0.0f};
-
     // SMAA Intermediates
 
     // SMAA Intermediates
@@ -114,7 +111,6 @@ enum class PassType
     DLSS,        // Deep Learning Super Sampling
     DLSS_RR,     // Deep Learning Super Sampling Ray Reconstruction
     XeSS,        // Intel XeSS
-    TemporalTonemap,
     Composite,
     UI,
     Debug,
@@ -137,7 +133,7 @@ struct PassStage
     stltype::fixed_vector<PassType, 8> groups;
 };
 
-inline const stltype::fixed_vector<PassStage, 12> PASS_SCHEDULE = {
+inline const stltype::fixed_vector<PassStage, 11> PASS_SCHEDULE = {
     PassStage{{PassType::EarlyAsyncCompute}},
     PassStage{{PassType::PreProcess}},
     PassStage{{PassType::DepthReliantCompute}},
@@ -145,7 +141,6 @@ inline const stltype::fixed_vector<PassStage, 12> PASS_SCHEDULE = {
     PassStage{{PassType::Lighting}},
     PassStage{{PassType::RTAOCompute, PassType::RTReflectionsCompute}},
     PassStage{{PassType::RTComposite}},
-    PassStage{{PassType::TemporalTonemap}},
     PassStage{{PassType::TAA, PassType::DLSS, PassType::DLSS_RR, PassType::XeSS}},
     PassStage{{PassType::SMAA}},
     PassStage{{PassType::Composite}},
@@ -160,13 +155,13 @@ inline bool IsComputePass(PassType type)
            type == PassType::ClusterGenCompute ||
            type == PassType::TileAssignmentCompute ||
            type == PassType::PostProcess ||
-           type == PassType::TemporalTonemap ||
            type == PassType::TAA ||
            type == PassType::DLSS ||
            type == PassType::DLSS_RR ||
            type == PassType::XeSS ||
            type == PassType::RTAOCompute ||
-           type == PassType::RTReflectionsCompute;
+           type == PassType::RTReflectionsCompute ||
+           type == PassType::RTComposite;
 }
 
 struct GraphicsFrameContext

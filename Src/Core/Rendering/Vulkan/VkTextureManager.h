@@ -40,7 +40,8 @@ enum class TextureSemantic : u8
     Normal,
     Data,
     Sheen,
-    Clearcoat
+    Clearcoat,
+    Specular
 };
 
 struct DynamicTextureRequest

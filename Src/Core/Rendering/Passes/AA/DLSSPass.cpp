@@ -121,15 +121,6 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
         return;
     
     Texture* pColorIn = data.temporalResources.pCurrentColorTexture;
-    const auto& appRenderState = g_pApplicationState->GetCurrentApplicationState().renderState;
-    const bool useRTReflections = data.pRTSceneManager != nullptr &&
-                                  data.pRTSceneManager->HasReadyTLAS(frameIdx) &&
-                                  mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
-                                  mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTReflectionsEnabled);
-    if (useRTReflections)
-    {
-        pColorIn = data.pRTReflectedSceneColorTexture;
-    }
 
     Texture* pColorOut = data.temporalResources.pResolveTexture;
     Texture* pDepth = data.temporalResources.pCurrentDepthTexture;

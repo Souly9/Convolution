@@ -98,15 +98,16 @@ struct RendererState
         f32 globalMaterialReflectance{1.0f};
         u32 pendingBlasCount{0};
         u32 residentInstanceCount{0};
-        u32 reflectionsRaysPerPixel{1};
+        u32 reflectionsRaysPerPixel{4};
         bool globalReflectanceOverrideEnabled{false}; // Kept for UI logic, but can be flag later
         bool reflectionsUseRayReconstruction{false};
-        u32 aoRaysPerPixel{1};
+        u32 aoRaysPerPixel{4};
         f32 aoRadius{2.0f};
         f32 aoIntensity{1.0f};
     } rt;
 
     stltype::vector<u64> gbufferImGuiIDs{};
+    stltype::vector<u64> rtImGuiIDs{}; // Per-RT-buffer ImGui texture IDs
     u64 depthbufferImGuiID{};
     stltype::vector<u64> csmCascadeImGuiIDs{}; // Per-cascade ImGui texture IDs
     stltype::string physicalRenderDeviceName{};
@@ -122,11 +123,11 @@ struct RendererState
     mathstl::Vector2 swapchainResolution{};
 
     // Tonemapping
-    f32 exposure{1.0f};
+    f32 exposure{1.5f};
     s32 toneMapperType{static_cast<s32>(ToneMapperType::GT7)};
     f32 gt7PaperWhite{100.0f};
     f32 gt7ReferenceLuminance{300.0f};
-    f32 ambientIntensity{0.05f};
+    f32 ambientIntensity{0.1f};
 
     // Render info
     u32 triangleCount{};

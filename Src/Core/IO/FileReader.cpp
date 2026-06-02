@@ -193,12 +193,34 @@ void FileReader::ReadImageFile(const IORequest& request)
     }
     else
     {
-        info.pixels =
-            stbi_load(request.filePath.data(), &info.extents.x, &info.extents.y, &info.texChannels, STBI_rgb_alpha);
-        info.dataSize = (u64)info.extents.x * info.extents.y * 4;
-        info.ddsFormat = 0; // Standard RGBA8
-        info.supportsAlpha = true;
-        DEBUG_ASSERT(info.pixels);
+        bool isHDR = false;
+        if (request.filePath.size() > 4)
+        {
+            stltype::string extension = request.filePath.substr(request.filePath.size() - 4);
+            if (extension == ".hdr" || extension == ".HDR")
+            {
+                isHDR = true;
+            }
+        }
+
+        if (isHDR)
+        {
+            float* floatPixels = stbi_loadf(request.filePath.data(), &info.extents.x, &info.extents.y, &info.texChannels, STBI_rgb_alpha);
+            info.pixels = reinterpret_cast<unsigned char*>(floatPixels);
+            info.dataSize = (u64)info.extents.x * info.extents.y * 4 * sizeof(float);
+            info.ddsFormat = 0;
+            info.supportsAlpha = true;
+            DEBUG_ASSERT(info.pixels);
+        }
+        else
+        {
+            info.pixels =
+                stbi_load(request.filePath.data(), &info.extents.x, &info.extents.y, &info.texChannels, STBI_rgb_alpha);
+            info.dataSize = (u64)info.extents.x * info.extents.y * 4;
+            info.ddsFormat = 0; // Standard RGBA8
+            info.supportsAlpha = true;
+            DEBUG_ASSERT(info.pixels);
+        }
     }
 
 

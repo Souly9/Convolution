@@ -9,7 +9,7 @@ namespace Components
 {
 struct Camera : public IComponent
 {
-    float fov{45.f};
+    float fov{75.f};
     float zNear{0.1f};
     float zFar{100.f};
     bool isMainCam{true};
