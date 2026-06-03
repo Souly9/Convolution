@@ -9,7 +9,7 @@
 
 namespace SRF
 {
-static void SubmitCommandBufferToQueue(const stltype::vector<CommandBuffer*>& commandBuffers,
+inline void SubmitCommandBufferToQueue(const stltype::vector<CommandBuffer*>& commandBuffers,
                                        const Fence& transferFinishedFence,
                                        QueueType queue)
 {
@@ -198,7 +198,7 @@ inline SwapchainAcquireStatus QueryImageForPresentationFromMainSwapchain<Vulkan>
 }
 
 template <>
-SwapchainPresentStatus SubmitForPresentationToMainSwapchain<Vulkan>(Semaphore* pWaitSemaphore, u32 swapChainIdx)
+inline SwapchainPresentStatus SubmitForPresentationToMainSwapchain<Vulkan>(Semaphore* pWaitSemaphore, u32 swapChainIdx)
 {
     VkSemaphore waitSemaphore = VK_NULL_HANDLE;
     u32 waitCount = 0;
@@ -230,7 +230,7 @@ SwapchainPresentStatus SubmitForPresentationToMainSwapchain<Vulkan>(Semaphore* p
     return SwapchainPresentStatus::Failed;
 }
 template<>
-void WaitForDeviceIdle<Vulkan>()
+inline void WaitForDeviceIdle<Vulkan>()
 {
     vkDeviceWaitIdle(VK_LOGICAL_DEVICE);
 }

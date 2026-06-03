@@ -23,7 +23,7 @@ struct EntityMeshData
     u32 subMeshIdx;
 
     EntityMeshData(ECS::EntityID id, u32 subIdx, Mesh* pM, Material* pMat, const AABB& box, bool isDebug)
-        : entityID(id), subMeshIdx(subIdx), pMesh(pM), pMaterial(pMat), aabb{box}
+        : pMesh(pM), pMaterial(pMat), aabb{box}, entityID(id), subMeshIdx(subIdx)
     {
         flags[s_isDebugMeshFlag] = isDebug;
     }

@@ -12,13 +12,6 @@
 
 #define PREALLOC_STAGING_BUFFERS 512
 
-static void SetBufferSyncInfo(const AsyncQueueHandler::SynchronizableCommand& cmd, CommandBuffer* pCmdBuffer)
-{
-    pCmdBuffer->SetWaitStages(cmd.waitStage);
-    pCmdBuffer->SetSignalStages(cmd.signalStage);
-    pCmdBuffer->SetName(cmd.name);
-}
-
 // Specializations for variant members to use with SetBufferSyncInfo if needed
 static void SetBufferSyncInfo(const AsyncQueueHandler::MeshTransfer& cmd, CommandBuffer* pCmdBuffer)
 {

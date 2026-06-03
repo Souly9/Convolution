@@ -625,7 +625,7 @@ inline VkBufferUsageFlags Conv(const BufferUsage& m)
                    VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
                    VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
         case BufferUsage::Texture:
-            return VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+            return VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT;
         case BufferUsage::Staging:
             return VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
         case BufferUsage::Uniform:

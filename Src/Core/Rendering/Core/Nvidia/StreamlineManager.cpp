@@ -47,24 +47,12 @@ static StreamlineManager::DLSSDebugState g_dlssDebugState{};
 
 static u32 g_slGraphicsQueueStartIndex = 0;
 static u32 g_slComputeQueueStartIndex = 0;
-static std::atomic<u64> g_slAcquireCallCount = 0;
-static std::atomic<u64> g_slPresentCallCount = 0;
-
-static bool ShouldLogHookProgress(u64 count)
-{
-    return count <= 3 || (count % 240ull) == 0;
-}
 
 static bool IsRenderDocLoaded()
 {
     return GetModuleHandleA("renderdoc.dll") != nullptr;
 }
 
-static bool FileExists(const char* path)
-{
-    const DWORD attrs = GetFileAttributesA(path);
-    return attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY) == 0;
-}
 
 static bool DirectoryExists(const wchar_t* path)
 {

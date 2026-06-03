@@ -97,7 +97,6 @@ void DLSSRRPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResour
 
 bool DLSSRRPass::WantsToRender() const
 {
-    const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
     const bool dlssRRSupported = Nvidia::StreamlineManager::IsDLSSRRSupported();
     if (!dlssRRSupported)
     {
@@ -269,7 +268,7 @@ void DLSSRRPass::Render(const MainPassData& data, FrameRendererContext& ctx, Com
     debugState.outputWidth = outputExtents.x;
     debugState.outputHeight = outputExtents.y;
     debugState.jitter = streamlineJitter;
-    debugState.motionVectorScale = {slConst.mvecScale.x, slConst.mvecScale.y};
+    debugState.motionVectorScale = mathstl::Vector2(slConst.mvecScale.x, slConst.mvecScale.y);
     debugState.nearPlane = cameraData.nearPlane;
     debugState.farPlane = cameraData.farPlane;
     debugState.fovRadians = cameraData.fovRadians;

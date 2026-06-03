@@ -213,7 +213,7 @@ ShaderMap ShaderCompiler::CompileAllShaders()
     ShaderMap rsltMap;
     for (auto& data : m_compileData)
     {
-        EShLanguage type;
+        EShLanguage type = EShLangVertex;
         switch (data.type)
         {
             case ShaderTypeBits::Vertex:

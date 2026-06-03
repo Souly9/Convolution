@@ -19,7 +19,7 @@ struct CsmRenderView
 };
 namespace RenderViewUtils
 {
-static mathstl::Viewport CreateViewportFromData(const mathstl::Vector2& resolution, f32 zNear, f32 zFar)
+inline mathstl::Viewport CreateViewportFromData(const mathstl::Vector2& resolution, f32 zNear, f32 zFar)
 {
     return {0, 0, resolution.x, resolution.y, zNear, zFar};
 }

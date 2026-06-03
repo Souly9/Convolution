@@ -16,7 +16,7 @@ static inline void FillVertices(const Mesh& mesh, stltype::vector<T>& vertices)
 }
 
 template <>
-static inline void FillVertices(const Mesh& mesh, stltype::vector<MinVertex>& vertices)
+inline void FillVertices(const Mesh& mesh, stltype::vector<MinVertex>& vertices)
 {
     for (auto& vert : mesh.vertices)
     {

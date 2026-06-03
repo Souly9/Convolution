@@ -1,10 +1,6 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
-
-extern "C" float sinf(float x);
-extern "C" float powf(float base, float exp);
-extern "C" float floorf(float x);
-extern "C" float ceilf(float x);
+#include <cmath>
 
 namespace mathstl
 {
@@ -34,28 +30,34 @@ namespace mathstl
 
     inline float sin(float val)
     {
-        return ::sinf(val);
+        return std::sin(val);
     }
 
     inline float floor(float val)
     {
-        return ::floorf(val);
+        if (abs(val) >= 8388608.0f)
+            return val;
+        int i = static_cast<int>(val);
+        return (val >= 0.0f || val == static_cast<float>(i)) ? static_cast<float>(i) : static_cast<float>(i - 1);
     }
 
     inline float ceil(float val)
     {
-        return ::ceilf(val);
+        if (abs(val) >= 8388608.0f)
+            return val;
+        int i = static_cast<int>(val);
+        return (val <= 0.0f || val == static_cast<float>(i)) ? static_cast<float>(i) : static_cast<float>(i + 1);
     }
 
     inline float fract(float val)
     {
-        return val - ::floorf(val);
+        return val - floor(val);
     }
 
     template <typename T>
     inline T pow(T base, T exp)
     {
-        return static_cast<T>(::powf(static_cast<float>(base), static_cast<float>(exp)));
+        return static_cast<T>(std::pow(static_cast<float>(base), static_cast<float>(exp)));
     }
 
     template <typename T>

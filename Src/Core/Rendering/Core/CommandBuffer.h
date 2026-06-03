@@ -175,16 +175,14 @@ struct CopyBaseCmd : public CommandBase
 
 struct PushConstantCmd : public CommandBase
 {
-    u32 size;
-    u32 offset;
+    PSO::Ptr pPSO{};
+    u32 offset{0};
+    u32 size{0};
     ShaderTypeBits shaderUsage{ShaderTypeBits::Vertex};
-    stltype::fixed_vector<u8, 128> data{};
-    PSO::Ptr pPSO;
-
-    PushConstantCmd() = default;
+    stltype::fixed_vector<u8, 128> data{}; // Fixed-size storage for push constant data
 
     template <typename T>
-    PushConstantCmd(PSO::Ptr p, u32 off, const T& d, ShaderTypeBits usage = ShaderTypeBits::Vertex) 
+    PushConstantCmd(PSO::Ptr p, u32 off, const T& d, ShaderTypeBits usage = ShaderTypeBits::Vertex)
         : pPSO(p), offset(off), size(sizeof(T)), shaderUsage(usage)
     {
         data.assign((u8*)&d, (u8*)&d + sizeof(T));
