@@ -435,7 +435,7 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
     u64 mainPassSignalValue = computeSignalValue + 3;
     u64 rtComputeSignalValue = computeSignalValue + 4;
     u64 lightingSignalValue = computeSignalValue + 5;
-    u64 finalRenderSignalValue = computeSignalValue + 6;
+    
     u64 graphicsTimelineValue = computeSignalValue + 7;
     const u64 submittedTransferValue = g_pQueueHandler->GetLastSubmittedValue(QueueType::Transfer);
 
@@ -684,7 +684,7 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
 
         const bool taaModeActive = appRenderState.aaType == AntialiasingType::TAA_SMAA;
         const bool smaaModeActive = appRenderState.aaType == AntialiasingType::SMAA;
-        const bool dlssModeActive = appRenderState.aaType == AntialiasingType::DLSS;
+        
         const bool seedHistoryFromCurrentColor = taaModeActive && appRenderState.taaSeedHistoryFromCurrentColor;
         const bool debugCopyCurrent =
             taaModeActive && appRenderState.taaDebugMode == static_cast<u32>(TAADebugMode::CurrentColor);

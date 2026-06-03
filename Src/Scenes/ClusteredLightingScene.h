@@ -27,7 +27,7 @@ public:
         auto envRootEnt = g_pEntityManager->CreateEntity(mathstl::Vector3(0, 0, 0), "EnvironmentRoot");
 
         // Hierarchy Setup
-        auto* pRootTrans = g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(rootEnt);
+        g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(rootEnt);
         
         // Parent sub-roots to main root
         {
@@ -132,7 +132,7 @@ public:
         
         // Parent DirLight to LightsRoot
         {
-             auto* pTrans = g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(dirLightEnt);
+             g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(dirLightEnt);
             // pTrans->parent = lightsRootEnt;
         }
 

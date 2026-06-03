@@ -23,7 +23,7 @@ Application::Application(bool canRender, RenderLayer<RenderAPI>& layer)
     VkGlobals::SetProfiler(m_pProfiler.get());
     g_pApplicationState = &m_applicationState;
 
-    bool bCanRender = layer.InitRenderLayer(
+    layer.InitRenderLayer(
         g_pWindowManager->GetScreenWidth(), g_pWindowManager->GetScreenHeight(), g_pWindowManager->GetTitle());
 
     g_pGPUMemoryManager->Init();
@@ -84,13 +84,13 @@ Application::~Application()
 void Application::Run()
 {
     u32 currentFrame = 0;
-    u32 lastFrame = 1;
+    
     while (!glfwWindowShouldClose(g_pWindowManager->GetWindow()))
     {
         WaitForRendererToFinish();
 
         {
-            lastFrame = currentFrame;
+            
             currentFrame = ++currentFrame % FRAMES_IN_FLIGHT;
             FrameGlobals::SetFrameNumber(currentFrame);
         }

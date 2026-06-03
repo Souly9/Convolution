@@ -14,7 +14,7 @@ static inline bool DrawFloat3Visualizer(const char* label, mathstl::Vector3& val
     using namespace Visualizer;
     ImGui::PushItemWidth(MIN_WIDTH);
     ImGui::PushID(label);
-    ImGui::Text(label);
+    ImGui::TextUnformatted(label);
     ImGui::SameLine(MIN_WIDTH);
     hasChanged |= ImGui::DragFloat("X", &value.x, MIN_STEP_SIZE);
     ImGui::SameLine();
@@ -35,7 +35,7 @@ static inline bool DrawFloatSlider(const char* label,
     using namespace Visualizer;
     ImGui::PushItemWidth(MIN_WIDTH);
     ImGui::PushID(label);
-    ImGui::Text(label);
+    ImGui::TextUnformatted(label);
     ImGui::SameLine(MIN_WIDTH);
     hasChanged |= ImGui::DragFloat("", value, MIN_STEP_SIZE, min, max, "%.3f", flags);
     ImGui::PopID();

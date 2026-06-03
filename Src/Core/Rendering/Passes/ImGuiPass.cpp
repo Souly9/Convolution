@@ -81,7 +81,6 @@ void ImGuiPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comm
 {
     ScopedZone("ImGuiPass::Render");
 
-    ImGuiIO& io = ImGui::GetIO();
     ImGui::Render();
     ColorAttachment swapChainColorAttachment = m_mainRenderingData.colorAttachments[0];
     swapChainColorAttachment.SetTexture(ctx.pCurrentSwapchainTexture);

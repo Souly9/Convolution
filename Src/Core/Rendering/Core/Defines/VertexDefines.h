@@ -4,16 +4,26 @@
 struct MinVertex
 {
     mathstl::Vector3 position;
+    
+    MinVertex() = default;
+    MinVertex(const mathstl::Vector3& p) : position(p) {}
 };
 struct SimpleVertex : public MinVertex
 {
     mathstl::Vector3 normal;
+    
+    SimpleVertex() = default;
+    SimpleVertex(const mathstl::Vector3& p, const mathstl::Vector3& n) : MinVertex(p), normal(n) {}
 };
 
 struct CompleteVertex : SimpleVertex
 {
     mathstl::Vector2 texCoord;
     mathstl::Vector4 tangent;
+    
+    CompleteVertex() = default;
+    CompleteVertex(const mathstl::Vector3& p, const mathstl::Vector3& n, const mathstl::Vector2& uv, const mathstl::Vector4& t)
+        : SimpleVertex(p, n), texCoord(uv), tangent(t) {}
 };
 
 namespace VertexInputDefines

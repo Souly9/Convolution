@@ -32,8 +32,8 @@ private:
     PSO m_blendPSO;
     PSO m_neighborhoodPSO;
 
-    TextureHandle m_searchTexHandle{0};
-    TextureHandle m_areaTexHandle{0};
+    
+    
     BindlessTextureHandle m_searchTexBindless{0};
     BindlessTextureHandle m_areaTexBindless{0};
     u32 m_currentFrameIdx{0};
