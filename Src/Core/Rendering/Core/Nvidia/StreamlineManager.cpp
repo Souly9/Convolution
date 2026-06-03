@@ -42,14 +42,9 @@ static bool g_dlssDEvaluateBlocked = false;
 static bool g_dlssDNeedsReset = false;
 static bool g_imguiPluginAvailable = false;
 static bool g_imguiSupported = false;
-static HMODULE g_slModule = nullptr;
-static bool g_slModuleOwned = false;
 static ProfiledLockable(CustomMutex, g_dlssDebugStateMutex);
 static StreamlineManager::DLSSDebugState g_dlssDebugState{};
 
-static PFN_vkCreateInstance g_slVkCreateInstance = nullptr;
-static PFN_vkGetInstanceProcAddr g_slVkGetInstanceProcAddr = nullptr;
-static PFN_vkGetDeviceProcAddr g_slVkGetDeviceProcAddr = nullptr;
 static u32 g_slGraphicsQueueStartIndex = 0;
 static u32 g_slComputeQueueStartIndex = 0;
 static std::atomic<u64> g_slAcquireCallCount = 0;
@@ -97,80 +92,7 @@ static std::wstring GetAbsolutePath(const wchar_t* path)
     return len > 0 && len < MAX_PATH ? std::wstring(buffer, len) : std::wstring(path);
 }
 
-template <typename T>
-static bool LoadRequiredProc(const char* name, T& proc)
-{
-    proc = reinterpret_cast<T>(GetProcAddress(g_slModule, name));
-    if (!proc)
-        DEBUG_LOG_WARNF("[StreamlineManager] Failed to resolve Streamline export '{}'", name);
-    return proc != nullptr;
-}
 
-static void ResetStreamlineFunctionPointers()
-{
-    g_slVkCreateInstance = nullptr;
-    g_slVkGetInstanceProcAddr = nullptr;
-    g_slVkGetDeviceProcAddr = nullptr;
-}
-
-static void ReleaseStreamlineLibrary()
-{
-    if (g_slModuleOwned && g_slModule)
-    {
-        FreeLibrary(g_slModule);
-    }
-    g_slModule = nullptr;
-    g_slModuleOwned = false;
-    ResetStreamlineFunctionPointers();
-}
-
-template <typename T>
-static T ResolveStreamlineDeviceProc(VkDevice device, const char* name, T& pCachedFn)
-{
-    if (pCachedFn)
-        return pCachedFn;
-
-    if (g_slVkGetDeviceProcAddr)
-        pCachedFn = reinterpret_cast<T>(g_slVkGetDeviceProcAddr(device, name));
-
-    if (!pCachedFn)
-        pCachedFn = reinterpret_cast<T>(vkGetDeviceProcAddr(device, name));
-
-    return pCachedFn;
-}
-
-static PFN_vkGetInstanceProcAddr GetNativeVkGetInstanceProcAddr()
-{
-    static PFN_vkGetInstanceProcAddr s_pNativeVkGetInstanceProcAddr = []() -> PFN_vkGetInstanceProcAddr
-    {
-        HMODULE vulkanModule = GetModuleHandleA("vulkan-1.dll");
-        if (!vulkanModule)
-            vulkanModule = LoadLibraryA("vulkan-1.dll");
-        return vulkanModule
-                   ? reinterpret_cast<PFN_vkGetInstanceProcAddr>(GetProcAddress(vulkanModule, "vkGetInstanceProcAddr"))
-                   : nullptr;
-    }();
-    return s_pNativeVkGetInstanceProcAddr;
-}
-
-template <typename T>
-static T ResolveStreamlineInstanceProc(VkInstance instance, const char* name, T& pCachedFn)
-{
-    if (pCachedFn)
-        return pCachedFn;
-
-    if (g_slVkGetInstanceProcAddr)
-        pCachedFn = reinterpret_cast<T>(g_slVkGetInstanceProcAddr(instance, name));
-
-    if (!pCachedFn)
-    {
-        const auto pNativeProc = GetNativeVkGetInstanceProcAddr();
-        if (pNativeProc)
-            pCachedFn = reinterpret_cast<T>(pNativeProc(instance, name));
-    }
-
-    return pCachedFn;
-}
 
 static void SL_LoggingCallback(sl::LogType type, const char* msg)
 {
@@ -199,44 +121,13 @@ bool StreamlineManager::EarlyInit()
         return false;
     }
 
-    g_slModule = GetModuleHandleA("sl.interposer.dll");
-    if (!g_slModule)
-    {
-        g_slModule = LoadLibraryA("sl.interposer.dll");
-        g_slModuleOwned = g_slModule != nullptr;
-    }
-    if (!g_slModule)
-    {
-        g_slModule = LoadLibraryA("External/additional_libs/NVStreamline/sl.interposer.dll");
-        g_slModuleOwned = g_slModule != nullptr;
-    }
-
-    if (!g_slModule)
-    {
-        DEBUG_LOG_WARN("[StreamlineManager] Failed to load sl.interposer.dll");
-        ReleaseStreamlineLibrary();
-        return false;
-    }
-
-    bool loaded = true;
-    loaded &= LoadRequiredProc("vkCreateInstance", g_slVkCreateInstance);
-    loaded &= LoadRequiredProc("vkGetInstanceProcAddr", g_slVkGetInstanceProcAddr);
-    loaded &= LoadRequiredProc("vkGetDeviceProcAddr", g_slVkGetDeviceProcAddr);
-
-    if (!loaded)
-    {
-        ReleaseStreamlineLibrary();
-        return false;
-    }
-
-    // Call slInit EARLY so interposer can hook Vulkan creation
+    // Call slInit EARLY
     sl::Preferences pref{};
     g_imguiPluginAvailable = false;
     sl::Feature features[] = {sl::kFeatureDLSS, sl::kFeatureDLSS_RR};
     pref.featuresToLoad = features;
     pref.numFeaturesToLoad = 2u;
     pref.renderAPI = sl::RenderAPI::eVulkan;
-    pref.flags |= sl::PreferenceFlags::eUseManualHooking;
     pref.flags |= sl::PreferenceFlags::eUseFrameBasedResourceTagging;
     pref.logMessageCallback = SL_LoggingCallback;
     pref.logLevel = sl::LogLevel::eOff;
@@ -256,7 +147,6 @@ bool StreamlineManager::EarlyInit()
     if (res != sl::Result::eOk)
     {
         DEBUG_LOG_WARNF("[StreamlineManager] slInit failed with error: {}", static_cast<int>(res));
-        ReleaseStreamlineLibrary();
         return false;
     }
 
@@ -280,23 +170,20 @@ bool StreamlineManager::Init()
     const auto queueFamilies = VkGlobals::GetQueueFamilyIndices();
 
     sl::Result res = sl::Result::eOk;
-    if (!g_slModule)
+    sl::VulkanInfo vulkanInfo{};
+    vulkanInfo.instance = context.Instance;
+    vulkanInfo.device = context.Device;
+    vulkanInfo.physicalDevice = context.PhysicalDevice;
+    vulkanInfo.graphicsQueueFamily = queueFamilies.graphicsFamily.value_or(0);
+    vulkanInfo.computeQueueFamily = queueFamilies.computeFamily.value_or(0);
+    vulkanInfo.graphicsQueueIndex = g_slGraphicsQueueStartIndex;
+    vulkanInfo.computeQueueIndex = g_slComputeQueueStartIndex;
+    res = slSetVulkanInfo(vulkanInfo);
+    if (res != sl::Result::eOk)
     {
-        sl::VulkanInfo vulkanInfo{};
-        vulkanInfo.instance = context.Instance;
-        vulkanInfo.device = context.Device;
-        vulkanInfo.physicalDevice = context.PhysicalDevice;
-        vulkanInfo.graphicsQueueFamily = queueFamilies.graphicsFamily.value_or(0);
-        vulkanInfo.computeQueueFamily = queueFamilies.computeFamily.value_or(0);
-        vulkanInfo.graphicsQueueIndex = g_slGraphicsQueueStartIndex;
-        vulkanInfo.computeQueueIndex = g_slComputeQueueStartIndex;
-        res = slSetVulkanInfo(vulkanInfo);
-        if (res != sl::Result::eOk)
-        {
-            DEBUG_LOG_WARNF("[StreamlineManager] slSetVulkanInfo failed with error: {}", static_cast<int>(res));
-            Shutdown();
-            return false;
-        }
+        DEBUG_LOG_WARNF("[StreamlineManager] slSetVulkanInfo failed with error: {}", static_cast<int>(res));
+        Shutdown();
+        return false;
     }
 
     // Check support
@@ -400,15 +287,30 @@ void StreamlineManager::Shutdown()
     g_imguiSupported = false;
     g_slGraphicsQueueStartIndex = 0;
     g_slComputeQueueStartIndex = 0;
-    ReleaseStreamlineLibrary();
+}
+
+#include "Core/Global/FrameGlobals.h"
+
+static sl::FrameToken* s_frameTokens[8] = {nullptr};
+
+void StreamlineManager::AcquireNewFrameToken(u32 frameIdx)
+{
+    if (!g_slInitialized) return;
+    
+    sl::Result res = slGetNewFrameToken(s_frameTokens[frameIdx], nullptr);
+    if (res != sl::Result::eOk)
+    {
+        DEBUG_LOG_ERR("Failed to get SL frame token");
+    }
 }
 
 bool StreamlineManager::GetFrameToken(u32 frameIdx, sl::FrameToken*& pFrameToken)
 {
-    (void)frameIdx;
-    if (!s_initialized)
+    if (!g_slInitialized)
         return false;
-    return slGetNewFrameToken(pFrameToken, nullptr) == sl::Result::eOk && pFrameToken != nullptr;
+
+    pFrameToken = s_frameTokens[frameIdx];
+    return pFrameToken != nullptr;
 }
 
 bool StreamlineManager::GetDLSSFeatureRequirements(sl::FeatureRequirements& requirements)
@@ -462,42 +364,7 @@ bool StreamlineManager::GetDLSSState(sl::DLSSState& state)
     return slDLSSGetState(viewport, state) == sl::Result::eOk;
 }
 
-VkResult StreamlineManager::CreateVulkanInstance(const VkInstanceCreateInfo* pCreateInfo,
-                                                 const VkAllocationCallbacks* pAllocator,
-                                                 VkInstance* pInstance)
-{
-    if (g_slInitialized && g_slVkCreateInstance)
-        return g_slVkCreateInstance(pCreateInfo, pAllocator, pInstance);
-    return vkCreateInstance(pCreateInfo, pAllocator, pInstance);
-}
 
-VkResult StreamlineManager::CreateVulkanDevice(VkInstance instance,
-                                               VkPhysicalDevice physicalDevice,
-                                               const VkDeviceCreateInfo* pCreateInfo,
-                                               const VkAllocationCallbacks* pAllocator,
-                                               VkDevice* pDevice)
-{
-    static PFN_vkCreateDevice s_pStreamlineProc = nullptr;
-    const auto pStreamlineProc = ResolveStreamlineInstanceProc(instance, "vkCreateDevice", s_pStreamlineProc);
-    if (pStreamlineProc)
-    {
-        return pStreamlineProc(physicalDevice, pCreateInfo, pAllocator, pDevice);
-    }
-    return vkCreateDevice(physicalDevice, pCreateInfo, pAllocator, pDevice);
-}
-
-VkResult StreamlineManager::EnumeratePhysicalDevices(VkInstance instance,
-                                                     uint32_t* pPhysicalDeviceCount,
-                                                     VkPhysicalDevice* pPhysicalDevices)
-{
-    static PFN_vkEnumeratePhysicalDevices s_pStreamlineProc = nullptr;
-    const auto pStreamlineProc = ResolveStreamlineInstanceProc(instance, "vkEnumeratePhysicalDevices", s_pStreamlineProc);
-    if (pStreamlineProc)
-    {
-        return pStreamlineProc(instance, pPhysicalDeviceCount, pPhysicalDevices);
-    }
-    return vkEnumeratePhysicalDevices(instance, pPhysicalDeviceCount, pPhysicalDevices);
-}
 
 void StreamlineManager::SetVulkanQueueStartIndices(u32 graphicsQueueIndex, u32 computeQueueIndex)
 {
@@ -507,22 +374,7 @@ void StreamlineManager::SetVulkanQueueStartIndices(u32 graphicsQueueIndex, u32 c
 
 void StreamlineManager::GetVulkanDeviceQueue(VkDevice device, u32 queueFamilyIndex, u32 queueIndex, VkQueue* pQueue)
 {
-    static PFN_vkGetDeviceQueue s_pStreamlineProc = nullptr;
-    const auto pStreamlineProc = ResolveStreamlineDeviceProc(device, "vkGetDeviceQueue", s_pStreamlineProc);
-    if (pStreamlineProc)
-    {
-        pStreamlineProc(device, queueFamilyIndex, queueIndex, pQueue);
-        return;
-    }
-
-    const auto pLoaderFn = reinterpret_cast<PFN_vkGetDeviceQueue>(vkGetDeviceProcAddr(device, "vkGetDeviceQueue"));
-    if (pLoaderFn)
-    {
-        pLoaderFn(device, queueFamilyIndex, queueIndex, pQueue);
-        return;
-    }
-
-    *pQueue = VK_NULL_HANDLE;
+    vkGetDeviceQueue(device, queueFamilyIndex, queueIndex, pQueue);
 }
 
 bool StreamlineManager::SetDLSSOptions(u32 width, u32 height, sl::DLSSMode mode)
@@ -559,10 +411,12 @@ bool StreamlineManager::EnsureDLSSConfigured(u32 width, u32 height, sl::DLSSMode
     if (sameAsLastFailedConfig)
         return false;
 
+    /*
     if (g_dlssConfigured && !FreeResources(sl::kFeatureDLSS))
     {
         DEBUG_LOG_WARN("[StreamlineManager] Failed to free old DLSS resources during reconfigure");
     }
+    */
     g_dlssConfigured = false;
 
     if (!SetDLSSOptions(width, height, mode))
@@ -750,10 +604,12 @@ bool StreamlineManager::EnsureDLSSDConfigured(u32 width, u32 height, sl::DLSSMod
     if (sameAsLastFailedConfig)
         return false;
 
+    /*
     if (g_dlssDConfigured && !FreeResources(sl::kFeatureDLSS_RR))
     {
         DEBUG_LOG_WARN("[StreamlineManager] Failed to free old DLSS-D resources during reconfigure");
     }
+    */
     g_dlssDConfigured = false;
 
     if (!SetDLSSDOptions(width, height, mode, worldToView, viewToWorld))
@@ -846,194 +702,7 @@ bool StreamlineManager::AllocateResources(VkCommandBuffer cmdBuf, sl::Feature fe
 
 } // namespace Nvidia
 
-extern "C" VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance, const char* pName)
-{
-    if (Nvidia::g_slVkGetInstanceProcAddr)
-        return Nvidia::g_slVkGetInstanceProcAddr(instance, pName);
 
-    const auto pNativeProc = Nvidia::GetNativeVkGetInstanceProcAddr();
-    return pNativeProc ? pNativeProc(instance, pName) : nullptr;
-}
-
-extern "C" VKAPI_ATTR VkResult VKAPI_CALL vkCreateSwapchainKHR(VkDevice device,
-                                                               const VkSwapchainCreateInfoKHR* pCreateInfo,
-                                                               const VkAllocationCallbacks* pAllocator,
-                                                               VkSwapchainKHR* pSwapchain)
-{
-    static PFN_vkCreateSwapchainKHR s_pStreamlineProc = nullptr;
-    const auto pStreamlineProc = Nvidia::ResolveStreamlineDeviceProc(device, "vkCreateSwapchainKHR", s_pStreamlineProc);
-    return pStreamlineProc ? pStreamlineProc(device, pCreateInfo, pAllocator, pSwapchain)
-                           : VK_ERROR_EXTENSION_NOT_PRESENT;
-}
-
-extern "C" VKAPI_ATTR void VKAPI_CALL vkDestroySwapchainKHR(VkDevice device,
-                                                            VkSwapchainKHR swapchain,
-                                                            const VkAllocationCallbacks* pAllocator)
-{
-    static PFN_vkDestroySwapchainKHR s_pStreamlineProc = nullptr;
-    const auto pStreamlineProc = Nvidia::ResolveStreamlineDeviceProc(device, "vkDestroySwapchainKHR", s_pStreamlineProc);
-    if (pStreamlineProc)
-        pStreamlineProc(device, swapchain, pAllocator);
-}
-
-extern "C" VKAPI_ATTR VkResult VKAPI_CALL vkGetSwapchainImagesKHR(VkDevice device,
-                                                                  VkSwapchainKHR swapchain,
-                                                                  uint32_t* pSwapchainImageCount,
-                                                                  VkImage* pSwapchainImages)
-{
-    static PFN_vkGetSwapchainImagesKHR s_pStreamlineProc = nullptr;
-    const auto pStreamlineProc =
-        Nvidia::ResolveStreamlineDeviceProc(device, "vkGetSwapchainImagesKHR", s_pStreamlineProc);
-    return pStreamlineProc ? pStreamlineProc(device, swapchain, pSwapchainImageCount, pSwapchainImages)
-                           : VK_ERROR_EXTENSION_NOT_PRESENT;
-}
-
-extern "C" VKAPI_ATTR VkResult VKAPI_CALL vkAcquireNextImageKHR(VkDevice device,
-                                                                VkSwapchainKHR swapchain,
-                                                                uint64_t timeout,
-                                                                VkSemaphore semaphore,
-                                                                VkFence fence,
-                                                                uint32_t* pImageIndex)
-{
-    static PFN_vkAcquireNextImageKHR s_pStreamlineProc = nullptr;
-    const auto pStreamlineProc = Nvidia::ResolveStreamlineDeviceProc(device, "vkAcquireNextImageKHR", s_pStreamlineProc);
-    const u64 callCount = ++Nvidia::g_slAcquireCallCount;
-    if (!pStreamlineProc)
-    {
-        DEBUG_LOG_WARN("[StreamlineManager] Streamline acquire proxy missing");
-        return VK_ERROR_EXTENSION_NOT_PRESENT;
-    }
-
-    const VkResult result = pStreamlineProc(device, swapchain, timeout, semaphore, fence, pImageIndex);
-    return result;
-}
-
-extern "C" VKAPI_ATTR VkResult VKAPI_CALL vkCreateWin32SurfaceKHR(
-    VkInstance instance,
-    const void* pCreateInfo,
-    const VkAllocationCallbacks* pAllocator,
-    VkSurfaceKHR* pSurface)
-{
-    using PFN_vkCreateWin32SurfaceKHRCompat =
-        VkResult(VKAPI_PTR*)(VkInstance, const void*, const VkAllocationCallbacks*, VkSurfaceKHR*);
-    static PFN_vkCreateWin32SurfaceKHRCompat s_pStreamlineProc = nullptr;
-    const auto pStreamlineProc =
-        Nvidia::ResolveStreamlineInstanceProc(instance, "vkCreateWin32SurfaceKHR", s_pStreamlineProc);
-    return pStreamlineProc ? pStreamlineProc(instance, pCreateInfo, pAllocator, pSurface)
-                           : VK_ERROR_EXTENSION_NOT_PRESENT;
-}
-
-extern "C" VKAPI_ATTR void VKAPI_CALL vkDestroySurfaceKHR(VkInstance instance,
-                                                          VkSurfaceKHR surface,
-                                                          const VkAllocationCallbacks* pAllocator)
-{
-    static PFN_vkDestroySurfaceKHR s_pStreamlineProc = nullptr;
-    const auto pStreamlineProc =
-        Nvidia::ResolveStreamlineInstanceProc(instance, "vkDestroySurfaceKHR", s_pStreamlineProc);
-    if (pStreamlineProc)
-        pStreamlineProc(instance, surface, pAllocator);
-}
-
-extern "C" VKAPI_ATTR VkResult VKAPI_CALL vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pPresentInfo)
-{
-    static PFN_vkQueuePresentKHR s_pStreamlineProc = nullptr;
-    const auto pStreamlineProc =
-        Nvidia::ResolveStreamlineDeviceProc(VkGlobals::GetLogicalDevice(), "vkQueuePresentKHR", s_pStreamlineProc);
-    const u64 callCount = ++Nvidia::g_slPresentCallCount;
-    if (!pStreamlineProc)
-    {
-        DEBUG_LOG_WARN("[StreamlineManager] Streamline present proxy missing");
-        return VK_ERROR_EXTENSION_NOT_PRESENT;
-    }
-
-    const VkResult result = pStreamlineProc(queue, pPresentInfo);
-    return result;
-}
-
-extern "C" VKAPI_ATTR VkResult VKAPI_CALL vkDeviceWaitIdle(VkDevice device)
-{
-    static PFN_vkDeviceWaitIdle s_pStreamlineProc = nullptr;
-    const auto pStreamlineProc = Nvidia::ResolveStreamlineDeviceProc(device, "vkDeviceWaitIdle", s_pStreamlineProc);
-    return pStreamlineProc ? pStreamlineProc(device) : VK_ERROR_EXTENSION_NOT_PRESENT;
-}
-
-extern "C" VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(VkQueue queue,
-                                                        uint32_t submitCount,
-                                                        const VkSubmitInfo* pSubmits,
-                                                        VkFence fence)
-{
-    static PFN_vkQueueSubmit s_pStreamlineProc = nullptr;
-    const auto pStreamlineProc =
-        Nvidia::ResolveStreamlineDeviceProc(VkGlobals::GetLogicalDevice(), "vkQueueSubmit", s_pStreamlineProc);
-    return pStreamlineProc ? pStreamlineProc(queue, submitCount, pSubmits, fence) : VK_ERROR_EXTENSION_NOT_PRESENT;
-}
-
-extern "C" VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit2(VkQueue queue,
-                                                         uint32_t submitCount,
-                                                         const VkSubmitInfo2* pSubmits,
-                                                         VkFence fence)
-{
-    static PFN_vkQueueSubmit2 s_pStreamlineProc = nullptr;
-    const auto pStreamlineProc =
-        Nvidia::ResolveStreamlineDeviceProc(VkGlobals::GetLogicalDevice(), "vkQueueSubmit2", s_pStreamlineProc);
-    return pStreamlineProc ? pStreamlineProc(queue, submitCount, pSubmits, fence) : VK_ERROR_EXTENSION_NOT_PRESENT;
-}
-
-extern "C" VKAPI_ATTR VkResult VKAPI_CALL vkBeginCommandBuffer(VkCommandBuffer commandBuffer,
-                                                               const VkCommandBufferBeginInfo* pBeginInfo)
-{
-    static PFN_vkBeginCommandBuffer s_pStreamlineProc = nullptr;
-    const auto pStreamlineProc =
-        Nvidia::ResolveStreamlineDeviceProc(VkGlobals::GetLogicalDevice(), "vkBeginCommandBuffer", s_pStreamlineProc);
-    return pStreamlineProc ? pStreamlineProc(commandBuffer, pBeginInfo) : VK_ERROR_EXTENSION_NOT_PRESENT;
-}
-
-extern "C" VKAPI_ATTR VkResult VKAPI_CALL vkCreateCommandPool(VkDevice device,
-                                                              const VkCommandPoolCreateInfo* pCreateInfo,
-                                                              const VkAllocationCallbacks* pAllocator,
-                                                              VkCommandPool* pCommandPool)
-{
-    static PFN_vkCreateCommandPool s_pStreamlineProc = nullptr;
-    const auto pStreamlineProc = Nvidia::ResolveStreamlineDeviceProc(device, "vkCreateCommandPool", s_pStreamlineProc);
-    return pStreamlineProc ? pStreamlineProc(device, pCreateInfo, pAllocator, pCommandPool)
-                           : VK_ERROR_EXTENSION_NOT_PRESENT;
-}
-
-extern "C" VKAPI_ATTR void VKAPI_CALL vkCmdBindPipeline(VkCommandBuffer commandBuffer,
-                                                        VkPipelineBindPoint pipelineBindPoint,
-                                                        VkPipeline pipeline)
-{
-    static PFN_vkCmdBindPipeline s_pStreamlineProc = nullptr;
-    const auto pStreamlineProc =
-        Nvidia::ResolveStreamlineDeviceProc(VkGlobals::GetLogicalDevice(), "vkCmdBindPipeline", s_pStreamlineProc);
-    if (pStreamlineProc)
-        pStreamlineProc(commandBuffer, pipelineBindPoint, pipeline);
-}
-
-extern "C" VKAPI_ATTR void VKAPI_CALL vkCmdBindDescriptorSets(VkCommandBuffer commandBuffer,
-                                                              VkPipelineBindPoint pipelineBindPoint,
-                                                              VkPipelineLayout layout,
-                                                              uint32_t firstSet,
-                                                              uint32_t descriptorSetCount,
-                                                              const VkDescriptorSet* pDescriptorSets,
-                                                              uint32_t dynamicOffsetCount,
-                                                              const uint32_t* pDynamicOffsets)
-{
-    static PFN_vkCmdBindDescriptorSets s_pStreamlineProc = nullptr;
-    const auto pStreamlineProc = Nvidia::ResolveStreamlineDeviceProc(
-        VkGlobals::GetLogicalDevice(), "vkCmdBindDescriptorSets", s_pStreamlineProc);
-    if (pStreamlineProc)
-    {
-        pStreamlineProc(commandBuffer,
-                        pipelineBindPoint,
-                        layout,
-                        firstSet,
-                        descriptorSetCount,
-                        pDescriptorSets,
-                        dynamicOffsetCount,
-                        pDynamicOffsets);
-    }
-}
 #else // CONV_WITH_STREAMLINE == 0
 
 namespace Nvidia
@@ -1044,34 +713,15 @@ bool StreamlineManager::EarlyInit() { return false; }
 bool StreamlineManager::Init() { return false; }
 void StreamlineManager::Shutdown() {}
 
+void StreamlineManager::AcquireNewFrameToken(u32 frameIdx) {}
 bool StreamlineManager::GetFrameToken(u32 frameIdx, sl::FrameToken*& pFrameToken) { return false; }
+
 bool StreamlineManager::GetDLSSFeatureRequirements(sl::FeatureRequirements& requirements) { return false; }
 bool StreamlineManager::GetDLSSRRFeatureRequirements(sl::FeatureRequirements& requirements) { return false; }
 bool StreamlineManager::GetDLSSOptimalSettings(u32 width, u32 height, sl::DLSSMode mode, sl::DLSSOptimalSettings& settings) { return false; }
 bool StreamlineManager::GetDLSSState(sl::DLSSState& state) { return false; }
 
-VkResult StreamlineManager::CreateVulkanInstance(const VkInstanceCreateInfo* pCreateInfo,
-                                                 const VkAllocationCallbacks* pAllocator,
-                                                 VkInstance* pInstance)
-{
-    return vkCreateInstance(pCreateInfo, pAllocator, pInstance);
-}
 
-VkResult StreamlineManager::CreateVulkanDevice(VkInstance instance,
-                                               VkPhysicalDevice physicalDevice,
-                                               const VkDeviceCreateInfo* pCreateInfo,
-                                               const VkAllocationCallbacks* pAllocator,
-                                               VkDevice* pDevice)
-{
-    return vkCreateDevice(physicalDevice, pCreateInfo, pAllocator, pDevice);
-}
-
-VkResult StreamlineManager::EnumeratePhysicalDevices(VkInstance instance,
-                                                     uint32_t* pPhysicalDeviceCount,
-                                                     VkPhysicalDevice* pPhysicalDevices)
-{
-    return vkEnumeratePhysicalDevices(instance, pPhysicalDeviceCount, pPhysicalDevices);
-}
 
 void StreamlineManager::SetVulkanQueueStartIndices(u32 graphicsQueueIndex, u32 computeQueueIndex) {}
 

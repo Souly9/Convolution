@@ -97,7 +97,7 @@ void CSMPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comman
     ScopedZone("ShadowPass::Render");
 
     auto& sceneGeometryBuffers = data.pResourceManager->GetSceneGeometryBuffers();
-    const auto currentFrame = ctx.imageIdx;
+    const auto currentFrame = ctx.currentFrame;
     UpdateContextForFrame(currentFrame);
     const auto& passCtx = m_perObjectFrameContexts[currentFrame];
 

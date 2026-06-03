@@ -102,13 +102,13 @@ void RTReflectionsPass::Render(const MainPassData& data, FrameRendererContext& c
         }
         else
         {
-            m_tlasDescriptors[ctx.imageIdx]->WriteAccelerationStructureUpdate(pTLASFrameData->accelerationStructure,
+            m_tlasDescriptors[ctx.currentFrame]->WriteAccelerationStructureUpdate(pTLASFrameData->accelerationStructure,
                                                                               s_rtSceneASBindingSlot);
-            m_tlasDescriptors[ctx.imageIdx]->WriteSSBOUpdate(pTLASFrameData->hitDataBuffer,
+            m_tlasDescriptors[ctx.currentFrame]->WriteSSBOUpdate(pTLASFrameData->hitDataBuffer,
                                                              s_rtInstanceHitDataBindingSlot);
-            m_tlasDescriptors[ctx.imageIdx]->WriteSSBOUpdate(sceneGeometryBuffers.GetVertexBuffer(),
+            m_tlasDescriptors[ctx.currentFrame]->WriteSSBOUpdate(sceneGeometryBuffers.GetVertexBuffer(),
                                                              s_rtSceneVertexBufferBindingSlot);
-            m_tlasDescriptors[ctx.imageIdx]->WriteSSBOUpdate(sceneGeometryBuffers.GetIndexBuffer(),
+            m_tlasDescriptors[ctx.currentFrame]->WriteSSBOUpdate(sceneGeometryBuffers.GetIndexBuffer(),
                                                              s_rtSceneIndexBufferBindingSlot);
         }
     }
@@ -131,7 +131,7 @@ void RTReflectionsPass::Render(const MainPassData& data, FrameRendererContext& c
                                   data.bufferDescriptors.at(UBO::DescriptorContentsType::GlobalInstanceData),
                                   data.bufferDescriptors.at(UBO::DescriptorContentsType::GBuffer),
                                   data.bufferDescriptors.at(UBO::DescriptorContentsType::LightData),
-                                  m_tlasDescriptors[ctx.imageIdx]};
+                                  m_tlasDescriptors[ctx.currentFrame]};
     dispatchCmd.SetPushConstants(0, m_pushConstants);
     pCmdBuffer->RecordCommand(dispatchCmd);
 

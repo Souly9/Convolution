@@ -213,13 +213,15 @@ bool RenderBackendImpl<Vulkan>::Cleanup()
     if (m_logicalDevice != VK_NULL_HANDLE)
         vkDeviceWaitIdle(m_logicalDevice);
 
-    Nvidia::StreamlineManager::Shutdown();
-
 #ifdef CONV_DEBUG
     vkDestroyDebugUtilsMessengerEXT(m_instance, VulkanAllocator(), &m_debugMessenger);
 #endif
+
+    Nvidia::StreamlineManager::Shutdown();
+
     vkDestroySwapchainKHR(m_logicalDevice, m_swapChain, VulkanAllocator());
     vkDestroySurfaceKHR(m_instance, m_surface, VulkanAllocator());
+    
     vkDestroyDevice(m_logicalDevice, VulkanAllocator());
     vkDestroyInstance(m_instance, VulkanAllocator());
     return true;
@@ -401,11 +403,6 @@ bool RenderBackendImpl<Vulkan>::CreateInstance(uint32_t screenWidth, uint32_t sc
     }
 #endif
 
-    if (m_dlssSupportAvailable)
-    {
-        return Nvidia::StreamlineManager::CreateVulkanInstance(&createInfo, VulkanAllocator(), &m_instance) ==
-               VK_SUCCESS;
-    }
     return vkCreateInstance(&createInfo, VulkanAllocator(), &m_instance) == VK_SUCCESS;
 }
 
@@ -628,16 +625,7 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
 
     createInfo.pNext = hasAftermath ? (void*)&aftermathInfo : featuresChain;
 
-    VkResult deviceResult;
-    if (m_dlssSupportAvailable)
-    {
-        deviceResult = Nvidia::StreamlineManager::CreateVulkanDevice(
-            m_instance, m_physicalDevice, &createInfo, VulkanAllocator(), &m_logicalDevice);
-    }
-    else
-    {
-        deviceResult = vkCreateDevice(m_physicalDevice, &createInfo, VulkanAllocator(), &m_logicalDevice);
-    }
+    VkResult deviceResult = vkCreateDevice(m_physicalDevice, &createInfo, VulkanAllocator(), &m_logicalDevice);
 
     if (deviceResult != VK_SUCCESS)
         return false;
@@ -704,14 +692,7 @@ bool RenderBackendImpl<Vulkan>::AcquireDeviceQueues()
 bool RenderBackendImpl<Vulkan>::PickPhysicalDevice()
 {
     uint32_t deviceCount = 0;
-    if (m_dlssSupportAvailable)
-    {
-        Nvidia::StreamlineManager::EnumeratePhysicalDevices(m_instance, &deviceCount, nullptr);
-    }
-    else
-    {
-        vkEnumeratePhysicalDevices(m_instance, &deviceCount, nullptr);
-    }
+    vkEnumeratePhysicalDevices(m_instance, &deviceCount, nullptr);
 
     if (deviceCount == 0)
     {
@@ -719,14 +700,7 @@ bool RenderBackendImpl<Vulkan>::PickPhysicalDevice()
         return false;
     }
     stltype::vector<VkPhysicalDevice> devices(deviceCount);
-    if (m_dlssSupportAvailable)
-    {
-        Nvidia::StreamlineManager::EnumeratePhysicalDevices(m_instance, &deviceCount, devices.data());
-    }
-    else
-    {
-        vkEnumeratePhysicalDevices(m_instance, &deviceCount, devices.data());
-    }
+    vkEnumeratePhysicalDevices(m_instance, &deviceCount, devices.data());
 
     if (m_dlssSupportAvailable)
     {

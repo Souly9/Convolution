@@ -54,22 +54,13 @@ public:
     static bool Init();
     static void Shutdown();
 
+    static void AcquireNewFrameToken(u32 frameIdx);
     static bool GetFrameToken(u32 frameIdx, sl::FrameToken*& pFrameToken);
     static bool GetDLSSFeatureRequirements(sl::FeatureRequirements& requirements);
     static bool GetDLSSRRFeatureRequirements(sl::FeatureRequirements& requirements);
     static bool GetDLSSOptimalSettings(u32 width, u32 height, sl::DLSSMode mode, sl::DLSSOptimalSettings& settings);
     static bool GetDLSSState(sl::DLSSState& state);
-    static VkResult CreateVulkanInstance(const VkInstanceCreateInfo* pCreateInfo,
-                                         const VkAllocationCallbacks* pAllocator,
-                                         VkInstance* pInstance);
-    static VkResult CreateVulkanDevice(VkInstance instance,
-                                       VkPhysicalDevice physicalDevice,
-                                       const VkDeviceCreateInfo* pCreateInfo,
-                                       const VkAllocationCallbacks* pAllocator,
-                                       VkDevice* pDevice);
-    static VkResult EnumeratePhysicalDevices(VkInstance instance,
-                                             uint32_t* pPhysicalDeviceCount,
-                                             VkPhysicalDevice* pPhysicalDevices);
+
     static void SetVulkanQueueStartIndices(u32 graphicsQueueIndex, u32 computeQueueIndex);
     static void GetVulkanDeviceQueue(VkDevice device, u32 queueFamilyIndex, u32 queueIndex, VkQueue* pQueue);
     static bool EnsureDLSSConfigured(u32 width, u32 height, sl::DLSSMode mode);

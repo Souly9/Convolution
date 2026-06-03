@@ -21,7 +21,7 @@ inline RenderLight ConvertToRenderLight(const ECS::Components::Light* light,
                                         const ECS::Components::Transform* transform)
 {
     RenderLight renderLight;
-    renderLight.position = mathstl::Vector4(transform->position.x, transform->position.y, transform->position.z, 0.0f);
+    renderLight.position = mathstl::Vector4(transform->worldPosition.x, transform->worldPosition.y, transform->worldPosition.z, 0.0f);
     renderLight.direction = mathstl::Vector4(light->direction.x, light->direction.y, light->direction.z, light->range);
     renderLight.color = mathstl::Vector4(light->color.x, light->color.y, light->color.z, light->intensity);
     renderLight.cutoff = mathstl::Vector4(light->cutoff, light->outerCutoff, 0.0f, 0.0f);

@@ -87,7 +87,7 @@ void DepthPrePass::Render(const MainPassData& data, FrameRendererContext& ctx, C
 {
     ScopedZone("DepthPrePass::Render");
 
-    const auto currentFrame = ctx.imageIdx;
+    const auto currentFrame = ctx.currentFrame;
     UpdateContextForFrame(currentFrame);
     const auto& passCtx = m_perObjectFrameContexts[currentFrame];
 

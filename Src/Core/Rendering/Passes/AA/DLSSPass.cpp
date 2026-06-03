@@ -116,7 +116,7 @@ bool DLSSPass::WantsToRender() const
 void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
 {
     ScopedZone("DLSSPass::Render");
-    u32 frameIdx = ctx.imageIdx;
+    u32 frameIdx = ctx.currentFrame;
     
     sl::FrameToken* pFrameToken = nullptr;
     if (!Nvidia::StreamlineManager::GetFrameToken(frameIdx, pFrameToken))
@@ -241,7 +241,7 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     CopyMatrixToStreamline(slConst.prevClipToClip, prevClipToClip);
 
     slConst.jitterOffset = {streamlineJitter.x, streamlineJitter.y};
-    slConst.mvecScale = {-1.0f, 1.0f};
+    slConst.mvecScale = {1.0f, -1.0f};
     slConst.cameraPinholeOffset = {0.0f, 0.0f};
     const mathstl::Vector3 streamlineCameraUp =
         GetNormalizedOrFallback(cameraData.up, mathstl::Vector3::Up);
@@ -294,7 +294,7 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     Nvidia::StreamlineManager::SetDLSSDebugState(debugState);
 
     ExecuteNativeCmd streamlineCmd{};
-    const u32 frameSlot = ctx.imageIdx;
+    const u32 frameSlot = ctx.currentFrame;
     streamlineCmd.callback = [tagDescs, pFrameToken, frameSlot](void* pNativeCmdBuf) mutable {
         VkCommandBuffer cmd = reinterpret_cast<VkCommandBuffer>(pNativeCmdBuf);
         sl::ViewportHandle viewportHandle(0);

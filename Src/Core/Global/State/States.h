@@ -148,6 +148,8 @@ struct RendererState
     // Clustered lighting debug stats
     u32 totalClusterCount{0};
     f32 avgLightsPerCluster{0.0f};
+    u32 numLightsEvaluated{0};
+    u32 numLightsInFrustum{0};
 
     // GPU timing stats
     stltype::vector<PassTimingStat> passTimings{};

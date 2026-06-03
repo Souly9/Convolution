@@ -63,7 +63,8 @@ void main()
         {
             StoreClusterLightIndex(baseIndex, i, i);
         }
-        StoreClusterLightOffsetAndCount(clusterIdx, baseIndex, count);
+        // Save the full totalLights count to propagate to later stages (bypassing MAX_LIGHTS_PER_CLUSTER cap)
+        StoreClusterLightOffsetAndCount(clusterIdx, baseIndex, totalLights);
         return;
     }
 
@@ -95,8 +96,9 @@ void main()
         if (lZMin > clusterZMax || lZMax < clusterZMin)
             continue;
 
-        // Fine AABB test
-        if (sphereIntersectsAABB(vsLight.xyz, vsLight.w, aabbMin, aabbMax))
+        // Fine AABB test (expand radius slightly to prevent boundary culling drops)
+        float r = vsLight.w * 1.05;
+        if (sphereIntersectsAABB(vsLight.xyz, r, aabbMin, aabbMax))
         {
             // Write directly to global memory
             StoreClusterLightIndex(baseIndex, visibleCount, globalLightIdx);

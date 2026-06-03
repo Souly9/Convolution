@@ -136,7 +136,7 @@ void SMAAPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     ScopedZone("SMAAPass::Render");
     StartRenderPassProfilingScope(pCmdBuffer);
 
-    UpdateContextForFrame(ctx.imageIdx);
+    UpdateContextForFrame(ctx.currentFrame);
     auto& cmdBuf = m_indirectCmdBuffers[m_currentFrameIdx];
 
     const auto extentsXY = data.renderState.swapchainResolution;

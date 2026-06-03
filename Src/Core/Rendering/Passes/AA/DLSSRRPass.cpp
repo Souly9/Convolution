@@ -116,7 +116,7 @@ bool DLSSRRPass::WantsToRender() const
 void DLSSRRPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
 {
     ScopedZone("DLSSRRPass::Render");
-    u32 frameIdx = ctx.imageIdx;
+    u32 frameIdx = ctx.currentFrame;
     
     sl::FrameToken* pFrameToken = nullptr;
     if (!Nvidia::StreamlineManager::GetFrameToken(frameIdx, pFrameToken))
@@ -137,7 +137,7 @@ void DLSSRRPass::Render(const MainPassData& data, FrameRendererContext& ctx, Com
     const sl::DLSSMode dlssMode =
         ResolveDLSSModeForRenderScale(data.renderState.renderResolution, data.renderState.swapchainResolution);
 
-    if (!Nvidia::StreamlineManager::EnsureDLSSDConfigured(outputExtents.x, outputExtents.y, dlssMode, data.mainCamViewMatrix, data.mainCamInvViewProj))
+    if (!Nvidia::StreamlineManager::EnsureDLSSDConfigured(outputExtents.x, outputExtents.y, dlssMode, data.mainCamViewMatrix, data.mainCamViewMatrix.Invert()))
         return;
     if (Nvidia::StreamlineManager::IsDLSSDEvaluateBlocked())
         return;
@@ -237,7 +237,7 @@ void DLSSRRPass::Render(const MainPassData& data, FrameRendererContext& ctx, Com
     CopyMatrixToStreamline(slConst.prevClipToClip, prevClipToClip);
 
     slConst.jitterOffset = {streamlineJitter.x, streamlineJitter.y};
-    slConst.mvecScale = {-1.0f, 1.0f};
+    slConst.mvecScale = {1.0f, -1.0f};
     slConst.cameraPinholeOffset = {0.0f, 0.0f};
     const mathstl::Vector3 streamlineCameraUp =
         GetNormalizedOrFallback(cameraData.up, mathstl::Vector3::Up);
@@ -290,7 +290,7 @@ void DLSSRRPass::Render(const MainPassData& data, FrameRendererContext& ctx, Com
     Nvidia::StreamlineManager::SetDLSSDebugState(debugState);
 
     ExecuteNativeCmd streamlineCmd{};
-    const u32 frameSlot = ctx.imageIdx;
+    const u32 frameSlot = ctx.currentFrame;
     streamlineCmd.callback = [tagDescs, pFrameToken, frameSlot](void* pNativeCmdBuf) mutable {
         VkCommandBuffer cmd = reinterpret_cast<VkCommandBuffer>(pNativeCmdBuf);
         sl::ViewportHandle viewportHandle(0);

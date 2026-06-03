@@ -1016,7 +1016,7 @@ void VkTextureManager::SetLayoutBarrierMasks(ImageLayoutTransitionCmd& transitio
     {
         transitionCmd.srcAccessMask = 0;
         transitionCmd.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
         transitionCmd.dstStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
     }
     else if (oldLayout == ImageLayout::COLOR_ATTACHMENT_OPTIMAL && newLayout == ImageLayout::PRESENT_SRC_KHR)

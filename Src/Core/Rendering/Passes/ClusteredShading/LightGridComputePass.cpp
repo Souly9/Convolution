@@ -79,8 +79,12 @@ void LightGridComputePass::Render(const MainPassData& data,
     auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
 
     const u32 totalClusters = renderState.clusterCount.x * renderState.clusterCount.y * renderState.clusterCount.z;
-    g_pApplicationState->RegisterUpdateFunction([totalClusters](ApplicationState& state)
-                                                { state.renderState.totalClusterCount = totalClusters; });
+    const u32 numLightsEvaluated = ctx.numLights;
+    g_pApplicationState->RegisterUpdateFunction([totalClusters, numLightsEvaluated](ApplicationState& state)
+                                                {
+                                                    state.renderState.totalClusterCount = totalClusters;
+                                                    state.renderState.numLightsEvaluated = numLightsEvaluated;
+                                                });
 
     if (!ctx.clusterGridDescriptor)
     {
@@ -96,7 +100,7 @@ void LightGridComputePass::Render(const MainPassData& data,
     const u32 workgroupsY = (m_pushConstants.clusterCount.y + 7) / 8;
     const u32 workgroupsZ = m_pushConstants.clusterCount.z;
 
-    DescriptorSet::Ptr viewSpaceLightsDesc = data.pResourceManager->GetViewSpaceLightsDescriptorSet(ctx.imageIdx);
+    DescriptorSet::Ptr viewSpaceLightsDesc = data.pResourceManager->GetViewSpaceLightsDescriptorSet(ctx.currentFrame);
 
     // Cull lights for each cluster
     {

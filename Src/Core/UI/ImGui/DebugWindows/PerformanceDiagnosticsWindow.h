@@ -1,15 +1,16 @@
 #pragma once
+#include "Core/ECS/Components/Light.h"
+#include "Core/ECS/EntityManager.h"
+#include "Core/Events/EventSystem.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Global/Profiling.h"
 #include "Core/Global/State/ApplicationState.h"
 #include "Core/Global/Utils/MathFunctions.h"
-#include "Core/ECS/EntityManager.h"
-#include "Core/ECS/Components/Light.h"
-#include "Core/Events/EventSystem.h"
+#include "Core/Rendering/Core/Nvidia/StreamlineManager.h"
 #include "Core/Rendering/Vulkan/VkGlobals.h"
 #include "InfoWindow.h"
-#include <EASTL/sort.h>
 #include <EASTL/hash_map.h>
+#include <EASTL/sort.h>
 #include <EASTL/vector.h>
 #include <imgui.h>
 
@@ -18,7 +19,7 @@ class PerformanceDiagnosticsWindow : public ImGuiWindow
 public:
     PerformanceDiagnosticsWindow()
     {
-        m_isOpen = false;
+        m_isOpen = true;
         g_pEventSystem->AddUpdateEventCallback([this](const UpdateEventData& d) { OnUpdate(d); });
     }
 
@@ -39,6 +40,7 @@ public:
         ImGui::Separator();
         ImGui::Text("Avg FPS: %u", m_frameCount);
         ImGui::Text("Avg Frame Time: %.3f ms", m_avgFrameTime * 1000.f);
+        ImGui::Text("Avg CPU Time: %.3f ms", m_avgFrameTime * 1000.f);
         ImGui::Text("Avg Total GPU Time: %.3f ms", m_avgTotalGPUTime);
         ImGui::Spacing();
 
@@ -46,6 +48,7 @@ public:
         ImGui::Separator();
         ImGui::Text("Total Entities: %u", m_entityCount);
         ImGui::Text("Total Lights: %u", m_lightCount);
+        ImGui::Text("Lights Evaluated: %u", m_lastState.numLightsEvaluated);
         ImGui::Spacing();
 
         ImGui::Text("Hardware Details");
@@ -78,6 +81,54 @@ public:
             ImGui::Text("Primitives: %llu", m_lastState.stats.numPrimitives);
         }
 
+        if (ImGui::CollapsingHeader("Clustered Shading Statistics"))
+        {
+            ImGui::Text("Total Clusters: %u", m_lastState.totalClusterCount);
+            ImGui::Text("Avg Lights/Cluster: %.2f", m_lastState.avgLightsPerCluster);
+        }
+
+        if (ImGui::CollapsingHeader("Ray Tracing Diagnostics"))
+        {
+            ImGui::Text("Pending BLAS builds: %u", m_lastState.rt.pendingBlasCount);
+            ImGui::Text("Resident RT Instances: %u", m_lastState.rt.residentInstanceCount);
+        }
+
+        if (m_lastState.dlssSupported && ImGui::CollapsingHeader("NVIDIA DLSS & Streamline Diagnostics"))
+        {
+            const auto debugState = Nvidia::StreamlineManager::GetDLSSDebugState();
+
+            ImGui::TextWrapped("NVIDIA Streamline ImGui is loaded as the sl.imgui plugin. Use Ctrl+Shift+Home "
+                               "to toggle the Streamline overlay. The engine hides its own ImGui while that "
+                               "overlay is active so it can receive input.");
+            ImGui::Separator();
+
+            ImGui::Text("AA Mode: %s", m_lastState.aaType == AntialiasingType::DLSS ? "DLSS" : "Not DLSS");
+            ImGui::Text("Streamline Initialized: %s", BoolToString(debugState.streamlineInitialized));
+            ImGui::Text("DLSS Feature Supported: %s", BoolToString(debugState.featureSupported));
+            ImGui::Text("Streamline ImGui Plugin: %s", BoolToString(debugState.imguiPluginAvailable));
+            ImGui::Text("Configured: %s", BoolToString(debugState.configured));
+            ImGui::Text("Evaluate Blocked: %s", BoolToString(debugState.evaluateBlocked));
+            ImGui::Text("Last Configure Failed: %s", BoolToString(debugState.lastConfigureFailed));
+            ImGui::Text("Pending Reset Flag: %s", BoolToString(debugState.needsReset));
+            ImGui::Text("Configured Mode: %s", DLSSModeToString(debugState.configuredMode));
+
+            ImGui::Separator();
+            ImGui::Text("DLSS Input: %u x %u", debugState.inputWidth, debugState.inputHeight);
+            ImGui::Text("DLSS Output: %u x %u", debugState.outputWidth, debugState.outputHeight);
+            ImGui::Text("Estimated VRAM Usage: %.2f MB",
+                        static_cast<f32>(debugState.estimatedVRAMUsageInBytes) / (1024.0f * 1024.0f));
+            ImGui::Text("Evaluate Calls: %llu", debugState.evaluateCallCount);
+            ImGui::Text("slSetConstants: %s (0x%X)",
+                        ResultToString(debugState.lastSetConstantsResult),
+                        static_cast<u32>(debugState.lastSetConstantsResult));
+            ImGui::Text("slSetTagForFrame: %s (0x%X)",
+                        ResultToString(debugState.lastTagResult),
+                        static_cast<u32>(debugState.lastTagResult));
+            ImGui::Text("slEvaluateFeature: %s (0x%X)",
+                        ResultToString(debugState.lastEvaluateResult),
+                        static_cast<u32>(debugState.lastEvaluateResult));
+        }
+
         ImGui::Columns(1);
         ImGui::Separator();
         ImGui::Spacing();
@@ -99,11 +150,20 @@ public:
             stltype::vector<u32> queues;
             for (auto it = m_smoothed.begin(); it != m_smoothed.end(); ++it)
             {
-                if (!it->second.wasRun) continue;
+                if (!it->second.wasRun)
+                    continue;
                 u32 q = it->second.queueFamilyIndex;
                 bool found = false;
-                for (u32 existing : queues) { if (existing == q) { found = true; break; } }
-                if (!found) queues.push_back(q);
+                for (u32 existing : queues)
+                {
+                    if (existing == q)
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found)
+                    queues.push_back(q);
             }
             eastl::sort(queues.begin(), queues.end());
 
@@ -119,14 +179,18 @@ public:
                 f32 rulerY = origin.y;
                 f32 tlX = origin.x + LABEL_WIDTH;
 
-                dl->AddRectFilled(ImVec2(origin.x, rulerY), ImVec2(origin.x + windowWidth, rulerY + RULER_HEIGHT), IM_COL32(20, 20, 20, 255));
+                dl->AddRectFilled(ImVec2(origin.x, rulerY),
+                                  ImVec2(origin.x + windowWidth, rulerY + RULER_HEIGHT),
+                                  IM_COL32(20, 20, 20, 255));
                 dl->AddText(ImVec2(origin.x + 2.0f, rulerY + 3.0f), IM_COL32(180, 180, 180, 255), "ms");
 
                 f32 tickStep = ChooseTickStep(rangeMs, timelineWidth);
                 for (f32 ms = 0.0f; ms <= rangeMs; ms += tickStep)
                 {
                     f32 x = tlX + (ms / rangeMs) * timelineWidth;
-                    dl->AddLine(ImVec2(x, rulerY + RULER_HEIGHT - 6.0f), ImVec2(x, rulerY + RULER_HEIGHT), IM_COL32(120, 120, 120, 255));
+                    dl->AddLine(ImVec2(x, rulerY + RULER_HEIGHT - 6.0f),
+                                ImVec2(x, rulerY + RULER_HEIGHT),
+                                IM_COL32(120, 120, 120, 255));
                     char buf[16];
                     snprintf(buf, sizeof(buf), "%.2f", ms);
                     dl->AddText(ImVec2(x + 2.0f, rulerY + 3.0f), IM_COL32(180, 180, 180, 255), buf);
@@ -144,10 +208,14 @@ public:
                     dl->AddRectFilled(ImVec2(origin.x, y), ImVec2(origin.x + windowWidth, y + ROW_HEIGHT), bgCol);
 
                     stltype::string queueName = "Unknown";
-                    if (qIndices.graphicsFamily.has_value() && queueIdx == qIndices.graphicsFamily.value()) queueName = "Graphics";
-                    else if (qIndices.computeFamily.has_value() && queueIdx == qIndices.computeFamily.value()) queueName = "Compute";
-                    else if (qIndices.transferFamily.has_value() && queueIdx == qIndices.transferFamily.value()) queueName = "Transfer";
-                    else if (qIndices.presentFamily.has_value() && queueIdx == qIndices.presentFamily.value()) queueName = "Present";
+                    if (qIndices.graphicsFamily.has_value() && queueIdx == qIndices.graphicsFamily.value())
+                        queueName = "Graphics";
+                    else if (qIndices.computeFamily.has_value() && queueIdx == qIndices.computeFamily.value())
+                        queueName = "Compute";
+                    else if (qIndices.transferFamily.has_value() && queueIdx == qIndices.transferFamily.value())
+                        queueName = "Transfer";
+                    else if (qIndices.presentFamily.has_value() && queueIdx == qIndices.presentFamily.value())
+                        queueName = "Present";
 
                     dl->AddText(ImVec2(origin.x + 4.0f, y + 4.0f), IM_COL32(200, 200, 200, 255), queueName.c_str());
                     dl->AddLine(ImVec2(tlX, y), ImVec2(tlX, y + ROW_HEIGHT), IM_COL32(60, 60, 60, 255));
@@ -156,11 +224,13 @@ public:
                     {
                         const auto& name = it->first;
                         const auto& pass = it->second;
-                        if (!pass.wasRun || pass.queueFamilyIndex != queueIdx) continue;
+                        if (!pass.wasRun || pass.queueFamilyIndex != queueIdx)
+                            continue;
 
                         f32 startX = tlX + (pass.startMs / rangeMs) * timelineWidth;
                         f32 endX = tlX + (pass.endMs / rangeMs) * timelineWidth;
-                        if (endX - startX < 3.0f) endX = startX + 3.0f;
+                        if (endX - startX < 3.0f)
+                            endX = startX + 3.0f;
 
                         u32 color = HashColor(name);
                         f32 blockY = y + 2.0f;
@@ -188,7 +258,12 @@ public:
 
                         if (ImGui::IsMouseHoveringRect(ImVec2(startX, blockY), ImVec2(endX, blockY + blockH)))
                         {
-                            dl->AddRect(ImVec2(startX, blockY), ImVec2(endX, blockY + blockH), IM_COL32(255, 255, 255, 255), 2.0f, 0, 2.0f);
+                            dl->AddRect(ImVec2(startX, blockY),
+                                        ImVec2(endX, blockY + blockH),
+                                        IM_COL32(255, 255, 255, 255),
+                                        2.0f,
+                                        0,
+                                        2.0f);
                             ImGui::BeginTooltip();
                             ImGui::Text("%s", name.c_str());
                             ImGui::Text("Time: %.3f ms", pass.durationMs);
@@ -218,8 +293,7 @@ private:
         if (g_pEntityManager)
         {
             m_entityCount = static_cast<u32>(g_pEntityManager->GetAllEntities().size());
-            m_lightCount =
-                static_cast<u32>(g_pEntityManager->GetComponentVector<ECS::Components::Light>().size());
+            m_lightCount = static_cast<u32>(g_pEntityManager->GetComponentVector<ECS::Components::Light>().size());
         }
 
         m_frameTimeSamples[m_sampleIndex] = dt;
@@ -267,12 +341,18 @@ private:
     {
         switch (format)
         {
-            case TexFormat::R8G8B8A8_SRGB: return "R8G8B8A8_SRGB";
-            case TexFormat::B8G8R8A8_SRGB: return "B8G8R8A8_SRGB";
-            case TexFormat::R8G8B8A8_UNORM: return "R8G8B8A8_UNORM";
-            case TexFormat::B8G8R8A8_UNORM: return "B8G8R8A8_UNORM";
-            case TexFormat::R16G16B16A16_FLOAT: return "R16G16B16A16_FLOAT";
-            default: return "UNKNOWN";
+            case TexFormat::R8G8B8A8_SRGB:
+                return "R8G8B8A8_SRGB";
+            case TexFormat::B8G8R8A8_SRGB:
+                return "B8G8R8A8_SRGB";
+            case TexFormat::R8G8B8A8_UNORM:
+                return "R8G8B8A8_UNORM";
+            case TexFormat::B8G8R8A8_UNORM:
+                return "B8G8R8A8_UNORM";
+            case TexFormat::R16G16B16A16_FLOAT:
+                return "R16G16B16A16_FLOAT";
+            default:
+                return "UNKNOWN";
         }
     }
 
@@ -294,7 +374,8 @@ private:
     void UpdateSmoothedData()
     {
         const auto& passTimings = m_lastState.passTimings;
-        if (passTimings.empty()) return;
+        if (passTimings.empty())
+            return;
 
         f32 frameMaxMs = 0.0f;
 
@@ -304,7 +385,8 @@ private:
             s.queueFamilyIndex = pass.queueFamilyIndex;
             s.wasRun = pass.wasRun;
 
-            if (!pass.wasRun) continue;
+            if (!pass.wasRun)
+                continue;
 
             if (!s.initialized)
             {
@@ -320,31 +402,38 @@ private:
                 s.durationMs += (pass.gpuTimeMs - s.durationMs) * ALPHA_TIMING;
             }
 
-            if (s.endMs > frameMaxMs) frameMaxMs = s.endMs;
+            if (s.endMs > frameMaxMs)
+                frameMaxMs = s.endMs;
         }
 
-        if (m_totalRangeMs < 0.001f) m_totalRangeMs = frameMaxMs;
-        else m_totalRangeMs += (frameMaxMs - m_totalRangeMs) * ALPHA_TIMING;
+        if (m_totalRangeMs < 0.001f)
+            m_totalRangeMs = frameMaxMs;
+        else
+            m_totalRangeMs += (frameMaxMs - m_totalRangeMs) * ALPHA_TIMING;
     }
 
     static f32 ChooseTickStep(f32 rangeMs, f32 widthPx)
     {
+        if (widthPx <= 0.0f) return 10.0f;
         const f32 minTickSpacingPx = 60.0f;
         f32 maxTicks = widthPx / minTickSpacingPx;
+        if (maxTicks < 1.0f) maxTicks = 1.0f;
         f32 rawStep = rangeMs / maxTicks;
 
         const f32 steps[] = {0.01f, 0.02f, 0.05f, 0.1f, 0.2f, 0.25f, 0.5f, 1.0f, 2.0f, 5.0f, 10.0f, 20.0f};
         for (f32 s : steps)
         {
-            if (s >= rawStep) return s;
+            if (s >= rawStep)
+                return s;
         }
-        return 10.0f;
+        return (stltype::max)(20.0f, rawStep);
     }
 
     static u32 HashColor(const stltype::string& name)
     {
         u32 h = 5381;
-        for (char c : name) h = ((h << 5) + h) + c;
+        for (char c : name)
+            h = ((h << 5) + h) + c;
 
         u8 r = 80 + (h % 160);
         u8 g = 80 + ((h >> 8) % 160);
@@ -374,6 +463,59 @@ private:
 
     u32 m_entityCount{0};
     u32 m_lightCount{0};
+
+    static const char* BoolToString(bool value)
+    {
+        return value ? "Yes" : "No";
+    }
+
+    static const char* DLSSModeToString(sl::DLSSMode mode)
+    {
+        switch (mode)
+        {
+            case sl::DLSSMode::eOff:
+                return "Off";
+            case sl::DLSSMode::eMaxPerformance:
+                return "Max Performance";
+            case sl::DLSSMode::eBalanced:
+                return "Balanced";
+            case sl::DLSSMode::eMaxQuality:
+                return "Max Quality";
+            case sl::DLSSMode::eUltraPerformance:
+                return "Ultra Performance";
+            case sl::DLSSMode::eUltraQuality:
+                return "Ultra Quality";
+            case sl::DLSSMode::eDLAA:
+                return "DLAA";
+            default:
+                return "Unknown";
+        }
+    }
+
+    static const char* ResultToString(sl::Result result)
+    {
+        switch (result)
+        {
+            case sl::Result::eOk:
+                return "Ok";
+            case sl::Result::eErrorNGXFailed:
+                return "NGX Failed";
+            case sl::Result::eErrorNotInitialized:
+                return "Not Initialized";
+            case sl::Result::eErrorInvalidParameter:
+                return "Invalid Parameter";
+            case sl::Result::eErrorFeatureNotSupported:
+                return "Feature Not Supported";
+            case sl::Result::eErrorMissingConstants:
+                return "Missing Constants";
+            case sl::Result::eErrorInvalidState:
+                return "Invalid State";
+            case sl::Result::eWarnOutOfVRAM:
+                return "Out Of VRAM";
+            default:
+                return "Other";
+        }
+    }
 
     stltype::hash_map<stltype::string, SmoothedPass> m_smoothed;
     f32 m_totalRangeMs{0.0f};

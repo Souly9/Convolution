@@ -66,11 +66,6 @@ void ShadowMapManager::Recreate(u32 cascades,
     UBO::ShadowMapUBO shadowMapUBO{};
     shadowMapUBO.directionalShadowMapIdx = m_shadowMap.bindlessHandle;
     std::memcpy(frameResourceManager.GetMappedShadowMapUBO(), &shadowMapUBO, sizeof(shadowMapUBO));
-    for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
-    {
-        frameResourceManager.GetFrameRendererContext(i).gbufferPostProcessDescriptor->WriteBufferUpdate(
-            frameResourceManager.GetShadowMapUBO(), s_shadowmapUBOBindingSlot);
-    }
 }
 
 void ShadowMapManager::Reset()

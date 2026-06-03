@@ -128,7 +128,7 @@ void DebugShapePass::RebuildInternalData(const stltype::vector<PassMeshData>& me
 void DebugShapePass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
 {
     ScopedZone("DebugShapePass::Render");
-    const auto currentFrame = ctx.imageIdx;
+    const auto currentFrame = ctx.currentFrame;
     UpdateContextForFrame(currentFrame);
     const auto& passCtx = m_perObjectFrameContexts[currentFrame];
 

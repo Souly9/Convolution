@@ -177,8 +177,13 @@ set(CONV_WITH_AFTERMATH_SDK OFF)
 if(WIN32 AND EXISTS "${AFTERMATH_SDK_LIB}")
     set(CONV_WITH_AFTERMATH_SDK ON)
 endif()
+option(CONV_ENABLE_STREAMLINE "Enable NVIDIA Streamline integration" ON)
 set(STREAMLINE_INTERPOSER_LIB "${CMAKE_SOURCE_DIR}/External/additional_libs/NVStreamline/sl.interposer.lib")
-set(CONV_WITH_STREAMLINE_INTERPOSER_LIB ON)
+set(CONV_WITH_STREAMLINE_INTERPOSER_LIB OFF)
+# Force disable Streamline to avoid Delay Load Exceptions
+# if(WIN32 AND CONV_ENABLE_STREAMLINE AND EXISTS "${STREAMLINE_INTERPOSER_LIB}")
+#     set(CONV_WITH_STREAMLINE_INTERPOSER_LIB ON)
+# endif()
 set(XESS_LIB "${CMAKE_SOURCE_DIR}/External/additional_libs/XeSS/libxess.lib")
 set(CONV_WITH_XESS OFF)
 if(WIN32 AND EXISTS "${XESS_LIB}")
@@ -384,6 +389,13 @@ foreach(FILE_NAME IN LISTS STREAMLINE_CONFIG_FILES)
     )
 endforeach()
 endif()
+
+add_custom_target(
+    ${NAME}Utilities
+    ${CONV_UTILITY_COMMANDS}
+    COMMENT "Staging runtime resources, debugger helpers, and optional SDK runtimes"
+    VERBATIM
+)
 
 set_target_properties(${NAME} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CONV_OUTPUT_BASE_DIR}"

@@ -5,12 +5,12 @@
 #define MAX_MATERIALS          2048
 #define MAX_ENTITIES           65536 * 3
 #define MAX_CASCADE_COUNT      16
-#define MAX_LIGHTS_PER_CLUSTER 128
-#define MAX_SCENE_LIGHTS       16384 * 5
+#define MAX_LIGHTS_PER_CLUSTER 512 // Fine culling limit (eg. max number of lights to eval)
+#define MAX_SCENE_LIGHTS       100000
 #define MAX_CLUSTERS           (64 * 64 * 64)
 #define MAX_LIGHT_INDICES      (MAX_CLUSTERS * MAX_LIGHTS_PER_CLUSTER)
 #define MAX_TILE_XY            (64 * 64)
-#define MAX_LIGHTS_PER_TILE    4096
+#define MAX_LIGHTS_PER_TILE    4096 // Coarse culling limit
 
 #define SharedDataUBOBindingSlot             300
 #define ShadowMapDataBindingSlot             301

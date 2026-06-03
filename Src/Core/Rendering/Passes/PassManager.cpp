@@ -23,21 +23,20 @@
 #include "Core/Rendering/Core/ShaderManager.h"
 #include "Core/Rendering/Core/Synchronization.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
-#include "Core/Rendering/Vulkan/VkGlobals.h"
 #include "Core/Rendering/Vulkan/Utils/VkEnumHelpers.h"
+#include "Core/Rendering/Vulkan/VkGlobals.h"
 #include "Core/Rendering/Vulkan/XeSS/XeSSManager.h"
 #include "Core/SceneGraph/Scene.h"
 #include "DebugShapePass.h"
 #include "ImGuiPass.h"
 #include "PreProcess/DepthPrePass.h"
-#include "RT/RTDebugViewPass.h"
-#include "RT/RTReflectionsPass.h"
 #include "RT/RTAOPass.h"
 #include "RT/RTCompositePass.h"
+#include "RT/RTDebugViewPass.h"
+#include "RT/RTReflectionsPass.h"
 #include "ScreenSpaceShadowPass.h"
 #include "ShadowPass.h"
 #include "StaticMeshPass.h"
-
 
 using namespace RenderPasses;
 
@@ -212,7 +211,7 @@ void PassManager::RecreateResizeDependentResources(const mathstl::Vector2& swapc
         ++idx;
     }
 
-    UpdateGBufferUBO(m_mainPassData[m_currentSwapChainIdx]);
+    UpdateGBufferUBO(m_mainPassData[0]);
     for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
     {
         m_frameResourceManager.GetFrameRendererContext(i).gbufferPostProcessDescriptor->WriteBufferUpdate(
@@ -416,9 +415,9 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
         allColorTextures.push_back(m_renderTargetManager.GetSMAABlendTexture());
     }
 
-    CommandBuffer* pMainGraphicsWorkBuffer = m_graphicsFrameCtx.cmdBuffers[ctx.imageIdx];
-    CommandBuffer* pComputeCmdBuffer = m_computeFrameCtx.cmdBuffers[ctx.imageIdx];
-    CommandBuffer* pDepthWorkBuffer = m_graphicsFrameCtx.depthPrePassCmdBuffers[ctx.imageIdx];
+    CommandBuffer* pMainGraphicsWorkBuffer = m_graphicsFrameCtx.cmdBuffers[ctx.currentFrame];
+    CommandBuffer* pComputeCmdBuffer = m_computeFrameCtx.cmdBuffers[ctx.currentFrame];
+    CommandBuffer* pDepthWorkBuffer = m_graphicsFrameCtx.depthPrePassCmdBuffers[ctx.currentFrame];
 
     pMainGraphicsWorkBuffer->ResetBuffer();
     pComputeCmdBuffer->ResetBuffer();
@@ -519,7 +518,7 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
     }
 
     // SSS (DepthReliantCompute)
-    CommandBuffer* pSSSWorkBuffer = m_computeFrameCtx.sssComputeCmdBuffers[ctx.imageIdx];
+    CommandBuffer* pSSSWorkBuffer = m_computeFrameCtx.sssComputeCmdBuffers[ctx.currentFrame];
     pSSSWorkBuffer->ResetBuffer();
     pSSSWorkBuffer->SetFrameIdx(ctx.currentFrame);
     {
@@ -561,7 +560,7 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
     }
 
     // Lighting Stage + RTReflections
-    CommandBuffer* pLightingWorkBuffer = m_graphicsFrameCtx.lightingCmdBuffers[ctx.imageIdx];
+    CommandBuffer* pLightingWorkBuffer = m_graphicsFrameCtx.lightingCmdBuffers[ctx.currentFrame];
     pLightingWorkBuffer->ResetBuffer();
     pLightingWorkBuffer->SetFrameIdx(ctx.currentFrame);
     {
@@ -575,9 +574,9 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
 
         // Ensure Compute Queue shader writes (shadows/light grids) are visible to Graphics Queue shader reads
         pLightingWorkBuffer->RecordCommand(GlobalBarrierCmd(SyncStages::COMPUTE_SHADER,
-                                                           SyncStages::COMPUTE_SHADER,
-                                                           VK_ACCESS_SHADER_WRITE_BIT,
-                                                           VK_ACCESS_SHADER_READ_BIT));
+                                                            SyncStages::COMPUTE_SHADER,
+                                                            VK_ACCESS_SHADER_WRITE_BIT,
+                                                            VK_ACCESS_SHADER_READ_BIT));
 
         // Transition GBufferThisFrameColor to GENERAL layout for compute shader write (discarding previous contents)
         m_transitionRecorder.RecordThisFrameColorToGeneralDiscard(pLightingWorkBuffer, gbuffer);
@@ -588,9 +587,12 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
         m_transitionRecorder.RecordThisFrameColorToRead(pLightingWorkBuffer, gbuffer);
 
         // RT Reflections runs after lighting so it can sample GBuffer and depth
-        m_rtResourceManager.RecordTransition(pLightingWorkBuffer, m_rtResourceManager.Get(RT::RTTextureType::Reflections), ImageLayout::GENERAL);
+        m_rtResourceManager.RecordTransition(
+            pLightingWorkBuffer, m_rtResourceManager.Get(RT::RTTextureType::Reflections), ImageLayout::GENERAL);
         RenderPassGroup(PassType::RTReflectionsCompute, mainPassData, ctx, pLightingWorkBuffer);
-        m_rtResourceManager.RecordTransition(pLightingWorkBuffer, m_rtResourceManager.Get(RT::RTTextureType::Reflections), ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+        m_rtResourceManager.RecordTransition(pLightingWorkBuffer,
+                                             m_rtResourceManager.Get(RT::RTTextureType::Reflections),
+                                             ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
         pLightingWorkBuffer->AddTimelineSignal(&ctx.frameTimeline, lightingSignalValue);
         pLightingWorkBuffer->SetSignalStages(SyncStages::COLOR_ATTACHMENT_OUTPUT | SyncStages::COMPUTE_SHADER);
@@ -599,7 +601,7 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
     }
 
     // Async Compute RT Stage (RTAO, parallel with Lighting)
-    CommandBuffer* pRTComputeCmdBuffer = m_computeFrameCtx.rtComputeCmdBuffers[ctx.imageIdx];
+    CommandBuffer* pRTComputeCmdBuffer = m_computeFrameCtx.rtComputeCmdBuffers[ctx.currentFrame];
     pRTComputeCmdBuffer->ResetBuffer();
     pRTComputeCmdBuffer->SetFrameIdx(ctx.currentFrame);
     {
@@ -608,14 +610,17 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
 
         if (mainPassData.pRTAOTexture != nullptr)
         {
-            m_rtResourceManager.RecordTransitionComputeOnly(pRTComputeCmdBuffer, m_rtResourceManager.Get(RT::RTTextureType::RTAO), ImageLayout::GENERAL);
+            m_rtResourceManager.RecordTransitionComputeOnly(
+                pRTComputeCmdBuffer, m_rtResourceManager.Get(RT::RTTextureType::RTAO), ImageLayout::GENERAL);
         }
 
         RenderPassGroup(PassType::RTAOCompute, mainPassData, ctx, pRTComputeCmdBuffer);
 
         if (mainPassData.pRTAOTexture != nullptr)
         {
-            m_rtResourceManager.RecordTransitionComputeOnly(pRTComputeCmdBuffer, m_rtResourceManager.Get(RT::RTTextureType::RTAO), ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+            m_rtResourceManager.RecordTransitionComputeOnly(pRTComputeCmdBuffer,
+                                                            m_rtResourceManager.Get(RT::RTTextureType::RTAO),
+                                                            ImageLayout::SHADER_READ_ONLY_OPTIMAL);
         }
 
         pRTComputeCmdBuffer->AddTimelineSignal(&ctx.computeTimeline, rtComputeSignalValue);
@@ -625,7 +630,7 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
     }
 
     // Final Stage (RT Composite -> UI)
-    CommandBuffer* pFinalWorkBuffer = m_graphicsFrameCtx.compositeCmdBuffers[ctx.imageIdx];
+    CommandBuffer* pFinalWorkBuffer = m_graphicsFrameCtx.compositeCmdBuffers[ctx.currentFrame];
     pFinalWorkBuffer->ResetBuffer();
     pFinalWorkBuffer->SetFrameIdx(ctx.currentFrame);
     {
@@ -651,27 +656,30 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
         }
 
         const auto& appRenderState = g_pApplicationState->GetCurrentApplicationState().renderState;
-        const bool reflectionsEnabled = mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
-                                        mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTReflectionsEnabled);
+        const bool reflectionsEnabled =
+            mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
+            mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTReflectionsEnabled);
         const bool rtaoEnabled = mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
                                  mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTAOEnabled);
         const bool useRTReflections = reflectionsEnabled && mainPassData.pRTSceneManager != nullptr &&
                                       mainPassData.pRTSceneManager->HasReadyTLAS(m_currentSwapChainIdx);
         const bool useRTAO = rtaoEnabled && mainPassData.pRTSceneManager != nullptr &&
-                            mainPassData.pRTSceneManager->HasReadyTLAS(m_currentSwapChainIdx);
+                             mainPassData.pRTSceneManager->HasReadyTLAS(m_currentSwapChainIdx);
         const bool useRT = useRTReflections || useRTAO;
         const bool useRayReconstruction = Nvidia::StreamlineManager::IsDLSSRRSupported() &&
-                                          appRenderState.rt.reflectionsUseRayReconstruction &&
-                                          useRTReflections;
+                                          appRenderState.rt.reflectionsUseRayReconstruction && useRTReflections;
 
         // 1. RT Composite (combines Lighting, RTAO, Reflections)
         if (useRT && !useRayReconstruction)
         {
-            m_rtResourceManager.RecordTransition(pFinalWorkBuffer, m_rtResourceManager.Get(RT::RTTextureType::Accumulation), ImageLayout::GENERAL);
+            m_rtResourceManager.RecordTransition(
+                pFinalWorkBuffer, m_rtResourceManager.Get(RT::RTTextureType::Accumulation), ImageLayout::GENERAL);
             m_transitionRecorder.RecordThisFrameColorToGeneral(pFinalWorkBuffer, gbuffer);
             RenderPassGroup(PassType::RTComposite, mainPassData, ctx, pFinalWorkBuffer);
             m_transitionRecorder.RecordThisFrameColorFromGeneralToRead(pFinalWorkBuffer, gbuffer);
-            m_rtResourceManager.RecordTransition(pFinalWorkBuffer, m_rtResourceManager.Get(RT::RTTextureType::Accumulation), ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+            m_rtResourceManager.RecordTransition(pFinalWorkBuffer,
+                                                 m_rtResourceManager.Get(RT::RTTextureType::Accumulation),
+                                                 ImageLayout::SHADER_READ_ONLY_OPTIMAL);
         }
 
         const bool taaModeActive = appRenderState.aaType == AntialiasingType::TAA_SMAA;
@@ -733,28 +741,28 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
         if (Nvidia::StreamlineManager::IsAvailable())
         {
             ExecuteNativeCmd streamlineCmd{};
-            const u32 frameSlot = ctx.imageIdx;
+            const u32 frameSlot = ctx.currentFrame;
+            const u32 frameIdx = ctx.currentFrame;
             Texture* pTex = ctx.pCurrentSwapchainTexture;
-            streamlineCmd.callback = [frameSlot, pTex](void* pNativeCmdBuf) mutable
+            streamlineCmd.callback = [frameIdx, frameSlot, pTex](void* pNativeCmdBuf) mutable
             {
                 auto cmdBuffer = static_cast<VkCommandBuffer>(pNativeCmdBuf);
                 sl::FrameToken* pFrameToken = nullptr;
-                if (!Nvidia::StreamlineManager::GetFrameToken(frameSlot, pFrameToken) || !pFrameToken)
+                if (!Nvidia::StreamlineManager::GetFrameToken(frameIdx, pFrameToken) || !pFrameToken)
                     return;
 
-                static struct {
+                static struct
+                {
                     sl::Resource res;
                     sl::ResourceTag tags[1];
                 } s_slData[SWAPCHAIN_IMAGES];
 
                 auto& data = s_slData[frameSlot];
-                data.res = sl::Resource(
-                    sl::ResourceType::eTex2d,
-                    (void*)pTex->GetImage(),
-                    nullptr,
-                    (void*)pTex->GetImageView(),
-                    static_cast<uint32_t>(VK_IMAGE_LAYOUT_PRESENT_SRC_KHR)
-                );
+                data.res = sl::Resource(sl::ResourceType::eTex2d,
+                                        (void*)pTex->GetImage(),
+                                        nullptr,
+                                        (void*)pTex->GetImageView(),
+                                        static_cast<uint32_t>(VK_IMAGE_LAYOUT_PRESENT_SRC_KHR));
                 data.res.width = pTex->GetInfo().extents.x;
                 data.res.height = pTex->GetInfo().extents.y;
                 data.res.nativeFormat = static_cast<uint32_t>(Conv(pTex->GetInfo().format));
@@ -763,7 +771,8 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
                 data.res.arrayLayers = pTex->GetInfo().extents.z > 0 ? pTex->GetInfo().extents.z : 1u;
                 data.res.flags = 0;
 
-                data.tags[0] = sl::ResourceTag(&data.res, sl::kBufferTypeBackbuffer, sl::ResourceLifecycle::eValidUntilPresent);
+                data.tags[0] =
+                    sl::ResourceTag(&data.res, sl::kBufferTypeBackbuffer, sl::ResourceLifecycle::eValidUntilPresent);
 
                 sl::ViewportHandle viewportHandle(0);
                 Nvidia::StreamlineManager::SetTagForFrame(*pFrameToken, viewportHandle, data.tags, 1, cmdBuffer);
@@ -815,27 +824,25 @@ void PassManager::UpdateGBufferUBO(const MainPassData& data)
     const bool rtReflectionsRequested =
         mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
         mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTReflectionsEnabled);
-    const bool rtaoRequested =
-        mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
-        mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTAOEnabled);
+    const bool rtaoRequested = mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
+                               mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTAOEnabled);
 
     const bool useRTReflections = rtReflectionsRequested && data.pRTSceneManager != nullptr &&
                                   data.pRTSceneManager->HasReadyTLAS(m_currentSwapChainIdx);
-    const bool useRTAO = rtaoRequested && data.pRTSceneManager != nullptr &&
-                         data.pRTSceneManager->HasReadyTLAS(m_currentSwapChainIdx);
+    const bool useRTAO =
+        rtaoRequested && data.pRTSceneManager != nullptr && data.pRTSceneManager->HasReadyTLAS(m_currentSwapChainIdx);
     const bool useRT = useRTReflections || useRTAO;
     const bool useRayReconstruction = Nvidia::StreamlineManager::IsDLSSRRSupported() &&
-                                      appRenderState.rt.reflectionsUseRayReconstruction &&
-                                      useRTReflections;
+                                      appRenderState.rt.reflectionsUseRayReconstruction && useRTReflections;
 
     gbufferUBO.thisFrameColorBufferIdx = gbuffer.GetHandle(GBufferTextureType::GBufferThisFrameColor);
 
     Nvidia::StreamlineManager::SetUseRayReconstructionThisFrame(useRayReconstruction);
 
-    gbufferUBO.finalTemporalColorBufferIdx =
-        (((taaModeActive && !taaDebugOrSeed) || smaaModeActive) && temporal.postAAColorHandle != 0 && !useRayReconstruction)
-            ? temporal.postAAColorHandle
-            : temporal.resolveHandle;
+    gbufferUBO.finalTemporalColorBufferIdx = (((taaModeActive && !taaDebugOrSeed) || smaaModeActive) &&
+                                              temporal.postAAColorHandle != 0 && !useRayReconstruction)
+                                                 ? temporal.postAAColorHandle
+                                                 : temporal.resolveHandle;
 
     if (useRayReconstruction)
     {
@@ -865,6 +872,8 @@ void PassManager::Init()
 
 void PassManager::ExecutePasses(u32 frameIdx)
 {
+    Nvidia::StreamlineManager::AcquireNewFrameToken(frameIdx);
+
     auto& ctx = m_frameResourceManager.GetFrameRendererContext(m_currentSwapChainIdx);
     auto& mainPassData = m_mainPassData.at(m_currentSwapChainIdx);
     auto& imageAvailableSemaphore = m_imageAvailableSemaphores.at(frameIdx);
@@ -960,6 +969,37 @@ void PassManager::SetSharedData(RenderView&& mainView, u32 frameIdx)
 }
 void PassManager::PreProcessDataForCurrentFrame(u32 frameIdx, u64 jitterFrameNumber)
 {
+    // Calculate average lights per cluster by reading final counts from the GPU buffer of the completed frame
+    {
+        const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+        u32 totalClusters = renderState.clusterCount.x * renderState.clusterCount.y * renderState.clusterCount.z;
+        if (totalClusters > 0)
+        {
+            u32 totalLightsInClusters = 0;
+            void* pMapped = m_frameResourceManager.GetLightClusterSSBO().MapMemory();
+            if (pMapped)
+            {
+                char* pBase = static_cast<char*>(pMapped);
+                u32* pOffsets = reinterpret_cast<u32*>(pBase + UBO::LightClusterOffsetsOffset);
+                u32* pIndices = reinterpret_cast<u32*>(pBase + UBO::LightClusterIndicesOffset);
+
+                for (u32 i = 0; i < totalClusters; ++i)
+                {
+                    u32 baseIdx = pOffsets[i];
+                    if (baseIdx < MAX_LIGHT_INDICES)
+                    {
+                        totalLightsInClusters += pIndices[baseIdx];
+                    }
+                }
+                m_frameResourceManager.GetLightClusterSSBO().UnmapMemory();
+            }
+
+            f32 avgLights = static_cast<f32>(totalLightsInClusters) / static_cast<f32>(totalClusters);
+            g_pApplicationState->RegisterUpdateFunction([avgLights](ApplicationState& state)
+                                                        { state.renderState.avgLightsPerCluster = avgLights; });
+        }
+    }
+
     m_renderTargetManager.RotateHistory(frameIdx);
     for (auto& mainPassData : m_mainPassData)
     {
@@ -979,9 +1019,9 @@ void PassManager::PreProcessDataForCurrentFrame(u32 frameIdx, u64 jitterFrameNum
 
 bool PassManager::BlockUntilPassesFinished(u32 frameIdx)
 {
-    // Force strict 1-frame in-flight serialization to resolve CPU-to-GPU and GPU-to-GPU
-    // data races on single-buffered resources (UBOs and intermediate textures).
-    g_pQueueHandler->WaitForFences(~0u);
+    ScopedZone("Waiting for passes to finish (block until finished)");
+    // Wait for previous in-flight frame to finish as we dont double buffer UBOs etc
+    g_pQueueHandler->WaitForFences(frameIdx);
 
     auto& fence = m_imageAvailableFences.at(frameIdx);
     auto& sem = m_imageAvailableSemaphores.at(frameIdx);
@@ -1023,7 +1063,10 @@ void PassManager::PreProcessMeshData(const stltype::vector<PassMeshData>& meshes
     {
         for (auto& pass : passes)
         {
-            pass->RebuildInternalData(meshes, lastFrameCtx, curFrame);
+            for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
+            {
+                pass->RebuildInternalData(meshes, lastFrameCtx, i);
+            }
             pass->NameResources(pass->GetName());
         }
     }

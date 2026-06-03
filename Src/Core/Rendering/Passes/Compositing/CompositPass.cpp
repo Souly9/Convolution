@@ -69,7 +69,7 @@ void CompositPass::RebuildInternalData(const stltype::vector<PassMeshData>& mesh
 
 void CompositPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
 {
-    const auto currentFrame = ctx.imageIdx;
+    const auto currentFrame = ctx.currentFrame;
     UpdateContextForFrame(currentFrame);
 
     ColorAttachment swapchainAttachment = m_mainRenderingData.colorAttachments[0];

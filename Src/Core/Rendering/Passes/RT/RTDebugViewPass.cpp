@@ -91,7 +91,7 @@ void RTDebugViewPass::Render(const MainPassData& data, FrameRendererContext& ctx
         return;
     }
 
-    m_tlasDescriptors[ctx.imageIdx]->WriteAccelerationStructureUpdate(pTLASFrameData->accelerationStructure,
+    m_tlasDescriptors[ctx.currentFrame]->WriteAccelerationStructureUpdate(pTLASFrameData->accelerationStructure,
                                                                       s_rtSceneASBindingSlot);
 
     const auto& rtState = g_pApplicationState->GetCurrentApplicationState().renderState.rt;
@@ -108,7 +108,7 @@ void RTDebugViewPass::Render(const MainPassData& data, FrameRendererContext& ctx
                                   data.bufferDescriptors.at(UBO::DescriptorContentsType::GlobalInstanceData),
                                   data.bufferDescriptors.at(UBO::DescriptorContentsType::GBuffer),
                                   data.bufferDescriptors.at(UBO::DescriptorContentsType::LightData),
-                                  m_tlasDescriptors[ctx.imageIdx]};
+                                  m_tlasDescriptors[ctx.currentFrame]};
     dispatchCmd.SetPushConstants(0, m_pushConstants);
     pCmdBuffer->RecordCommand(dispatchCmd);
     EndRenderPassProfilingScope(pCmdBuffer);

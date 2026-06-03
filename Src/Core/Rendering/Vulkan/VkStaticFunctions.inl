@@ -221,15 +221,14 @@ SwapchainPresentStatus SubmitForPresentationToMainSwapchain<Vulkan>(Semaphore* p
     presentInfo.pResults = nullptr;
 
     const VkResult result = vkQueuePresentKHR(VkGlobals::GetPresentQueue(), &presentInfo);
-    if (result == VK_SUCCESS)
+    if (result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR)
         return SwapchainPresentStatus::Presented;
-    if (result == VK_SUBOPTIMAL_KHR || result == VK_ERROR_OUT_OF_DATE_KHR)
+    if (result == VK_ERROR_OUT_OF_DATE_KHR)
         return SwapchainPresentStatus::NeedsRecreate;
 
     DEBUG_ASSERT(false);
     return SwapchainPresentStatus::Failed;
 }
-
 template<>
 void WaitForDeviceIdle<Vulkan>()
 {

@@ -136,7 +136,7 @@ void FrameResourceManager::Init()
 
     m_lightCluster = stltype::make_unique<UBO::LightClusterSSBO>();
     m_lightCluster->lights.resize(MAX_SCENE_LIGHTS);
-    m_lightClusterSSBO = StorageBuffer(UBO::LightClusterSSBOSize, true);
+    m_lightClusterSSBO = StorageBuffer(UBO::LightClusterSSBOSize, false);
     m_clusterGridSSBO = StorageBuffer(UBO::ClusterAABBSetSize, true);
 
     m_sharedDataUBO = UniformBuffer(sharedDataUBOSize);
@@ -400,6 +400,11 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
 
             float zNear = stltype::max(mainView.zNear, 0.000001f);
             float zFar = mainView.zFar;
+            if (zFar <= zNear || zFar > 10000.0f)
+            {
+                zFar = 10000.0f;
+            }
+            
             u32 sliceCount = renderState.clusterCount.z;
 
             float logRatio = std::log(zFar / zNear);

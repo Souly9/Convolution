@@ -4,6 +4,7 @@
 extern "C" float sinf(float x);
 extern "C" float powf(float base, float exp);
 extern "C" float floorf(float x);
+extern "C" float ceilf(float x);
 
 namespace mathstl
 {
@@ -39,6 +40,16 @@ namespace mathstl
     inline float floor(float val)
     {
         return ::floorf(val);
+    }
+
+    inline float ceil(float val)
+    {
+        return ::ceilf(val);
+    }
+
+    inline float fract(float val)
+    {
+        return val - ::floorf(val);
     }
 
     template <typename T>

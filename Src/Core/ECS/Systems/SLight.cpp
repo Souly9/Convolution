@@ -81,7 +81,7 @@ void ECS::System::SLight::Process()
                 mathstl::Vector3 lightColor = maxVal > 0.0001f ? mathstl::Vector3(r / maxVal, g / maxVal, b / maxVal) : mathstl::Vector3(1.f, 1.f, 1.f);
 
                 RenderLight emissiveLight;
-                emissiveLight.position = mathstl::Vector4(pTransform->position.x, pTransform->position.y, pTransform->position.z, 0.0f); // 0.0f = Point light
+                emissiveLight.position = mathstl::Vector4(pTransform->worldPosition.x, pTransform->worldPosition.y, pTransform->worldPosition.z, 0.0f); // 0.0f = Point light
                 emissiveLight.direction = mathstl::Vector4(0.0f, -1.0f, 0.0f, range);
                 emissiveLight.color = mathstl::Vector4(lightColor.x, lightColor.y, lightColor.z, intensity);
                 emissiveLight.cutoff = mathstl::Vector4(0.0f, 0.0f, 0.0f, 0.0f);

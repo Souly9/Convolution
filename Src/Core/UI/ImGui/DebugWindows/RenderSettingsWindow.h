@@ -19,7 +19,7 @@ class RenderSettingsWindow : public ImGuiWindow
 public:
     RenderSettingsWindow()
     {
-        m_isOpen = false;
+        m_isOpen = true;
     }
 
     void DrawWindow(f32 dt)
@@ -245,9 +245,6 @@ public:
                                                  disableCulling);
                             });
                     }
-
-                    ImGui::Text("Total Clusters: %u", renderState.totalClusterCount);
-                    ImGui::Text("Avg Lights/Cluster: %.2f", renderState.avgLightsPerCluster);
                 }
 
                 if (needsUpdate)
@@ -389,12 +386,6 @@ public:
                             [uiAOIntensity](ApplicationState& state)
                             { state.renderState.rt.aoIntensity = uiAOIntensity; });
                     }
-                }
-
-                if (ImGui::CollapsingHeader("RT Diagnostics", ImGuiTreeNodeFlags_DefaultOpen))
-                {
-                    ImGui::Text("Pending BLAS builds: %u", renderState.rt.pendingBlasCount);
-                    ImGui::Text("Resident RT Instances: %u", renderState.rt.residentInstanceCount);
                 }
 
                 ImGui::EndTabItem();
@@ -558,43 +549,6 @@ public:
                             needsUpdate = true;
                         }
                     }
-                }
-
-                if (renderState.dlssSupported &&
-                    ImGui::CollapsingHeader("NVIDIA DLSS & Streamline Diagnostics", ImGuiTreeNodeFlags_DefaultOpen))
-                {
-                    const auto debugState = Nvidia::StreamlineManager::GetDLSSDebugState();
-
-                    ImGui::TextWrapped("NVIDIA Streamline ImGui is loaded as the sl.imgui plugin. Use Ctrl+Shift+Home "
-                                       "to toggle the Streamline overlay. The engine hides its own ImGui while that "
-                                       "overlay is active so it can receive input.");
-                    ImGui::Separator();
-
-                    ImGui::Text("AA Mode: %s", renderState.aaType == AntialiasingType::DLSS ? "DLSS" : "Not DLSS");
-                    ImGui::Text("Streamline Initialized: %s", BoolToString(debugState.streamlineInitialized));
-                    ImGui::Text("DLSS Feature Supported: %s", BoolToString(debugState.featureSupported));
-                    ImGui::Text("Streamline ImGui Plugin: %s", BoolToString(debugState.imguiPluginAvailable));
-                    ImGui::Text("Configured: %s", BoolToString(debugState.configured));
-                    ImGui::Text("Evaluate Blocked: %s", BoolToString(debugState.evaluateBlocked));
-                    ImGui::Text("Last Configure Failed: %s", BoolToString(debugState.lastConfigureFailed));
-                    ImGui::Text("Pending Reset Flag: %s", BoolToString(debugState.needsReset));
-                    ImGui::Text("Configured Mode: %s", DLSSModeToString(debugState.configuredMode));
-
-                    ImGui::Separator();
-                    ImGui::Text("DLSS Input: %u x %u", debugState.inputWidth, debugState.inputHeight);
-                    ImGui::Text("DLSS Output: %u x %u", debugState.outputWidth, debugState.outputHeight);
-                    ImGui::Text("Estimated VRAM Usage: %.2f MB",
-                                static_cast<f32>(debugState.estimatedVRAMUsageInBytes) / (1024.0f * 1024.0f));
-                    ImGui::Text("Evaluate Calls: %llu", debugState.evaluateCallCount);
-                    ImGui::Text("slSetConstants: %s (0x%X)",
-                                ResultToString(debugState.lastSetConstantsResult),
-                                static_cast<u32>(debugState.lastSetConstantsResult));
-                    ImGui::Text("slSetTagForFrame: %s (0x%X)",
-                                ResultToString(debugState.lastTagResult),
-                                static_cast<u32>(debugState.lastTagResult));
-                    ImGui::Text("slEvaluateFeature: %s (0x%X)",
-                                ResultToString(debugState.lastEvaluateResult),
-                                static_cast<u32>(debugState.lastEvaluateResult));
                 }
 
                 if (needsUpdate)

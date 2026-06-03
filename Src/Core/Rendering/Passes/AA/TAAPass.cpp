@@ -92,7 +92,7 @@ void TAAPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comman
         m_pushConstants.resetHistory = 0;
     }
 
-    m_pushConstants.frameIndex = ctx.imageIdx;
+    m_pushConstants.frameIndex = ctx.currentFrame;
     m_pushConstants.resolutionX = data.renderState.renderResolution.x;
     m_pushConstants.resolutionY = data.renderState.renderResolution.y;
     m_pushConstants.outputResolutionX = data.renderState.swapchainResolution.x;

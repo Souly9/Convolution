@@ -83,7 +83,7 @@ void LightTransformComputePass::Render(const MainPassData& data,
     workgroupCount = workgroupCount > 0 ? workgroupCount : 1;
     GenericComputeDispatchCmd cmd(&m_pipeline, workgroupCount, 1, 1);
 
-    DescriptorSet::Ptr viewSpaceLightsDesc = data.pResourceManager->GetViewSpaceLightsDescriptorSet(ctx.imageIdx);
+    DescriptorSet::Ptr viewSpaceLightsDesc = data.pResourceManager->GetViewSpaceLightsDescriptorSet(ctx.currentFrame);
     
     cmd.descriptorSets = {ctx.sharedDataUBODescriptor, ctx.tileArraySSBODescriptor, ctx.clusterGridDescriptor, viewSpaceLightsDesc};
     cmd.SetPushConstants(0, m_pushConstants);

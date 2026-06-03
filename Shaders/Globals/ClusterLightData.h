@@ -69,7 +69,6 @@ FUNC_QUALIFIER uint getClusterIndex(vec3 viewPos, mat4 projMat)
     vec3 clusterSize = lightUniforms.data.ClusterSize.xyz;
     vec4 clipPos = projMat * vec4(viewPos, 1.0);
     vec3 ndc = clipPos.xyz / clipPos.w;
-    ndc.y = -ndc.y;
     vec2 uv = ndc.xy * 0.5 + 0.5;
 
     uint x = uint(uv.x * clusterSize.x);

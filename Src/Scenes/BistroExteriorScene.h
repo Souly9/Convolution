@@ -47,7 +47,9 @@ public:
                                         .isShadowCaster = true};
         g_pEntityManager->AddComponent(dirLightEnt, dirLight);
 
-        //auto lightsRootEnt = g_pEntityManager->CreateEntity(mathstl::Vector3(0, 0, 0), "LightsRoot");
-        // CreateTestLights(mathstl::Vector3(-20.0f, 1.0f, -15.0f), 40, 10.0f, lightsRootEnt);
+        auto lightsRootEnt = g_pEntityManager->CreateEntity(mathstl::Vector3(-20, 40, -15), "LightsRoot");
+        auto pLightRootTrans = g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(lightsRootEnt);
+        pLightRootTrans->scale = mathstl::Vector3(2.5f, 0.2f, 2.5f);
+        CreateTestLights(mathstl::Vector3(0, 0, 0), 12000, 15.0f, lightsRootEnt);
     }
 };

@@ -119,7 +119,7 @@ void ClusterDebugPass::Render(const MainPassData& data, FrameRendererContext& ct
     u32 totalClusters = renderState.totalClusterCount;
     if (totalClusters == 0) return;
 
-    m_currentFrameIdx = ctx.imageIdx;
+    m_currentFrameIdx = ctx.currentFrame;
     auto& cmdBuf = m_indirectCmdBuffers[m_currentFrameIdx];
     // Update Indirect Command
     cmdBuf.EmptyCmds();

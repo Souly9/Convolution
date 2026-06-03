@@ -58,10 +58,9 @@ void main()
         return;
     }
 
-    // Need to enlargen the AABB as otherwise some lights will jump between clusters sometimes or not get assigned to
-    // either correctly
+    // Need to enlargen the AABB as otherwise some lights will jump between clusters sometimes or not get assigned to either correctly
     vec3 c = viewPos;
-    float r = radius;
+    float r = radius * 1.1; // Expand by 10% to prevent tight culling dropouts
     vec3 minV = c - vec3(r);
     vec3 maxV = c + vec3(r);
 

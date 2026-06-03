@@ -156,11 +156,20 @@ void main()
 
     uint baseIndex = GetClusterLightBaseIndex(clusterIdx);
     uint lightCount = GetClusterLightCount(baseIndex);
-    lightCount = min(lightCount, MAX_LIGHTS_PER_CLUSTER - 1);
+    
+    bool disableCulling = (ubo.debugFlags & DEBUG_FLAG_DISABLE_CLUSTER_CULLING) != 0u;
+    if (!disableCulling)
+    {
+        lightCount = min(lightCount, MAX_LIGHTS_PER_CLUSTER - 1);
+    }
+    else
+    {
+        lightCount = min(lightCount, MAX_SCENE_LIGHTS);
+    }
 
     for (uint i = 0; i < lightCount; ++i)
     {
-        uint globalLightIdx = FetchClusterLightIndex(baseIndex, i);
+        uint globalLightIdx = disableCulling ? i : FetchClusterLightIndex(baseIndex, i);
         Light light = lightData.lights[globalLightIdx];
 
         vec3 lightPos = light.position.xyz;
