@@ -11,8 +11,8 @@ TextureVulkan::TextureVulkan()
 
 TextureVulkan::TextureVulkan(const VkImageCreateInfo& createInfo, const TextureInfo& info) : TextureBase(info)
 {
-    const auto device = VK_LOGICAL_DEVICE;
-    m_imageMemory = g_pGPUMemoryManager->AllocateImage(createInfo, m_image);}
+    m_imageMemory = g_pGPUMemoryManager->AllocateImage(createInfo, m_image);
+}
 
 TextureVulkan::TextureVulkan(const TextureInfo& info) : TextureBase(info)
 {

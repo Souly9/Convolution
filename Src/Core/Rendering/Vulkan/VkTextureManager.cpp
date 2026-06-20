@@ -16,9 +16,7 @@
 #include <tinyddsloader.h>
 #include <vulkan/vulkan.h>
 
-static constexpr u32 MIPMAP_NUM = 4;
-static constexpr u32 MAX_BINDLESS_UPLOADS = 1;
-static constexpr u32 MAX_STAGING_BUFFERS = 512;
+
 static constexpr u32 MAX_CACHE_BUFFERS = 512;
 
 static TextureInfo RequestToTexInfo(const DynamicTextureRequest& info)

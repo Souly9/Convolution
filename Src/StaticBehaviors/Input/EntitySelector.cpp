@@ -112,7 +112,6 @@ void EntitySelector::OnLeftMouseClick(const LeftMouseClickEventData& data)
 
     f32 overallMinDist = FLT_MAX;
     ECS::Entity rsltEntity;
-    const Vector3 rayDir(ray.direction);
     const Vector3 dirInverted = ray.invDirection;
 
     auto checkIntersections = [&](const auto& comps)
@@ -171,7 +170,7 @@ void EntitySelector::OnLeftMouseClick(const LeftMouseClickEventData& data)
     else
     {
         g_pApplicationState->RegisterUpdateFunction(
-            [rsltEntity, deslectEntity](ApplicationState& state)
+            [deslectEntity](ApplicationState& state)
             {
                 for (auto& selectedEntity : state.selectedEntities)
                 {

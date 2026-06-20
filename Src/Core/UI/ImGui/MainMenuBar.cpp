@@ -19,7 +19,6 @@ MainMenuBar::MainMenuBar() : SelfInstantiatingUIElement()
 void MainMenuBar::DrawMenuBar(f32 dt, ApplicationInfos& appInfos)
 {
     ScopedZone("MainMenuBar");
-    const bool dlssSupported = g_pApplicationState->GetCurrentApplicationState().renderState.dlssSupported;
     if (ImGui::BeginMainMenuBar())
     {
         if (ImGui::BeginMenu("Entity"))

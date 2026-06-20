@@ -37,10 +37,7 @@ namespace
 {
 constexpr u32 NVIDIA_VENDOR_ID = 0x10DE;
 
-bool IsSrgbSwapchainFormat(VkFormat format)
-{
-    return format == VK_FORMAT_B8G8R8A8_SRGB || format == VK_FORMAT_R8G8B8A8_SRGB;
-}
+
 
 bool HasExtension(const stltype::vector<const char*>& extensions, const char* name)
 {
@@ -245,9 +242,7 @@ bool RenderBackendImpl<Vulkan>::AreValidationLayersAvailable(const stltype::vect
 
 void RenderBackendImpl<Vulkan>::CreateDebugMessenger()
 {
-    PFN_vkCreateDebugReportCallbackEXT CreateDebugReportCallback = VK_NULL_HANDLE;
-    CreateDebugReportCallback =
-        (PFN_vkCreateDebugReportCallbackEXT)vkGetInstanceProcAddr(m_instance, "vkCreateDebugReportCallbackEXT");
+
 
     VkDebugUtilsMessengerCreateInfoEXT createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;

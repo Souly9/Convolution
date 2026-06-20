@@ -450,6 +450,10 @@ target_compile_definitions(${NAME} PRIVATE
     VULKAN_CORE_1_3=1
 )
 
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(${NAME} PRIVATE -Wno-nullability-completeness -Wno-unused-private-field)
+endif()
+
 target_precompile_headers(${NAME} PRIVATE "Src/PCH.h")
 
 set(GLSLANG_LIB_DIR "${CMAKE_SOURCE_DIR}/External/additional_libs/glsl/")
@@ -480,6 +484,10 @@ foreach(COMP ${GLSLANG_COMPONENTS})
         endif()
         if(NOT TARGET ${COMP})
             add_library(${COMP} STATIC IMPORTED GLOBAL)
+            if(${COMP} STREQUAL "SPIRV-Tools-opt")
+                # Fix lld-link failure due to duplicate library deduplication
+                set_target_properties(SPIRV-Tools-opt PROPERTIES INTERFACE_LINK_LIBRARIES SPIRV-Tools)
+            endif()
         endif()
         set_target_properties(${COMP} PROPERTIES
             IMPORTED_LOCATION "${GLSLANG_COMP_RELEASE_PATH}"
