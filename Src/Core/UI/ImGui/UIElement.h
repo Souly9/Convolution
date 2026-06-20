@@ -12,7 +12,7 @@ class SelfInstantiatingUIElement : public UIElement
 public:
     SelfInstantiatingUIElement()
     {
-        s_forcedRegistrator;
+        (void)s_forcedRegistrator;
     }
 
     static bool Init()
