@@ -28,15 +28,10 @@ jobs:
     - name: Configure CMake
       shell: pwsh
       run: |
-        $generator = "Visual Studio 17 2022"
-        if ($env:ImageVersion -like "*2025*") {
-          $generator = "Visual Studio 18 2026"
-        }
-        
         if ("${{ matrix.compiler }}" -eq "Clang") {
-          cmake -B build -S . -G $generator -A x64 -T ClangCL -DCONV_USE_CLANG_CL=ON
+          cmake -B build -S . -A x64 -T ClangCL -DCONV_USE_CLANG_CL=ON
         } else {
-          cmake -B build -S . -G $generator -A x64 -DCONV_USE_CLANG_CL=OFF
+          cmake -B build -S . -A x64 -DCONV_USE_CLANG_CL=OFF
         }
 
     - name: Build
