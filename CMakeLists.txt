@@ -458,7 +458,7 @@ target_precompile_headers(${NAME} PRIVATE "Src/PCH.h")
 
 set(GLSLANG_LIB_DIR "${CMAKE_SOURCE_DIR}/External/additional_libs/glsl/")
 set(GLSLANG_LIBS)
-set(GLSLANG_COMPONENTS glslang glslang-default-resource-limits SPIRV SPIRV-Tools-opt SPIRV-Tools-link SPIRV-Tools-reduce MachineIndependent GenericCodeGen OSDependent SPIRV-Tools)
+set(GLSLANG_COMPONENTS glslang glslang-default-resource-limits SPIRV SPIRV-Tools-opt SPIRV-Tools-link SPIRV-Tools-reduce SPIRV-Tools SPIRV-Tools-core SPIRV-Tools-opt SPIRV-Tools MachineIndependent GenericCodeGen OSDependent)
 set(GLSLANG_SEARCH_DIRS "${GLSLANG_LIB_DIR}")
 if(DEFINED ENV{VULKAN_SDK} AND NOT "$ENV{VULKAN_SDK}" STREQUAL "")
     list(APPEND GLSLANG_SEARCH_DIRS "$ENV{VULKAN_SDK}/Lib")
@@ -482,21 +482,7 @@ foreach(COMP ${GLSLANG_COMPONENTS})
         if(NOT GLSLANG_COMP_DEBUG_PATH)
             set(GLSLANG_COMP_DEBUG_PATH "${GLSLANG_COMP_RELEASE_PATH}")
         endif()
-        if(NOT TARGET ${COMP})
-            add_library(${COMP} STATIC IMPORTED GLOBAL)
-            if(${COMP} STREQUAL "SPIRV-Tools-opt")
-                # Fix lld-link failure due to duplicate library deduplication
-                set_target_properties(SPIRV-Tools-opt PROPERTIES INTERFACE_LINK_LIBRARIES SPIRV-Tools)
-            endif()
-        endif()
-        set_target_properties(${COMP} PROPERTIES
-            IMPORTED_LOCATION "${GLSLANG_COMP_RELEASE_PATH}"
-            IMPORTED_LOCATION_RELEASE "${GLSLANG_COMP_RELEASE_PATH}"
-            IMPORTED_LOCATION_RELWITHDEBINFO "${GLSLANG_COMP_RELEASE_PATH}"
-            IMPORTED_LOCATION_MINSIZEREL "${GLSLANG_COMP_RELEASE_PATH}"
-            IMPORTED_LOCATION_DEBUG "${GLSLANG_COMP_DEBUG_PATH}"
-        )
-        list(APPEND GLSLANG_LIBS ${COMP})
+        list(APPEND GLSLANG_LIBS "$<IF:$<CONFIG:Debug>,${GLSLANG_COMP_DEBUG_PATH},${GLSLANG_COMP_RELEASE_PATH}>")
     else()
         message(STATUS "glslang component not found and will be skipped: ${COMP}")
     endif()
