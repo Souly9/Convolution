@@ -5,7 +5,12 @@
 
 void AttachmentBaseVulkan::SetClearValue(const mathstl::Vector4& clearValue)
 {
-    m_clearValue = {clearValue.x, clearValue.y, clearValue.z, clearValue.w};
+    VkClearValue cv{};
+    cv.color.float32[0] = clearValue.x;
+    cv.color.float32[1] = clearValue.y;
+    cv.color.float32[2] = clearValue.z;
+    cv.color.float32[3] = clearValue.w;
+    m_clearValue = cv;
 }
 
 AttachmentBaseVulkan::AttachmentBaseVulkan(const VkAttachmentDescription& attachmentDesc,

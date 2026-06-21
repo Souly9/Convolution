@@ -458,7 +458,7 @@ target_precompile_headers(${NAME} PRIVATE "Src/PCH.h")
 
 set(GLSLANG_LIB_DIR "${CMAKE_SOURCE_DIR}/External/additional_libs/glsl/")
 set(GLSLANG_LIBS)
-set(GLSLANG_COMPONENTS glslang glslang-default-resource-limits SPIRV SPIRV-Tools-opt SPIRV-Tools-link SPIRV-Tools-reduce SPIRV-Tools SPIRV-Tools-core SPIRV-Tools-opt SPIRV-Tools MachineIndependent GenericCodeGen OSDependent)
+set(GLSLANG_COMPONENTS glslang glslang-default-resource-limits SPIRV SPIRV-Tools-opt SPIRV-Tools-link SPIRV-Tools-reduce MachineIndependent GenericCodeGen OSDependent SPIRV-Tools)
 set(GLSLANG_SEARCH_DIRS "${GLSLANG_LIB_DIR}")
 if(DEFINED ENV{VULKAN_SDK} AND NOT "$ENV{VULKAN_SDK}" STREQUAL "")
     list(APPEND GLSLANG_SEARCH_DIRS "$ENV{VULKAN_SDK}/Lib")

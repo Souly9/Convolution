@@ -831,7 +831,6 @@ void PassManager::UpdateGBufferUBO(const MainPassData& data)
                                   data.pRTSceneManager->HasReadyTLAS(m_currentSwapChainIdx);
     const bool useRTAO =
         rtaoRequested && data.pRTSceneManager != nullptr && data.pRTSceneManager->HasReadyTLAS(m_currentSwapChainIdx);
-    const bool useRT = useRTReflections || useRTAO;
     const bool useRayReconstruction = Nvidia::StreamlineManager::IsDLSSRRSupported() &&
                                       appRenderState.rt.reflectionsUseRayReconstruction && useRTReflections;
 
