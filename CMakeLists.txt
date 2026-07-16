@@ -357,7 +357,6 @@ endforeach()
 set(STREAMLINE_SHARED_DLLS
     nvngx_dlss.dll
     nvngx_dlssd.dll
-    NvLowLatencyVk.dll
 )
 foreach(FILE_NAME IN LISTS STREAMLINE_SHARED_DLLS)
     set(PRODUCTION_FILE "${STREAMLINE_ROOT}/${FILE_NAME}")
@@ -389,6 +388,23 @@ foreach(FILE_NAME IN LISTS STREAMLINE_CONFIG_FILES)
             "$<TARGET_FILE_DIR:${NAME}>/${FILE_NAME}"
     )
 endforeach()
+endif()
+
+if(CONV_WITH_XESS)
+    set(XESS_ROOT "${CMAKE_SOURCE_DIR}/External/additional_libs/XeSS")
+    set(XESS_DLLS
+        libxess.dll
+    )
+    foreach(FILE_NAME IN LISTS XESS_DLLS)
+        set(XESS_DLL_PATH "${XESS_ROOT}/${FILE_NAME}")
+        if(EXISTS "${XESS_DLL_PATH}")
+            list(APPEND CONV_UTILITY_COMMANDS
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${XESS_DLL_PATH}"
+                    "$<TARGET_FILE_DIR:${NAME}>/${FILE_NAME}"
+            )
+        endif()
+    endforeach()
 endif()
 
 add_custom_target(
