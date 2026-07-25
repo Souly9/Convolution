@@ -6,7 +6,7 @@
 #include "Core/Rendering/Core/ShaderManager.h"
 #include "Core/Rendering/Core/SharedResourceManager.h"
 #include "Core/Rendering/Core/View.h"
-#include "Core/Rendering/Vulkan/VkTextureManager.h"
+#include "Core/Rendering/Core/TextureManager.h"
 
 using namespace RenderPasses;
 
@@ -60,10 +60,10 @@ void RTCompositePass::Render(const MainPassData& data, FrameRendererContext& ctx
     const bool reflectionsEnabled = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
                                     mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTReflectionsEnabled);
 
-    m_pushConstants.resetHistory        = shouldReset ? 1u : 0u;
-    m_pushConstants.accumRate           = 1.0f / static_cast<float>(m_accumFrameCount + 1);
-    m_pushConstants.accumTexIdx         = data.rtAccumulationTextureHandle;
-    m_pushConstants.rtaoTexIdx          = rtaoEnabled ? data.rtaoTextureHandle : 0u;
+    m_pushConstants.resetHistory = shouldReset ? 1u : 0u;
+    m_pushConstants.accumRate = 1.0f / static_cast<float>(m_accumFrameCount + 1);
+    m_pushConstants.accumTexIdx = data.rtAccumulationTextureHandle;
+    m_pushConstants.rtaoTexIdx = rtaoEnabled ? data.rtaoTextureHandle : 0u;
     m_pushConstants.rtReflectionsTexIdx = reflectionsEnabled ? data.rtReflectionsTextureHandle : 0u;
 
     const u32 groupCountX = (static_cast<u32>(data.renderState.renderResolution.x) + 7) / 8;

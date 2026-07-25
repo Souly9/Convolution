@@ -4,7 +4,7 @@
 #include "Core/Rendering/Core/View.h"
 #include "Core/Rendering/Core/SharedResourceManager.h"
 #include "Core/Rendering/Core/ShaderManager.h"
-#include "Core/Rendering/Vulkan/VkTextureManager.h"
+#include "Core/Rendering/Core/TextureManager.h"
 #include "Core/Global/Profiling.h"
 
 using namespace RenderPasses;
@@ -85,8 +85,8 @@ void CompositPass::Render(const MainPassData& data, FrameRendererContext& ctx, C
     cmdBegin.viewport = RenderViewUtils::CreateViewportFromData(data.renderState.swapchainResolution, ctx.zNear, ctx.zFar);
 
     auto& sceneGeometryBuffers = data.pResourceManager->GetSceneGeometryBuffers();
-    if (sceneGeometryBuffers.GetVertexBuffer().GetRef() == VK_NULL_HANDLE ||
-        sceneGeometryBuffers.GetIndexBuffer().GetRef() == VK_NULL_HANDLE)
+    if (!sceneGeometryBuffers.GetVertexBuffer().IsCreated() ||
+        !sceneGeometryBuffers.GetIndexBuffer().IsCreated())
     {
         return;
     }

@@ -773,6 +773,57 @@ static inline u32 Conv(SyncStages stage)
     return vkStage;
 }
 
+static inline VkAccessFlags2 Conv(AccessFlags access)
+{
+    VkAccessFlags2 flags = 0;
+    if (access == AccessFlags::NONE)
+        return flags;
+    if ((u64)access & (u64)AccessFlags::INDIRECT_COMMAND_READ)
+        flags |= VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
+    if ((u64)access & (u64)AccessFlags::INDEX_READ)
+        flags |= VK_ACCESS_2_INDEX_READ_BIT;
+    if ((u64)access & (u64)AccessFlags::VERTEX_ATTRIBUTE_READ)
+        flags |= VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT;
+    if ((u64)access & (u64)AccessFlags::UNIFORM_READ)
+        flags |= VK_ACCESS_2_UNIFORM_READ_BIT;
+    if ((u64)access & (u64)AccessFlags::INPUT_ATTACHMENT_READ)
+        flags |= VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT;
+    if ((u64)access & (u64)AccessFlags::SHADER_READ)
+        flags |= VK_ACCESS_2_SHADER_READ_BIT;
+    if ((u64)access & (u64)AccessFlags::SHADER_WRITE)
+        flags |= VK_ACCESS_2_SHADER_WRITE_BIT;
+    if ((u64)access & (u64)AccessFlags::COLOR_ATTACHMENT_READ)
+        flags |= VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT;
+    if ((u64)access & (u64)AccessFlags::COLOR_ATTACHMENT_WRITE)
+        flags |= VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+    if ((u64)access & (u64)AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ)
+        flags |= VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+    if ((u64)access & (u64)AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE)
+        flags |= VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    if ((u64)access & (u64)AccessFlags::TRANSFER_READ)
+        flags |= VK_ACCESS_2_TRANSFER_READ_BIT;
+    if ((u64)access & (u64)AccessFlags::TRANSFER_WRITE)
+        flags |= VK_ACCESS_2_TRANSFER_WRITE_BIT;
+    if ((u64)access & (u64)AccessFlags::HOST_READ)
+        flags |= VK_ACCESS_2_HOST_READ_BIT;
+    if ((u64)access & (u64)AccessFlags::HOST_WRITE)
+        flags |= VK_ACCESS_2_HOST_WRITE_BIT;
+    if ((u64)access & (u64)AccessFlags::MEMORY_READ)
+        flags |= VK_ACCESS_2_MEMORY_READ_BIT;
+    if ((u64)access & (u64)AccessFlags::MEMORY_WRITE)
+        flags |= VK_ACCESS_2_MEMORY_WRITE_BIT;
+    if ((u64)access & (u64)AccessFlags::SHADER_STORAGE_READ)
+        flags |= VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
+    if ((u64)access & (u64)AccessFlags::SHADER_STORAGE_WRITE)
+        flags |= VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+    if ((u64)access & (u64)AccessFlags::ACCELERATION_STRUCTURE_READ)
+        flags |= VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR;
+    if ((u64)access & (u64)AccessFlags::ACCELERATION_STRUCTURE_WRITE)
+        flags |= VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
+
+    return flags;
+}
+
 static inline VkSamplerAddressMode Conv(TextureWrapMode mode)
 {
     switch (mode)

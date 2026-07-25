@@ -143,8 +143,8 @@ void SMAAPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     const DirectX::XMINT2 extents(extentsXY.x, extentsXY.y);
     const auto displayViewport = RenderViewUtils::CreateViewportFromData(extentsXY, ctx.zNear, ctx.zFar);
     auto& sceneGeometryBuffers = data.pResourceManager->GetSceneGeometryBuffers();
-    if (sceneGeometryBuffers.GetVertexBuffer().GetRef() == VK_NULL_HANDLE ||
-        sceneGeometryBuffers.GetIndexBuffer().GetRef() == VK_NULL_HANDLE)
+    if (!sceneGeometryBuffers.GetVertexBuffer().IsCreated() ||
+        !sceneGeometryBuffers.GetIndexBuffer().IsCreated())
     {
         return;
     }

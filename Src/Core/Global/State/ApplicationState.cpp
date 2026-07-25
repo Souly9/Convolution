@@ -9,13 +9,13 @@
 
 void ApplicationStateManager::ProcessStateUpdates()
 {
-    u32 currentState = 0;
+    u32 nextState = 0;
     ApplicationState newState;
     {
         SimpleScopedGuard<CustomMutex> lock(m_updateStateFutex);
-        currentState = m_currentState;
-        currentState = ++currentState % MAX_STATES;
-        // Don't change actual index before processing update functions
+        u32 currentState = m_currentState.load(stltype::memory_order_relaxed);
+        nextState = (currentState + 1) % MAX_STATES;
+        // Copy from active current state so all previous updates are preserved!
         newState = m_appStates[currentState];
         newState.renderState.stats = {};
         for (auto& updateFunction : m_updateFunctions)
@@ -30,11 +30,8 @@ void ApplicationStateManager::ProcessStateUpdates()
         m_pNextScene = nullptr;
         newState.pCurrentScene = m_pCurrentScene.get();
     }
-    for (auto& state : m_appStates)
-    {
-        state = newState;
-    }
-    m_currentState = currentState;
+    m_appStates[nextState] = newState;
+    m_currentState.store(nextState, stltype::memory_order_release);
 }
 void ApplicationStateManager::SwitchSceneInternal()
 {

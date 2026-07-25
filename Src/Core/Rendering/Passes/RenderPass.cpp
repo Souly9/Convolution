@@ -3,8 +3,6 @@
 #include "Core/Rendering/Core/GPUTimingQuery.h"
 #include "Core/Rendering/Core/RenderingIncludes.h"
 #include "Core/Rendering/Core/SharedResourceManager.h"
-#include "Core/Rendering/Vulkan/VkGlobals.h"
-#include "Core/Rendering/Vulkan/VkSynchronization.h"
 
 using namespace RenderPasses;
 
@@ -23,10 +21,10 @@ void ConvolutionRenderPass::SetVertexInputDescriptions(VertexInputDefines::Verte
 
     DEBUG_ASSERT(totalOffset != 0);
 
-    m_vertexInputDescription = VkVertexInputBindingDescription{};
+    m_vertexInputDescription = VertexBindingDescription{};
     m_vertexInputDescription.binding = 0;
     m_vertexInputDescription.stride = totalOffset;
-    m_vertexInputDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+    m_vertexInputDescription.inputRate = VertexInputRate::Vertex;
 }
 
 void ConvolutionRenderPass::InitBaseData(const RendererAttachmentInfo& attachmentInfo)
@@ -40,10 +38,10 @@ u32 ConvolutionRenderPass::SetVertexAttributes(
     u32 offset = 0;
     for (const auto& attribute : vertexAttributes)
     {
-        VkVertexInputAttributeDescription attributeDescription{};
+        VertexAttributeDescription attributeDescription{};
         attributeDescription.binding = g_VertexAttributeBindingMap.at(attribute);
         attributeDescription.location = g_VertexAttributeLocationMap.at(attribute);
-        attributeDescription.format = g_VertexAttributeVkFormatMap.at(attribute);
+        attributeDescription.format = g_VertexAttributeFormatMap.at(attribute);
         attributeDescription.offset = offset;
 
         offset += g_VertexAttributeSizeMap.at(attribute);

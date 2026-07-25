@@ -281,11 +281,11 @@ struct ImageLayoutTransitionCmd : public CommandBase
     u32 baseArrayLayer{0};
     u32 layerCount{1};
 
-    u64 srcAccessMask{0};
-    u64 dstAccessMask{0};
+    AccessFlags srcAccessMask{AccessFlags::NONE};
+    AccessFlags dstAccessMask{AccessFlags::NONE};
 
-    u32 srcStage{0};
-    u32 dstStage{0};
+    SyncStages srcStage{SyncStages::NONE};
+    SyncStages dstStage{SyncStages::NONE};
 
     ImageLayoutTransitionCmd(const Texture* pI) : images{const_cast<Texture*>(pI)}
     {
@@ -330,10 +330,10 @@ struct GlobalBarrierCmd : public CommandBase
 {
     SyncStages srcStage{SyncStages::NONE};
     SyncStages dstStage{SyncStages::NONE};
-    u32 srcAccessMask{0};
-    u32 dstAccessMask{0};
+    AccessFlags srcAccessMask{AccessFlags::NONE};
+    AccessFlags dstAccessMask{AccessFlags::NONE};
 
-    GlobalBarrierCmd(SyncStages sStage, SyncStages dStage, u32 sAccess, u32 dAccess)
+    GlobalBarrierCmd(SyncStages sStage, SyncStages dStage, AccessFlags sAccess, AccessFlags dAccess)
         : srcStage(sStage), dstStage(dStage), srcAccessMask(sAccess), dstAccessMask(dAccess)
     {
     }

@@ -1,8 +1,8 @@
 #include "ImGuiPass.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Rendering/Core/Nvidia/StreamlineManager.h"
-#include "Core/Rendering/Core/View.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
+#include "Core/Rendering/Core/View.h"
 #include "Core/Rendering/Vulkan/VkGlobals.h"
 #include "Core/Rendering/Vulkan/VkTextureManager.h"
 #include "Utils/RenderPassUtils.h"
@@ -15,8 +15,8 @@
 #include <imgui/imstb_textedit.h>
 #include <imgui/imstb_truetype.h>
 
-using namespace RenderPasses;
 
+using namespace RenderPasses;
 
 ImGuiPass::ImGuiPass() : ConvolutionRenderPass("ImGuiPass")
 {
@@ -70,8 +70,7 @@ void ImGuiPass::RecreateResolutionDependentResources(RendererAttachmentInfo& att
 {
     ScopedZone("ImGuiPass::RecreateResolutionDependentResources");
 
-    const auto swapchainAttachment =
-        CreateDefaultColorAttachment(SWAPCHAIN_FORMAT, LoadOp::LOAD, nullptr);
+    const auto swapchainAttachment = CreateDefaultColorAttachment(SWAPCHAIN_FORMAT, LoadOp::LOAD, nullptr);
     m_mainRenderingData.colorAttachments = {swapchainAttachment};
 
     InitBaseData(attachmentInfo);
@@ -89,11 +88,12 @@ void ImGuiPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comm
     colorAttachments.push_back(swapChainColorAttachment);
     const auto ex = ctx.pCurrentSwapchainTexture->GetInfo().extents;
     const DirectX::XMINT2 extents(ex.x, ex.y);
-    
+
     BeginRenderingBaseCmd cmdBegin(ToRenderAttachmentInfos(colorAttachments));
-    cmdBegin.viewport = RenderViewUtils::CreateViewportFromData(data.renderState.swapchainResolution, ctx.zNear, ctx.zFar);
+    cmdBegin.viewport =
+        RenderViewUtils::CreateViewportFromData(data.renderState.swapchainResolution, ctx.zNear, ctx.zFar);
     cmdBegin.extents = extents;
-    
+
     StartRenderPassProfilingScope(pCmdBuffer);
     pCmdBuffer->RecordCommand(cmdBegin);
     pCmdBuffer->RecordCommand(ImGuiDrawCmd(ImGui::GetDrawData()));
@@ -115,4 +115,3 @@ bool ImGuiPass::WantsToRender() const
 {
     return true;
 }
-

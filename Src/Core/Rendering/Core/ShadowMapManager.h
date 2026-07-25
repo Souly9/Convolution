@@ -5,6 +5,7 @@
 class ShadowMapManager
 {
 public:
+    ~ShadowMapManager() { Reset(); }
     void Recreate(u32 cascades, const mathstl::Vector2& extents, RenderPasses::FrameResourceManager& frameResourceManager);
     void Reset();
 

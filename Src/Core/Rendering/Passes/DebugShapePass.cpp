@@ -139,8 +139,8 @@ void DebugShapePass::Render(const MainPassData& data, FrameRendererContext& ctx,
     const DirectX::XMINT2 extents(data.renderState.renderResolution.x, data.renderState.renderResolution.y);
 
     auto& sceneGeometryBuffers = data.pResourceManager->GetDebugGeometryBuffers();
-    if (sceneGeometryBuffers.GetVertexBuffer().GetRef() == VK_NULL_HANDLE ||
-        sceneGeometryBuffers.GetIndexBuffer().GetRef() == VK_NULL_HANDLE)
+    if (!sceneGeometryBuffers.GetVertexBuffer().IsCreated() ||
+        !sceneGeometryBuffers.GetIndexBuffer().IsCreated())
     {
         return;
     }

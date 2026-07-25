@@ -134,8 +134,8 @@ void StaticMainMeshPass::Render(const MainPassData& data, FrameRendererContext& 
     cmd.drawCount = cmdBuf.GetDrawCmdNum();
 
     auto& sceneGeometryBuffers = data.pResourceManager->GetSceneGeometryBuffers();
-    if (sceneGeometryBuffers.GetVertexBuffer().GetRef() == VK_NULL_HANDLE ||
-        sceneGeometryBuffers.GetIndexBuffer().GetRef() == VK_NULL_HANDLE)
+    if (!sceneGeometryBuffers.GetVertexBuffer().IsCreated() ||
+        !sceneGeometryBuffers.GetIndexBuffer().IsCreated())
     {
         return;
     }

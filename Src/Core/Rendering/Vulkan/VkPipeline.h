@@ -8,8 +8,8 @@
 
 struct PipeVertInfo
 {
-    VkVertexInputBindingDescription m_vertexInputDescription{};
-    stltype::vector<VkVertexInputAttributeDescription> m_attributeDescriptions{};
+    VertexBindingDescription m_vertexInputDescription{};
+    stltype::vector<VertexAttributeDescription> m_attributeDescriptions{};
     u32 bindingDescriptionCount{1};
 };
 
@@ -64,6 +64,8 @@ protected:
 
     PipelineInfo m_info{};
     PipeVertInfo m_vertexInfo{};
+    VkVertexInputBindingDescription m_vkBindingDescription{};
+    stltype::vector<VkVertexInputAttributeDescription> m_vkAttributeDescriptions{};
     stltype::vector<VkPipelineColorBlendAttachmentState> m_colorBlendAttachments{};
 };
 

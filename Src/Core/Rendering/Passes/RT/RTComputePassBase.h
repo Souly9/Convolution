@@ -1,8 +1,8 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Rendering/Passes/RenderPass.h"
-#include "Core/Rendering/Vulkan/VkDescriptorPool.h"
-#include "Core/Rendering/Vulkan/VkDescriptorSetLayout.h"
+#include "Core/Rendering/Core/DescriptorPool.h"
+#include "Core/Rendering/Core/DescriptorSetLayout.h"
 
 namespace RenderPasses
 {
@@ -11,7 +11,9 @@ namespace RenderPasses
 class RTComputePassBase : public ConvolutionRenderPass
 {
 public:
-    explicit RTComputePassBase(const stltype::string& name) : ConvolutionRenderPass(name) {}
+    explicit RTComputePassBase(const stltype::string& name) : ConvolutionRenderPass(name)
+    {
+    }
 
 protected:
     // Call from Init(). includeGeometry=false for debug-only passes (AS only, no hit/vertex/index).

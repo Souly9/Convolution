@@ -996,212 +996,205 @@ void VkTextureManager::SetLayoutBarrierMasks(ImageLayoutTransitionCmd& transitio
 {
     if (oldLayout == ImageLayout::UNDEFINED && newLayout == ImageLayout::TRANSFER_DST_OPTIMAL)
     {
-        transitionCmd.srcAccessMask = 0;
-        transitionCmd.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        transitionCmd.srcAccessMask = AccessFlags::NONE;
+        transitionCmd.dstAccessMask = AccessFlags::TRANSFER_WRITE;
 
-        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_NONE;
-        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+        transitionCmd.srcStage = SyncStages::NONE;
+        transitionCmd.dstStage = SyncStages::TRANSFER;
     }
     else if (oldLayout == ImageLayout::TRANSFER_DST_OPTIMAL && newLayout == ImageLayout::SHADER_READ_ONLY_OPTIMAL)
     {
-        transitionCmd.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-        transitionCmd.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+        transitionCmd.srcAccessMask = AccessFlags::TRANSFER_WRITE;
+        transitionCmd.dstAccessMask = AccessFlags::SHADER_READ;
 
-        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        transitionCmd.srcStage = SyncStages::TRANSFER;
+        transitionCmd.dstStage = SyncStages::FRAGMENT_SHADER | SyncStages::COMPUTE_SHADER;
     }
     else if (oldLayout == ImageLayout::UNDEFINED && newLayout == ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
     {
-        transitionCmd.srcAccessMask = 0;
-        transitionCmd.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+        transitionCmd.srcAccessMask = AccessFlags::NONE;
+        transitionCmd.dstAccessMask = AccessFlags::COLOR_ATTACHMENT_WRITE;
+        transitionCmd.srcStage = SyncStages::COLOR_ATTACHMENT_OUTPUT;
+        transitionCmd.dstStage = SyncStages::COLOR_ATTACHMENT_OUTPUT;
     }
     else if (oldLayout == ImageLayout::COLOR_ATTACHMENT_OPTIMAL && newLayout == ImageLayout::PRESENT_SRC_KHR)
     {
-        transitionCmd.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-        transitionCmd.dstAccessMask = 0;
-        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
+        transitionCmd.srcAccessMask = AccessFlags::COLOR_ATTACHMENT_WRITE;
+        transitionCmd.dstAccessMask = AccessFlags::NONE;
+        transitionCmd.srcStage = SyncStages::COLOR_ATTACHMENT_OUTPUT;
+        transitionCmd.dstStage = SyncStages::BOTTOM_OF_PIPE;
     }
     else if (oldLayout == ImageLayout::COLOR_ATTACHMENT_OPTIMAL && newLayout == ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
     {
-        transitionCmd.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT;
-        transitionCmd.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT;
-        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+        transitionCmd.srcAccessMask = AccessFlags::COLOR_ATTACHMENT_WRITE | AccessFlags::COLOR_ATTACHMENT_READ;
+        transitionCmd.dstAccessMask = AccessFlags::COLOR_ATTACHMENT_WRITE | AccessFlags::COLOR_ATTACHMENT_READ;
+        transitionCmd.srcStage = SyncStages::COLOR_ATTACHMENT_OUTPUT;
+        transitionCmd.dstStage = SyncStages::COLOR_ATTACHMENT_OUTPUT;
     }
     else if (oldLayout == ImageLayout::COLOR_ATTACHMENT_OPTIMAL && newLayout == ImageLayout::SHADER_READ_ONLY_OPTIMAL)
     {
-        transitionCmd.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-        transitionCmd.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+        transitionCmd.srcAccessMask = AccessFlags::COLOR_ATTACHMENT_WRITE;
+        transitionCmd.dstAccessMask = AccessFlags::SHADER_READ;
 
-        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        transitionCmd.srcStage = SyncStages::COLOR_ATTACHMENT_OUTPUT;
+        transitionCmd.dstStage = SyncStages::FRAGMENT_SHADER | SyncStages::COMPUTE_SHADER;
     }
     else if (oldLayout == ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL &&
              newLayout == ImageLayout::SHADER_READ_ONLY_OPTIMAL)
     {
         transitionCmd.srcAccessMask =
-            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-        transitionCmd.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+            AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ | AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE;
+        transitionCmd.dstAccessMask = AccessFlags::SHADER_READ;
 
-        transitionCmd.srcStage =
-            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
-        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+        transitionCmd.srcStage = SyncStages::EARLY_FRAGMENT_TESTS | SyncStages::LATE_FRAGMENT_TESTS;
+        transitionCmd.dstStage = SyncStages::FRAGMENT_SHADER;
     }
     else if (oldLayout == ImageLayout::UNDEFINED && newLayout == ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
     {
-        transitionCmd.srcAccessMask = 0;
-        transitionCmd.dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
-        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
+        transitionCmd.srcAccessMask = AccessFlags::NONE;
+        transitionCmd.dstAccessMask = AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE;
+        transitionCmd.srcStage = SyncStages::TOP_OF_PIPE;
+        transitionCmd.dstStage = SyncStages::EARLY_FRAGMENT_TESTS;
     }
     // Not strictly great but mainly used for compute shaders
     else if (oldLayout == ImageLayout::UNDEFINED && newLayout == ImageLayout::GENERAL)
     {
-        transitionCmd.srcAccessMask = 0;
-        transitionCmd.dstAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
-        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
-        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        transitionCmd.srcAccessMask = AccessFlags::NONE;
+        transitionCmd.dstAccessMask = AccessFlags::SHADER_STORAGE_WRITE;
+        transitionCmd.srcStage = SyncStages::TOP_OF_PIPE;
+        transitionCmd.dstStage = SyncStages::COMPUTE_SHADER;
     }
     else if (oldLayout == ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL &&
              newLayout == ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL)
     {
         transitionCmd.srcAccessMask =
-            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-        transitionCmd.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
-        transitionCmd.srcStage =
-            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
-        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT |
-                                 VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
-                                 VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+            AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ | AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE;
+        transitionCmd.dstAccessMask = AccessFlags::SHADER_READ | AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ;
+        transitionCmd.srcStage = SyncStages::EARLY_FRAGMENT_TESTS | SyncStages::LATE_FRAGMENT_TESTS;
+        transitionCmd.dstStage = SyncStages::FRAGMENT_SHADER | SyncStages::EARLY_FRAGMENT_TESTS |
+                                 SyncStages::LATE_FRAGMENT_TESTS | SyncStages::COMPUTE_SHADER;
     }
     else if (oldLayout == ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL &&
              newLayout == ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
     {
-        transitionCmd.srcAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+        transitionCmd.srcAccessMask = AccessFlags::SHADER_READ | AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ;
         transitionCmd.dstAccessMask =
-            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT |
-                                 VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
-                                 VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
-        transitionCmd.dstStage =
-            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+            AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ | AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE;
+        transitionCmd.srcStage = SyncStages::FRAGMENT_SHADER | SyncStages::COMPUTE_SHADER |
+                                 SyncStages::EARLY_FRAGMENT_TESTS | SyncStages::LATE_FRAGMENT_TESTS;
+        transitionCmd.dstStage = SyncStages::EARLY_FRAGMENT_TESTS | SyncStages::LATE_FRAGMENT_TESTS;
     }
     // Not strictly great but mainly used for compute shaders
     else if (oldLayout == ImageLayout::GENERAL && newLayout == ImageLayout::SHADER_READ_ONLY_OPTIMAL)
     {
-        transitionCmd.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
-        transitionCmd.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
-        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        transitionCmd.srcAccessMask = AccessFlags::SHADER_STORAGE_WRITE;
+        transitionCmd.dstAccessMask = AccessFlags::SHADER_READ;
+        transitionCmd.srcStage = SyncStages::COMPUTE_SHADER;
+        transitionCmd.dstStage = SyncStages::FRAGMENT_SHADER | SyncStages::COMPUTE_SHADER;
     }
     // Not strictly great but mainly used for compute shaders
     else if (oldLayout == ImageLayout::UNDEFINED && newLayout == ImageLayout::SHADER_READ_ONLY_OPTIMAL)
     {
-        transitionCmd.srcAccessMask = 0;
-        transitionCmd.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
-        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
-        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        transitionCmd.srcAccessMask = AccessFlags::NONE;
+        transitionCmd.dstAccessMask = AccessFlags::SHADER_READ;
+        transitionCmd.srcStage = SyncStages::TOP_OF_PIPE;
+        transitionCmd.dstStage = SyncStages::FRAGMENT_SHADER | SyncStages::COMPUTE_SHADER;
     }
     else if (oldLayout == ImageLayout::UNDEFINED && newLayout == ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL)
     {
-        transitionCmd.srcAccessMask = 0;
-        transitionCmd.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
-        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
-        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT |
-                                 VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
-                                 VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        transitionCmd.srcAccessMask = AccessFlags::NONE;
+        transitionCmd.dstAccessMask = AccessFlags::SHADER_READ | AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ;
+        transitionCmd.srcStage = SyncStages::TOP_OF_PIPE;
+        transitionCmd.dstStage = SyncStages::FRAGMENT_SHADER | SyncStages::EARLY_FRAGMENT_TESTS |
+                                 SyncStages::LATE_FRAGMENT_TESTS | SyncStages::COMPUTE_SHADER;
     }
     // Not strictly great but mainly used for compute shaders
     else if (oldLayout == ImageLayout::SHADER_READ_ONLY_OPTIMAL && newLayout == ImageLayout::GENERAL)
     {
-        transitionCmd.srcAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
-        transitionCmd.dstAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
-        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        transitionCmd.srcAccessMask = AccessFlags::SHADER_READ;
+        transitionCmd.dstAccessMask = AccessFlags::SHADER_STORAGE_WRITE;
+        transitionCmd.srcStage = SyncStages::FRAGMENT_SHADER | SyncStages::COMPUTE_SHADER;
+        transitionCmd.dstStage = SyncStages::COMPUTE_SHADER;
     }
     else if (oldLayout == ImageLayout::TRANSFER_DST_OPTIMAL && newLayout == ImageLayout::GENERAL)
     {
-        transitionCmd.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-        transitionCmd.dstAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
-        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        transitionCmd.srcAccessMask = AccessFlags::TRANSFER_WRITE;
+        transitionCmd.dstAccessMask = AccessFlags::SHADER_STORAGE_WRITE;
+        transitionCmd.srcStage = SyncStages::TRANSFER;
+        transitionCmd.dstStage = SyncStages::COMPUTE_SHADER;
     }
     else if (oldLayout == ImageLayout::COLOR_ATTACHMENT_OPTIMAL && newLayout == ImageLayout::TRANSFER_SRC_OPTIMAL)
     {
-        transitionCmd.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-        transitionCmd.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
-        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+        transitionCmd.srcAccessMask = AccessFlags::COLOR_ATTACHMENT_WRITE;
+        transitionCmd.dstAccessMask = AccessFlags::TRANSFER_READ;
+        transitionCmd.srcStage = SyncStages::COLOR_ATTACHMENT_OUTPUT;
+        transitionCmd.dstStage = SyncStages::TRANSFER;
     }
     else if (oldLayout == ImageLayout::COLOR_ATTACHMENT_OPTIMAL && newLayout == ImageLayout::TRANSFER_DST_OPTIMAL)
     {
-        transitionCmd.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-        transitionCmd.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+        transitionCmd.srcAccessMask = AccessFlags::COLOR_ATTACHMENT_WRITE;
+        transitionCmd.dstAccessMask = AccessFlags::TRANSFER_WRITE;
+        transitionCmd.srcStage = SyncStages::COLOR_ATTACHMENT_OUTPUT;
+        transitionCmd.dstStage = SyncStages::TRANSFER;
     }
     else if (oldLayout == ImageLayout::SHADER_READ_ONLY_OPTIMAL && newLayout == ImageLayout::TRANSFER_SRC_OPTIMAL)
     {
-        transitionCmd.srcAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
-        transitionCmd.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
-        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+        transitionCmd.srcAccessMask = AccessFlags::SHADER_READ;
+        transitionCmd.dstAccessMask = AccessFlags::TRANSFER_READ;
+        transitionCmd.srcStage = SyncStages::FRAGMENT_SHADER | SyncStages::COMPUTE_SHADER;
+        transitionCmd.dstStage = SyncStages::TRANSFER;
     }
     else if (oldLayout == ImageLayout::TRANSFER_SRC_OPTIMAL && newLayout == ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
     {
-        transitionCmd.srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
-        transitionCmd.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT;
-        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+        transitionCmd.srcAccessMask = AccessFlags::TRANSFER_READ;
+        transitionCmd.dstAccessMask = AccessFlags::COLOR_ATTACHMENT_WRITE | AccessFlags::COLOR_ATTACHMENT_READ;
+        transitionCmd.srcStage = SyncStages::TRANSFER;
+        transitionCmd.dstStage = SyncStages::COLOR_ATTACHMENT_OUTPUT;
     }
     else if (oldLayout == ImageLayout::TRANSFER_DST_OPTIMAL && newLayout == ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
     {
-        transitionCmd.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-        transitionCmd.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT;
-        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+        transitionCmd.srcAccessMask = AccessFlags::TRANSFER_WRITE;
+        transitionCmd.dstAccessMask = AccessFlags::COLOR_ATTACHMENT_WRITE | AccessFlags::COLOR_ATTACHMENT_READ;
+        transitionCmd.srcStage = SyncStages::TRANSFER;
+        transitionCmd.dstStage = SyncStages::COLOR_ATTACHMENT_OUTPUT;
     }
     else if (oldLayout == ImageLayout::TRANSFER_SRC_OPTIMAL && newLayout == ImageLayout::SHADER_READ_ONLY_OPTIMAL)
     {
-        transitionCmd.srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
-        transitionCmd.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
-        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        transitionCmd.srcAccessMask = AccessFlags::TRANSFER_READ;
+        transitionCmd.dstAccessMask = AccessFlags::SHADER_READ;
+        transitionCmd.srcStage = SyncStages::TRANSFER;
+        transitionCmd.dstStage = SyncStages::FRAGMENT_SHADER | SyncStages::COMPUTE_SHADER;
     }
     else if (oldLayout == ImageLayout::SHADER_READ_ONLY_OPTIMAL && newLayout == ImageLayout::TRANSFER_DST_OPTIMAL)
     {
-        transitionCmd.srcAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
-        transitionCmd.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+        transitionCmd.srcAccessMask = AccessFlags::SHADER_READ;
+        transitionCmd.dstAccessMask = AccessFlags::TRANSFER_WRITE;
+        transitionCmd.srcStage = SyncStages::FRAGMENT_SHADER | SyncStages::COMPUTE_SHADER;
+        transitionCmd.dstStage = SyncStages::TRANSFER;
     }
     else if (oldLayout == ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL &&
              newLayout == ImageLayout::TRANSFER_SRC_OPTIMAL)
     {
-        transitionCmd.srcAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-        transitionCmd.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
-        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
-        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+        transitionCmd.srcAccessMask = AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE;
+        transitionCmd.dstAccessMask = AccessFlags::TRANSFER_READ;
+        transitionCmd.srcStage = SyncStages::LATE_FRAGMENT_TESTS;
+        transitionCmd.dstStage = SyncStages::TRANSFER;
     }
     else if (oldLayout == ImageLayout::TRANSFER_SRC_OPTIMAL &&
              newLayout == ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
     {
-        transitionCmd.srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
+        transitionCmd.srcAccessMask = AccessFlags::TRANSFER_READ;
         transitionCmd.dstAccessMask =
-            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
-        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-        transitionCmd.dstStage =
-            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+            AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE | AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ;
+        transitionCmd.srcStage = SyncStages::TRANSFER;
+        transitionCmd.dstStage = SyncStages::EARLY_FRAGMENT_TESTS | SyncStages::LATE_FRAGMENT_TESTS;
     }
     else if (oldLayout == ImageLayout::SHADER_READ_ONLY_OPTIMAL && newLayout == ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
     {
-        transitionCmd.srcAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
-        transitionCmd.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-        transitionCmd.srcStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-        transitionCmd.dstStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+        transitionCmd.srcAccessMask = AccessFlags::SHADER_READ;
+        transitionCmd.dstAccessMask = AccessFlags::COLOR_ATTACHMENT_READ | AccessFlags::COLOR_ATTACHMENT_WRITE;
+        transitionCmd.srcStage = SyncStages::FRAGMENT_SHADER | SyncStages::COMPUTE_SHADER;
+        transitionCmd.dstStage = SyncStages::COLOR_ATTACHMENT_OUTPUT;
     }
     else
     {

@@ -33,18 +33,18 @@ struct StreamlineTagDesc
     uint32_t arrayLayers{1};
 };
 
-VkImageLayout GetTaggedLayout(sl::BufferType type)
+uint32_t GetTaggedLayout(sl::BufferType type)
 {
     switch (type)
     {
         case sl::kBufferTypeScalingOutputColor:
-            return VK_IMAGE_LAYOUT_GENERAL;
+            return static_cast<uint32_t>(Conv(ImageLayout::GENERAL));
         case sl::kBufferTypeDepth:
-            return VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+            return static_cast<uint32_t>(Conv(ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL));
         case sl::kBufferTypeBackbuffer:
-            return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            return static_cast<uint32_t>(Conv(ImageLayout::COLOR_ATTACHMENT_OPTIMAL));
         default:
-            return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            return static_cast<uint32_t>(Conv(ImageLayout::SHADER_READ_ONLY_OPTIMAL));
     }
 }
 

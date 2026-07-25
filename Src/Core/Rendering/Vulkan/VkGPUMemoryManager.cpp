@@ -52,7 +52,7 @@ void GPUMemManager<Vulkan>::Init(Allocator allocatorMode)
 
 void GPUMemManager<Vulkan>::FreeMemory(GPUMemoryHandle memory)
 {
-    const auto it = std::find_if(s_memoryHandles.begin(),
+    const auto it = stltype::find_if(s_memoryHandles.begin(),
                                  s_memoryHandles.end(),
                                  [&memory](const auto& elem) { return elem.memoryHandle == memory; });
     if (it == s_memoryHandles.end())
@@ -105,7 +105,7 @@ GPUMemManager<Vulkan>::~GPUMemManager()
         while (wasMapped)
         {
             SimpleScopedGuard<CustomMutex> lock(m_mappingMutex);
-            auto mapped_it = std::find(m_mappedMemoryHandles.begin(), m_mappedMemoryHandles.end(), handle.memoryHandle);
+            auto mapped_it = stltype::find(m_mappedMemoryHandles.begin(), m_mappedMemoryHandles.end(), handle.memoryHandle);
             if (mapped_it != m_mappedMemoryHandles.end())
             {
                 vmaUnmapMemory(s_vmaAllocator, *mapped_it);
@@ -228,7 +228,7 @@ GPUMappedMemoryHandle GPUMemManager<Vulkan>::MapMemory(GPUMemoryHandle memory, s
 {
     SimpleScopedGuard<CustomMutex> allocGuard(m_allocatinggMutex);
     SimpleScopedGuard<CustomMutex> mapGuard(m_mappingMutex);
-    const auto it = std::find_if(s_memoryHandles.begin(),
+    const auto it = stltype::find_if(s_memoryHandles.begin(),
                                  s_memoryHandles.end(),
                                  [&memory](const auto& elem) { return elem.memoryHandle == memory; });
     DEBUG_ASSERT(it != s_memoryHandles.end());
@@ -242,7 +242,7 @@ GPUMappedMemoryHandle GPUMemManager<Vulkan>::MapMemory(GPUMemoryHandle memory, s
 void GPUMemManager<Vulkan>::UnmapMemory(GPUMemoryHandle memory)
 {
     SimpleScopedGuard<CustomMutex> lock(m_mappingMutex);
-    auto mapped_it = std::find(m_mappedMemoryHandles.begin(), m_mappedMemoryHandles.end(), memory);
+    auto mapped_it = stltype::find(m_mappedMemoryHandles.begin(), m_mappedMemoryHandles.end(), memory);
 
     if (mapped_it != m_mappedMemoryHandles.end())
     {
@@ -266,7 +266,7 @@ void GPUMemManager<Vulkan>::TryFreeMemory(GPUMemoryHandle memory)
 void GPUMemManager<Vulkan>::BindImageMemory(GPUMemoryHandle handle)
 {
     SimpleScopedGuard<CustomMutex> lock(m_allocatinggMutex);
-    const auto it = std::find_if(s_memoryHandles.begin(),
+    const auto it = stltype::find_if(s_memoryHandles.begin(),
                                  s_memoryHandles.end(),
                                  [&handle](const auto& elem) { return elem.memoryHandle == handle; });
     DEBUG_ASSERT(vmaBindImageMemory(s_vmaAllocator, it->vmaAllocation, it->imageHandle) == VK_SUCCESS);

@@ -1,6 +1,7 @@
 #pragma once
 #include "Core/Global/Utils/EnumHelpers.h"
 #include "Core/Global/GlobalDefines.h"
+#include "Core/Rendering/Core/Synchronization.h"
 
 // Class defining memory barrier enums to synchronize resource access
 
@@ -18,20 +19,6 @@ enum class StageFlags
     AllCompute = ComputeShader
 };
 MAKE_FLAG_ENUM(StageFlags)
-
-enum class AccessFlags : u32
-{
-    VertexBufferRead = 1 << 0,
-    IndexBufferRead = 1 << 1,
-    UniformBufferRead = 1 << 2,
-    StorageBufferRead = 1 << 3,
-    TextureRead = 1 << 4,
-    TextureWrite = 1 << 5,
-    ShaderWrite = 1 << 6,
-    TransferRead = 1 << 7,
-    TransferWrite = 1 << 8,
-};
-MAKE_FLAG_ENUM(AccessFlags)
 
 enum class AspectFlags : u32
 {

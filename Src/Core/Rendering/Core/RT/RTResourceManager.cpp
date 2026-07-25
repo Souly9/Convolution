@@ -120,8 +120,8 @@ void RTResourceManager::RecordTransitionComputeOnly(CommandBuffer* pCmdBuffer,
     cmd.oldLayout = resource.currentLayout;
     cmd.newLayout = newLayout;
     VkTextureManager::SetLayoutBarrierMasks(cmd, resource.currentLayout, newLayout);
-    cmd.srcStage &= ~VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-    cmd.dstStage &= ~VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+    cmd.srcStage &= ~SyncStages::FRAGMENT_SHADER;
+    cmd.dstStage &= ~SyncStages::FRAGMENT_SHADER;
     pCmdBuffer->RecordCommand(cmd);
     resource.currentLayout = newLayout;
 }

@@ -93,7 +93,7 @@ Entity EntityManager::CreateEntity(const mathstl::Vector3& position, const stlty
 
 void EntityManager::DestroyEntity(Entity entity)
 {
-    m_entities.erase(std::remove(m_entities.begin(), m_entities.end(), entity), m_entities.end());
+    m_entities.erase(stltype::remove(m_entities.begin(), m_entities.end(), entity), m_entities.end());
     m_entityComponentMap.erase(entity);
     ClearCompIdx(entity.ID);
 }

@@ -40,6 +40,7 @@ struct DescriptorPoolCreateInfo
     bool enableAccelerationStructureDescriptors{false};
     bool freeDescriptorSet{true};
 };
+
 class DescriptorPoolVulkan : public DescriptorPoolBase
 {
 public:

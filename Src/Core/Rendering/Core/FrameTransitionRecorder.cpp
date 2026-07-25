@@ -50,7 +50,7 @@ void FrameTransitionRecorder::RecordTemporalResourceInitialLayouts(
         exposureToRead.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
         VkTextureManager::SetLayoutBarrierMasks(
             exposureToRead, ImageLayout::TRANSFER_DST_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-        exposureToRead.dstStage = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT;
+        exposureToRead.dstStage = static_cast<SyncStages>(VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT);
         pCmdBuffer->RecordCommand(exposureToRead);
     }
 }
@@ -293,8 +293,8 @@ void FrameTransitionRecorder::RecordSSSOutputToShaderRead(CommandBuffer* pCmdBuf
     cmd.oldLayout = ImageLayout::GENERAL;
     cmd.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
     VkTextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::GENERAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-    cmd.dstStage = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
-    cmd.dstAccessMask = 0;
+    cmd.dstStage = static_cast<SyncStages>(VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT);
+    cmd.dstAccessMask = static_cast<AccessFlags>(0);
     pCmdBuffer->RecordCommand(cmd);
 }
 
@@ -313,7 +313,7 @@ void FrameTransitionRecorder::RecordDLSSExposureUpdate(CommandBuffer* pCmdBuffer
     exposureToTransfer.newLayout = ImageLayout::TRANSFER_DST_OPTIMAL;
     VkTextureManager::SetLayoutBarrierMasks(
         exposureToTransfer, ImageLayout::SHADER_READ_ONLY_OPTIMAL, ImageLayout::TRANSFER_DST_OPTIMAL);
-    exposureToTransfer.srcStage = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT;
+    exposureToTransfer.srcStage = static_cast<SyncStages>(VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT);
     pCmdBuffer->RecordCommand(exposureToTransfer);
 
     ImageBufferCopyCmd copyExposure(&dlssExposureStagingBuffer, pDLSSExposureTexture);
@@ -326,7 +326,7 @@ void FrameTransitionRecorder::RecordDLSSExposureUpdate(CommandBuffer* pCmdBuffer
     exposureToRead.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
     VkTextureManager::SetLayoutBarrierMasks(
         exposureToRead, ImageLayout::TRANSFER_DST_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-    exposureToRead.dstStage = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT;
+    exposureToRead.dstStage = static_cast<SyncStages>(VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT);
     pCmdBuffer->RecordCommand(exposureToRead);
 }
 

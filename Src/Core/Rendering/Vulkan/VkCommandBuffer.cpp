@@ -406,10 +406,10 @@ static void RecordCommand(ImageLayoutTransitionCmd& cmd, CBufferVulkan& buffer)
         memoryBarrier.dstQueueFamilyIndex = cmd.dstQueueFamilyIdx < 0 ? VK_QUEUE_FAMILY_IGNORED : cmd.dstQueueFamilyIdx;
 
         // The stage and access masks are now on the barrier itself.
-        memoryBarrier.srcStageMask = cmd.srcStage;
-        memoryBarrier.dstStageMask = cmd.dstStage;
-        memoryBarrier.srcAccessMask = cmd.srcAccessMask;
-        memoryBarrier.dstAccessMask = cmd.dstAccessMask;
+        memoryBarrier.srcStageMask = Conv(cmd.srcStage);
+        memoryBarrier.dstStageMask = Conv(cmd.dstStage);
+        memoryBarrier.srcAccessMask = Conv(cmd.srcAccessMask);
+        memoryBarrier.dstAccessMask = Conv(cmd.dstAccessMask);
 
         const TexFormat format = image->GetInfo().format;
         const bool isDepthFormat = (format == TexFormat::D16_UNORM || format == TexFormat::X8_D24_UNORM_PACK32 ||
@@ -531,8 +531,8 @@ static void RecordCommand(GlobalBarrierCmd& cmd, CBufferVulkan& buffer)
     barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
     barrier.srcStageMask = Conv(cmd.srcStage);
     barrier.dstStageMask = Conv(cmd.dstStage);
-    barrier.srcAccessMask = cmd.srcAccessMask;
-    barrier.dstAccessMask = cmd.dstAccessMask;
+    barrier.srcAccessMask = Conv(cmd.srcAccessMask);
+    barrier.dstAccessMask = Conv(cmd.dstAccessMask);
 
     VkDependencyInfo dependencyInfo{};
     dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;

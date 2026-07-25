@@ -230,12 +230,31 @@ VkPipelineVertexInputStateCreateInfo PipelineVulkanBase::CreateVertexInputInfo(c
 {
     m_vertexInfo = vertexInputs;
 
+    m_vkBindingDescription = {};
+    m_vkBindingDescription.binding = vertexInputs.m_vertexInputDescription.binding;
+    m_vkBindingDescription.stride = vertexInputs.m_vertexInputDescription.stride;
+    m_vkBindingDescription.inputRate = (vertexInputs.m_vertexInputDescription.inputRate == VertexInputRate::Instance)
+                                            ? VK_VERTEX_INPUT_RATE_INSTANCE
+                                            : VK_VERTEX_INPUT_RATE_VERTEX;
+
+    m_vkAttributeDescriptions.clear();
+    m_vkAttributeDescriptions.reserve(vertexInputs.m_attributeDescriptions.size());
+    for (const auto& attr : vertexInputs.m_attributeDescriptions)
+    {
+        VkVertexInputAttributeDescription vkAttr{};
+        vkAttr.location = attr.location;
+        vkAttr.binding = attr.binding;
+        vkAttr.format = Conv(attr.format);
+        vkAttr.offset = attr.offset;
+        m_vkAttributeDescriptions.push_back(vkAttr);
+    }
+
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertexInputInfo.vertexBindingDescriptionCount = m_vertexInfo.bindingDescriptionCount;
-    vertexInputInfo.pVertexBindingDescriptions = &m_vertexInfo.m_vertexInputDescription;
-    vertexInputInfo.vertexAttributeDescriptionCount = m_vertexInfo.m_attributeDescriptions.size();
-    vertexInputInfo.pVertexAttributeDescriptions = m_vertexInfo.m_attributeDescriptions.data();
+    vertexInputInfo.vertexBindingDescriptionCount = vertexInputs.bindingDescriptionCount;
+    vertexInputInfo.pVertexBindingDescriptions = &m_vkBindingDescription;
+    vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(m_vkAttributeDescriptions.size());
+    vertexInputInfo.pVertexAttributeDescriptions = m_vkAttributeDescriptions.data();
 
     return vertexInputInfo;
 }

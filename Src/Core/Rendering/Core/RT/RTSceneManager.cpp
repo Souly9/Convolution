@@ -6,6 +6,7 @@
 #include "Core/Rendering/Core/Defines/VertexDefines.h"
 #include "Core/Rendering/Core/FrameResourceManager.h"
 #include "Core/Rendering/Core/SharedResourceManager.h"
+#include "Core/Rendering/Core/Synchronization.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
 #include <EASTL/algorithm.h>
 #include <EASTL/sort.h>
@@ -107,10 +108,14 @@ void RTSceneManager::RegisterSceneMeshes(const stltype::vector<stltype::unique_p
     PublishDebugState();
 }
 
-void RTSceneManager::Update(u32 frameIdx, u32 frameSlot, const RenderPasses::FrameResourceManager& frameResourceManager)
+bool RTSceneManager::Update(u32 frameIdx,
+                            u32 frameSlot,
+                            const RenderPasses::FrameResourceManager& frameResourceManager,
+                            TimelineSemaphore* pSignalTimeline,
+                            u64 signalValue)
 {
     if (m_pResourceManager == nullptr)
-        return;
+        return false;
 
     for (const Mesh* pMesh : m_pResourceManager->PopPendingResidentMeshesForRayTracing())
     {
@@ -129,9 +134,10 @@ void RTSceneManager::Update(u32 frameIdx, u32 frameSlot, const RenderPasses::Fra
                             (instancesChanged || frameData.state == TLASState::Uninitialized ||
                              frameData.lastBuiltInstanceCount != m_currentSortedInstances.size());
 
+    bool builtThisFrame = false;
     if (needsBuild)
     {
-        BuildTLASForFrame(frameData, frameIdx, frameSlot);
+        builtThisFrame = BuildTLASForFrame(frameData, frameIdx, frameSlot, pSignalTimeline, signalValue);
     }
     else if (m_currentSortedInstances.empty())
     {
@@ -140,12 +146,14 @@ void RTSceneManager::Update(u32 frameIdx, u32 frameSlot, const RenderPasses::Fra
 
     m_previousSortedInstances = m_currentSortedInstances;
     PublishDebugState();
+    return builtThisFrame;
 }
 
 bool RTSceneManager::HasReadyTLAS(u32 frameIdx) const
 {
     const TLASFrameData* pFrameData = GetTLASFrameData(frameIdx);
-    return pFrameData != nullptr && pFrameData->state == TLASState::Ready;
+    return pFrameData != nullptr &&
+           (pFrameData->state == TLASState::Ready || pFrameData->state == TLASState::Building);
 }
 
 const TLASFrameData* RTSceneManager::GetTLASFrameData(u32 frameIdx) const
@@ -203,7 +211,11 @@ void RTSceneManager::BuildCurrentInstanceList(const RenderPasses::FrameResourceM
     m_residentInstanceCount = static_cast<u32>(m_currentSortedInstances.size());
 }
 
-bool RTSceneManager::BuildTLASForFrame(TLASFrameData& frameData, u32 frameSubmitIdx, u32 frameSlot)
+bool RTSceneManager::BuildTLASForFrame(TLASFrameData& frameData,
+                                      u32 frameSubmitIdx,
+                                      u32 frameSlot,
+                                      TimelineSemaphore* pSignalTimeline,
+                                      u64 signalValue)
 {
     const auto& rtCaps = RayTracingDevice::GetCapabilities();
     const u32 instanceCount = static_cast<u32>(m_currentSortedInstances.size());
@@ -312,6 +324,12 @@ bool RTSceneManager::BuildTLASForFrame(TLASFrameData& frameData, u32 frameSubmit
                                                                   SyncStages::COMPUTE_SHADER,
                                                                   RayTracingAccess::AccelerationStructureWrite,
                                                                   RayTracingAccess::AccelerationStructureRead));
+
+    if (pSignalTimeline != nullptr && signalValue > 0)
+    {
+        pBuildCmdBuffer->AddTimelineSignal(pSignalTimeline, signalValue);
+        pBuildCmdBuffer->SetSignalStages(SyncStages::ACCELERATION_STRUCTURE_BUILD);
+    }
 
     pBuildCmdBuffer->AddExecutionFinishedCallback(
         [this, pBuildCmdBuffer, frameSlot = frameSlot % SWAPCHAIN_IMAGES, instanceCount]()

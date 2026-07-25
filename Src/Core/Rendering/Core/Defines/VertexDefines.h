@@ -91,11 +91,30 @@ static inline const stltype::hash_map<VertexInputDefines::VertexAttributes, u32>
     {VertexInputDefines::VertexAttributes::Normal, 1},
     {VertexInputDefines::VertexAttributes::Tangent, 3}};
 
-#ifdef USE_VULKAN
-static inline const stltype::hash_map<VertexInputDefines::VertexAttributes, VkFormat> g_VertexAttributeVkFormatMap = {
-    {VertexInputDefines::VertexAttributes::Position, TEXFORMAT(R32G32B32_SFLOAT)},
-    {VertexInputDefines::VertexAttributes::Color0, TEXFORMAT(R32G32B32_SFLOAT)},
-    {VertexInputDefines::VertexAttributes::TexCoord0, TEXFORMAT(R32G32_SFLOAT)},
-    {VertexInputDefines::VertexAttributes::Normal, TEXFORMAT(R32G32B32_SFLOAT)},
-    {VertexInputDefines::VertexAttributes::Tangent, TEXFORMAT(R32G32B32A32_SFLOAT)}};
-#endif
+enum class VertexInputRate
+{
+    Vertex,
+    Instance
+};
+
+struct VertexAttributeDescription
+{
+    u32 location{0};
+    u32 binding{0};
+    TexFormat format{TexFormat::UNDEFINED};
+    u32 offset{0};
+};
+
+struct VertexBindingDescription
+{
+    u32 binding{0};
+    u32 stride{0};
+    VertexInputRate inputRate{VertexInputRate::Vertex};
+};
+
+static inline const stltype::hash_map<VertexInputDefines::VertexAttributes, TexFormat> g_VertexAttributeFormatMap = {
+    {VertexInputDefines::VertexAttributes::Position, TexFormat::R32G32B32_FLOAT},
+    {VertexInputDefines::VertexAttributes::Color0, TexFormat::R32G32B32_FLOAT},
+    {VertexInputDefines::VertexAttributes::TexCoord0, TexFormat::R32G32_FLOAT},
+    {VertexInputDefines::VertexAttributes::Normal, TexFormat::R32G32B32_FLOAT},
+    {VertexInputDefines::VertexAttributes::Tangent, TexFormat::R32G32B32A32_FLOAT}};

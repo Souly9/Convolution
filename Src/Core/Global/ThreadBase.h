@@ -104,5 +104,5 @@ public:
 protected:
     threadstl::Thread m_thread;
     mutable ProfiledLockable(CustomMutex, m_sharedDataMutex);
-    bool m_keepRunning{true};
+    stltype::atomic<bool> m_keepRunning{true};
 };

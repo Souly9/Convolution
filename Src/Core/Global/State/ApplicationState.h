@@ -19,7 +19,7 @@ public:
 
     const ApplicationState& GetCurrentApplicationState()
     {
-        return m_appStates[m_currentState];
+        return m_appStates[m_currentState.load(stltype::memory_order_acquire)];
     }
 
     void RegisterUpdateFunction(ApplicationStateUpdateFunction&& updateFunction);

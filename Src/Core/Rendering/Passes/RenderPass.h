@@ -7,6 +7,7 @@
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
 #include "Core/Rendering/Core/Shader.h"
 #include "Core/Rendering/Core/ProfilingUtils.h"
+#include "Core/Rendering/Core/Defines/VertexDefines.h"
 
 class SharedResourceManager;
 class GPUTimingQueryBase;
@@ -95,10 +96,10 @@ protected:
 
     stltype::fixed_vector<InternalSynchronizationContext, SWAPCHAIN_IMAGES> m_internalSyncContexts{};
 
-    stltype::vector<VkVertexInputAttributeDescription> m_attributeDescriptions{};
+    stltype::vector<VertexAttributeDescription> m_attributeDescriptions{};
     stltype::vector<PipelineDescriptorLayout> m_sharedDescriptors{};
 
-    VkVertexInputBindingDescription m_vertexInputDescription{};
+    VertexBindingDescription m_vertexInputDescription{};
 
     stltype::string m_passName;
     GPUTimingQueryBase* m_pTimingQuery{nullptr};

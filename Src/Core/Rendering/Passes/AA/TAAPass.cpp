@@ -81,11 +81,17 @@ void TAAPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comman
     const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
     const auto& currentAA = renderState.aaType;
     const u32 currentDebugMode = renderState.taaDebugMode;
-    if (m_lastAAType != currentAA || m_lastDebugMode != currentDebugMode)
+    if (m_lastAAType != currentAA || m_lastDebugMode != currentDebugMode || data.renderState.recreatedThisFrame)
     {
-        m_pushConstants.resetHistory = 1;
+        m_resetFramesRemaining = SWAPCHAIN_IMAGES;
         m_lastAAType = currentAA;
         m_lastDebugMode = currentDebugMode;
+    }
+
+    if (m_resetFramesRemaining > 0)
+    {
+        m_pushConstants.resetHistory = 1;
+        m_resetFramesRemaining--;
     }
     else
     {
@@ -107,7 +113,6 @@ void TAAPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comman
     m_pushConstants.velocityRejectionEnd = renderState.taaVelocityRejectionEnd;
     m_pushConstants.debugMode = currentDebugMode;
     m_pushConstants.forceHistory = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::TAAForceHistory) ? 1u : 0u;
-    m_pushConstants.resetHistory |= data.renderState.recreatedThisFrame ? 1u : 0u;
 
     u32 groupCountX = (static_cast<u32>(data.renderState.swapchainResolution.x) + 7) / 8;
     u32 groupCountY = (static_cast<u32>(data.renderState.swapchainResolution.y) + 7) / 8;

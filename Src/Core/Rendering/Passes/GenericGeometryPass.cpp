@@ -59,11 +59,11 @@ void GenericGeometryPass::NameResources(const stltype::string& name)
     for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
     {
         const auto frameStr = stltype::to_string(i);
-        if (m_indirectCmdBuffers[i].GetRef() != VK_NULL_HANDLE)
+        if (m_indirectCmdBuffers[i].IsCreated())
         {
             m_indirectCmdBuffers[i].SetName(name + "_IndirectDrawCmdBuffer_" + frameStr);
         }
-        if (m_indirectCountBuffers[i].GetRef() != VK_NULL_HANDLE)
+        if (m_indirectCountBuffers[i].IsCreated())
         {
             m_indirectCountBuffers[i].SetName(name + "_IndirectCountBuffer_" + frameStr);
         }

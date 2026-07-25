@@ -5,7 +5,7 @@
 #include "Core/Rendering/Core/Defines/BindingSlots.h"
 #include "Core/Rendering/Core/RT/RTSceneManager.h"
 #include "Core/Rendering/Core/SharedResourceManager.h"
-#include "Core/Rendering/Vulkan/VkTextureManager.h"
+#include "Core/Rendering/Core/TextureManager.h"
 
 using namespace RenderPasses;
 

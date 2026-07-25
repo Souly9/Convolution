@@ -435,7 +435,7 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
     u64 mainPassSignalValue = computeSignalValue + 3;
     u64 rtComputeSignalValue = computeSignalValue + 4;
     u64 lightingSignalValue = computeSignalValue + 5;
-    
+
     u64 graphicsTimelineValue = computeSignalValue + 7;
     const u64 submittedTransferValue = g_pQueueHandler->GetLastSubmittedValue(QueueType::Transfer);
 
@@ -449,8 +449,8 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
 
             pComputeCmdBuffer->RecordCommand(GlobalBarrierCmd(SyncStages::COMPUTE_SHADER,
                                                               SyncStages::TRANSFER,
-                                                              VK_ACCESS_SHADER_WRITE_BIT,
-                                                              VK_ACCESS_TRANSFER_WRITE_BIT));
+                                                              AccessFlags::SHADER_WRITE,
+                                                              AccessFlags::TRANSFER_WRITE));
 
             constexpr u64 tileCountersOffset = MAX_SCENE_LIGHTS * sizeof(mathstl::Vector4);
             pComputeCmdBuffer->RecordCommand(BufferFillCmd(&m_resourceManager.GetViewSpaceLightsSSBO(),
@@ -460,8 +460,8 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
 
             pComputeCmdBuffer->RecordCommand(GlobalBarrierCmd(SyncStages::TRANSFER | SyncStages::COMPUTE_SHADER,
                                                               SyncStages::COMPUTE_SHADER,
-                                                              VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_SHADER_WRITE_BIT,
-                                                              VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT));
+                                                              AccessFlags::TRANSFER_WRITE | AccessFlags::SHADER_WRITE,
+                                                              AccessFlags::SHADER_READ | AccessFlags::SHADER_WRITE));
 
             Profiling::EndScope(pComputeCmdBuffer, &m_gpuTimingQuery, m_clearTileCountersTimingIndex);
         }
@@ -472,8 +472,8 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
 
         pComputeCmdBuffer->RecordCommand(GlobalBarrierCmd(SyncStages::COMPUTE_SHADER,
                                                           SyncStages::COMPUTE_SHADER,
-                                                          VK_ACCESS_SHADER_WRITE_BIT,
-                                                          VK_ACCESS_SHADER_READ_BIT));
+                                                          AccessFlags::SHADER_WRITE,
+                                                          AccessFlags::SHADER_READ));
 
         RenderPassGroup(PassType::EarlyAsyncCompute, mainPassData, ctx, pComputeCmdBuffer);
 
@@ -500,8 +500,8 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
             pDepthWorkBuffer->RecordCommand(
                 GlobalBarrierCmd(SyncStages::TRANSFER,
                                  SyncStages::VERTEX_SHADER | SyncStages::FRAGMENT_SHADER | SyncStages::COMPUTE_SHADER,
-                                 VK_ACCESS_TRANSFER_WRITE_BIT,
-                                 VK_ACCESS_SHADER_READ_BIT));
+                                 AccessFlags::TRANSFER_WRITE,
+                                 AccessFlags::SHADER_READ));
 
             Profiling::EndScope(pDepthWorkBuffer, &m_gpuTimingQuery, m_instanceBufferUpdateTimingIndex);
         }
@@ -559,6 +559,20 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
         g_pQueueHandler->SubmitCommandBufferThisFrame({pMainGraphicsWorkBuffer, QueueType::Graphics, ctx.currentFrame});
     }
 
+    const auto& appRenderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+    const bool reflectionsEnabled =
+        mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
+        mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTReflectionsEnabled);
+    const bool rtaoEnabled = mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
+                             mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTAOEnabled);
+    const bool useRTReflections = reflectionsEnabled && mainPassData.pRTSceneManager != nullptr &&
+                                  mainPassData.pRTSceneManager->HasReadyTLAS(m_currentSwapChainIdx);
+    const bool useRTAO = rtaoEnabled && mainPassData.pRTSceneManager != nullptr &&
+                         mainPassData.pRTSceneManager->HasReadyTLAS(m_currentSwapChainIdx);
+    const bool useRT = useRTReflections || useRTAO;
+    const bool useRayReconstruction = Nvidia::StreamlineManager::IsDLSSRRSupported() &&
+                                      appRenderState.rt.reflectionsUseRayReconstruction && useRTReflections;
+
     // Lighting Stage + RTReflections
     CommandBuffer* pLightingWorkBuffer = m_graphicsFrameCtx.lightingCmdBuffers[ctx.currentFrame];
     pLightingWorkBuffer->ResetBuffer();
@@ -575,8 +589,8 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
         // Ensure Compute Queue shader writes (shadows/light grids) are visible to Graphics Queue shader reads
         pLightingWorkBuffer->RecordCommand(GlobalBarrierCmd(SyncStages::COMPUTE_SHADER,
                                                             SyncStages::COMPUTE_SHADER,
-                                                            VK_ACCESS_SHADER_WRITE_BIT,
-                                                            VK_ACCESS_SHADER_READ_BIT));
+                                                            AccessFlags::SHADER_WRITE,
+                                                            AccessFlags::SHADER_READ));
 
         // Transition GBufferThisFrameColor to GENERAL layout for compute shader write (discarding previous contents)
         m_transitionRecorder.RecordThisFrameColorToGeneralDiscard(pLightingWorkBuffer, gbuffer);
@@ -604,24 +618,21 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
     CommandBuffer* pRTComputeCmdBuffer = m_computeFrameCtx.rtComputeCmdBuffers[ctx.currentFrame];
     pRTComputeCmdBuffer->ResetBuffer();
     pRTComputeCmdBuffer->SetFrameIdx(ctx.currentFrame);
+    
+    const bool runRTAO = (mainPassData.pRTAOTexture != nullptr);
+    if (runRTAO)
     {
         pRTComputeCmdBuffer->AddTimelineWait(&ctx.frameTimeline, mainPassSignalValue);
         pRTComputeCmdBuffer->SetWaitStages(SyncStages::COMPUTE_SHADER);
 
-        if (mainPassData.pRTAOTexture != nullptr)
-        {
-            m_rtResourceManager.RecordTransitionComputeOnly(
-                pRTComputeCmdBuffer, m_rtResourceManager.Get(RT::RTTextureType::RTAO), ImageLayout::GENERAL);
-        }
+        m_rtResourceManager.RecordTransitionComputeOnly(
+            pRTComputeCmdBuffer, m_rtResourceManager.Get(RT::RTTextureType::RTAO), ImageLayout::GENERAL);
 
         RenderPassGroup(PassType::RTAOCompute, mainPassData, ctx, pRTComputeCmdBuffer);
 
-        if (mainPassData.pRTAOTexture != nullptr)
-        {
-            m_rtResourceManager.RecordTransitionComputeOnly(pRTComputeCmdBuffer,
-                                                            m_rtResourceManager.Get(RT::RTTextureType::RTAO),
-                                                            ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-        }
+        m_rtResourceManager.RecordTransitionComputeOnly(pRTComputeCmdBuffer,
+                                                        m_rtResourceManager.Get(RT::RTTextureType::RTAO),
+                                                        ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
         pRTComputeCmdBuffer->AddTimelineSignal(&ctx.computeTimeline, rtComputeSignalValue);
         pRTComputeCmdBuffer->SetSignalStages(SyncStages::COMPUTE_SHADER);
@@ -635,7 +646,10 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
     pFinalWorkBuffer->SetFrameIdx(ctx.currentFrame);
     {
         pFinalWorkBuffer->AddTimelineWait(&ctx.frameTimeline, lightingSignalValue);
-        pFinalWorkBuffer->AddTimelineWait(&ctx.computeTimeline, rtComputeSignalValue);
+        if (runRTAO)
+        {
+            pFinalWorkBuffer->AddTimelineWait(&ctx.computeTimeline, rtComputeSignalValue);
+        }
         pFinalWorkBuffer->AddWaitSemaphore(&imageAvailableSemaphore);
         pFinalWorkBuffer->SetWaitStages(SyncStages::FRAGMENT_SHADER | SyncStages::COMPUTE_SHADER |
                                         SyncStages::COLOR_ATTACHMENT_OUTPUT);
@@ -643,8 +657,8 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
         // Ensure Compute Queue shader writes (RTAO/reflections) are visible to Graphics Queue shader reads
         pFinalWorkBuffer->RecordCommand(GlobalBarrierCmd(SyncStages::COMPUTE_SHADER,
                                                          SyncStages::FRAGMENT_SHADER | SyncStages::COMPUTE_SHADER,
-                                                         VK_ACCESS_SHADER_WRITE_BIT,
-                                                         VK_ACCESS_SHADER_READ_BIT));
+                                                         AccessFlags::SHADER_WRITE,
+                                                         AccessFlags::SHADER_READ));
 
         m_transitionRecorder.RecordSwapchainToAttachment(pFinalWorkBuffer, ctx.pCurrentSwapchainTexture);
 
@@ -654,20 +668,6 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
                                                           m_renderTargetManager.GetDLSSExposureTexture(),
                                                           m_renderTargetManager.GetDLSSExposureStagingBuffer());
         }
-
-        const auto& appRenderState = g_pApplicationState->GetCurrentApplicationState().renderState;
-        const bool reflectionsEnabled =
-            mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
-            mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTReflectionsEnabled);
-        const bool rtaoEnabled = mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
-                                 mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTAOEnabled);
-        const bool useRTReflections = reflectionsEnabled && mainPassData.pRTSceneManager != nullptr &&
-                                      mainPassData.pRTSceneManager->HasReadyTLAS(m_currentSwapChainIdx);
-        const bool useRTAO = rtaoEnabled && mainPassData.pRTSceneManager != nullptr &&
-                             mainPassData.pRTSceneManager->HasReadyTLAS(m_currentSwapChainIdx);
-        const bool useRT = useRTReflections || useRTAO;
-        const bool useRayReconstruction = Nvidia::StreamlineManager::IsDLSSRRSupported() &&
-                                          appRenderState.rt.reflectionsUseRayReconstruction && useRTReflections;
 
         // 1. RT Composite (combines Lighting, RTAO, Reflections)
         if (useRT && !useRayReconstruction)
@@ -684,7 +684,7 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
 
         const bool taaModeActive = appRenderState.aaType == AntialiasingType::TAA_SMAA;
         const bool smaaModeActive = appRenderState.aaType == AntialiasingType::SMAA;
-        
+
         const bool seedHistoryFromCurrentColor = taaModeActive && appRenderState.taaSeedHistoryFromCurrentColor;
         const bool debugCopyCurrent =
             taaModeActive && appRenderState.taaDebugMode == static_cast<u32>(TAADebugMode::CurrentColor);
@@ -762,7 +762,7 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
                                         (void*)pTex->GetImage(),
                                         nullptr,
                                         (void*)pTex->GetImageView(),
-                                        static_cast<uint32_t>(VK_IMAGE_LAYOUT_PRESENT_SRC_KHR));
+                                        static_cast<uint32_t>(Conv(ImageLayout::PRESENT_SRC_KHR)));
                 data.res.width = pTex->GetInfo().extents.x;
                 data.res.height = pTex->GetInfo().extents.y;
                 data.res.nativeFormat = static_cast<uint32_t>(Conv(pTex->GetInfo().format));

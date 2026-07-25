@@ -51,8 +51,8 @@ void RenderTextureImGuiRegistry::RegisterShadowMapTextures(const CascadedShadowM
     ReleaseShadowMapIdsForNextFrame();
     if (!shadowMap.pTexture || shadowMap.cascadeViews.empty())
     {
-        g_pApplicationState->RegisterUpdateFunction(
-            [](ApplicationState& state) { state.renderState.csmCascadeImGuiIDs.clear(); });
+        g_pApplicationState->RegisterUpdateFunction([](ApplicationState& state)
+                                                    { state.renderState.csmCascadeImGuiIDs.clear(); });
         return;
     }
 
@@ -63,8 +63,8 @@ void RenderTextureImGuiRegistry::RegisterShadowMapTextures(const CascadedShadowM
         m_csmCascadeImGuiIDs.push_back(reinterpret_cast<u64>(ImGui_ImplVulkan_AddTexture(
             shadowMap.pTexture->GetSampler(), view, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL)));
     }
-    g_pApplicationState->RegisterUpdateFunction(
-        [ids = m_csmCascadeImGuiIDs](ApplicationState& state) { state.renderState.csmCascadeImGuiIDs = ids; });
+    g_pApplicationState->RegisterUpdateFunction([ids = m_csmCascadeImGuiIDs](ApplicationState& state)
+                                                { state.renderState.csmCascadeImGuiIDs = ids; });
 }
 
 void RenderTextureImGuiRegistry::RegisterGBufferTextures(GBuffer& gbuffer, Texture* pScreenSpaceShadowTexture)
@@ -80,15 +80,16 @@ void RenderTextureImGuiRegistry::RegisterGBufferTextures(GBuffer& gbuffer, Textu
 
     m_gbufferImGuiIDs.push_back(addTex(GBufferTextureType::GBufferNormal));
     m_gbufferImGuiIDs.push_back(addTex(GBufferTextureType::GBufferAlbedo));
-    m_gbufferImGuiIDs.push_back(reinterpret_cast<u64>(ImGui_ImplVulkan_AddTexture(
-        pScreenSpaceShadowTexture->GetSampler(),
-        pScreenSpaceShadowTexture->GetImageView(),
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)));
+    m_gbufferImGuiIDs.push_back(
+        reinterpret_cast<u64>(ImGui_ImplVulkan_AddTexture(pScreenSpaceShadowTexture->GetSampler(),
+                                                          pScreenSpaceShadowTexture->GetImageView(),
+                                                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)));
 
     m_pVelocityA = gbuffer.Get(GBufferTextureType::GBufferVelocity);
     m_velocityIdA = addTex(GBufferTextureType::GBufferVelocity);
     m_velocityIdB = addTex(GBufferTextureType::GBufferLastFrameVelocity);
     m_gbufferImGuiIDs.push_back(m_velocityIdA);
+    m_gbufferImGuiIDs.push_back(m_velocityIdB);
 
     m_gbufferImGuiIDs.push_back(addTex(GBufferTextureType::GBufferThisFrameColor));
 
@@ -133,9 +134,7 @@ void RenderTextureImGuiRegistry::RegisterRTTextures(const RT::RTResourceManager&
         if (res.pTexture != nullptr && res.pTexture->GetImageView() != VK_NULL_HANDLE)
         {
             return reinterpret_cast<u64>(ImGui_ImplVulkan_AddTexture(
-                res.pTexture->GetSampler(),
-                res.pTexture->GetImageView(),
-                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL));
+                res.pTexture->GetSampler(), res.pTexture->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL));
         }
         return static_cast<u64>(0);
     };
@@ -144,9 +143,6 @@ void RenderTextureImGuiRegistry::RegisterRTTextures(const RT::RTResourceManager&
     m_rtImGuiIDs.push_back(addRT(RT::RTTextureType::Reflections));
     m_rtImGuiIDs.push_back(addRT(RT::RTTextureType::RTAO));
 
-    g_pApplicationState->RegisterUpdateFunction(
-        [ids = m_rtImGuiIDs](ApplicationState& state)
-        {
-            state.renderState.rtImGuiIDs = ids;
-        });
+    g_pApplicationState->RegisterUpdateFunction([ids = m_rtImGuiIDs](ApplicationState& state)
+                                                { state.renderState.rtImGuiIDs = ids; });
 }

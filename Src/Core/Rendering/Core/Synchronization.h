@@ -3,7 +3,6 @@
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Global/Utils/EnumHelpers.h"
 #include "Core/Rendering/Core/Resource.h"
-#include "Core/Rendering/Vulkan/BackendDefines.h"
 
 enum class SyncStages
 {
@@ -25,6 +24,33 @@ enum class SyncStages
     ALL_COMMANDS = 1 << 14,
 };
 MAKE_FLAG_ENUM(SyncStages)
+
+enum class AccessFlags : u64
+{
+    NONE = 0,
+    INDIRECT_COMMAND_READ = 1ULL << 0,
+    INDEX_READ = 1ULL << 1,
+    VERTEX_ATTRIBUTE_READ = 1ULL << 2,
+    UNIFORM_READ = 1ULL << 3,
+    INPUT_ATTACHMENT_READ = 1ULL << 4,
+    SHADER_READ = 1ULL << 5,
+    SHADER_WRITE = 1ULL << 6,
+    COLOR_ATTACHMENT_READ = 1ULL << 7,
+    COLOR_ATTACHMENT_WRITE = 1ULL << 8,
+    DEPTH_STENCIL_ATTACHMENT_READ = 1ULL << 9,
+    DEPTH_STENCIL_ATTACHMENT_WRITE = 1ULL << 10,
+    TRANSFER_READ = 1ULL << 11,
+    TRANSFER_WRITE = 1ULL << 12,
+    HOST_READ = 1ULL << 13,
+    HOST_WRITE = 1ULL << 14,
+    MEMORY_READ = 1ULL << 15,
+    MEMORY_WRITE = 1ULL << 16,
+    SHADER_STORAGE_READ = 1ULL << 17,
+    SHADER_STORAGE_WRITE = 1ULL << 18,
+    ACCELERATION_STRUCTURE_READ = 1ULL << 19,
+    ACCELERATION_STRUCTURE_WRITE = 1ULL << 20,
+};
+MAKE_FLAG_ENUM(AccessFlags)
 
 class GPUSyncer : public TrackedResource
 {

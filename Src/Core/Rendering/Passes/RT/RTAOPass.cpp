@@ -1,10 +1,11 @@
 #include "RTAOPass.h"
+#include "Core/Global/FrameGlobals.h"
 #include "Core/Global/GlobalVariables.h"
-#include "Core/Rendering/Core/CommandBuffer.h"
-#include "Core/Rendering/Core/SharedResourceManager.h"
-#include "Core/Rendering/Vulkan/VkTextureManager.h"
 #include "Core/Global/Profiling.h"
 #include "Core/Global/Utils/MathFunctions.h"
+#include "Core/Rendering/Core/CommandBuffer.h"
+#include "Core/Rendering/Core/SharedResourceManager.h"
+#include "Core/Rendering/Core/TextureManager.h"
 
 using namespace RenderPasses;
 
@@ -70,9 +71,7 @@ bool RTAOPass::WantsToRender() const
 
 void RTAOPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
 {
-    if (data.pRTSceneManager == nullptr ||
-        data.pResourceManager == nullptr ||
-        data.rtaoTextureHandle == 0)
+    if (data.pRTSceneManager == nullptr || data.pResourceManager == nullptr || data.rtaoTextureHandle == 0)
     {
         return;
     }
@@ -102,13 +101,13 @@ void RTAOPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
         else
         {
             m_tlasDescriptors[ctx.currentFrame]->WriteAccelerationStructureUpdate(pTLASFrameData->accelerationStructure,
-                                                                              s_rtSceneASBindingSlot);
+                                                                                  s_rtSceneASBindingSlot);
             m_tlasDescriptors[ctx.currentFrame]->WriteSSBOUpdate(pTLASFrameData->hitDataBuffer,
-                                                             s_rtInstanceHitDataBindingSlot);
+                                                                 s_rtInstanceHitDataBindingSlot);
             m_tlasDescriptors[ctx.currentFrame]->WriteSSBOUpdate(sceneGeometryBuffers.GetVertexBuffer(),
-                                                             s_rtSceneVertexBufferBindingSlot);
+                                                                 s_rtSceneVertexBufferBindingSlot);
             m_tlasDescriptors[ctx.currentFrame]->WriteSSBOUpdate(sceneGeometryBuffers.GetIndexBuffer(),
-                                                             s_rtSceneIndexBufferBindingSlot);
+                                                                 s_rtSceneIndexBufferBindingSlot);
         }
     }
 
