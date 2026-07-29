@@ -1,10 +1,13 @@
 #include "LightTransformComputePass.h"
 #include "../PassManager.h"
 #include "Core/Global/GlobalVariables.h"
+#include "Core/Global/State/ApplicationState.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
 #include "Core/Rendering/Core/Defines/BindingSlots.h"
 #include "Core/Rendering/Core/Defines/GlobalBuffers.h"
 #include "Core/Rendering/Vulkan/Utils/VkDescriptorLayoutUtils.h"
+#include "Core/Rendering/Core/RenderGraph/PassContext.h"
+#include "Core/Rendering/Core/RenderGraph/RenderGraphBuilder.h"
 
 #define ViewSet             0
 #define LightClusterSet     1
@@ -57,6 +60,44 @@ void LightTransformComputePass::CreateSharedDescriptorLayout()
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::LightUniformsUBO, LightClusterSet));
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::ClusterAABBsSSBO, ClusterGridSet));
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::ViewSpaceLightsSSBO, ViewSpaceLightsSet));
+}
+
+void LightTransformComputePass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
+{
+    builder.DeclareContexts<
+        PassCtx::View,
+        PassCtx::LightCluster,
+        PassCtx::ClusterGrid>();
+
+    auto viewSpaceLights = builder.DeclareStorageBuffer(RGResourceID::Custom, UBO::ViewSpaceLightsSSBOSize);
+    builder.SetCustomResourceName(viewSpaceLights, "ViewSpaceLightsSSBO");
+    builder.WriteStorageBuffer(viewSpaceLights, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_WRITE);
+    builder.SetHasSideEffects();
+}
+
+void LightTransformComputePass::RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const RGExecutionContext& execCtx)
+{
+    ScopedZone("LightTransformComputePass::RenderWithGraph");
+    auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+
+    if (!ctx.clusterGridDescriptor)
+    {
+        return;
+    }
+
+    m_pushConstants.clusterCount = renderState.clusterCount;
+    m_pushConstants.nearFar = mathstl::Vector4(ctx.zNear, ctx.zFar, 0.0f, 0.0f);
+    m_pushConstants.numLights = ctx.numLights;
+
+    u32 workgroupCount = (ctx.numLights + 255) / 256;
+    workgroupCount = workgroupCount > 0 ? workgroupCount : 1;
+    GenericComputeDispatchCmd cmd(&m_pipeline, workgroupCount, 1, 1);
+
+    DescriptorSet::Ptr viewSpaceLightsDesc = data.pResourceManager->GetViewSpaceLightsDescriptorSet(ctx.currentFrame);
+
+    cmd.descriptorSets = {ctx.sharedDataUBODescriptor, ctx.tileArraySSBODescriptor, ctx.clusterGridDescriptor, viewSpaceLightsDesc};
+    cmd.SetPushConstants(0, m_pushConstants);
+    execCtx.pCmdBuffer->RecordCommand(cmd);
 }
 
 void LightTransformComputePass::Render(const MainPassData& data,

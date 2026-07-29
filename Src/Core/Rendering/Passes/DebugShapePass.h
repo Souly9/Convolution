@@ -19,9 +19,11 @@ public:
                                      FrameRendererContext& previousFrameCtx,
                                      u32 thisFrameNum) override;
 
-    virtual void Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer) override;
+    virtual void Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer) override {}
+    virtual void RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const struct RGExecutionContext& execCtx) override;
 
     virtual void CreateSharedDescriptorLayout() override;
+    virtual void Setup(::RenderGraphBuilder& builder, const MainPassData& data) override;
 
     virtual bool WantsToRender() const override;
 

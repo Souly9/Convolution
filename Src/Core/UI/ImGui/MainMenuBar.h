@@ -4,6 +4,7 @@
 #include "DebugWindows/InfoWindow.h"
 #include "DebugWindows/RenderSettingsWindow.h"
 #include "DebugWindows/PerformanceDiagnosticsWindow.h"
+#include "DebugWindows/RenderGraphInspectorWindow.h"
 #include "UIElement.h"
 #include <imgui/imgui.h>
 
@@ -26,4 +27,5 @@ private:
     SceneGraphWindow m_sceneGraphWindow;
     RenderSettingsWindow m_renderSettingsWindow;
     PerformanceDiagnosticsWindow m_performanceDiagnosticsWindow;
+    RenderGraphInspectorWindow m_renderGraphInspectorWindow;
 };

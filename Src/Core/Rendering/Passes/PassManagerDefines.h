@@ -4,6 +4,7 @@
 #include "Core/Rendering/Core/AABB.h"
 #include "Core/Rendering/Core/RenderingForwardDecls.h"
 #include "Core/SceneGraph/Mesh.h"
+#include "MainPassData.h"
 #include <EASTL/bitset.h>
 #include <EASTL/hash_map.h>
 #include <EASTL/vector.h>

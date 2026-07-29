@@ -150,7 +150,16 @@ void CSMPass::CreateSharedDescriptorLayout()
 
 bool CSMPass::WantsToRender() const
 {
-    return NeedToRender(m_indirectCmdBuffers[m_currentFrameIdx]) &&
+    bool hasDraws = false;
+    for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
+    {
+        if (NeedToRender(m_indirectCmdBuffers[i]))
+        {
+            hasDraws = true;
+            break;
+        }
+    }
+    return hasDraws &&
            mathstl::isFlagSet(g_pApplicationState->GetCurrentApplicationState().renderState.debugFlags,
                               (u32)DebugFlags::ShadowsEnabled);
 }
@@ -275,4 +284,11 @@ void CSMPass::ComputeLightViewProjMatrices(u32 cascades,
     {
         splits[i] = FLT_MAX;
     }
+}
+
+#include "Core/Rendering/Core/RenderGraph/RenderGraphBuilder.h"
+
+void CSMPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
+{
+    builder.SetHasSideEffects();
 }

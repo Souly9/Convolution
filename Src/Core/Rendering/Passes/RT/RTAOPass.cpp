@@ -69,6 +69,18 @@ bool RTAOPass::WantsToRender() const
            mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTAOEnabled);
 }
 
+#include "Core/Rendering/Core/RenderGraph/RenderGraphBuilder.h"
+
+void RTAOPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
+{
+    builder.ReadTexture(RGResourceID::MainDepth, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+    builder.ReadTexture(RGResourceID::GBufferNormal, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+
+    auto rtao = builder.DeclareStorageTexture(RGResourceID::RTAOOutput, TexFormat::R8_UNORM, RGSizeClass::RenderResolution);
+    builder.WriteStorageImage(rtao, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_WRITE);
+    builder.SetHasSideEffects();
+}
+
 void RTAOPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
 {
     if (data.pRTSceneManager == nullptr || data.pResourceManager == nullptr || data.rtaoTextureHandle == 0)

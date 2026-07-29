@@ -16,85 +16,18 @@
 #include "Core/Rendering/Core/ShadowMaps.h"
 #include "Core/Rendering/Core/ShadowMapManager.h"
 #include "Core/Rendering/Core/SharedResourceManager.h"
+#include "Core/Rendering/Core/RenderGraph/RenderGraph.h"
 #include "Core/Rendering/Core/View.h"
 #include "Core/Rendering/Core/Buffer.h"
 #include <SimpleMath/SimpleMath.h>
 #include "EASTL/fixed_vector.h"
+#include "MainPassData.h"
+
 class SharedResourceManager;
 
 namespace RenderPasses
 {
 class ConvolutionRenderPass;
-
-// A pass is responsible for rendering a view (aka, main pass renders the main
-// camera view), can also execute solely on CPU side (think culling would be a
-// pass too) Won't make it too complex but pass data will be roughly sorted
-// based on the view type
-struct MainPassData
-{
-    struct TemporalResources
-    {
-        Texture* pCurrentColorTexture{nullptr};
-        Texture* pHistoryColorTexture{nullptr};
-        Texture* pResolveTexture{nullptr};
-        Texture* pPostAAColorTexture{nullptr};
-        Texture* pCurrentDepthTexture{nullptr};
-        Texture* pHistoryDepthTexture{nullptr};
-        BindlessTextureHandle currentColorHandle{0};
-        BindlessTextureHandle historyColorHandle{0};
-        BindlessTextureHandle resolveHandle{0};
-        BindlessTextureHandle postAAColorHandle{0};
-        BindlessTextureHandle currentDepthHandle{0};
-        BindlessTextureHandle historyDepthHandle{0};
-    };
-
-    struct PassManagerRenderState
-    {
-        bool recreatedThisFrame{false};
-        mathstl::Vector2 renderResolution{};
-        mathstl::Vector2 swapchainResolution{};
-        mathstl::Vector2 jitter{};
-        mathstl::Vector2 previousJitter{};
-    };
-
-    ::SharedResourceManager* pResourceManager{nullptr};
-    GBuffer* pGbuffer{nullptr};
-    Texture* pMainDepthTexture{nullptr};
-    Texture* pLastFrameDepthTexture{nullptr};
-    TemporalResources temporalResources{};
-    PassManagerRenderState renderState{};
-    RenderView mainView{};
-    mathstl::Matrix mainCamViewMatrix{};
-    mathstl::Matrix mainCamInvViewProj{};
-    // Views we want to render with CSMs
-    stltype::vector<CsmRenderView> csmViews;
-    // Views we just render into normal shadowmaps whatever those will end up being
-    stltype::vector<RenderView> shadowViews;
-    stltype::vector<DescriptorSet::Ptr> viewDescriptorSets;
-    stltype::hash_map<UBO::DescriptorContentsType, DescriptorSet::Ptr> bufferDescriptors;
-    CascadedShadowMap directionalLightShadowMap{};
-    Texture* pScreenSpaceShadowTexture{nullptr};
-    BindlessTextureHandle screenSpaceShadows{0};
-    BindlessTextureHandle depthBufferBindlessHandle{0};
-    RT::RTSceneManager* pRTSceneManager{nullptr};
-    Texture* pRTDebugViewTexture{nullptr};
-    Texture* pRTReflectionsTexture{nullptr};
-    BindlessTextureHandle rtDebugTextureHandle{0};
-    BindlessTextureHandle rtReflectionsTextureHandle{0};
-    Texture* pRTAOTexture{nullptr};
-    BindlessTextureHandle rtaoTextureHandle{0};
-    Texture* pRTAccumulationTexture{nullptr};
-    BindlessTextureHandle rtAccumulationTextureHandle{0};
-    u32 cascades{0};
-    f32 csmStepSize{0.0f};
-    // SMAA Intermediates
-
-    // SMAA Intermediates
-    Texture* pSMAAEdgesTexture{nullptr};
-    Texture* pSMAABlendTexture{nullptr};
-    BindlessTextureHandle smaaEdges{0};
-    BindlessTextureHandle smaaBlend{0};
-};
 
 enum class PassType
 {
@@ -142,8 +75,8 @@ inline const stltype::fixed_vector<PassStage, 11> PASS_SCHEDULE = {
     PassStage{{PassType::RTAOCompute, PassType::RTReflectionsCompute}},
     PassStage{{PassType::RTComposite}},
     PassStage{{PassType::TAA, PassType::DLSS, PassType::DLSS_RR, PassType::XeSS}},
-    PassStage{{PassType::SMAA}},
     PassStage{{PassType::Composite}},
+    PassStage{{PassType::SMAA}},
     PassStage{{PassType::UI}},
 };
 inline const u32 STAGE_COUNT = PASS_SCHEDULE.size();
@@ -172,6 +105,7 @@ struct GraphicsFrameContext
     stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> compositeCmdBuffers{SWAPCHAIN_IMAGES};
     stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> presentTransitionCmdBuffers{SWAPCHAIN_IMAGES};
     stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> depthPrePassCmdBuffers{SWAPCHAIN_IMAGES};
+    stltype::vector<CommandBuffer*> batchCmdBuffers[SWAPCHAIN_IMAGES];
     bool initialized{false};
 };
 
@@ -181,6 +115,7 @@ struct ComputeFrameContext
     stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> cmdBuffers{SWAPCHAIN_IMAGES};
     stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> sssComputeCmdBuffers{SWAPCHAIN_IMAGES};
     stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> rtComputeCmdBuffers{SWAPCHAIN_IMAGES};
+    stltype::vector<CommandBuffer*> batchCmdBuffers[SWAPCHAIN_IMAGES];
     bool initialized{false};
 };
 
@@ -200,6 +135,10 @@ class PassManager
 public:
     PassManager()
     {
+        m_mainPassData.resize(SWAPCHAIN_IMAGES);
+        m_imageAvailableSemaphores.resize(SWAPCHAIN_IMAGES);
+        m_imageAvailableFences.resize(SWAPCHAIN_IMAGES);
+        m_renderFinishedFences.resize(SWAPCHAIN_IMAGES);
         g_pEventSystem->AddBaseInitEventCallback([&](const auto&) { Init(); });
     }
     ~PassManager();
@@ -222,6 +161,7 @@ public:
 
     void SetSharedData(RenderView&& mainView, u32 frameIdx);
     void PreProcessDataForCurrentFrame(u32 frameIdx, u64 jitterFrameNumber);
+    void ResetSceneState();
 
     void RegisterDebugCallbacks();
 
@@ -256,6 +196,8 @@ public:
     const stltype::vector<PassTimingResult>& GetPassTimingResults() const;
     f32 GetTotalGPUTimeMs() const;
 
+    static inline stltype::atomic<u64> s_globalTimelineCounter{1};
+
 protected:
     void PreProcessMeshData(const stltype::vector<PassMeshData>& meshes, u32 lastFrame, u32 curFrame);
 
@@ -264,6 +206,7 @@ protected:
     void InitResourceManagerAndCallbacks();
     void CreatePassObjectsAndLayouts();
     void CreateUBOsAndMap();
+
     void CreateFrameRendererContexts();
     void InitPassesAndImGui();
 
@@ -273,11 +216,12 @@ protected:
     void RenderAllPassGroups(const MainPassData& mainPassData,
                              FrameRendererContext& ctx,
                              Semaphore& imageAvailableSemaphore);
-    void RenderPassGroup(PassType groupType, const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer);
     void InitFrameContexts();
     void UpdateGBufferUBO(const MainPassData& data);
 
-    // Inline layout transition helpers — record directly into pCmdBuffer
+    CommandBuffer* GetGraphicsCommandBuffer(u32 frameIdx, u32 batchIdx);
+    CommandBuffer* GetComputeCommandBuffer(u32 frameIdx, u32 batchIdx);
+
 private:
 
     // GPU timing query
@@ -292,14 +236,14 @@ private:
     ShadowMapManager m_shadowMapManager;
     RenderTextureImGuiRegistry m_imguiRegistry;
     FrameTransitionRecorder m_transitionRecorder;
+    RenderGraph m_renderGraph;
 
     // Pass data for each frame
     stltype::hash_map<PassType, stltype::vector<stltype::unique_ptr<ConvolutionRenderPass>>> m_passes{};
-    stltype::fixed_vector<MainPassData, SWAPCHAIN_IMAGES> m_mainPassData{SWAPCHAIN_IMAGES};
-    stltype::fixed_vector<Semaphore, SWAPCHAIN_IMAGES> m_imageAvailableSemaphores{SWAPCHAIN_IMAGES};
-    stltype::fixed_vector<Fence, SWAPCHAIN_IMAGES> m_imageAvailableFences{SWAPCHAIN_IMAGES};
-    // Fences to track when rendering to each swapchain image completes (for semaphore reuse safety)
-    stltype::fixed_vector<Fence, SWAPCHAIN_IMAGES> m_renderFinishedFences{SWAPCHAIN_IMAGES};
+    stltype::fixed_vector<MainPassData, SWAPCHAIN_IMAGES> m_mainPassData{};
+    stltype::fixed_vector<Semaphore, SWAPCHAIN_IMAGES> m_imageAvailableSemaphores{};
+    stltype::fixed_vector<Fence, SWAPCHAIN_IMAGES> m_imageAvailableFences{};
+    stltype::fixed_vector<Fence, SWAPCHAIN_IMAGES> m_renderFinishedFences{};
     GraphicsFrameContext m_graphicsFrameCtx;
     ComputeFrameContext m_computeFrameCtx;
 
@@ -312,7 +256,6 @@ private:
     u32 m_instanceBufferUpdateTimingIndex;
     u32 m_clearTileCountersTimingIndex{UINT32_MAX};
     MainPassData::PassManagerRenderState m_renderState{};
-    static inline stltype::atomic<u64> s_globalTimelineCounter{1};
 };
 } // namespace RenderPasses
 

@@ -41,21 +41,28 @@ inline stltype::vector<PipelineDescriptorLayout> GlobalInstanceData()
     };
 }
 
-// Set 3: GBufferUBO + ShadowmapUBO
-inline stltype::vector<PipelineDescriptorLayout> GBuffer()
+// Set 3 (default): GBufferUBO + ShadowmapUBO
+inline stltype::vector<PipelineDescriptorLayout> GBuffer(u32 setIdx = kGBufferSet)
 {
     return {
-        PipelineDescriptorLayout(UBO::BufferType::GBufferUBO, kGBufferSet),
-        PipelineDescriptorLayout(UBO::BufferType::ShadowmapUBO, kGBufferSet)
+        PipelineDescriptorLayout(UBO::BufferType::GBufferUBO, setIdx),
+        PipelineDescriptorLayout(UBO::BufferType::ShadowmapUBO, setIdx)
     };
 }
 
-// Set 4: TileArraySSBO + LightUniformsUBO
-inline stltype::vector<PipelineDescriptorLayout> LightCluster()
+// Set 4 (default): TileArraySSBO + LightUniformsUBO
+inline stltype::vector<PipelineDescriptorLayout> LightCluster(u32 setIdx = kLightClusterSet)
 {
     return {
-        PipelineDescriptorLayout(UBO::BufferType::TileArraySSBO, kLightClusterSet),
-        PipelineDescriptorLayout(UBO::BufferType::LightUniformsUBO, kLightClusterSet),
+        PipelineDescriptorLayout(UBO::BufferType::TileArraySSBO, setIdx),
+        PipelineDescriptorLayout(UBO::BufferType::LightUniformsUBO, setIdx),
+    };
+}
+
+inline stltype::vector<PipelineDescriptorLayout> ClusterGrid(u32 setIdx = 2)
+{
+    return {
+        PipelineDescriptorLayout(UBO::BufferType::ClusterAABBsSSBO, setIdx)
     };
 }
 

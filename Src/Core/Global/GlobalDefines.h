@@ -7,9 +7,9 @@
 
 // Configuration Macros
 #ifdef CONV_DEBUG
-#define ASSERT(x) assert(x)
+#define ASSERT(x) do { if (!(x)) { printf("ASSERT FAILED: %s at %s:%d\n", #x, __FILE__, __LINE__); abort(); } } while(0)
 #else
-#define ASSERT(x) x
+#define ASSERT(x) do { if (!(x)) { printf("ASSERT FAILED: %s at %s:%d\n", #x, __FILE__, __LINE__); abort(); } } while(0)
 #endif
 #define DEBUG_ASSERT(x) ASSERT(x)
 

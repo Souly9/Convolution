@@ -3,6 +3,27 @@
 #include "Core/Global/Utils/EnumHelpers.h"
 
 // API-Agnostic definitions to decouple Core from Vulkan headers
+enum class QueueType
+{
+    Transfer,
+    Compute,
+    Graphics
+};
+
+enum class TextureWrapMode
+{
+    REPEAT,
+    MIRRORED_REPEAT,
+    CLAMP_TO_EDGE,
+    CLAMP_TO_BORDER
+};
+
+enum class TextureFilter
+{
+    NEAREST,
+    LINEAR
+};
+
 enum class TexFormat
 {
     UNDEFINED,

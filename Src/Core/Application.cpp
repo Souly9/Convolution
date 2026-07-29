@@ -49,6 +49,7 @@ Application::Application(bool canRender, RenderLayer<RenderAPI>& layer)
     m_applicationState.ProcessStateUpdates();
 
     auto pRenderer = m_renderThread.Start();
+    m_applicationState.SetPassManager(pRenderer);
     g_pEventSystem->OnAppInit({pRenderer});
     StaticBehaviorCollection::RegisterAllBehaviors();
 

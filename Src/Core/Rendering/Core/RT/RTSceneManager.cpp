@@ -66,6 +66,10 @@ bool HasInstanceDataChanged(const stltype::vector<RTInstanceRecord>& lhs, const 
 void ReleaseTLASFrameData(TLASFrameData& frameData)
 {
     frameData.accelerationStructure.CleanUp();
+    frameData.storageBuffer.CleanUp();
+    frameData.scratchBuffer.CleanUp();
+    frameData.instanceBuffer.CleanUp();
+    frameData.hitDataBuffer.CleanUp();
     frameData = TLASFrameData{};
 }
 } // namespace

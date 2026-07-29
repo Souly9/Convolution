@@ -228,7 +228,7 @@ void SharedResourceManager::ClearGeometryCaches()
     }
 }
 
-void SharedResourceManager::FlushPendingMeshUploads(u32 /*frameIdx*/, u32 maxCount)
+void SharedResourceManager::FlushPendingMeshUploads(u32 frameIdx, u32 maxCount)
 {
     ScopedZone("SharedResourceManager::FlushPendingMeshUploads");
 
@@ -247,11 +247,38 @@ void SharedResourceManager::FlushPendingMeshUploads(u32 /*frameIdx*/, u32 maxCou
     if (batch.empty())
         return;
 
-    SimpleScopedGuard lock(m_residencyStateMutex);
-    for (const Mesh* pMesh : batch)
     {
-        if (m_residentMeshes.insert(pMesh).second)
-            m_pendingVisibleMeshes.push_back(pMesh);
+        SimpleScopedGuard lock(m_residencyStateMutex);
+        for (const Mesh* pMesh : batch)
+        {
+            if (m_residentMeshes.insert(pMesh).second)
+                m_pendingVisibleMeshes.push_back(pMesh);
+        }
+    }
+
+    auto newlyVisibleIndices = PopPendingVisibleInstanceIndices();
+    if (!newlyVisibleIndices.empty())
+    {
+        for (u32 instanceIdx : newlyVisibleIndices)
+        {
+            if (instanceIdx < m_currentFrameInstanceData.size())
+            {
+                m_currentFrameInstanceData[instanceIdx].SetVisible(true);
+            }
+        }
+
+        AsyncQueueHandler::SSBOTransfer transfer;
+        transfer.pData = m_currentFrameInstanceData.data();
+        transfer.size = static_cast<u32>(m_currentFrameInstanceData.size() * sizeof(m_currentFrameInstanceData[0]));
+        transfer.offset = 0;
+        transfer.pDescriptor = nullptr;
+        transfer.pSSBO = &m_sceneInstanceBuffer;
+        transfer.dstBinding = s_globalInstanceDataSSBOSlot;
+        transfer.frameIdx = frameIdx;
+        DEBUG_LOGF("SharedResourceManager: Updated visibility for {} newly resident instances. Re-uploading SSBO size: {} bytes", 
+                   (u32)newlyVisibleIndices.size(), transfer.size);
+        g_pQueueHandler->SubmitTransferCommandAsync(transfer);
+        g_pQueueHandler->DispatchAllRequests();
     }
 }
 
@@ -336,7 +363,12 @@ MeshHandle SharedResourceManager::UploadMesh(const Mesh& mesh)
 MeshHandle SharedResourceManager::GetMeshHandle(const Mesh* pMesh) const
 {
     SimpleScopedGuard lock(m_geometryStateMutex);
-    return m_meshHandles.find(pMesh)->second;
+    auto it = m_meshHandles.find(pMesh);
+    if (it != m_meshHandles.end())
+    {
+        return it->second;
+    }
+    return MeshResourceData{};
 }
 
 void SharedResourceManager::WriteInstanceSSBODescriptorUpdate(u32 targetFrame)
@@ -492,7 +524,20 @@ stltype::vector<const Mesh*> SharedResourceManager::PopPendingResidentMeshesForR
 {
     ScopedZone("SharedResourceManager::PopPendingResidentMeshesForRayTracing");
     SimpleScopedGuard lock(m_residencyStateMutex);
-    stltype::vector<const Mesh*> meshes = stltype::move(m_pendingRayTracingMeshes);
+    stltype::vector<const Mesh*> meshes;
+    meshes.reserve(m_pendingRayTracingMeshes.size());
+
+    {
+        SimpleScopedGuard geoLock(m_geometryStateMutex);
+        for (const Mesh* pMesh : m_pendingRayTracingMeshes)
+        {
+            if (pMesh != nullptr && m_meshHandles.find(pMesh) != m_meshHandles.end())
+            {
+                meshes.push_back(pMesh);
+            }
+        }
+    }
+
     m_pendingRayTracingMeshes.clear();
     return meshes;
 }

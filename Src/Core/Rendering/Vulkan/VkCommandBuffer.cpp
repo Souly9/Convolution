@@ -388,10 +388,36 @@ static void RecordCommand(ClearColorImageCmd& cmd, CBufferVulkan& buffer)
         buffer.GetRef(), cmd.image->GetImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clearValue, 1, &range);
 }
 
+static inline VkPipelineStageFlags2 ConvStageForQueue(SyncStages stage, QueueType queueType, bool isDst)
+{
+    VkPipelineStageFlags2 vkStage = Conv(stage);
+    if (queueType == QueueType::Compute)
+    {
+        constexpr VkPipelineStageFlags2 VALID_COMPUTE_STAGES = 
+            VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT |
+            VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT |
+            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT |
+            VK_PIPELINE_STAGE_2_TRANSFER_BIT |
+            VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT |
+            VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR |
+            VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR |
+            VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+
+        vkStage &= VALID_COMPUTE_STAGES;
+        if (vkStage == 0)
+        {
+            vkStage = isDst ? VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT : VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+        }
+    }
+    return vkStage;
+}
+
 static void RecordCommand(ImageLayoutTransitionCmd& cmd, CBufferVulkan& buffer)
 {
-    // Create a new VkImageMemoryBarrier2 for the transition.
-    std::vector<VkImageMemoryBarrier2> barriers;
+    if (cmd.images.empty())
+        return;
+
+    stltype::vector<VkImageMemoryBarrier2> barriers;
     barriers.reserve(cmd.images.size());
 
     for (const auto& image : cmd.images)
@@ -406,10 +432,10 @@ static void RecordCommand(ImageLayoutTransitionCmd& cmd, CBufferVulkan& buffer)
         memoryBarrier.dstQueueFamilyIndex = cmd.dstQueueFamilyIdx < 0 ? VK_QUEUE_FAMILY_IGNORED : cmd.dstQueueFamilyIdx;
 
         // The stage and access masks are now on the barrier itself.
-        memoryBarrier.srcStageMask = Conv(cmd.srcStage);
-        memoryBarrier.dstStageMask = Conv(cmd.dstStage);
-        memoryBarrier.srcAccessMask = Conv(cmd.srcAccessMask);
-        memoryBarrier.dstAccessMask = Conv(cmd.dstAccessMask);
+        memoryBarrier.srcStageMask = ConvStageForQueue(cmd.srcStage, buffer.GetQueueType(), false);
+        memoryBarrier.dstStageMask = ConvStageForQueue(cmd.dstStage, buffer.GetQueueType(), true);
+        memoryBarrier.srcAccessMask = (memoryBarrier.srcStageMask == VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT) ? 0 : Conv(cmd.srcAccessMask);
+        memoryBarrier.dstAccessMask = (memoryBarrier.dstStageMask == VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT) ? 0 : Conv(cmd.dstAccessMask);
 
         const TexFormat format = image->GetInfo().format;
         const bool isDepthFormat = (format == TexFormat::D16_UNORM || format == TexFormat::X8_D24_UNORM_PACK32 ||
@@ -529,10 +555,10 @@ static void RecordCommand(GlobalBarrierCmd& cmd, CBufferVulkan& buffer)
 {
     VkMemoryBarrier2 barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-    barrier.srcStageMask = Conv(cmd.srcStage);
-    barrier.dstStageMask = Conv(cmd.dstStage);
-    barrier.srcAccessMask = Conv(cmd.srcAccessMask);
-    barrier.dstAccessMask = Conv(cmd.dstAccessMask);
+    barrier.srcStageMask = ConvStageForQueue(cmd.srcStage, buffer.GetQueueType(), false);
+    barrier.dstStageMask = ConvStageForQueue(cmd.dstStage, buffer.GetQueueType(), true);
+    barrier.srcAccessMask = (barrier.srcStageMask == VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT) ? 0 : Conv(cmd.srcAccessMask);
+    barrier.dstAccessMask = (barrier.dstStageMask == VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT) ? 0 : Conv(cmd.dstAccessMask);
 
     VkDependencyInfo dependencyInfo{};
     dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;

@@ -131,10 +131,10 @@ void SMAAPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
     cmdBuf.FillCmds();
 }
 
-void SMAAPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
+void SMAAPass::RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const RGExecutionContext& execCtx)
 {
     ScopedZone("SMAAPass::Render");
-    StartRenderPassProfilingScope(pCmdBuffer);
+    StartRenderPassProfilingScope(execCtx.pCmdBuffer);
 
     UpdateContextForFrame(ctx.currentFrame);
     auto& cmdBuf = m_indirectCmdBuffers[m_currentFrameIdx];
@@ -157,38 +157,41 @@ void SMAAPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     SMAAPushConstants pc;
     pc.metrics = mathstl::Vector4(1.0f / extents.x, 1.0f / extents.y, (f32)extents.x, (f32)extents.y);
 
-    // 1. Edge Detection (Writes to data.pSMAAEdgesTexture)
-    {
-        ColorAttachment attach = CreateDefaultColorAttachment(data.pSMAAEdgesTexture->GetInfo().format, LoadOp::CLEAR, data.pSMAAEdgesTexture);
-        BeginRenderingCmd beginEdge{&m_edgePSO, ToRenderAttachmentInfos(stltype::vector<ColorAttachment>{attach})};
-        beginEdge.extents = extents;
-        beginEdge.viewport = displayViewport;
-        
-        GenericIndirectDrawCmd cmdEdge{&m_edgePSO, cmdBuf};
-        cmdEdge.drawCount = cmdBuf.GetDrawCmdNum();
-        cmdEdge.descriptorSets = { texArraySet, gbufferUBOSet };
-        pc.tex1 = data.pGbuffer->GetHandle(GBufferTextureType::GBufferResolve); // Input color (TAA result)
-        cmdEdge.SetPushConstants(0, pc, ShaderTypeBits::Vertex | ShaderTypeBits::Fragment);
+    const u32 inputColorHandle = execCtx.GetBindless(RGResourceID::GBufferPostAAColor);
 
-        pCmdBuffer->RecordCommand(beginEdge);
+    static bool loggedOnce = false;
+    if (!loggedOnce)
+    {
+        DEBUG_LOGF("[SMAAPass] Input color handle selected: %u", inputColorHandle);
+        loggedOnce = true;
+    }
+
+    // 1. Edge Detection
+    {
+        Texture* pEdgesTex = execCtx.GetTexture(RGResourceID::SMAAEdges);
+        ColorAttachment attach = CreateDefaultColorAttachment(pEdgesTex ? pEdgesTex->GetInfo().format : TexFormat::R8G8_UNORM, LoadOp::CLEAR, ImageLayout::SHADER_READ_ONLY_OPTIMAL, pEdgesTex);
+        BeginRenderingCmd beginEdges{&m_edgePSO, ToRenderAttachmentInfos(stltype::vector<ColorAttachment>{attach})};
+        beginEdges.extents = extents;
+        beginEdges.viewport = displayViewport;
+
+        GenericIndirectDrawCmd cmdEdges{&m_edgePSO, cmdBuf};
+        cmdEdges.drawCount = cmdBuf.GetDrawCmdNum();
+        cmdEdges.descriptorSets = { texArraySet, gbufferUBOSet };
+        pc.tex1 = inputColorHandle;
+        pc.tex2 = m_searchTexBindless;
+        cmdEdges.SetPushConstants(0, pc, ShaderTypeBits::Vertex | ShaderTypeBits::Fragment);
+
+        execCtx.pCmdBuffer->RecordCommand(beginEdges);
         if (geomBufferCmd.vertexBuffer != nullptr)
-            pCmdBuffer->RecordCommand(geomBufferCmd);
-        pCmdBuffer->RecordCommand(cmdEdge);
-        pCmdBuffer->RecordCommand(EndRenderingCmd{});
+            execCtx.pCmdBuffer->RecordCommand(geomBufferCmd);
+        execCtx.pCmdBuffer->RecordCommand(cmdEdges);
+        execCtx.pCmdBuffer->RecordCommand(EndRenderingCmd{});
     }
 
-    // Barrier between Edge and Blend: EdgesTex COLOR_ATTACHMENT -> SHADER_READ
+    // 2. Blending Weight Calculation
     {
-        ImageLayoutTransitionCmd barrier(data.pSMAAEdgesTexture);
-        barrier.oldLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
-        barrier.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-        VkTextureManager::SetLayoutBarrierMasks(barrier, ImageLayout::COLOR_ATTACHMENT_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-        pCmdBuffer->RecordCommand(barrier);
-    }
-
-    // 2. Blend Weight Calculation (Writes to data.pSMAABlendTexture)
-    {
-        ColorAttachment attach = CreateDefaultColorAttachment(data.pSMAABlendTexture->GetInfo().format, LoadOp::CLEAR, data.pSMAABlendTexture);
+        Texture* pBlendTex = execCtx.GetTexture(RGResourceID::SMAABlend);
+        ColorAttachment attach = CreateDefaultColorAttachment(pBlendTex ? pBlendTex->GetInfo().format : TexFormat::R8G8B8A8_UNORM, LoadOp::CLEAR, ImageLayout::SHADER_READ_ONLY_OPTIMAL, pBlendTex);
         BeginRenderingCmd beginBlend{&m_blendPSO, ToRenderAttachmentInfos(stltype::vector<ColorAttachment>{attach})};
         beginBlend.extents = extents;
         beginBlend.viewport = displayViewport;
@@ -196,40 +199,22 @@ void SMAAPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
         GenericIndirectDrawCmd cmdBlend{&m_blendPSO, cmdBuf};
         cmdBlend.drawCount = cmdBuf.GetDrawCmdNum();
         cmdBlend.descriptorSets = { texArraySet, gbufferUBOSet };
-        pc.tex1 = data.smaaEdges; // Edges
+        pc.tex1 = execCtx.GetBindless(RGResourceID::SMAAEdges);
         pc.tex2 = m_areaTexBindless;
         pc.tex3 = m_searchTexBindless;
         cmdBlend.SetPushConstants(0, pc, ShaderTypeBits::Vertex | ShaderTypeBits::Fragment);
 
-        pCmdBuffer->RecordCommand(beginBlend);
+        execCtx.pCmdBuffer->RecordCommand(beginBlend);
         if (geomBufferCmd.vertexBuffer != nullptr)
-            pCmdBuffer->RecordCommand(geomBufferCmd);
-        pCmdBuffer->RecordCommand(cmdBlend);
-        pCmdBuffer->RecordCommand(EndRenderingCmd{});
+            execCtx.pCmdBuffer->RecordCommand(geomBufferCmd);
+        execCtx.pCmdBuffer->RecordCommand(cmdBlend);
+        execCtx.pCmdBuffer->RecordCommand(EndRenderingCmd{});
     }
 
-    // Barrier between Blend and Neighborhood: BlendTex COLOR_ATTACHMENT -> SHADER_READ
+    // 3. Neighborhood Blending
     {
-        ImageLayoutTransitionCmd barrier(data.pSMAABlendTexture);
-        barrier.oldLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
-        barrier.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-        VkTextureManager::SetLayoutBarrierMasks(barrier, ImageLayout::COLOR_ATTACHMENT_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-        pCmdBuffer->RecordCommand(barrier);
-    }
-    {
-        Texture* pOutputTexture = data.pGbuffer->Get(GBufferTextureType::GBufferPostAAColor);
-        
-        ImageLayoutTransitionCmd outputBarrier(pOutputTexture);
-        outputBarrier.oldLayout =
-            (m_outputWritten || data.renderState.recreatedThisFrame) ? ImageLayout::SHADER_READ_ONLY_OPTIMAL
-                                                                     : ImageLayout::UNDEFINED;
-        outputBarrier.newLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
-        VkTextureManager::SetLayoutBarrierMasks(outputBarrier, outputBarrier.oldLayout, ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
-        pCmdBuffer->RecordCommand(outputBarrier);
-
-        const LoadOp outputLoadOp =
-            (m_outputWritten || data.renderState.recreatedThisFrame) ? LoadOp::LOAD : LoadOp::CLEAR;
-        ColorAttachment attach = CreateDefaultColorAttachment(pOutputTexture->GetInfo().format, outputLoadOp, pOutputTexture);
+        Texture* pOutputTexture = ctx.pCurrentSwapchainTexture;
+        ColorAttachment attach = CreateDefaultColorAttachment(pOutputTexture ? pOutputTexture->GetInfo().format : SWAPCHAIN_FORMAT, LoadOp::CLEAR, pOutputTexture);
         BeginRenderingCmd beginNeighbor{&m_neighborhoodPSO, ToRenderAttachmentInfos(stltype::vector<ColorAttachment>{attach})};
         beginNeighbor.extents = extents;
         beginNeighbor.viewport = displayViewport;
@@ -237,25 +222,35 @@ void SMAAPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
         GenericIndirectDrawCmd cmdNeighbor{&m_neighborhoodPSO, cmdBuf};
         cmdNeighbor.drawCount = cmdBuf.GetDrawCmdNum();
         cmdNeighbor.descriptorSets = { texArraySet, gbufferUBOSet };
-        pc.tex1 = data.pGbuffer->GetHandle(GBufferTextureType::GBufferResolve); // Un-AA color (TAA result)
-        pc.tex2 = data.smaaBlend; // Blending weights
+        pc.tex1 = inputColorHandle; // Post-tonemap LDR color
+        pc.tex2 = execCtx.GetBindless(RGResourceID::SMAABlend);
         cmdNeighbor.SetPushConstants(0, pc, ShaderTypeBits::Vertex | ShaderTypeBits::Fragment);
 
-        pCmdBuffer->RecordCommand(beginNeighbor);
+        execCtx.pCmdBuffer->RecordCommand(beginNeighbor);
         if (geomBufferCmd.vertexBuffer != nullptr)
-            pCmdBuffer->RecordCommand(geomBufferCmd);
-        pCmdBuffer->RecordCommand(cmdNeighbor);
-        pCmdBuffer->RecordCommand(EndRenderingCmd{});
-        
-        ImageLayoutTransitionCmd outputBarrier2(pOutputTexture);
-        outputBarrier2.oldLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
-        outputBarrier2.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-        VkTextureManager::SetLayoutBarrierMasks(outputBarrier2, ImageLayout::COLOR_ATTACHMENT_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-        pCmdBuffer->RecordCommand(outputBarrier2);
+            execCtx.pCmdBuffer->RecordCommand(geomBufferCmd);
+        execCtx.pCmdBuffer->RecordCommand(cmdNeighbor);
+        execCtx.pCmdBuffer->RecordCommand(EndRenderingCmd{});
+
         m_outputWritten = true;
     }
     
 
-    EndRenderPassProfilingScope(pCmdBuffer);
+    EndRenderPassProfilingScope(execCtx.pCmdBuffer);
+}
+
+#include "Core/Rendering/Core/RenderGraph/RenderGraphBuilder.h"
+
+void SMAAPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
+{
+    builder.ReadTexture(RGResourceID::GBufferPostAAColor, SyncStages::FRAGMENT_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+
+    auto smaaEdges = builder.DeclareStorageTexture(RGResourceID::SMAAEdges, TexFormat::R8G8_UNORM, RGSizeClass::OutputResolution);
+    auto smaaBlend = builder.DeclareStorageTexture(RGResourceID::SMAABlend, TexFormat::R8G8B8A8_UNORM, RGSizeClass::OutputResolution);
+
+    builder.WriteColorAttachment(smaaEdges, LoadOp::CLEAR, StoreOp::STORE);
+    builder.WriteColorAttachment(smaaBlend, LoadOp::CLEAR, StoreOp::STORE);
+    builder.WriteColorAttachment(RGResourceID::Swapchain, LoadOp::CLEAR, StoreOp::STORE);
+    builder.SetHasSideEffects();
 }
 } // namespace RenderPasses

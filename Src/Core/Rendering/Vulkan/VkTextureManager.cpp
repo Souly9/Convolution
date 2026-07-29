@@ -729,7 +729,37 @@ BindlessTextureHandle VkTextureManager::MakeTextureBindless(TextureHandle handle
 
 BindlessTextureHandle VkTextureManager::MakeTextureBindless(TextureVulkan* pTex, bool isPersistent)
 {
-    DEBUG_ASSERT(false);
+    if (!pTex) return 0;
+
+    TextureHandle handle = 0;
+    {
+        SimpleScopedGuard<tracy::Lockable<CustomMutex>> lock(m_sharedDataMutex);
+        for (const auto& [h, texPtr] : m_persistentTextures)
+        {
+            if (texPtr.get() == pTex)
+            {
+                handle = h;
+                break;
+            }
+        }
+        if (handle == 0)
+        {
+            for (const auto& [h, texPtr] : m_textures)
+            {
+                if (texPtr.get() == pTex)
+                {
+                    handle = h;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (handle != 0)
+    {
+        return MakeTextureBindless(handle, isPersistent);
+    }
+
     return 0;
 }
 

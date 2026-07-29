@@ -4,13 +4,16 @@
 #include "Core/Rendering/Core/RenderingForwardDecls.h"
 #include "Core/Rendering/Core/RenderTargetManager.h"
 #include "Core/Rendering/Core/Synchronization.h"
+#include "Core/Rendering/Core/TransferUtils/TransferDefines.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
 #include "Core/Rendering/Core/Shader.h"
 #include "Core/Rendering/Core/ProfilingUtils.h"
 #include "Core/Rendering/Core/Defines/VertexDefines.h"
+#include "Core/Rendering/Core/RenderGraph/RGExecutionContext.h"
 
 class SharedResourceManager;
 class GPUTimingQueryBase;
+class RenderGraphBuilder;
 
 namespace VertexInputDefines
 {
@@ -44,6 +47,15 @@ public:
                                      u32 thisFrameNum) = 0;
 
     virtual void Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer) = 0;
+
+    virtual void Setup(::RenderGraphBuilder& builder, const MainPassData& data)
+    {
+    }
+
+    virtual void RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const struct RGExecutionContext& execCtx)
+    {
+        Render(data, const_cast<FrameRendererContext&>(ctx), execCtx.pCmdBuffer);
+    }
 
     virtual void CreateSharedDescriptorLayout() = 0;
 

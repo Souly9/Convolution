@@ -9,6 +9,7 @@
 #include "Core/Rendering/Vulkan/VkTexture.h"
 #include "Core/Rendering/Vulkan/VkTextureManager.h"
 #include "Core/Rendering/Vulkan/Utils/VkEnumHelpers.h"
+#include "Core/Rendering/Core/RenderGraph/RenderGraphBuilder.h"
 #include "sl.h"
 #include "sl_dlss.h"
 #include "sl_dlss_d.h"
@@ -112,7 +113,7 @@ bool DLSSRRPass::WantsToRender() const
     return wantsToRender;
 }
 
-void DLSSRRPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
+void DLSSRRPass::RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const RGExecutionContext& execCtx)
 {
     ScopedZone("DLSSRRPass::Render");
     u32 frameIdx = ctx.currentFrame;
@@ -121,11 +122,11 @@ void DLSSRRPass::Render(const MainPassData& data, FrameRendererContext& ctx, Com
     if (!Nvidia::StreamlineManager::GetFrameToken(frameIdx, pFrameToken))
         return;
     
-    Texture* pColorIn = data.temporalResources.pCurrentColorTexture;
-    Texture* pColorOut = data.temporalResources.pResolveTexture;
-    Texture* pDepth = data.temporalResources.pCurrentDepthTexture;
-    Texture* pMotion = data.pGbuffer->Get(GBufferTextureType::GBufferVelocity);
-    Texture* pExposure = ctx.pDLSSExposureTexture;
+    Texture* pColorIn = execCtx.GetTexture(RGResourceID::GBufferThisFrameColor);
+    Texture* pColorOut = execCtx.GetTexture(RGResourceID::TemporalResolve);
+    Texture* pDepth = execCtx.GetTexture(RGResourceID::MainDepth);
+    Texture* pMotion = execCtx.GetTexture(RGResourceID::GBufferVelocity);
+    Texture* pExposure = execCtx.GetTexture(RGResourceID::DLSSExposure);
 
     if (!pColorIn || !pColorOut || !pDepth || !pMotion || !pExposure)
         return;
@@ -151,14 +152,14 @@ void DLSSRRPass::Render(const MainPassData& data, FrameRendererContext& ctx, Com
         colorOutGen.oldLayout = oldColorOutLayout;
         colorOutGen.newLayout = ImageLayout::GENERAL;
         VkTextureManager::SetLayoutBarrierMasks(colorOutGen, oldColorOutLayout, ImageLayout::GENERAL);
-        pCmdBuffer->RecordCommand(colorOutGen);
+        execCtx.pCmdBuffer->RecordCommand(colorOutGen);
     }
     const auto restoreColorOutReadLayout = [&]() {
         ImageLayoutTransitionCmd colorOutRead(pColorOut);
         colorOutRead.oldLayout = ImageLayout::GENERAL;
         colorOutRead.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
         VkTextureManager::SetLayoutBarrierMasks(colorOutRead, ImageLayout::GENERAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-        pCmdBuffer->RecordCommand(colorOutRead);
+        execCtx.pCmdBuffer->RecordCommand(colorOutRead);
     };
 
     sl::ViewportHandle viewport(0);
@@ -194,10 +195,10 @@ void DLSSRRPass::Render(const MainPassData& data, FrameRendererContext& ctx, Com
 
     if (tagsOk)
     {
-        Texture* pAlbedo = data.pGbuffer->Get(GBufferTextureType::GBufferAlbedo);
-        Texture* pNormal = data.pGbuffer->Get(GBufferTextureType::GBufferNormal);
-        Texture* pRoughness = data.pGbuffer->Get(GBufferTextureType::GBufferRoughness);
-        Texture* pNoisyReflections = data.pRTReflectionsTexture;
+        Texture* pAlbedo = execCtx.GetTexture(RGResourceID::GBufferAlbedo);
+        Texture* pNormal = execCtx.GetTexture(RGResourceID::GBufferNormal);
+        Texture* pRoughness = execCtx.GetTexture(RGResourceID::GBufferRoughness);
+        Texture* pNoisyReflections = execCtx.GetTexture(RGResourceID::RTReflections);
 
         tagsOk &= pushTagDesc(pAlbedo, sl::kBufferTypeAlbedo);
         tagsOk &= pushTagDesc(pAlbedo, sl::kBufferTypeSpecularAlbedo);
@@ -350,7 +351,7 @@ void DLSSRRPass::Render(const MainPassData& data, FrameRendererContext& ctx, Com
         Nvidia::StreamlineManager::EvaluateDLSSD(cmd, *pFrameToken);
     };
 
-    StartRenderPassProfilingScope(pCmdBuffer);
+    StartRenderPassProfilingScope(execCtx.pCmdBuffer);
     const sl::Result constRes = Nvidia::StreamlineManager::SetConstants(slConst, *pFrameToken, viewport);
     debugState = Nvidia::StreamlineManager::GetDLSSDebugState();
     debugState.lastSetConstantsResult = constRes;
@@ -358,13 +359,26 @@ void DLSSRRPass::Render(const MainPassData& data, FrameRendererContext& ctx, Com
     if (constRes != sl::Result::eOk)
     {
         DEBUG_LOG_WARNF("[DLSSRRPass] slSetConstants failed with result: 0x{:X}", static_cast<u32>(constRes));
-        EndRenderPassProfilingScope(pCmdBuffer);
+        EndRenderPassProfilingScope(execCtx.pCmdBuffer);
         restoreColorOutReadLayout();
         return;
     }
     m_wasActive = true;
-    pCmdBuffer->RecordCommand(streamlineCmd);
-    EndRenderPassProfilingScope(pCmdBuffer);
+    execCtx.pCmdBuffer->RecordCommand(streamlineCmd);
+    EndRenderPassProfilingScope(execCtx.pCmdBuffer);
 
     restoreColorOutReadLayout();
+}
+
+void DLSSRRPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
+{
+    builder.ReadTexture(RGResourceID::GBufferThisFrameColor, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    builder.ReadTexture(RGResourceID::MainDepth, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+    builder.ReadTexture(RGResourceID::GBufferVelocity, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    builder.ReadTexture(RGResourceID::GBufferNormal, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    builder.ReadTexture(RGResourceID::GBufferRoughness, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+
+    auto resolve = builder.DeclareStorageTexture(RGResourceID::TemporalResolve, TexFormat::R16G16B16A16_FLOAT, RGSizeClass::RenderResolution);
+    builder.WriteStorageImage(resolve, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_WRITE);
+    builder.SetHasSideEffects();
 }

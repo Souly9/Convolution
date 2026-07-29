@@ -31,6 +31,14 @@ void ReleaseImGuiIds(stltype::vector<u64>& ids)
 
 void RenderTextureImGuiRegistry::ReleaseGBufferIdsForNextFrame()
 {
+    if (m_velocityIdB != 0 && m_velocityIdB != m_velocityIdA)
+    {
+        m_gbufferImGuiIDs.push_back(m_velocityIdB);
+    }
+    if (m_historyColorIdB != 0 && m_historyColorIdB != m_historyColorIdA)
+    {
+        m_gbufferImGuiIDs.push_back(m_historyColorIdB);
+    }
     ReleaseImGuiIds(m_gbufferImGuiIDs);
     ReleaseImGuiIds(m_rtImGuiIDs);
     m_pVelocityA = nullptr;
@@ -78,9 +86,9 @@ void RenderTextureImGuiRegistry::RegisterGBufferTextures(GBuffer& gbuffer, Textu
             ImGui_ImplVulkan_AddTexture(t->GetSampler(), t->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL));
     };
 
-    m_gbufferImGuiIDs.push_back(addTex(GBufferTextureType::GBufferNormal));
-    m_gbufferImGuiIDs.push_back(addTex(GBufferTextureType::GBufferAlbedo));
-    m_gbufferImGuiIDs.push_back(
+    m_gbufferImGuiIDs.push_back(addTex(GBufferTextureType::GBufferNormal));              // [0] Normals
+    m_gbufferImGuiIDs.push_back(addTex(GBufferTextureType::GBufferAlbedo));              // [1] Albedo
+    m_gbufferImGuiIDs.push_back(                                                         // [2] SSS
         reinterpret_cast<u64>(ImGui_ImplVulkan_AddTexture(pScreenSpaceShadowTexture->GetSampler(),
                                                           pScreenSpaceShadowTexture->GetImageView(),
                                                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)));
@@ -88,17 +96,23 @@ void RenderTextureImGuiRegistry::RegisterGBufferTextures(GBuffer& gbuffer, Textu
     m_pVelocityA = gbuffer.Get(GBufferTextureType::GBufferVelocity);
     m_velocityIdA = addTex(GBufferTextureType::GBufferVelocity);
     m_velocityIdB = addTex(GBufferTextureType::GBufferLastFrameVelocity);
-    m_gbufferImGuiIDs.push_back(m_velocityIdA);
-    m_gbufferImGuiIDs.push_back(m_velocityIdB);
+    m_gbufferImGuiIDs.push_back(m_velocityIdA);                                           // [3] Velocity
 
-    m_gbufferImGuiIDs.push_back(addTex(GBufferTextureType::GBufferThisFrameColor));
+    m_gbufferImGuiIDs.push_back(addTex(GBufferTextureType::GBufferThisFrameColor));      // [4] Color
 
     m_pHistoryColorA = gbuffer.Get(GBufferTextureType::GBufferLastFrameColor);
     m_historyColorIdA = addTex(GBufferTextureType::GBufferLastFrameColor);
     m_historyColorIdB = addTex(GBufferTextureType::GBufferResolve);
-    m_gbufferImGuiIDs.push_back(m_historyColorIdA);
-    m_gbufferImGuiIDs.push_back(m_historyColorIdB);
-    m_gbufferImGuiIDs.push_back(addTex(GBufferTextureType::GBufferPostAAColor));
+    m_gbufferImGuiIDs.push_back(m_historyColorIdA);                                       // [5] History
+    m_gbufferImGuiIDs.push_back(addTex(GBufferTextureType::GBufferPostAAColor));          // [6] Post AA
+
+    static bool loggedImGuiOnce = false;
+    if (!loggedImGuiOnce)
+    {
+        DEBUG_LOGF("[RenderTextureImGuiRegistry] Registered GBuffer ImGui IDs: Normals=%llu, Albedo=%llu, SSS=%llu, Velocity=%llu, Color=%llu, History=%llu, PostAA=%llu",
+                   m_gbufferImGuiIDs[0], m_gbufferImGuiIDs[1], m_gbufferImGuiIDs[2], m_gbufferImGuiIDs[3], m_gbufferImGuiIDs[4], m_gbufferImGuiIDs[5], m_gbufferImGuiIDs[6]);
+        loggedImGuiOnce = true;
+    }
 
     PublishGBufferTextureState(gbuffer);
 }
@@ -112,7 +126,7 @@ void RenderTextureImGuiRegistry::PublishGBufferTextureState(GBuffer& gbuffer)
             state.renderState.csmCascadeImGuiIDs = m_csmCascadeImGuiIDs;
             state.renderState.gbufferImGuiIDs = m_gbufferImGuiIDs;
 
-            if (state.renderState.gbufferImGuiIDs.size() < 8)
+            if (state.renderState.gbufferImGuiIDs.size() < 7)
                 return;
 
             const bool velocitySwapped = pGbuffer->Get(GBufferTextureType::GBufferVelocity) != m_pVelocityA;
@@ -120,7 +134,6 @@ void RenderTextureImGuiRegistry::PublishGBufferTextureState(GBuffer& gbuffer)
 
             const bool colorSwapped = pGbuffer->Get(GBufferTextureType::GBufferLastFrameColor) != m_pHistoryColorA;
             state.renderState.gbufferImGuiIDs[5] = colorSwapped ? m_historyColorIdB : m_historyColorIdA;
-            state.renderState.gbufferImGuiIDs[6] = colorSwapped ? m_historyColorIdA : m_historyColorIdB;
         });
 }
 

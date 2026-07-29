@@ -81,7 +81,7 @@ void TAAPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comman
     const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
     const auto& currentAA = renderState.aaType;
     const u32 currentDebugMode = renderState.taaDebugMode;
-    if (m_lastAAType != currentAA || m_lastDebugMode != currentDebugMode || data.renderState.recreatedThisFrame)
+    if (m_lastAAType != currentAA || m_lastDebugMode != currentDebugMode || data.renderState.recreatedThisFrame || renderState.taaSeedHistoryFromCurrentColor)
     {
         m_resetFramesRemaining = SWAPCHAIN_IMAGES;
         m_lastAAType = currentAA;
@@ -132,4 +132,17 @@ void TAAPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comman
     }
 
     EndRenderPassProfilingScope(pCmdBuffer);
+}
+
+#include "Core/Rendering/Core/RenderGraph/RenderGraphBuilder.h"
+
+void TAAPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
+{
+    builder.ReadTexture(RGResourceID::GBufferThisFrameColor, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    builder.ReadTexture(RGResourceID::MainDepth, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+    builder.ReadTexture(RGResourceID::GBufferVelocity, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+
+    auto resolve = builder.DeclareStorageTexture(RGResourceID::TemporalResolve, TexFormat::R16G16B16A16_FLOAT, RGSizeClass::RenderResolution);
+    builder.WriteStorageImage(resolve, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_WRITE);
+    builder.SetHasSideEffects();
 }

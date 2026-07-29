@@ -4,6 +4,11 @@
 #include "Core/SceneGraph/Scene.h"
 #include "States.h"
 
+namespace RenderPasses
+{
+class PassManager;
+}
+
 struct ApplicationState;
 
 // Classes can register functions that recieve writeable application state and
@@ -22,6 +27,11 @@ public:
         return m_appStates[m_currentState.load(stltype::memory_order_acquire)];
     }
 
+    void SetPassManager(RenderPasses::PassManager* pPassManager)
+    {
+        m_pPassManager = pPassManager;
+    }
+
     void RegisterUpdateFunction(ApplicationStateUpdateFunction&& updateFunction);
 
     void SetCurrentScene(stltype::unique_ptr<Scene>&& scene);
@@ -31,6 +41,19 @@ public:
     }
     void ReloadCurrentScene();
     void UnloadCurrentScene();
+    
+    bool HasPendingSceneSwitch() const
+    {
+        return m_sceneSwitchPending.load(stltype::memory_order_acquire);
+    }
+
+    void SetRenderThreadRunning(bool running)
+    {
+        m_isRenderThreadRunning.store(running, stltype::memory_order_release);
+    }
+
+    void ExecuteSceneSwitchOnRenderThread();
+
     // Can't be called from multiple threads! Updates all states with the
     // registered functions
     void ProcessStateUpdates();
@@ -44,8 +67,12 @@ private:
     stltype::fixed_vector<ApplicationState, MAX_STATES, false> m_appStates{MAX_STATES};
     stltype::fixed_vector<ApplicationStateUpdateFunction, 32> m_updateFunctions;
     stltype::atomic<u8> m_currentState = 0;
+    stltype::atomic<bool> m_sceneSwitchPending{false};
+    stltype::atomic<bool> m_reloadRequested{false};
+    stltype::atomic<bool> m_isRenderThreadRunning{false};
     stltype::unique_ptr<Scene> m_pCurrentScene{nullptr};
     // Scene switching has to be synchronized a bit differently as my design is
     // just too wonky
     stltype::unique_ptr<Scene> m_pNextScene{nullptr};
+    RenderPasses::PassManager* m_pPassManager{nullptr};
 };

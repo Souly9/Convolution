@@ -126,10 +126,10 @@ void FrameTransitionRecorder::RecordGBufferToShaderRead(
     if (const auto* pShadowMap = attachments.directionalLightShadowMap.pTexture)
     {
         ImageLayoutTransitionCmd shadowCmd(pShadowMap);
-        shadowCmd.oldLayout = ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        shadowCmd.oldLayout = ImageLayout::UNDEFINED;
         shadowCmd.newLayout = ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL;
         VkTextureManager::SetLayoutBarrierMasks(
-            shadowCmd, ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+            shadowCmd, ImageLayout::UNDEFINED, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
         pCmdBuffer->RecordCommand(shadowCmd);
     }
 }
@@ -222,9 +222,9 @@ void FrameTransitionRecorder::RecordCopyTextureToResolve(CommandBuffer* pCmdBuff
     pCmdBuffer->RecordCommand(sourceToCopy);
 
     ImageLayoutTransitionCmd resolveToCopy(pResolve);
-    resolveToCopy.oldLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
+    resolveToCopy.oldLayout = ImageLayout::UNDEFINED;
     resolveToCopy.newLayout = ImageLayout::TRANSFER_DST_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(resolveToCopy, ImageLayout::SHADER_READ_ONLY_OPTIMAL, ImageLayout::TRANSFER_DST_OPTIMAL);
+    VkTextureManager::SetLayoutBarrierMasks(resolveToCopy, ImageLayout::UNDEFINED, ImageLayout::TRANSFER_DST_OPTIMAL);
     pCmdBuffer->RecordCommand(resolveToCopy);
 
     const auto sourceExtents = pSourceTexture->GetInfo().extents;

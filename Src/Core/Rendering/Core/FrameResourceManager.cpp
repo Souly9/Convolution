@@ -784,6 +784,16 @@ void FrameResourceManager::ClearGeometryCaches()
     SimpleScopedGuard lock(m_passDataMutex);
     m_currentPassGeometryState = PassGeometryData{};
     m_dataToBePreProcessed.Clear();
+    m_entityToTransformUBOIdx.clear();
+    m_entityToObjectDataIdx.clear();
+    m_cachedTransformSSBO.clear();
+    m_cachedPrevTransformSSBO.clear();
+    m_cachedSceneAABBs.clear();
+    m_transformsToPropagateToPrev.clear();
+    m_transformsPendingPrevCatchup.clear();
+    m_cachedDirLights.clear();
+    m_needsToPropagateMainDataUpdate = false;
+    m_frameIdxToPropagate = 0;
 }
 
 } // namespace RenderPasses

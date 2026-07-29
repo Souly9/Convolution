@@ -18,6 +18,7 @@ public:
 
     void RenderLoop();
     bool HandleResizeAtFrameStart();
+    bool HandleSceneSwitchAtFrameStart();
 
     RenderPasses::PassManager* Start();
     void CleanUp();

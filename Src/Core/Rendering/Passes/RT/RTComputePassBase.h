@@ -15,6 +15,8 @@ public:
     {
     }
 
+    QueueType GetQueueType() const override { return QueueType::Compute; }
+
 protected:
     // Call from Init(). includeGeometry=false for debug-only passes (AS only, no hit/vertex/index).
     void CreateTLASDescriptorResources(bool includeGeometry);

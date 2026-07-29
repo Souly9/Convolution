@@ -66,7 +66,7 @@ struct GBuffer : public GBufferInfo
             m_velocityFrameTargets[m_currentHistoryFrameSlot].pTexture};
     }
 
-    Texture* Get(GBufferTextureType type)
+    Texture* Get(GBufferTextureType type) const
     {
         switch (type)
         {

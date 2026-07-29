@@ -55,6 +55,7 @@ public:
         bool isLastInBatch{false};
         const char* name{"Unnamed CommandBuffer Batch"};
         stltype::vector<u32> requiredStagingBuffers;
+        u32 contextIdx{~0u};
     };
 
     struct InFlightBatch
@@ -85,6 +86,7 @@ public:
     u64 GetCompletedValue(QueueType queue) const;
     
     void DispatchAllRequests();
+    void FlushAllTransferCommands();
     void FlushGraphicsComputeBuffers();
 
     TimelineSemaphore* GetTimelineSemaphore(QueueType type) { return &m_queueTimelines[type].timeline; }

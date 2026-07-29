@@ -137,7 +137,69 @@ void DepthPrePass::CreateSharedDescriptorLayout()
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::PerPassObjectSSBO, 3));
 }
 
+#include "Core/Rendering/Core/RenderGraph/PassContext.h"
+#include "Core/Rendering/Core/RenderGraph/RenderGraphBuilder.h"
+
+void DepthPrePass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
+{
+    builder.DeclareContexts<
+        PassCtx::BindlessWithImages,
+        PassCtx::View,
+        PassCtx::GlobalInstance>();
+
+    auto mainDepth = builder.WriteDepthAttachment(RGResourceID::MainDepth, LoadOp::CLEAR, StoreOp::STORE);
+    builder.AssumeOutputLayout(mainDepth, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+    builder.SetHasSideEffects();
+}
+
+void DepthPrePass::RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const RGExecutionContext& execCtx)
+{
+    ScopedZone("DepthPrePass::RenderWithGraph");
+
+    const auto currentFrame = ctx.currentFrame;
+    UpdateContextForFrame(currentFrame);
+    const auto& passCtx = m_perObjectFrameContexts[currentFrame];
+
+    m_mainRenderingData.depthAttachment.SetTexture(execCtx.GetTexture(RGResourceID::MainDepth));
+    const DirectX::XMINT2 extents(data.renderState.renderResolution.x, data.renderState.renderResolution.y);
+    stltype::vector<ColorAttachment> colorAttachments;
+    BeginRenderingCmd cmdBegin{&m_mainPSO,
+                               ToRenderAttachmentInfos(colorAttachments),
+                               ToRenderAttachmentInfo(m_mainRenderingData.depthAttachment)};
+    cmdBegin.extents = extents;
+    cmdBegin.viewport = data.mainView.viewport;
+
+    auto& cmdBuf = m_indirectCmdBuffers[currentFrame];
+    GenericIndirectDrawCmd cmd{&m_mainPSO, cmdBuf};
+    cmd.drawCount = cmdBuf.GetDrawCmdNum();
+
+    auto& sceneGeometryBuffers = data.pResourceManager->GetSceneGeometryBuffers();
+    if (!sceneGeometryBuffers.GetVertexBuffer().IsCreated() ||
+        !sceneGeometryBuffers.GetIndexBuffer().IsCreated())
+    {
+        return;
+    }
+
+    const auto transformSSBOSet = data.bufferDescriptors.at(UBO::DescriptorContentsType::GlobalInstanceData);
+    const auto texArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessTextureArray);
+    cmd.descriptorSets = {texArraySet, ctx.sharedDataUBODescriptor, transformSSBOSet, passCtx.m_perObjectDescriptor};
+
+    cmdBegin.drawCmdBuffer = &cmdBuf;
+
+    execCtx.pCmdBuffer->RecordCommand(cmdBegin);
+    BinRenderDataCmd geomBufferCmd(sceneGeometryBuffers.GetVertexBuffer(), sceneGeometryBuffers.GetIndexBuffer());
+    execCtx.pCmdBuffer->RecordCommand(geomBufferCmd);
+    execCtx.pCmdBuffer->RecordCommand(cmd);
+    execCtx.pCmdBuffer->RecordCommand(EndRenderingCmd{});
+}
+
 bool DepthPrePass::WantsToRender() const
 {
-    return NeedToRender(m_indirectCmdBuffers[m_currentFrameIdx]);
+    for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
+    {
+        if (NeedToRender(m_indirectCmdBuffers[i]))
+            return true;
+    }
+    return false;
 }
+

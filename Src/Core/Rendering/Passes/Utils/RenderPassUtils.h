@@ -8,20 +8,57 @@ struct WriteableRTAttachments
     ColorAttachment color;
     DepthAttachment depth;
 };
-// Helper to create a default ColorAttachment
-static inline ColorAttachment CreateDefaultColorAttachment(TexFormat format, LoadOp loadOp, Texture* pTex)
+
+static inline RenderAttachmentInfo ToRenderAttachmentInfo(const ColorAttachment& colorAttachment)
+{
+    RenderAttachmentInfo info{};
+    info.pTexture = const_cast<Texture*>(colorAttachment.GetTexture());
+    info.renderingLayout = colorAttachment.GetRenderingLayout();
+    info.loadOp = colorAttachment.GetLoadOp();
+    info.storeOp = colorAttachment.GetStoreOp();
+    return info;
+}
+
+static inline RenderAttachmentInfo ToRenderAttachmentInfo(const DepthAttachment& depthAttachment)
+{
+    RenderAttachmentInfo info{};
+    info.pTexture = const_cast<Texture*>(depthAttachment.GetTexture());
+    info.renderingLayout = depthAttachment.GetRenderingLayout();
+    info.loadOp = depthAttachment.GetLoadOp();
+    info.storeOp = depthAttachment.GetStoreOp();
+    return info;
+}
+
+static inline stltype::vector<RenderAttachmentInfo> ToRenderAttachmentInfos(const stltype::vector<ColorAttachment>& colorAttachments)
+{
+    stltype::vector<RenderAttachmentInfo> result;
+    result.reserve(colorAttachments.size());
+    for (const auto& colorAttachment : colorAttachments)
+    {
+        result.push_back(ToRenderAttachmentInfo(colorAttachment));
+    }
+    return result;
+}
+
+// Helper to create a default ColorAttachment with optional finalLayout
+static inline ColorAttachment CreateDefaultColorAttachment(TexFormat format, LoadOp loadOp, ImageLayout finalLayout, Texture* pTex)
 {
     ColorAttachmentInfo info{};
     info.format = format;
     info.loadOp = loadOp;
     info.storeOp = StoreOp::STORE;
     info.initialLayout = ImageLayout::UNDEFINED;
-    info.finalLayout = ImageLayout::PRESENT_SRC_KHR;
+    info.finalLayout = finalLayout;
     info.renderingLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
     
     auto att = ColorAttachment::Create(info, pTex);
     att.SetClearValue(mathstl::Vector4(0.0f, 0.0f, 0.0f, 1.0f));
     return att;
+}
+
+static inline ColorAttachment CreateDefaultColorAttachment(TexFormat format, LoadOp loadOp, Texture* pTex)
+{
+    return CreateDefaultColorAttachment(format, loadOp, ImageLayout::PRESENT_SRC_KHR, pTex);
 }
 
 static inline DepthAttachment CreateDefaultDepthAttachment(LoadOp loadOp, StoreOp storeOp, Texture* pTex)
@@ -66,51 +103,4 @@ static inline bool NeedToRender(const IndirectDrawCmdBuf& buffer)
     if (buffer.GetDrawCmdNum() == 0)
         return false;
     return true;
-}
-
-static inline RenderAttachmentInfo ToRenderAttachmentInfo(const ColorAttachment& attachment)
-{
-    RenderAttachmentInfo info{};
-    info.pTexture = const_cast<Texture*>(attachment.GetTexture());
-    if (info.pTexture)
-    {
-        info.renderingLayout = attachment.GetRenderingLayout();
-    }
-    else
-    {
-        info.renderingLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
-    }
-    
-    info.loadOp = attachment.GetLoadOp();
-    info.storeOp = attachment.GetStoreOp();
-    
-    auto clear = attachment.GetClearValue();
-    memcpy(&info.clearValue, &clear, sizeof(clear));
-    
-    return info;
-}
-
-static inline RenderAttachmentInfo ToRenderAttachmentInfo(const DepthAttachment& attachment)
-{
-    RenderAttachmentInfo info{};
-    info.pTexture = const_cast<Texture*>(attachment.GetTexture());
-    info.renderingLayout = attachment.GetRenderingLayout();
-    info.loadOp = attachment.GetLoadOp();
-    info.storeOp = attachment.GetStoreOp();
-    
-    auto clear = attachment.GetClearValue();
-    memcpy(&info.clearValue, &clear, sizeof(clear));
-    
-    return info;
-}
-
-static inline stltype::vector<RenderAttachmentInfo> ToRenderAttachmentInfos(const stltype::vector<ColorAttachment>& attachments)
-{
-    stltype::vector<RenderAttachmentInfo> infos;
-    infos.reserve(attachments.size());
-    for (const auto& att : attachments)
-    {
-        infos.push_back(ToRenderAttachmentInfo(att));
-    }
-    return infos;
 }

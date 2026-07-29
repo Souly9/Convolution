@@ -125,22 +125,40 @@ void DebugShapePass::RebuildInternalData(const stltype::vector<PassMeshData>& me
     m_indirectCmdBuffersWireframe[m_currentFrameIdx].FillCmds();
 }
 
-void DebugShapePass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
+void DebugShapePass::CreateSharedDescriptorLayout()
 {
-    ScopedZone("DebugShapePass::Render");
+    m_sharedDescriptors.clear();
+    AppendLayoutPreset(DescriptorPresets::Bindless());
+    AppendLayoutPreset(DescriptorPresets::View());
+    AppendLayoutPreset(DescriptorPresets::GlobalInstanceData());
+    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::PerPassObjectSSBO, 3));
+}
+
+#include "Core/Rendering/Core/RenderGraph/RenderGraphBuilder.h"
+
+void DebugShapePass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
+{
+    builder.WriteGBuffer(RGResourceID::GBufferDebug, LoadOp::LOAD);
+    builder.ReadDepth(RGResourceID::MainDepth);
+    builder.SetHasSideEffects();
+}
+
+void DebugShapePass::RenderWithGraph(const MainPassData& data,
+                                     const FrameRendererContext& ctx,
+                                     const RGExecutionContext& execCtx)
+{
     const auto currentFrame = ctx.currentFrame;
     UpdateContextForFrame(currentFrame);
     const auto& passCtx = m_perObjectFrameContexts[currentFrame];
 
     ColorAttachment debugAttachment = m_mainRenderingData.colorAttachments[0];
-    debugAttachment.SetTexture(data.pGbuffer->Get(GBufferTextureType::GBufferDebug));
+    debugAttachment.SetTexture(execCtx.GetTexture(RGResourceID::GBufferDebug));
 
     stltype::vector<ColorAttachment> colorAttachments = {debugAttachment};
     const DirectX::XMINT2 extents(data.renderState.renderResolution.x, data.renderState.renderResolution.y);
 
     auto& sceneGeometryBuffers = data.pResourceManager->GetDebugGeometryBuffers();
-    if (!sceneGeometryBuffers.GetVertexBuffer().IsCreated() ||
-        !sceneGeometryBuffers.GetIndexBuffer().IsCreated())
+    if (!sceneGeometryBuffers.GetVertexBuffer().IsCreated() || !sceneGeometryBuffers.GetIndexBuffer().IsCreated())
     {
         return;
     }
@@ -148,7 +166,7 @@ void DebugShapePass::Render(const MainPassData& data, FrameRendererContext& ctx,
 
     if (data.bufferDescriptors.empty() == false)
     {
-        StartRenderPassProfilingScope(pCmdBuffer);
+        StartRenderPassProfilingScope(execCtx.pCmdBuffer);
 
         const auto transformSSBOSet = data.bufferDescriptors.at(UBO::DescriptorContentsType::GlobalInstanceData);
         const auto texArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessTextureArray);
@@ -163,16 +181,16 @@ void DebugShapePass::Render(const MainPassData& data, FrameRendererContext& ctx,
                 texArraySet, data.mainView.descriptorSet, transformSSBOSet, passCtx.m_perObjectDescriptor};
             cmd.drawCount = opaqueBuffer.GetDrawCmdNum();
 
-            m_mainRenderingData.depthAttachment.SetTexture(data.pMainDepthTexture);
+            m_mainRenderingData.depthAttachment.SetTexture(execCtx.GetTexture(RGResourceID::MainDepth));
             BeginRenderingCmd cmdBegin{&m_solidDebugObjectsPSO,
                                        ToRenderAttachmentInfos(colorAttachments),
                                        ToRenderAttachmentInfo(m_mainRenderingData.depthAttachment)};
             cmdBegin.extents = extents;
             cmdBegin.viewport = data.mainView.viewport;
-            pCmdBuffer->RecordCommand(cmdBegin);
-            pCmdBuffer->RecordCommand(geomBufferCmd);
-            pCmdBuffer->RecordCommand(cmd);
-            pCmdBuffer->RecordCommand(EndRenderingCmd{});
+            execCtx.pCmdBuffer->RecordCommand(cmdBegin);
+            execCtx.pCmdBuffer->RecordCommand(geomBufferCmd);
+            execCtx.pCmdBuffer->RecordCommand(cmd);
+            execCtx.pCmdBuffer->RecordCommand(EndRenderingCmd{});
         }
         if (wireframeBuffer.GetDrawCmdNum() > 0)
         {
@@ -181,29 +199,20 @@ void DebugShapePass::Render(const MainPassData& data, FrameRendererContext& ctx,
                 texArraySet, data.mainView.descriptorSet, transformSSBOSet, passCtx.m_perObjectDescriptor};
             cmd.drawCount = wireframeBuffer.GetDrawCmdNum();
 
-            m_mainRenderingData.depthAttachment.SetTexture(data.pMainDepthTexture);
+            m_mainRenderingData.depthAttachment.SetTexture(execCtx.GetTexture(RGResourceID::MainDepth));
             BeginRenderingCmd cmdBegin{&m_wireframeDebugObjectsPSO,
                                        ToRenderAttachmentInfos(colorAttachments),
                                        ToRenderAttachmentInfo(m_mainRenderingData.depthAttachment)};
             cmdBegin.extents = extents;
             cmdBegin.viewport = data.mainView.viewport;
 
-            pCmdBuffer->RecordCommand(cmdBegin);
-            pCmdBuffer->RecordCommand(geomBufferCmd);
-            pCmdBuffer->RecordCommand(cmd);
-            pCmdBuffer->RecordCommand(EndRenderingCmd{});
+            execCtx.pCmdBuffer->RecordCommand(cmdBegin);
+            execCtx.pCmdBuffer->RecordCommand(geomBufferCmd);
+            execCtx.pCmdBuffer->RecordCommand(cmd);
+            execCtx.pCmdBuffer->RecordCommand(EndRenderingCmd{});
         }
-        EndRenderPassProfilingScope(pCmdBuffer);
+        EndRenderPassProfilingScope(execCtx.pCmdBuffer);
     }
-}
-
-void DebugShapePass::CreateSharedDescriptorLayout()
-{
-    m_sharedDescriptors.clear();
-    AppendLayoutPreset(DescriptorPresets::Bindless());
-    AppendLayoutPreset(DescriptorPresets::View());
-    AppendLayoutPreset(DescriptorPresets::GlobalInstanceData());
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::PerPassObjectSSBO, 3));
 }
 
 bool DebugShapePass::WantsToRender() const

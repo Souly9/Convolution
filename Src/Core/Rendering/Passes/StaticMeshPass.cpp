@@ -62,6 +62,7 @@ void StaticMainMeshPass::BuildPipelines()
     PipelineInfo info{};
     info.descriptorSetLayout.sharedDescriptors = m_sharedDescriptors;
     info.depthWriteEnable = false;
+    info.depthCompareOp = DepthCompareOp::GREATER_OR_EQUAL;
     info.attachmentInfos =
         CreateAttachmentInfo({m_mainRenderingData.colorAttachments}, m_mainRenderingData.depthAttachment);
     m_mainPSO = PSO(
@@ -98,7 +99,18 @@ void StaticMainMeshPass::RebuildInternalData(const stltype::vector<PassMeshData>
     cmdBuf.FillCmds();
 }
 
-void StaticMainMeshPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
+void StaticMainMeshPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
+{
+    builder.WriteGBuffer(RGResourceID::GBufferAlbedo);
+    builder.WriteGBuffer(RGResourceID::GBufferNormal);
+    builder.WriteGBuffer(RGResourceID::GBufferUVMat);
+    builder.WriteGBuffer(RGResourceID::GBufferVelocity);
+    builder.WriteGBuffer(RGResourceID::GBufferRoughness);
+    builder.ReadDepth(RGResourceID::MainDepth);
+    builder.SetHasSideEffects();
+}
+
+void StaticMainMeshPass::RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const RGExecutionContext& execCtx)
 {
     ScopedZone("StaticMeshPass::Render");
 
@@ -111,18 +123,18 @@ void StaticMainMeshPass::Render(const MainPassData& data, FrameRendererContext& 
     ColorAttachment gbuffer3 = m_mainRenderingData.colorAttachments[2];
     ColorAttachment gbufferVelocity = m_mainRenderingData.colorAttachments[3];
     ColorAttachment gbufferRoughness = m_mainRenderingData.colorAttachments[4];
-    gbufferPosition.SetTexture(data.pGbuffer->Get(GBufferTextureType::GBufferAlbedo));
-    gbufferNormal.SetTexture(data.pGbuffer->Get(GBufferTextureType::GBufferNormal));
-    gbuffer3.SetTexture(data.pGbuffer->Get(GBufferTextureType::TexCoordMatData));
-    gbufferVelocity.SetTexture(data.pGbuffer->Get(GBufferTextureType::GBufferVelocity));
-    gbufferRoughness.SetTexture(data.pGbuffer->Get(GBufferTextureType::GBufferRoughness));
+    gbufferPosition.SetTexture(execCtx.GetTexture(RGResourceID::GBufferAlbedo));
+    gbufferNormal.SetTexture(execCtx.GetTexture(RGResourceID::GBufferNormal));
+    gbuffer3.SetTexture(execCtx.GetTexture(RGResourceID::GBufferUVMat));
+    gbufferVelocity.SetTexture(execCtx.GetTexture(RGResourceID::GBufferVelocity));
+    gbufferRoughness.SetTexture(execCtx.GetTexture(RGResourceID::GBufferRoughness));
 
     stltype::vector<ColorAttachment> colorAttachments = {
         gbufferPosition, gbufferNormal, gbuffer3, gbufferVelocity, gbufferRoughness};
 
     const DirectX::XMINT2 extents(data.renderState.renderResolution.x, data.renderState.renderResolution.y);
 
-    m_mainRenderingData.depthAttachment.SetTexture(data.pMainDepthTexture);
+    m_mainRenderingData.depthAttachment.SetTexture(execCtx.GetTexture(RGResourceID::MainDepth));
     BeginRenderingCmd cmdBegin{&m_mainPSO,
                                ToRenderAttachmentInfos(colorAttachments),
                                ToRenderAttachmentInfo(m_mainRenderingData.depthAttachment)};
@@ -141,7 +153,9 @@ void StaticMainMeshPass::Render(const MainPassData& data, FrameRendererContext& 
     }
 
     if (data.bufferDescriptors.empty())
+    {
         cmd.descriptorSets = {DescriptorSet::Cast(g_pTexManager->GetBindlessDescriptorSet())};
+    }
     else
     {
         const auto transformSSBOSet = data.bufferDescriptors.at(UBO::DescriptorContentsType::GlobalInstanceData);
@@ -149,14 +163,15 @@ void StaticMainMeshPass::Render(const MainPassData& data, FrameRendererContext& 
         cmd.descriptorSets = {
             texArraySet, data.mainView.descriptorSet, transformSSBOSet, passCtx.m_perObjectDescriptor};
     }
+
     cmdBegin.drawCmdBuffer = &cmdBuf;
-    StartRenderPassProfilingScope(pCmdBuffer);
-    pCmdBuffer->RecordCommand(cmdBegin);
+    StartRenderPassProfilingScope(execCtx.pCmdBuffer);
+    execCtx.pCmdBuffer->RecordCommand(cmdBegin);
     BinRenderDataCmd geomBufferCmd(sceneGeometryBuffers.GetVertexBuffer(), sceneGeometryBuffers.GetIndexBuffer());
-    pCmdBuffer->RecordCommand(geomBufferCmd);
-    pCmdBuffer->RecordCommand(cmd);
-    pCmdBuffer->RecordCommand(EndRenderingCmd{});
-    EndRenderPassProfilingScope(pCmdBuffer);
+    execCtx.pCmdBuffer->RecordCommand(geomBufferCmd);
+    execCtx.pCmdBuffer->RecordCommand(cmd);
+    execCtx.pCmdBuffer->RecordCommand(EndRenderingCmd{});
+    EndRenderPassProfilingScope(execCtx.pCmdBuffer);
 }
 
 void StaticMainMeshPass::CreateSharedDescriptorLayout()
@@ -170,5 +185,10 @@ void StaticMainMeshPass::CreateSharedDescriptorLayout()
 
 bool StaticMainMeshPass::WantsToRender() const
 {
-    return NeedToRender(m_indirectCmdBuffers[m_currentFrameIdx]);
+    for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
+    {
+        if (NeedToRender(m_indirectCmdBuffers[i]))
+            return true;
+    }
+    return false;
 }

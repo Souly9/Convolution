@@ -19,6 +19,8 @@ protected:
                              FrameRendererContext& previousFrameCtx,
                              u32 thisFrameNum) override;
     void Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer) override;
+    void Setup(::RenderGraphBuilder& builder, const MainPassData& data) override;
+    void RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const RGExecutionContext& execCtx) override;
     void CreateSharedDescriptorLayout() override;
     void Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager) override;
     void RecreateResolutionDependentResources(RendererAttachmentInfo& attachmentInfo,

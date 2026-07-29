@@ -6,6 +6,7 @@
 #include "Core/Rendering/Core/ShaderManager.h"
 #include "Core/Rendering/Core/TextureManager.h"
 #include "Core/Global/Profiling.h"
+#include "Core/Rendering/Core/RenderGraph/RenderGraphBuilder.h"
 
 using namespace RenderPasses;
 
@@ -72,12 +73,22 @@ void CompositPass::Render(const MainPassData& data, FrameRendererContext& ctx, C
     const auto currentFrame = ctx.currentFrame;
     UpdateContextForFrame(currentFrame);
 
+    const auto& appRenderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+    const bool smaaActive = (appRenderState.aaType == AntialiasingType::SMAA || appRenderState.aaType == AntialiasingType::TAA_SMAA);
+
     ColorAttachment swapchainAttachment = m_mainRenderingData.colorAttachments[0];
-    swapchainAttachment.SetTexture(ctx.pCurrentSwapchainTexture);
+    if (smaaActive && data.pGbuffer && data.pGbuffer->Get(GBufferTextureType::GBufferPostAAColor))
+    {
+        swapchainAttachment.SetTexture(data.pGbuffer->Get(GBufferTextureType::GBufferPostAAColor));
+    }
+    else
+    {
+        swapchainAttachment.SetTexture(ctx.pCurrentSwapchainTexture);
+    }
 
     stltype::vector<ColorAttachment> colorAttachments = {swapchainAttachment};
 
-    const auto ex = ctx.pCurrentSwapchainTexture->GetInfo().extents;
+    const auto ex = swapchainAttachment.GetTexture() ? swapchainAttachment.GetTexture()->GetInfo().extents : ctx.pCurrentSwapchainTexture->GetInfo().extents;
     const DirectX::XMINT2 extents(ex.x, ex.y);
 
     BeginRenderingCmd cmdBegin{&m_mainPSO, ToRenderAttachmentInfos(colorAttachments)};
@@ -92,7 +103,7 @@ void CompositPass::Render(const MainPassData& data, FrameRendererContext& ctx, C
     }
     BinRenderDataCmd geomBufferCmd(sceneGeometryBuffers.GetVertexBuffer(), sceneGeometryBuffers.GetIndexBuffer());
     
-    auto& cmdBuf = m_indirectCmdBuffers[m_currentFrameIdx];
+    auto& cmdBuf = m_indirectCmdBuffers[ctx.currentFrame];
     GenericIndirectDrawCmd cmd{&m_mainPSO, cmdBuf};
     cmd.drawCount = cmdBuf.GetDrawCmdNum();
 
@@ -114,6 +125,24 @@ void CompositPass::Render(const MainPassData& data, FrameRendererContext& ctx, C
     pCmdBuffer->RecordCommand(cmd);
     pCmdBuffer->RecordCommand(EndRenderingCmd{});
     EndRenderPassProfilingScope(pCmdBuffer);
+}
+
+void CompositPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
+{
+    builder.ReadTexture(RGResourceID::TemporalResolve, SyncStages::FRAGMENT_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    builder.ReadTexture(RGResourceID::GBufferThisFrameColor, SyncStages::FRAGMENT_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+
+    const auto& appRenderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+    const bool smaaActive = (appRenderState.aaType == AntialiasingType::SMAA || appRenderState.aaType == AntialiasingType::TAA_SMAA);
+    if (smaaActive)
+    {
+        builder.WriteColorAttachment(RGResourceID::GBufferPostAAColor, LoadOp::CLEAR, StoreOp::STORE);
+    }
+    else
+    {
+        builder.WriteColorAttachment(RGResourceID::Swapchain, LoadOp::CLEAR, StoreOp::STORE);
+    }
+    builder.SetHasSideEffects();
 }
 
 void CompositPass::CreateSharedDescriptorLayout()

@@ -5,6 +5,7 @@
 #include "Core/Rendering/Core/Pipeline.h"
 #include "PassManager.h"
 #include "ScreenSpaceShadowsHelper.h"
+#include "Core/Rendering/Core/FrameTransitionRecorder.h"
 
 
 using namespace RenderPasses;
@@ -70,8 +71,16 @@ bool ScreenSpaceShadowPass::WantsToRender() const
 void ScreenSpaceShadowPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
 {
     ScopedZone("ScreenSpaceShadowPass::Render");
-    
-    if (data.csmViews.empty()) return;
+
+    if (data.csmViews.empty())
+    {
+        if (data.pScreenSpaceShadowTexture)
+        {
+            FrameTransitionRecorder::RecordClearColorTexture(
+                pCmdBuffer, data.pScreenSpaceShadowTexture, ImageLayout::UNDEFINED, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+        }
+        return;
+    }
     
     // Use the directional light from the csmViews
     const mathstl::Vector3& lightDir = -data.csmViews[0].dir;
@@ -110,4 +119,14 @@ void ScreenSpaceShadowPass::Render(const MainPassData& data, FrameRendererContex
     }
     
     EndRenderPassProfilingScope(pCmdBuffer);
+}
+
+#include "Core/Rendering/Core/RenderGraph/RenderGraphBuilder.h"
+
+void ScreenSpaceShadowPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
+{
+    builder.ReadTexture(RGResourceID::MainDepth, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+    auto sss = builder.DeclareStorageTexture(RGResourceID::ScreenSpaceShadows, TexFormat::R8_UNORM, RGSizeClass::RenderResolution);
+    builder.WriteStorageImage(sss, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_WRITE);
+    builder.SetHasSideEffects();
 }

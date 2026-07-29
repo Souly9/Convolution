@@ -6,7 +6,9 @@
 #include <eathread/eathread.h>
 
 #endif
+
 #include <cstdint>
+#include <EASTL/unique_ptr.h>
 
 namespace stltype = eastl;
 namespace threadstl = EA::Thread;

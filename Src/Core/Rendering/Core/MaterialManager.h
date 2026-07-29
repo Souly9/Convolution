@@ -17,6 +17,7 @@ public:
     stltype::string_view GetMaterialName(const Material* pMat) const;
 
     void RebuildBufferData();
+    void Flush();
 
     const UBO::MaterialBuffer& GetMaterialBuffer() const
     {

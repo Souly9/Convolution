@@ -136,3 +136,33 @@ void MaterialManager::RebuildBufferDataUnlocked()
         }
     }
 }
+
+void MaterialManager::Flush()
+{
+    SimpleScopedGuard<CustomMutex> lock(m_mutex);
+    m_materialNameToBufferPos.clear();
+    m_materialToBufferPosMap.clear();
+    m_matToNameMap.clear();
+    m_materials.clear();
+    m_numAllocatedMaterials = 0;
+
+    Material defaultMaterial{};
+    defaultMaterial.baseColor = mathstl::Vector4(1.0f, 0.0f, 1.0f, 1.0f);
+    defaultMaterial.emissive = mathstl::Vector4(0.0f, 0.0f, 0.0f, 1.0f);
+    defaultMaterial.pbr1 = mathstl::Vector4(0.0f, 1.0f, 0.0f, 0.5f);
+    defaultMaterial.pbr2 = mathstl::Vector4(0.0f, 0.0f, 0.0f, 1.0f);
+    defaultMaterial.pbr3 = mathstl::Vector4(0.0f, 0.5f, 0.0f, 1.5f);
+    defaultMaterial.diffuseTexture = 0;
+    defaultMaterial.specularTexture = 0;
+    defaultMaterial.flags = 0;
+
+    m_materials.push_back(defaultMaterial);
+    Material* pVecMaterial = &m_materials.back();
+    m_numAllocatedMaterials = 1;
+
+    m_materialToBufferPosMap[pVecMaterial] = 0;
+    m_materialNameToBufferPos.emplace("Default", 0);
+    m_matToNameMap[pVecMaterial] = "Default";
+
+    m_isBufferDirty.store(true, stltype::memory_order_relaxed);
+}

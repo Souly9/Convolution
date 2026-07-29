@@ -436,7 +436,17 @@ public:
                         if (selectedAA != currentAA)
                         {
                             g_pApplicationState->RegisterUpdateFunction([selectedAA](ApplicationState& state)
-                                                                        { state.renderState.aaType = selectedAA; });
+                            {
+                                state.renderState.aaType = selectedAA;
+                                if (selectedAA == AntialiasingType::None || selectedAA == AntialiasingType::SMAA || selectedAA == AntialiasingType::TAA_SMAA)
+                                {
+                                    state.renderState.upscalingPercentage = 100;
+                                }
+                                if (selectedAA == AntialiasingType::TAA_SMAA)
+                                {
+                                    state.renderState.taaSeedHistoryFromCurrentColor = true;
+                                }
+                            });
                             needsUpdate = true;
                         }
                     }
@@ -567,7 +577,7 @@ public:
                 auto& csmIDs = renderState.csmCascadeImGuiIDs;
                 auto& rtIDs = renderState.rtImGuiIDs;
 
-                if (gbufferIDs.size() < 8)
+                if (gbufferIDs.size() < 7)
                 {
                     ImGui::Text("GBuffer IDs not fully initialized yet.");
                 }
@@ -582,6 +592,10 @@ public:
                         buffers.push_back({"Velocity", gbufferIDs[3]});
                         buffers.push_back({"Color", gbufferIDs[4]});
                         buffers.push_back({"History", gbufferIDs[5]});
+                        if (gbufferIDs.size() > 6)
+                        {
+                            buffers.push_back({"Post AA", gbufferIDs[6]});
+                        }
 
                         for (u32 i = 0; i < csmIDs.size(); ++i)
                         {

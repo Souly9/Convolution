@@ -5,13 +5,7 @@
 #include "Core/Rendering/Core/CommandPool.h"
 #include "Core/Rendering/Core/RenderingData.h"
 #include "Core/Rendering/Core/Buffer.h"
-
-enum class QueueType
-{
-    Transfer,
-    Compute,
-    Graphics
-};
+#include "Core/Rendering/Core/RenderDefinitions.h"
 
 struct PendingMeshResult
 {

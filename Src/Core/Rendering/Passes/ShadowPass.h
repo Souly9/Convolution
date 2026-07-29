@@ -20,6 +20,7 @@ public:
     virtual void Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer) override;
 
     virtual void CreateSharedDescriptorLayout() override;
+    virtual void Setup(::RenderGraphBuilder& builder, const MainPassData& data) override;
     virtual bool WantsToRender() const override;
 
     // Sets cascade count and rebuilds pipeline if changed

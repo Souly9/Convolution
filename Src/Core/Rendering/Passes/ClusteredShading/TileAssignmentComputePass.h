@@ -22,6 +22,8 @@ public:
                              FrameRendererContext& previousFrameCtx,
                              u32 thisFrameNum) override {}
     void Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer) override;
+    void Setup(::RenderGraphBuilder& builder, const MainPassData& data) override;
+    void RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const RGExecutionContext& execCtx) override;
 
     bool WantsToRender() const override { return true; }
     QueueType GetQueueType() const override { return QueueType::Compute; }

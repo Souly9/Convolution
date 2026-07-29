@@ -100,7 +100,7 @@ struct RendererState
         u32 residentInstanceCount{0};
         u32 reflectionsRaysPerPixel{4};
         bool globalReflectanceOverrideEnabled{false}; // Kept for UI logic, but can be flag later
-        bool reflectionsUseRayReconstruction{false};
+        bool reflectionsUseRayReconstruction{true};
         u32 aoRaysPerPixel{4};
         f32 aoRadius{2.0f};
         f32 aoIntensity{1.0f};
@@ -111,7 +111,7 @@ struct RendererState
     u64 depthbufferImGuiID{};
     stltype::vector<u64> csmCascadeImGuiIDs{}; // Per-cascade ImGui texture IDs
     stltype::string physicalRenderDeviceName{};
-    AntialiasingType aaType{AntialiasingType::SMAA};
+    AntialiasingType aaType{AntialiasingType::DLSS};
     bool dlssSupported{false};
     u32 taaDebugMode{static_cast<u32>(TAADebugMode::Off)};
     bool taaSeedHistoryFromCurrentColor{false};
@@ -169,6 +169,40 @@ struct RendererState
     f32 totalGPUTimeMs{0.f};
     u64 totalVramBytes{0};
     u64 usedVramBytes{0};
+
+    struct RenderGraphDebugNode
+    {
+        stltype::string name;
+        u32 queueType{0};
+        u32 exclusionGroup{0};
+        bool isCulled{false};
+        bool isOpaque{false};
+        stltype::vector<stltype::string> readResources;
+        stltype::vector<stltype::string> writeResources;
+    };
+
+    struct RenderGraphDebugResource
+    {
+        stltype::string name;
+        u32 format{0};
+        u32 sizeClass{0};
+        u32 width{0};
+        u32 height{0};
+        u64 estimatedBytes{0};
+        bool isPingPong{false};
+        bool isBuffer{false};
+        bool isImported{false};
+        bool isAllocated{false};
+    };
+
+    struct RenderGraphDebugState
+    {
+        stltype::vector<RenderGraphDebugNode> nodes;
+        stltype::vector<RenderGraphDebugResource> resources;
+        u32 activeNodeCount{0};
+        u32 culledNodeCount{0};
+        u64 totalVRAMBytes{0};
+    } rgDebugState;
 
     // Camera matrices for UI & Gizmos
     mathstl::Matrix mainCamViewMatrix{mathstl::Matrix::Identity};

@@ -9,6 +9,7 @@
 #include "Core/Rendering/Vulkan/VkTextureManager.h"
 #include "Core/Rendering/Vulkan/VkGlobals.h"
 #include "Core/Rendering/Vulkan/Utils/VkEnumHelpers.h"
+#include "Core/Rendering/Core/RenderGraph/RenderGraphBuilder.h"
 #include <cstring>
 
 using namespace RenderPasses;
@@ -57,14 +58,14 @@ bool XeSSPass::WantsToRender() const
     return wantsToRender;
 }
 
-void XeSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
+void XeSSPass::RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const RGExecutionContext& execCtx)
 {
     ScopedZone("XeSSPass::Render");
 
-    Texture* pColorIn = data.temporalResources.pCurrentColorTexture;
-    Texture* pColorOut = data.temporalResources.pResolveTexture;
-    Texture* pDepth = data.temporalResources.pCurrentDepthTexture;
-    Texture* pMotion = data.pGbuffer->Get(GBufferTextureType::GBufferVelocity);
+    Texture* pColorIn = execCtx.GetTexture(RGResourceID::GBufferThisFrameColor);
+    Texture* pColorOut = execCtx.GetTexture(RGResourceID::TemporalResolve);
+    Texture* pDepth = execCtx.GetTexture(RGResourceID::MainDepth);
+    Texture* pMotion = execCtx.GetTexture(RGResourceID::GBufferVelocity);
 
     if (!pColorIn || !pColorOut || !pDepth || !pMotion)
         return;
@@ -95,14 +96,14 @@ void XeSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
         colorOutGen.oldLayout = oldColorOutLayout;
         colorOutGen.newLayout = ImageLayout::GENERAL;
         VkTextureManager::SetLayoutBarrierMasks(colorOutGen, oldColorOutLayout, ImageLayout::GENERAL);
-        pCmdBuffer->RecordCommand(colorOutGen);
+        execCtx.pCmdBuffer->RecordCommand(colorOutGen);
     }
     const auto restoreColorOutReadLayout = [&]() {
         ImageLayoutTransitionCmd colorOutRead(pColorOut);
         colorOutRead.oldLayout = ImageLayout::GENERAL;
         colorOutRead.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
         VkTextureManager::SetLayoutBarrierMasks(colorOutRead, ImageLayout::GENERAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-        pCmdBuffer->RecordCommand(colorOutRead);
+        execCtx.pCmdBuffer->RecordCommand(colorOutRead);
     };
 
     auto to_xess_image_view = [](Texture* texture) -> xess_vk_image_view_info {
@@ -162,10 +163,21 @@ void XeSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
         VulkanXeSS::XeSSManager::Execute(cmd, execParams);
     };
 
-    StartRenderPassProfilingScope(pCmdBuffer);
+    StartRenderPassProfilingScope(execCtx.pCmdBuffer);
     m_wasActive = true;
-    pCmdBuffer->RecordCommand(xessCmd);
-    EndRenderPassProfilingScope(pCmdBuffer);
+    execCtx.pCmdBuffer->RecordCommand(xessCmd);
+    EndRenderPassProfilingScope(execCtx.pCmdBuffer);
 
     restoreColorOutReadLayout();
+}
+
+void XeSSPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
+{
+    builder.ReadTexture(RGResourceID::GBufferThisFrameColor, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    builder.ReadTexture(RGResourceID::MainDepth, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+    builder.ReadTexture(RGResourceID::GBufferVelocity, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+
+    auto resolve = builder.DeclareStorageTexture(RGResourceID::TemporalResolve, TexFormat::R16G16B16A16_FLOAT, RGSizeClass::RenderResolution);
+    builder.WriteStorageImage(resolve, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_WRITE);
+    builder.SetHasSideEffects();
 }

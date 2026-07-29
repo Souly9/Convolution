@@ -57,8 +57,10 @@ inline void SubmitCommandBufferToQueue(const stltype::vector<CommandBuffer*>& co
     {
         const auto& waitSemaphores = pCmdBuffer->GetWaitSemaphores();
         const auto& signalSemaphores = pCmdBuffer->GetSignalSemaphores();
-        const auto waitStages = pCmdBuffer->GetWaitStages();
-        const auto signalStages = pCmdBuffer->GetSignalStages();
+        const auto waitStagesRaw = pCmdBuffer->GetWaitStages();
+        const auto signalStagesRaw = pCmdBuffer->GetSignalStages();
+        const u32 waitStages = (waitStagesRaw != 0) ? waitStagesRaw : static_cast<u32>(VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT);
+        const u32 signalStages = (signalStagesRaw != 0) ? signalStagesRaw : static_cast<u32>(VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT);
         const auto& timelineWaits = pCmdBuffer->GetTimelineWaits();
         const auto& timelineSignals = pCmdBuffer->GetTimelineSignals();
         const bool hasBinary = !waitSemaphores.empty() || !signalSemaphores.empty();

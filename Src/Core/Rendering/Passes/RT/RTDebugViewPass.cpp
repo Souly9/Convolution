@@ -70,6 +70,18 @@ bool RTDebugViewPass::WantsToRender() const
            mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTDebugEnabled);
 }
 
+#include "Core/Rendering/Core/RenderGraph/RenderGraphBuilder.h"
+
+void RTDebugViewPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
+{
+    builder.ReadTexture(RGResourceID::MainDepth, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+    builder.ReadTexture(RGResourceID::GBufferNormal, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+
+    auto debugTex = builder.DeclareStorageTexture(RGResourceID::GBufferDebug, TexFormat::R16G16B16A16_FLOAT, RGSizeClass::RenderResolution);
+    builder.WriteStorageImage(debugTex, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_WRITE);
+    builder.SetHasSideEffects();
+}
+
 void RTDebugViewPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
 {
     if (data.pRTSceneManager == nullptr || data.rtDebugTextureHandle == 0)

@@ -1,5 +1,6 @@
 #include "BLASBuilder.h"
 #include "Core/Global/LogDefines.h"
+#include <format>
 #include "Core/Rendering/Core/CommandBuffer.h"
 #include "Core/Rendering/Core/Defines/VertexDefines.h"
 #include "Core/Rendering/Core/SharedResourceManager.h"
@@ -50,6 +51,15 @@ void BLASBuilder::Reset()
 
 BLASRecord& BLASBuilder::EnsureRecord(const Mesh& mesh)
 {
+    if (mesh.rtMeshId == Mesh::InvalidRTMeshId || mesh.rtMeshId > 65536)
+    {
+        DEBUG_LOG_WARNF("BLASBuilder rejected invalid mesh rtMeshId: {}", mesh.rtMeshId);
+        static BLASRecord dummyRecord{};
+        dummyRecord = BLASRecord{};
+        dummyRecord.state = BLASState::Failed;
+        return dummyRecord;
+    }
+
     if (mesh.rtMeshId >= m_records.size())
         m_records.resize(mesh.rtMeshId + 1);
 
@@ -174,6 +184,18 @@ void BLASBuilder::ProcessBuildQueue(SharedResourceManager& resourceManager, u32 
     if (!vertexBuffer.IsCreated() || !indexBuffer.IsCreated())
         return;
 
+    constexpr u32 kMaxBuildsPerFrame = 64;
+    u32 buildCount = 0;
+
+    struct BuildData {
+        u32 meshId;
+        u32 generation;
+    };
+    stltype::vector<BuildData> pendingBuilds;
+    pendingBuilds.reserve(kMaxBuildsPerFrame);
+
+    CommandBuffer* pBuildCmdBuffer = nullptr;
+
     for (auto& record : m_records)
     {
         if (record.state != BLASState::QueuedForBuild)
@@ -184,10 +206,12 @@ void BLASBuilder::ProcessBuildQueue(SharedResourceManager& resourceManager, u32 
 
         record.state = BLASState::Building;
 
-        CommandBuffer* pBuildCmdBuffer = m_buildCommandPool.CreateCommandBuffer(CommandBufferCreateInfo{});
-        pBuildCmdBuffer->SetName(
-            "BLAS Build Cmd " + stltype::to_string(record.meshId) + "_" + stltype::to_string(record.generation));
-        pBuildCmdBuffer->SetFrameIdx(frameIdx);
+        if (pBuildCmdBuffer == nullptr)
+        {
+            pBuildCmdBuffer = m_buildCommandPool.CreateCommandBuffer(CommandBufferCreateInfo{});
+            pBuildCmdBuffer->SetName("BLAS Batch Build Cmd");
+            pBuildCmdBuffer->SetFrameIdx(frameIdx);
+        }
 
         BuildAccelerationStructureCmd buildCmd{};
         buildCmd.buildDesc = BuildTrianglesDesc(record, vertexBuffer, indexBuffer);
@@ -195,24 +219,36 @@ void BLASBuilder::ProcessBuildQueue(SharedResourceManager& resourceManager, u32 
         buildCmd.scratchAddress = record.scratchBuffer.GetDeviceAddress();
 
         pBuildCmdBuffer->RecordCommand(buildCmd);
+        
+        pendingBuilds.push_back({record.meshId, record.generation});
+        
+        buildCount++;
+        if (buildCount >= kMaxBuildsPerFrame)
+            break;
+    }
+
+    if (pBuildCmdBuffer != nullptr)
+    {
         pBuildCmdBuffer->RecordCommand(AccelerationStructureBarrierCmd(
             SyncStages::ACCELERATION_STRUCTURE_BUILD,
-            SyncStages::COMPUTE_SHADER,
+            SyncStages::COMPUTE_SHADER | SyncStages::RAY_TRACING_SHADER,
             RayTracingAccess::AccelerationStructureWrite,
             RayTracingAccess::AccelerationStructureRead));
 
-        const u32 meshId = record.meshId;
-        const u32 generation = record.generation;
         pBuildCmdBuffer->AddExecutionFinishedCallback(
-            [this, pBuildCmdBuffer, meshId, generation]()
+            [this, pBuildCmdBuffer, builds = stltype::move(pendingBuilds)]()
             {
-                if (meshId < m_records.size())
+                for (const auto& b : builds)
                 {
-                    BLASRecord& finishedRecord = m_records[meshId];
-                    if (finishedRecord.meshId == meshId && finishedRecord.generation == generation)
+                    if (b.meshId < m_records.size())
                     {
-                        finishedRecord.deviceAddress = finishedRecord.accelerationStructure.GetDeviceAddress();
-                        finishedRecord.state = BLASState::Ready;
+                        BLASRecord& finishedRecord = m_records[b.meshId];
+                        if (finishedRecord.meshId == b.meshId && finishedRecord.generation == b.generation)
+                        {
+                            finishedRecord.deviceAddress = finishedRecord.accelerationStructure.GetDeviceAddress();
+                            finishedRecord.state = BLASState::Ready;
+                            finishedRecord.scratchBuffer.CleanUp();
+                        }
                     }
                 }
 

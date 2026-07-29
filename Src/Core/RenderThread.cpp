@@ -2,6 +2,7 @@
 #include "Core/ECS/EntityManager.h"
 #include "Core/Global/FrameGlobals.h"
 #include "Core/Global/GlobalVariables.h"
+#include "Core/Global/State/ApplicationState.h"
 #include "Core/Rendering/Core/StaticFunctions.h"
 #include "Core/Rendering/Core/TextureManager.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
@@ -56,6 +57,20 @@ bool RenderThread::HandleResizeAtFrameStart()
     return true;
 }
 
+bool RenderThread::HandleSceneSwitchAtFrameStart()
+{
+    ScopedZone("Handle Scene Switch");
+    if (!g_pApplicationState || !g_pApplicationState->HasPendingSceneSwitch())
+        return true;
+
+    g_pQueueHandler->DispatchAllRequests();
+    g_pQueueHandler->WaitForFences(~0u);
+    SRF::WaitForDeviceIdle<RenderAPI>();
+
+    g_pApplicationState->ExecuteSceneSwitchOnRenderThread();
+    return true;
+}
+
 void RenderThread::RenderLoop()
 {
     auto currentFrame = FrameGlobals::GetFrameNumber();
@@ -82,6 +97,13 @@ void RenderThread::RenderLoop()
         g_pEntityManager->SyncSystemData(lastFrame);
 
         if (!HandleResizeAtFrameStart())
+        {
+            g_renderThreadReadSemaphore.Post();
+            g_imguiSemaphore.Wait();
+            continue;
+        }
+
+        if (!HandleSceneSwitchAtFrameStart())
         {
             g_renderThreadReadSemaphore.Post();
             g_imguiSemaphore.Wait();
@@ -125,6 +147,10 @@ void RenderThread::RenderLoop()
 RenderPasses::PassManager* RenderThread::Start()
 {
     m_keepRunning = true;
+    if (g_pApplicationState)
+    {
+        g_pApplicationState->SetRenderThreadRunning(true);
+    }
     m_thread = threadstl::MakeThread([this]() { RenderLoop(); });
     InitializeThread("Convolution_RenderThread");
     return m_passManager.get();
@@ -132,6 +158,10 @@ RenderPasses::PassManager* RenderThread::Start()
 
 void RenderThread::CleanUp()
 {
+    if (g_pApplicationState)
+    {
+        g_pApplicationState->SetRenderThreadRunning(false);
+    }
     m_passManager.reset();
     g_pDeleteQueue->ForceEmptyQueue();
 }

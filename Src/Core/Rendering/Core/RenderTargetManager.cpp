@@ -187,7 +187,7 @@ void RenderTargetManager::RecreateAuxiliaryTextures(const mathstl::Vector2& rend
     sssRequest.format = TexFormat::R8_UNORM;
     sssRequest.handle = g_pTexManager->GenerateHandle();
     sssRequest.AddName("Screen Space Shadows");
-    sssRequest.usage = Usage::Storage | Usage::Sampled;
+    sssRequest.usage = Usage::Storage | Usage::Sampled | Usage::TransferDst;
     if (m_pScreenSpaceShadowTexture)
         oldTextureHandles.push_back(m_screenSpaceShadowsTextureHandle);
     m_pScreenSpaceShadowTexture = static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(sssRequest));
@@ -200,7 +200,7 @@ void RenderTargetManager::RecreateAuxiliaryTextures(const mathstl::Vector2& rend
     smaaEdgeReq.format = TexFormat::R8G8_UNORM;
     smaaEdgeReq.handle = g_pTexManager->GenerateHandle();
     smaaEdgeReq.AddName("SMAA Edges");
-    smaaEdgeReq.usage = Usage::GBuffer | Usage::Storage | Usage::Sampled;
+    smaaEdgeReq.usage = Usage::GBuffer | Usage::Storage | Usage::Sampled | Usage::TransferDst;
     if (m_pSMAAEdgesTexture)
         oldTextureHandles.push_back(m_smaaEdgesTextureHandle);
     m_pSMAAEdgesTexture = static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(smaaEdgeReq));
@@ -212,7 +212,7 @@ void RenderTargetManager::RecreateAuxiliaryTextures(const mathstl::Vector2& rend
     smaaBlendReq.format = TexFormat::R8G8B8A8_UNORM;
     smaaBlendReq.handle = g_pTexManager->GenerateHandle();
     smaaBlendReq.AddName("SMAA Blend Weights");
-    smaaBlendReq.usage = Usage::GBuffer | Usage::Storage | Usage::Sampled;
+    smaaBlendReq.usage = Usage::GBuffer | Usage::Storage | Usage::Sampled | Usage::TransferDst;
     if (m_pSMAABlendTexture)
         oldTextureHandles.push_back(m_smaaBlendTextureHandle);
     m_pSMAABlendTexture = static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(smaaBlendReq));

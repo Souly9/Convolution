@@ -195,6 +195,26 @@ void AsyncQueueHandler::DispatchAllRequests()
     m_swapchainPresentRequestsThisFrame.clear();
 }
 
+void AsyncQueueHandler::FlushAllTransferCommands()
+{
+    while (true)
+    {
+        bool hasPendingCommands = false;
+        {
+            SimpleScopedGuard lock(m_sharedDataMutex);
+            hasPendingCommands = !m_transferCommands.empty() || !m_commandBufferRequests.empty() || !m_thisFrameCommandBufferRequests.empty();
+        }
+        if (!hasPendingCommands)
+            break;
+        DispatchAllRequests();
+    }
+    WaitForFences(~0u);
+    
+    // Process timeline callbacks now that the device is idle
+    // This ensures that callbacks from completed transfers run BEFORE the main thread unloads resources
+    ReclaimCompletedResources(~0u);
+}
+
 void AsyncQueueHandler::FlushGraphicsComputeBuffers()
 {
     SimpleScopedGuard lock(m_sharedDataMutex);
@@ -294,7 +314,6 @@ void AsyncQueueHandler::BuildTransferCommandBuffer(const stltype::vector<Transfe
     if (transferCommands.empty())
         return;
 
-
     u32 workerCount = (u32)m_recorderContexts.size();
     u32 commandsPerWorker = mathstl::max(1u, (u32)transferCommands.size() / workerCount);
 
@@ -385,14 +404,9 @@ void AsyncQueueHandler::BuildTransferCommandBuffer(const stltype::vector<Transfe
         req.queueType = QueueType::Transfer;
         req.frameIdx = ~0u;
         req.requiredStagingBuffers = stltype::move(ctx.assignedStagingBuffers);
+        req.contextIdx = ctxIdx;
         ctx.assignedStagingBuffers.clear();
         requests.push_back(stltype::move(req));
-
-        // Return context to free list
-        {
-            SimpleScopedGuard lock(m_recorderContextMutex);
-            m_freeRecorderContextIndices.push_back(ctxIdx);
-        }
     }
 
     // Collect callbacks from the batch to trigger after submission
@@ -442,9 +456,7 @@ void AsyncQueueHandler::ReclaimCompletedResources(u32 frameIdx)
 
     for (auto& batch : completed)
     {
-        // Seems like we need this here as we get errros otherwise, probably a way to sync cpu/gpu since GetValue is
-        // speculative
-        m_queueTimelines[batch.queue].timeline.Wait(batch.signalValue, 0);
+        m_queueTimelines[batch.queue].timeline.Wait(batch.signalValue);
 
         for (auto& req : batch.requests)
         {
@@ -452,27 +464,43 @@ void AsyncQueueHandler::ReclaimCompletedResources(u32 frameIdx)
             {
                 req.pBuffer->CallCallbacks();
 
-                bool returned = false;
-                for (auto& ctx : m_recorderContexts)
+                if (req.contextIdx != ~0u && req.contextIdx < (u32)m_recorderContexts.size())
                 {
-                    if (req.pBuffer->GetPool() == &ctx->pool)
+                    auto& ctx = *m_recorderContexts[req.contextIdx];
                     {
-                        SimpleScopedGuard<decltype(ctx->mutex)> lock(ctx->mutex);
+                        SimpleScopedGuard<decltype(ctx.mutex)> lock(ctx.mutex);
                         req.pBuffer->ResetBuffer();
-                        ctx->freeBuffers.push_back(req.pBuffer);
-                        returned = true;
-                        break;
+                        ctx.freeBuffers.push_back(req.pBuffer);
+                    }
+                    {
+                        SimpleScopedGuard lock(m_recorderContextMutex);
+                        m_freeRecorderContextIndices.push_back(req.contextIdx);
                     }
                 }
-
-                if (!returned)
+                else
                 {
-                    for (auto& poolPair : m_commandPools)
+                    bool returned = false;
+                    for (auto& ctx : m_recorderContexts)
                     {
-                        if (req.pBuffer->GetPool() == &poolPair.second)
+                        if (req.pBuffer->GetPool() == &ctx->pool)
                         {
-                            poolPair.second.ReturnCommandBuffer(req.pBuffer);
+                            SimpleScopedGuard<decltype(ctx->mutex)> lock(ctx->mutex);
+                            req.pBuffer->ResetBuffer();
+                            ctx->freeBuffers.push_back(req.pBuffer);
+                            returned = true;
                             break;
+                        }
+                    }
+
+                    if (!returned)
+                    {
+                        for (auto& poolPair : m_commandPools)
+                        {
+                            if (req.pBuffer->GetPool() == &poolPair.second)
+                            {
+                                poolPair.second.ReturnCommandBuffer(req.pBuffer);
+                                break;
+                            }
                         }
                     }
                 }
@@ -664,6 +692,8 @@ void AsyncQueueHandler::SubmitCommandBuffers(stltype::vector<CommandBufferReques
             req.pBuffer->SetWaitStages(req.waitStage);
         if (req.signalStage != SyncStages::NONE)
             req.pBuffer->SetSignalStages(req.signalStage);
+        else if (req.pBuffer->GetSignalStages() == 0)
+            req.pBuffer->SetSignalStages(SyncStages::BOTTOM_OF_PIPE);
 
         // Every buffer gets its own tracking timeline signal
         req.pBuffer->AddTimelineSignal(&timelineData.timeline, signalValue);

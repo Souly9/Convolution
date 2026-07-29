@@ -96,6 +96,10 @@ void MainMenuBar::DrawMenuBar(f32 dt, ApplicationInfos& appInfos)
             {
                 m_renderSettingsWindow.SetOpen(true);
             }
+            if (ImGui::MenuItem("RenderGraph Inspector", ""))
+            {
+                m_renderGraphInspectorWindow.SetOpen(true);
+            }
             ImGui::EndMenu();
         }
         ImGui::EndMainMenuBar();
@@ -121,5 +125,9 @@ void MainMenuBar::DrawMenuBar(f32 dt, ApplicationInfos& appInfos)
     if (m_renderSettingsWindow.IsOpen())
     {
         m_renderSettingsWindow.DrawWindow(dt);
+    }
+    if (m_renderGraphInspectorWindow.IsOpen())
+    {
+        m_renderGraphInspectorWindow.DrawWindow(dt);
     }
 }

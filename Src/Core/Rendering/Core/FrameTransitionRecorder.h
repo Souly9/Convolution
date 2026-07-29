@@ -24,10 +24,10 @@ public:
     void RecordResolveToGeneral(CommandBuffer* pCmdBuffer, GBuffer& gbuffer);
     void RecordResolveToRead(CommandBuffer* pCmdBuffer, GBuffer& gbuffer);
     void RecordCopyTextureToResolve(CommandBuffer* pCmdBuffer, GBuffer& gbuffer, Texture* pSourceTexture);
-    void RecordClearColorTexture(CommandBuffer* pCmdBuffer,
-                                 Texture* pTexture,
-                                 ImageLayout oldLayout,
-                                 ImageLayout finalLayout);
+    static void RecordClearColorTexture(CommandBuffer* pCmdBuffer,
+                                        Texture* pTexture,
+                                        ImageLayout oldLayout,
+                                        ImageLayout finalLayout);
     void RecordSSSOutputToGeneral(CommandBuffer* pCmdBuffer, Texture* pScreenSpaceShadowTexture);
     void RecordSSSOutputToShaderRead(CommandBuffer* pCmdBuffer, Texture* pScreenSpaceShadowTexture);
     void RecordDLSSExposureUpdate(CommandBuffer* pCmdBuffer,

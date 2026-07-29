@@ -1,12 +1,14 @@
 #include "LightGridComputePass.h"
 #include "../PassManager.h"
 #include "Core/Global/GlobalVariables.h"
+#include "Core/Global/State/ApplicationState.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
 #include "Core/Rendering/Core/Shader.h"
 #include "Core/Rendering/Core/Defines/BindingSlots.h"
 #include "Core/Rendering/Core/Defines/GlobalBuffers.h"
 #include "Core/Rendering/Vulkan/Utils/VkDescriptorLayoutUtils.h"
-
+#include "Core/Rendering/Core/RenderGraph/PassContext.h"
+#include "Core/Rendering/Core/RenderGraph/RenderGraphBuilder.h"
 
 #define ViewSet             0
 #define LightClusterSet     1
@@ -14,8 +16,6 @@
 #define ViewSpaceLightsSet  3
 
 using namespace RenderPasses;
-
-
 
 LightGridComputePass::LightGridComputePass() : ConvolutionRenderPass("LightGridComputePass")
 {
@@ -25,7 +25,7 @@ LightGridComputePass::LightGridComputePass() : ConvolutionRenderPass("LightGridC
 LightGridComputePass::~LightGridComputePass() = default;
 
 void LightGridComputePass::Init(RendererAttachmentInfo& attachmentInfo,
-                                              const SharedResourceManager& resourceManager)
+                               const SharedResourceManager& resourceManager)
 {
     ScopedZone("LightGridComputePass::Init");
     BuildBuffers();
@@ -68,9 +68,60 @@ void LightGridComputePass::CreateSharedDescriptorLayout()
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::ViewSpaceLightsSSBO, ViewSpaceLightsSet));
 }
 
+void LightGridComputePass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
+{
+    builder.DeclareContexts<
+        PassCtx::View,
+        PassCtx::LightCluster,
+        PassCtx::ClusterGrid>();
+
+    auto viewSpaceLights = builder.DeclareStorageBuffer(RGResourceID::Custom, UBO::ViewSpaceLightsSSBOSize);
+    builder.SetCustomResourceName(viewSpaceLights, "ViewSpaceLightsSSBO");
+    builder.ReadStorageBuffer(viewSpaceLights, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ);
+
+    auto tileBuffer = builder.DeclareStorageBuffer(RGResourceID::TileAssignmentBuffer, UBO::LightClusterSSBOSize);
+    builder.ReadStorageBuffer(tileBuffer, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ);
+    builder.SetHasSideEffects();
+}
+
+void LightGridComputePass::RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const RGExecutionContext& execCtx)
+{
+    ScopedZone("LightGridComputePass::RenderWithGraph");
+
+    auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+
+    const u32 totalClusters = renderState.clusterCount.x * renderState.clusterCount.y * renderState.clusterCount.z;
+    const u32 numLightsEvaluated = ctx.numLights;
+    g_pApplicationState->RegisterUpdateFunction([totalClusters, numLightsEvaluated](ApplicationState& state)
+                                                {
+                                                    state.renderState.totalClusterCount = totalClusters;
+                                                    state.renderState.numLightsEvaluated = numLightsEvaluated;
+                                                });
+
+    if (!ctx.clusterGridDescriptor)
+    {
+        return;
+    }
+
+    m_pushConstants.clusterCount = renderState.clusterCount;
+    m_pushConstants.nearFar = mathstl::Vector4(ctx.zNear, ctx.zFar, 0.0f, 0.0f);
+    m_pushConstants.numLights = ctx.numLights;
+
+    const u32 workgroupsX = (m_pushConstants.clusterCount.x + 7) / 8;
+    const u32 workgroupsY = (m_pushConstants.clusterCount.y + 7) / 8;
+    const u32 workgroupsZ = m_pushConstants.clusterCount.z;
+
+    DescriptorSet::Ptr viewSpaceLightsDesc = data.pResourceManager->GetViewSpaceLightsDescriptorSet(ctx.currentFrame);
+
+    GenericComputeDispatchCmd cmd(&m_lightCullingComputePipeline, workgroupsX, workgroupsY, workgroupsZ);
+    cmd.descriptorSets = {ctx.sharedDataUBODescriptor, ctx.tileArraySSBODescriptor, ctx.clusterGridDescriptor, viewSpaceLightsDesc};
+    cmd.SetPushConstants(0, m_pushConstants);
+    execCtx.pCmdBuffer->RecordCommand(cmd);
+}
+
 void LightGridComputePass::Render(const MainPassData& data,
-                                                FrameRendererContext& ctx,
-                                                CommandBuffer* pCmdBuffer)
+                                  FrameRendererContext& ctx,
+                                  CommandBuffer* pCmdBuffer)
 {
     ScopedZone("LightGridComputePass::Render");
 

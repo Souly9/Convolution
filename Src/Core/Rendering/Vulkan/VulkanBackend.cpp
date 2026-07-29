@@ -919,7 +919,12 @@ void RenderBackendImpl<Vulkan>::PublishDLSSSupport(bool supported) const
         [supported](ApplicationState& state)
         {
             state.renderState.dlssSupported = supported;
-            if (!supported && state.renderState.aaType == AntialiasingType::DLSS)
+            if (supported)
+            {
+                state.renderState.aaType = AntialiasingType::DLSS;
+                state.renderState.rt.reflectionsUseRayReconstruction = Nvidia::StreamlineManager::IsDLSSRRSupported();
+            }
+            else if (!supported && state.renderState.aaType == AntialiasingType::DLSS)
             {
                 state.renderState.aaType = AntialiasingType::SMAA;
             }

@@ -38,7 +38,6 @@ bool ShaderManager::ReadAllSourceShaders()
     {
         if (entry.is_regular_file())
         {
-
             stltype::string path(entry.path().string().c_str());
             const stltype::string extension = entry.path().extension().string().c_str();
             stltype::string filename = entry.path().filename().string().c_str();

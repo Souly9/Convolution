@@ -29,6 +29,13 @@ public:
 
     virtual void Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer) override;
 
+    virtual void Setup(::RenderGraphBuilder& builder, const MainPassData& data) override
+    {
+        builder.SetHasSideEffects();
+        builder.ReadTexture(RGResourceID::Swapchain, SyncStages::COLOR_ATTACHMENT_OUTPUT, AccessFlags::COLOR_ATTACHMENT_WRITE, ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+        builder.WriteColorAttachment(RGResourceID::Swapchain, LoadOp::LOAD, StoreOp::STORE);
+    }
+
     virtual void CreateSharedDescriptorLayout() override
     {
     }

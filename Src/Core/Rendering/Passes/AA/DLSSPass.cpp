@@ -9,6 +9,7 @@
 #include "Core/Rendering/Vulkan/VkTexture.h"
 #include "Core/Rendering/Vulkan/VkTextureManager.h"
 #include "Core/Rendering/Vulkan/Utils/VkEnumHelpers.h"
+#include "Core/Rendering/Core/RenderGraph/RenderGraphBuilder.h"
 #include "sl.h"
 #include "sl_dlss.h"
 #include <cstring>
@@ -113,7 +114,7 @@ bool DLSSPass::WantsToRender() const
     return wantsToRender;
 }
 
-void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
+void DLSSPass::RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const RGExecutionContext& execCtx)
 {
     ScopedZone("DLSSPass::Render");
     u32 frameIdx = ctx.currentFrame;
@@ -122,12 +123,12 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     if (!Nvidia::StreamlineManager::GetFrameToken(frameIdx, pFrameToken))
         return;
     
-    Texture* pColorIn = data.temporalResources.pCurrentColorTexture;
+    Texture* pColorIn = execCtx.GetTexture(RGResourceID::GBufferThisFrameColor);
 
-    Texture* pColorOut = data.temporalResources.pResolveTexture;
-    Texture* pDepth = data.temporalResources.pCurrentDepthTexture;
-    Texture* pMotion = data.pGbuffer->Get(GBufferTextureType::GBufferVelocity);
-    Texture* pExposure = ctx.pDLSSExposureTexture;
+    Texture* pColorOut = execCtx.GetTexture(RGResourceID::TemporalResolve);
+    Texture* pDepth = execCtx.GetTexture(RGResourceID::MainDepth);
+    Texture* pMotion = execCtx.GetTexture(RGResourceID::GBufferVelocity);
+    Texture* pExposure = execCtx.GetTexture(RGResourceID::DLSSExposure);
 
     if (!pColorIn || !pColorOut || !pDepth || !pMotion || !pExposure || !ctx.pCurrentSwapchainTexture)
         return;
@@ -153,14 +154,14 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
         colorOutGen.oldLayout = oldColorOutLayout;
         colorOutGen.newLayout = ImageLayout::GENERAL;
         VkTextureManager::SetLayoutBarrierMasks(colorOutGen, oldColorOutLayout, ImageLayout::GENERAL);
-        pCmdBuffer->RecordCommand(colorOutGen);
+        execCtx.pCmdBuffer->RecordCommand(colorOutGen);
     }
     const auto restoreColorOutReadLayout = [&]() {
         ImageLayoutTransitionCmd colorOutRead(pColorOut);
         colorOutRead.oldLayout = ImageLayout::GENERAL;
         colorOutRead.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
         VkTextureManager::SetLayoutBarrierMasks(colorOutRead, ImageLayout::GENERAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-        pCmdBuffer->RecordCommand(colorOutRead);
+        execCtx.pCmdBuffer->RecordCommand(colorOutRead);
     };
 
     sl::ViewportHandle viewport(0);
@@ -169,12 +170,6 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     auto pushTagDesc = [&](Texture* pTex, sl::BufferType type) {
         if (!pTex)
         {
-            StreamlineTagDesc desc{};
-            desc.type = type;
-            desc.native = 0;
-            desc.view = 0;
-            desc.state = static_cast<uint32_t>(GetTaggedLayout(type));
-            tagDescs.push_back(desc);
             return true;
         }
         TextureVulkan* pVkTex = static_cast<TextureVulkan*>(pTex);
@@ -191,7 +186,8 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
         desc.arrayLayers = pVkTex->GetInfo().extents.z > 0 ? pVkTex->GetInfo().extents.z : 1u;
         if (desc.nativeFormat == 0)
         {
-            DEBUG_LOG_WARNF("[DLSSPass] Texture format is UNDEFINED for BufferType %d, Engine Format %d", static_cast<int>(type), static_cast<int>(pVkTex->GetInfo().format));
+            DEBUG_LOG_WARNF("[DLSSPass] Texture format is UNDEFINED for BufferType %d, falling back to RGBA8", static_cast<int>(type));
+            desc.nativeFormat = static_cast<uint32_t>(VK_FORMAT_R8G8B8A8_UNORM);
         }
         tagDescs.push_back(desc);
         return true;
@@ -369,7 +365,7 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
         Nvidia::StreamlineManager::EvaluateDLSS(cmd, *pFrameToken);
     };
 
-    StartRenderPassProfilingScope(pCmdBuffer);
+    StartRenderPassProfilingScope(execCtx.pCmdBuffer);
     const sl::Result constRes = Nvidia::StreamlineManager::SetConstants(slConst, *pFrameToken, viewport);
     debugState = Nvidia::StreamlineManager::GetDLSSDebugState();
     debugState.lastSetConstantsResult = constRes;
@@ -377,13 +373,25 @@ void DLSSPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comma
     if (constRes != sl::Result::eOk)
     {
         DEBUG_LOG_WARNF("[DLSSPass] slSetConstants failed with result: 0x{:X}", static_cast<u32>(constRes));
-        EndRenderPassProfilingScope(pCmdBuffer);
+        EndRenderPassProfilingScope(execCtx.pCmdBuffer);
         restoreColorOutReadLayout();
         return;
     }
     m_wasActive = true;
-    pCmdBuffer->RecordCommand(streamlineCmd);
-    EndRenderPassProfilingScope(pCmdBuffer);
+    execCtx.pCmdBuffer->RecordCommand(streamlineCmd);
+    EndRenderPassProfilingScope(execCtx.pCmdBuffer);
 
     restoreColorOutReadLayout();
+}
+
+void DLSSPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
+{
+    builder.ReadTexture(RGResourceID::GBufferThisFrameColor, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    builder.ReadTexture(RGResourceID::MainDepth, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+    builder.ReadTexture(RGResourceID::GBufferVelocity, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    builder.ReadTexture(RGResourceID::DLSSExposure, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+
+    auto resolve = builder.DeclareStorageTexture(RGResourceID::TemporalResolve, TexFormat::R16G16B16A16_FLOAT, RGSizeClass::RenderResolution);
+    builder.WriteStorageImage(resolve, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_WRITE);
+    builder.SetHasSideEffects();
 }

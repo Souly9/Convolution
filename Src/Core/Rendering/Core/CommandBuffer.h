@@ -545,8 +545,18 @@ public:
         return m_frameIdx;
     }
 
+    void SetQueueType(QueueType qType)
+    {
+        m_queueType = qType;
+    }
+    QueueType GetQueueType() const
+    {
+        return m_queueType;
+    }
+
 protected:
     u32 m_frameIdx{0};
+    QueueType m_queueType{QueueType::Graphics};
     stltype::vector<Command> m_commands{};
     CommandBufferStats m_stats{};
     // Gets called when buffer gets destroyed or reset indirectly guaranteeing execution has finished

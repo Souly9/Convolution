@@ -20,6 +20,9 @@ public:
                                      FrameRendererContext& previousFrameCtx,
                                      u32 thisFrameNum) override;
     virtual void Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer) override;
+
+    virtual void Setup(::RenderGraphBuilder& builder, const MainPassData& data) override;
+
     virtual void CreateSharedDescriptorLayout() override;
     // Always want to composite
     virtual bool WantsToRender() const override;
