@@ -587,18 +587,8 @@ bool StreamlineManager::EnsureDLSSDConfigured(u32 width, u32 height, sl::DLSSMod
         !g_dlssDConfigured || g_dlssDWidth != width || g_dlssDHeight != height || g_dlssDMode != mode;
     const bool sameAsLastFailedConfig = g_dlssDLastConfigureFailed && g_dlssDFailedWidth == width &&
                                         g_dlssDFailedHeight == height && g_dlssDFailedMode == mode;
-    if (!configChanged)
-        return true;
     if (sameAsLastFailedConfig)
         return false;
-
-    /*
-    if (g_dlssDConfigured && !FreeResources(sl::kFeatureDLSS_RR))
-    {
-        DEBUG_LOG_WARN("[StreamlineManager] Failed to free old DLSS-D resources during reconfigure");
-    }
-    */
-    g_dlssDConfigured = false;
 
     if (!SetDLSSDOptions(width, height, mode, worldToView, viewToWorld))
     {
@@ -610,16 +600,19 @@ bool StreamlineManager::EnsureDLSSDConfigured(u32 width, u32 height, sl::DLSSMod
         return false;
     }
 
-    g_dlssDConfigured = true;
-    g_dlssDWidth = width;
-    g_dlssDHeight = height;
-    g_dlssDMode = mode;
-    g_dlssDLastConfigureFailed = false;
-    g_dlssDFailedWidth = 0;
-    g_dlssDFailedHeight = 0;
-    g_dlssDFailedMode = sl::DLSSMode::eOff;
-    g_dlssDEvaluateBlocked = false;
-    g_dlssDNeedsReset = true;
+    if (configChanged)
+    {
+        g_dlssDConfigured = true;
+        g_dlssDWidth = width;
+        g_dlssDHeight = height;
+        g_dlssDMode = mode;
+        g_dlssDLastConfigureFailed = false;
+        g_dlssDFailedWidth = 0;
+        g_dlssDFailedHeight = 0;
+        g_dlssDFailedMode = sl::DLSSMode::eOff;
+        g_dlssDEvaluateBlocked = false;
+        g_dlssDNeedsReset = true;
+    }
 
     return true;
 }

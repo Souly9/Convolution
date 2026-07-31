@@ -129,6 +129,14 @@ struct RendererState
     f32 gt7ReferenceLuminance{300.0f};
     f32 ambientIntensity{0.1f};
 
+    // Bloom
+    struct BloomSettings
+    {
+        bool enabled{true};
+        f32 threshold{1.0f};
+        f32 intensity{0.8f};
+    } bloom;
+
     // Render info
     u32 triangleCount{};
     u32 vertexCount{};

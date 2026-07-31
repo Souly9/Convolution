@@ -135,6 +135,35 @@ public:
                     }
                 }
 
+                if (ImGui::CollapsingHeader("Bloom Settings", ImGuiTreeNodeFlags_DefaultOpen))
+                {
+                    bool bloomEnabled = renderState.bloom.enabled;
+                    float bloomThreshold = renderState.bloom.threshold;
+                    float bloomIntensity = renderState.bloom.intensity;
+
+                    if (ImGui::Checkbox("Enable Bloom", &bloomEnabled))
+                    {
+                        g_pApplicationState->RegisterUpdateFunction(
+                            [bloomEnabled](ApplicationState& state)
+                            { state.renderState.bloom.enabled = bloomEnabled; });
+                        needsUpdate = true;
+                    }
+                    if (ImGui::SliderFloat("Bloom Threshold", &bloomThreshold, 0.0f, 5.0f))
+                    {
+                        g_pApplicationState->RegisterUpdateFunction(
+                            [bloomThreshold](ApplicationState& state)
+                            { state.renderState.bloom.threshold = bloomThreshold; });
+                        needsUpdate = true;
+                    }
+                    if (ImGui::SliderFloat("Bloom Intensity", &bloomIntensity, 0.0f, 3.0f))
+                    {
+                        g_pApplicationState->RegisterUpdateFunction(
+                            [bloomIntensity](ApplicationState& state)
+                            { state.renderState.bloom.intensity = bloomIntensity; });
+                        needsUpdate = true;
+                    }
+                }
+
                 if (ImGui::CollapsingHeader("Shadow Settings", ImGuiTreeNodeFlags_DefaultOpen))
                 {
                     bool shadowsEnabled = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::ShadowsEnabled);
@@ -595,6 +624,10 @@ public:
                         if (gbufferIDs.size() > 6)
                         {
                             buffers.push_back({"Post AA", gbufferIDs[6]});
+                        }
+                        if (gbufferIDs.size() > 7)
+                        {
+                            buffers.push_back({"Bloom", gbufferIDs[7]});
                         }
 
                         for (u32 i = 0; i < csmIDs.size(); ++i)

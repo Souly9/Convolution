@@ -166,7 +166,10 @@ void DLSSRRPass::RenderWithGraph(const MainPassData& data, const FrameRendererCo
 
     stltype::fixed_vector<StreamlineTagDesc, 16> tagDescs;
     auto pushTagDesc = [&](Texture* pTex, sl::BufferType type) {
-        if (!pTex) return false;
+        if (!pTex)
+        {
+            return true;
+        }
         TextureVulkan* pVkTex = static_cast<TextureVulkan*>(pTex);
         StreamlineTagDesc desc{};
         desc.type = type;
@@ -190,21 +193,22 @@ void DLSSRRPass::RenderWithGraph(const MainPassData& data, const FrameRendererCo
     bool tagsOk = pushTagDesc(pColorIn, sl::kBufferTypeScalingInputColor) &&
                   pushTagDesc(pColorOut, sl::kBufferTypeScalingOutputColor) &&
                   pushTagDesc(pDepth, sl::kBufferTypeDepth) &&
-                  pushTagDesc(pMotion, sl::kBufferTypeMotionVectors) &&
-                  pushTagDesc(pExposure, sl::kBufferTypeExposure);
+                  pushTagDesc(pMotion, sl::kBufferTypeMotionVectors);
 
     if (tagsOk)
     {
+        pushTagDesc(pExposure, sl::kBufferTypeExposure);
+
         Texture* pAlbedo = execCtx.GetTexture(RGResourceID::GBufferAlbedo);
         Texture* pNormal = execCtx.GetTexture(RGResourceID::GBufferNormal);
         Texture* pRoughness = execCtx.GetTexture(RGResourceID::GBufferRoughness);
         Texture* pNoisyReflections = execCtx.GetTexture(RGResourceID::RTReflections);
 
-        tagsOk &= pushTagDesc(pAlbedo, sl::kBufferTypeAlbedo);
-        tagsOk &= pushTagDesc(pAlbedo, sl::kBufferTypeSpecularAlbedo);
-        tagsOk &= pushTagDesc(pNormal, sl::kBufferTypeNormals);
-        tagsOk &= pushTagDesc(pRoughness, sl::kBufferTypeRoughness);
-        tagsOk &= pushTagDesc(pNoisyReflections, sl::kBufferTypeSpecularHitNoisy);
+        pushTagDesc(pAlbedo, sl::kBufferTypeAlbedo);
+        pushTagDesc(pAlbedo, sl::kBufferTypeSpecularAlbedo);
+        pushTagDesc(pNormal, sl::kBufferTypeNormals);
+        pushTagDesc(pRoughness, sl::kBufferTypeRoughness);
+        pushTagDesc(pNoisyReflections, sl::kBufferTypeSpecularHitNoisy);
     }
 
     if (!tagsOk)
@@ -377,6 +381,9 @@ void DLSSRRPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
     builder.ReadTexture(RGResourceID::GBufferVelocity, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
     builder.ReadTexture(RGResourceID::GBufferNormal, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
     builder.ReadTexture(RGResourceID::GBufferRoughness, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    builder.ReadTexture(RGResourceID::GBufferAlbedo, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    builder.ReadTexture(RGResourceID::RTReflections, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    builder.ReadTexture(RGResourceID::DLSSExposure, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
     auto resolve = builder.DeclareStorageTexture(RGResourceID::TemporalResolve, TexFormat::R16G16B16A16_FLOAT, RGSizeClass::RenderResolution);
     builder.WriteStorageImage(resolve, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_WRITE);

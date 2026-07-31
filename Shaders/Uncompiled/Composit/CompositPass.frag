@@ -47,6 +47,12 @@ void main()
         }
     }
 
+    if (gbufferUBO.bloomResultIdx != 0u)
+    {
+        vec3 bloomColor = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.bloomResultIdx)], texCoords).rgb;
+        finalHDRColor += bloomColor;
+    }
+
     finalHDRColor *= ubo.exposure;
  
      // Tone Mapping

@@ -221,6 +221,39 @@ void RenderTargetManager::RecreateAuxiliaryTextures(const mathstl::Vector2& rend
 
     m_attachments.pSMAAEdgesTexture = m_pSMAAEdgesTexture;
     m_attachments.pSMAABlendTexture = m_pSMAABlendTexture;
+
+    // Bloom Downsample Target (Quarter resolution)
+    const u32 bloomWidth = stltype::max(1u, static_cast<u32>(renderResolution.x * 0.5f));
+    const u32 bloomHeight = stltype::max(1u, static_cast<u32>(renderResolution.y * 0.5f));
+
+    DynamicTextureRequest bloomDownsampleReq = baseRequest;
+    bloomDownsampleReq.extents = DirectX::XMUINT3(bloomWidth, bloomHeight, 1);
+    bloomDownsampleReq.format = TexFormat::R16G16B16A16_FLOAT;
+    bloomDownsampleReq.handle = g_pTexManager->GenerateHandle();
+    bloomDownsampleReq.AddName("Bloom Downsample Target");
+    bloomDownsampleReq.usage = Usage::GBuffer | Usage::Storage | Usage::Sampled | Usage::TransferDst | Usage::TransferSrc;
+    if (m_pBloomDownsampleTexture)
+        oldTextureHandles.push_back(m_bloomDownsampleTextureHandle);
+    m_pBloomDownsampleTexture = static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(bloomDownsampleReq));
+    m_bloomDownsampleTextureHandle = bloomDownsampleReq.handle;
+    m_bloomDownsampleBindlessHandle = g_pTexManager->MakeTextureBindless(bloomDownsampleReq.handle, true);
+    m_gbuffer.Set(GBufferTextureType::BloomDownsample, m_pBloomDownsampleTexture);
+    m_gbuffer.SetHandle(GBufferTextureType::BloomDownsample, m_bloomDownsampleBindlessHandle);
+
+    // Bloom Result Target (Quarter resolution)
+    DynamicTextureRequest bloomResultReq = baseRequest;
+    bloomResultReq.extents = DirectX::XMUINT3(bloomWidth, bloomHeight, 1);
+    bloomResultReq.format = TexFormat::R16G16B16A16_FLOAT;
+    bloomResultReq.handle = g_pTexManager->GenerateHandle();
+    bloomResultReq.AddName("Bloom Result Target");
+    bloomResultReq.usage = Usage::GBuffer | Usage::Storage | Usage::Sampled | Usage::TransferDst | Usage::TransferSrc;
+    if (m_pBloomResultTexture)
+        oldTextureHandles.push_back(m_bloomResultTextureHandle);
+    m_pBloomResultTexture = static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(bloomResultReq));
+    m_bloomResultTextureHandle = bloomResultReq.handle;
+    m_bloomResultBindlessHandle = g_pTexManager->MakeTextureBindless(bloomResultReq.handle, true);
+    m_gbuffer.Set(GBufferTextureType::BloomResult, m_pBloomResultTexture);
+    m_gbuffer.SetHandle(GBufferTextureType::BloomResult, m_bloomResultBindlessHandle);
 }
 
 void RenderTargetManager::RecreateDLSSExposureTexture()

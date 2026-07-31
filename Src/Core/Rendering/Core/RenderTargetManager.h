@@ -43,11 +43,16 @@ public:
     Texture* GetDLSSExposureTexture() const { return m_pDLSSExposureTexture; }
     StagingBuffer& GetDLSSExposureStagingBuffer() { return m_dlssExposureStagingBuffer; }
 
+    Texture* GetBloomDownsampleTexture() const { return m_pBloomDownsampleTexture; }
+    Texture* GetBloomResultTexture() const { return m_pBloomResultTexture; }
+
     BindlessTextureHandle GetDepthBindlessHandle() const { return m_depthBindlessHandle; }
     BindlessTextureHandle GetLastFrameDepthBindlessHandle() const { return m_lastFrameDepthBindlessHandle; }
     BindlessTextureHandle GetScreenSpaceShadowBindlessHandle() const { return m_screenSpaceShadowBindlessHandle; }
     BindlessTextureHandle GetSMAAEdgesBindlessHandle() const { return m_smaaEdgesBindlessHandle; }
     BindlessTextureHandle GetSMAABlendBindlessHandle() const { return m_smaaBlendBindlessHandle; }
+    BindlessTextureHandle GetBloomDownsampleBindlessHandle() const { return m_bloomDownsampleBindlessHandle; }
+    BindlessTextureHandle GetBloomResultBindlessHandle() const { return m_bloomResultBindlessHandle; }
 
 private:
     void CreateDepthAttachment(const mathstl::Vector2& renderResolution, stltype::vector<TextureHandle>& oldTextureHandles);
@@ -84,4 +89,12 @@ private:
     Texture* m_pDLSSExposureTexture{nullptr};
     TextureHandle m_dlssExposureTextureHandle{0};
     StagingBuffer m_dlssExposureStagingBuffer{};
+
+    Texture* m_pBloomDownsampleTexture{nullptr};
+    TextureHandle m_bloomDownsampleTextureHandle{0};
+    BindlessTextureHandle m_bloomDownsampleBindlessHandle{0};
+
+    Texture* m_pBloomResultTexture{nullptr};
+    TextureHandle m_bloomResultTextureHandle{0};
+    BindlessTextureHandle m_bloomResultBindlessHandle{0};
 };

@@ -52,6 +52,7 @@ enum class PassType
     RTAOCompute,
     RTReflectionsCompute,
     RTComposite,
+    Bloom,
 };
 
 // ============================================================================
@@ -66,7 +67,7 @@ struct PassStage
     stltype::fixed_vector<PassType, 8> groups;
 };
 
-inline const stltype::fixed_vector<PassStage, 11> PASS_SCHEDULE = {
+inline const stltype::fixed_vector<PassStage, 12> PASS_SCHEDULE = {
     PassStage{{PassType::EarlyAsyncCompute}},
     PassStage{{PassType::PreProcess}},
     PassStage{{PassType::DepthReliantCompute}},
@@ -75,6 +76,7 @@ inline const stltype::fixed_vector<PassStage, 11> PASS_SCHEDULE = {
     PassStage{{PassType::RTAOCompute, PassType::RTReflectionsCompute}},
     PassStage{{PassType::RTComposite}},
     PassStage{{PassType::TAA, PassType::DLSS, PassType::DLSS_RR, PassType::XeSS}},
+    PassStage{{PassType::Bloom}},
     PassStage{{PassType::Composite}},
     PassStage{{PassType::SMAA}},
     PassStage{{PassType::UI}},
@@ -94,7 +96,8 @@ inline bool IsComputePass(PassType type)
            type == PassType::XeSS ||
            type == PassType::RTAOCompute ||
            type == PassType::RTReflectionsCompute ||
-           type == PassType::RTComposite;
+           type == PassType::RTComposite ||
+           type == PassType::Bloom;
 }
 
 struct GraphicsFrameContext

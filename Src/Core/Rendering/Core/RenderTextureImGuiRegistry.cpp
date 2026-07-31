@@ -105,6 +105,7 @@ void RenderTextureImGuiRegistry::RegisterGBufferTextures(GBuffer& gbuffer, Textu
     m_historyColorIdB = addTex(GBufferTextureType::GBufferResolve);
     m_gbufferImGuiIDs.push_back(m_historyColorIdA);                                       // [5] History
     m_gbufferImGuiIDs.push_back(addTex(GBufferTextureType::GBufferPostAAColor));          // [6] Post AA
+    m_gbufferImGuiIDs.push_back(addTex(GBufferTextureType::BloomResult));                 // [7] Bloom Result
 
     static bool loggedImGuiOnce = false;
     if (!loggedImGuiOnce)

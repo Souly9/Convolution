@@ -81,5 +81,18 @@ STRUCTDECL(RTCompositePushConstants)
     STRUCTFIELD(uint, rtReflectionsTexIdx)
 STRUCTEND()
 
+STRUCTDECL(BloomPushConstants)
+    STRUCTFIELD(float, threshold)
+    STRUCTFIELD(float, intensity)
+    STRUCTFIELD(uint, isVerticalPass)
+    STRUCTFIELD(uint, width)
+    STRUCTFIELD(uint, height)
+    STRUCTFIELD(uint, outputWidth)
+    STRUCTFIELD(uint, outputHeight)
+    STRUCTFIELD(uint, inputTexIdx)
+    STRUCTFIELD(uint, outputImageIdx)
+STRUCTEND()
+
 #endif // SHADERS_PUSH_CONSTANTS_H
+
 

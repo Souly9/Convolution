@@ -29,6 +29,8 @@ static TexFormat GetDefaultFormatForRGResourceID(RGResourceID id)
         case RGResourceID::SMAAEdges: return TexFormat::R8G8_UNORM;
         case RGResourceID::SMAABlend: return TexFormat::R8G8B8A8_UNORM;
         case RGResourceID::DLSSExposure: return TexFormat::R32_FLOAT;
+        case RGResourceID::BloomDownsample: return TexFormat::R16G16B16A16_FLOAT;
+        case RGResourceID::BloomResult: return TexFormat::R16G16B16A16_FLOAT;
         default: return TexFormat::UNDEFINED;
     }
 }
@@ -396,6 +398,10 @@ void RGResourceRegistry::ImportEngineResources(const RenderPasses::MainPassData&
         ImportTexture(RGResourceID::TemporalResolve, gbuffer.Get(GBufferTextureType::GBufferResolve));
     if (gbuffer.Get(GBufferTextureType::GBufferPostAAColor))
         ImportTexture(RGResourceID::GBufferPostAAColor, gbuffer.Get(GBufferTextureType::GBufferPostAAColor));
+    if (gbuffer.Get(GBufferTextureType::BloomDownsample))
+        ImportTexture(RGResourceID::BloomDownsample, gbuffer.Get(GBufferTextureType::BloomDownsample));
+    if (gbuffer.Get(GBufferTextureType::BloomResult))
+        ImportTexture(RGResourceID::BloomResult, gbuffer.Get(GBufferTextureType::BloomResult));
 
     if (data.pScreenSpaceShadowTexture)
         ImportTexture(RGResourceID::ScreenSpaceShadows, data.pScreenSpaceShadowTexture);

@@ -13,6 +13,7 @@
 #include "ClusteredShading/TileAssignmentComputePass.h"
 #include "Compositing/CompositPass.h"
 #include "Compositing/LightingPass.h"
+#include "PostProcess/BloomPass.h"
 #include "Core/Global/FrameGlobals.h"
 #include "Core/Global/State/ApplicationState.h"
 #include "Core/Global/State/States.h"
@@ -107,6 +108,7 @@ void PassManager::InitResourceManagerAndCallbacks()
     {
         AddPass(PassType::XeSS, stltype::make_unique<RenderPasses::XeSSPass>());
     }
+    AddPass(PassType::Bloom, stltype::make_unique<RenderPasses::BloomPass>());
     AddPass(PassType::Composite, stltype::make_unique<RenderPasses::CompositPass>());
 }
 
@@ -510,6 +512,7 @@ void PassManager::UpdateGBufferUBO(const MainPassData& data)
     gbufferUBO.rtReflectionsIdx = reg.ResolveBindlessByID(RGResourceID::RTReflections);
     gbufferUBO.rtaoIdx = reg.ResolveBindlessByID(RGResourceID::RTAOOutput);
     gbufferUBO.deferredLightingColorIdx = reg.ResolveBindlessByID(RGResourceID::GBufferThisFrameColor);
+    gbufferUBO.bloomResultIdx = reg.ResolveBindlessByID(RGResourceID::BloomDownsample);
 
     const auto& appRenderState = g_pApplicationState->GetCurrentApplicationState().renderState;
     const bool taaModeActive = appRenderState.aaType == AntialiasingType::TAA_SMAA;
