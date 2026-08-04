@@ -30,16 +30,36 @@ enum class ExclusionGroup : u8
 using RGExecuteCallback = stltype::fixed_function<128, void(const RenderPasses::MainPassData&, const RenderPasses::FrameRendererContext&, const RGExecutionContext&)>;
 using RGContextResolver = stltype::fixed_function<64, stltype::vector<DescriptorSet::Ptr>(const RenderPasses::MainPassData&, const RenderPasses::FrameRendererContext&)>;
 
+#include "Core/Global/Utils/MathFunctions.h"
+
+enum class RGNodeFlags : u32
+{
+    None           = 0,
+    RequiresRT     = 1u << 0,
+    HasSideEffects = 1u << 1,
+    IsOpaque       = 1u << 2,
+    IsCulled       = 1u << 3
+};
+
 struct RGNode
 {
     stltype::string name;
     QueueType queueType{QueueType::Graphics};
     ExclusionGroup exclusionGroup{ExclusionGroup::None};
 
-    bool requiresRT{false};
-    bool hasSideEffects{false};
-    bool isOpaque{false};
-    bool isCulled{false};
+    u32 flags{0};
+
+    bool RequiresRT() const { return mathstl::isFlagSet(flags, (u32)RGNodeFlags::RequiresRT); }
+    void SetRequiresRT(bool v = true) { mathstl::setFlag(flags, (u32)RGNodeFlags::RequiresRT, v); }
+
+    bool HasSideEffects() const { return mathstl::isFlagSet(flags, (u32)RGNodeFlags::HasSideEffects); }
+    void SetHasSideEffects(bool v = true) { mathstl::setFlag(flags, (u32)RGNodeFlags::HasSideEffects, v); }
+
+    bool IsOpaque() const { return mathstl::isFlagSet(flags, (u32)RGNodeFlags::IsOpaque); }
+    void SetIsOpaque(bool v = true) { mathstl::setFlag(flags, (u32)RGNodeFlags::IsOpaque, v); }
+
+    bool IsCulled() const { return mathstl::isFlagSet(flags, (u32)RGNodeFlags::IsCulled); }
+    void SetIsCulled(bool v = true) { mathstl::setFlag(flags, (u32)RGNodeFlags::IsCulled, v); }
 
     stltype::fixed_vector<RGResourceAccess, 8> reads;
     stltype::fixed_vector<RGResourceAccess, 8> writes;

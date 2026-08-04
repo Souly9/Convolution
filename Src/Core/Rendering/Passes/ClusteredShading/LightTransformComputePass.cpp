@@ -78,10 +78,12 @@ void LightTransformComputePass::Setup(::RenderGraphBuilder& builder, const MainP
 void LightTransformComputePass::RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const RGExecutionContext& execCtx)
 {
     ScopedZone("LightTransformComputePass::RenderWithGraph");
+    StartRenderPassProfilingScope(execCtx.pCmdBuffer);
     auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
 
     if (!ctx.clusterGridDescriptor)
     {
+        EndRenderPassProfilingScope(execCtx.pCmdBuffer);
         return;
     }
 
@@ -98,6 +100,7 @@ void LightTransformComputePass::RenderWithGraph(const MainPassData& data, const 
     cmd.descriptorSets = {ctx.sharedDataUBODescriptor, ctx.tileArraySSBODescriptor, ctx.clusterGridDescriptor, viewSpaceLightsDesc};
     cmd.SetPushConstants(0, m_pushConstants);
     execCtx.pCmdBuffer->RecordCommand(cmd);
+    EndRenderPassProfilingScope(execCtx.pCmdBuffer);
 }
 
 void LightTransformComputePass::Render(const MainPassData& data,

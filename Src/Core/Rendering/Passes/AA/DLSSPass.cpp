@@ -144,26 +144,6 @@ void DLSSPass::RenderWithGraph(const MainPassData& data, const FrameRendererCont
     if (Nvidia::StreamlineManager::IsDLSSEvaluateBlocked())
         return;
 
-    // Transition layouts for DLSS
-    {
-        const ImageLayout oldColorOutLayout = (data.renderState.recreatedThisFrame || !m_wasActive)
-                                              ? ImageLayout::UNDEFINED
-                                              : ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-
-        ImageLayoutTransitionCmd colorOutGen(pColorOut);
-        colorOutGen.oldLayout = oldColorOutLayout;
-        colorOutGen.newLayout = ImageLayout::GENERAL;
-        VkTextureManager::SetLayoutBarrierMasks(colorOutGen, oldColorOutLayout, ImageLayout::GENERAL);
-        execCtx.pCmdBuffer->RecordCommand(colorOutGen);
-    }
-    const auto restoreColorOutReadLayout = [&]() {
-        ImageLayoutTransitionCmd colorOutRead(pColorOut);
-        colorOutRead.oldLayout = ImageLayout::GENERAL;
-        colorOutRead.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-        VkTextureManager::SetLayoutBarrierMasks(colorOutRead, ImageLayout::GENERAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-        execCtx.pCmdBuffer->RecordCommand(colorOutRead);
-    };
-
     sl::ViewportHandle viewport(0);
 
     stltype::fixed_vector<StreamlineTagDesc, 16> tagDescs;
@@ -173,6 +153,10 @@ void DLSSPass::RenderWithGraph(const MainPassData& data, const FrameRendererCont
             return true;
         }
         TextureVulkan* pVkTex = static_cast<TextureVulkan*>(pTex);
+        if (pVkTex->GetImageView() == VK_NULL_HANDLE || pVkTex->GetImage() == VK_NULL_HANDLE)
+        {
+            return true;
+        }
         StreamlineTagDesc desc{};
         desc.type = type;
         desc.native = reinterpret_cast<uint64_t>(pVkTex->GetImage());
@@ -196,20 +180,10 @@ void DLSSPass::RenderWithGraph(const MainPassData& data, const FrameRendererCont
     bool tagsOk = pushTagDesc(pColorIn, sl::kBufferTypeScalingInputColor) &&
                   pushTagDesc(pColorOut, sl::kBufferTypeScalingOutputColor) &&
                   pushTagDesc(pDepth, sl::kBufferTypeDepth) &&
-                  pushTagDesc(pMotion, sl::kBufferTypeMotionVectors) &&
-                  pushTagDesc(pExposure, sl::kBufferTypeExposure);
+                  pushTagDesc(pMotion, sl::kBufferTypeMotionVectors);
 
-    if (tagsOk)
+    if (!tagsOk)
     {
-        pushTagDesc(nullptr, sl::kBufferTypeAlbedo);
-        pushTagDesc(nullptr, sl::kBufferTypeSpecularAlbedo);
-        pushTagDesc(nullptr, sl::kBufferTypeNormals);
-        pushTagDesc(nullptr, sl::kBufferTypeRoughness);
-        pushTagDesc(nullptr, sl::kBufferTypeSpecularHitNoisy);
-    }
-    else
-    {
-        restoreColorOutReadLayout();
         return;
     }
 
@@ -374,14 +348,11 @@ void DLSSPass::RenderWithGraph(const MainPassData& data, const FrameRendererCont
     {
         DEBUG_LOG_WARNF("[DLSSPass] slSetConstants failed with result: 0x{:X}", static_cast<u32>(constRes));
         EndRenderPassProfilingScope(execCtx.pCmdBuffer);
-        restoreColorOutReadLayout();
         return;
     }
     m_wasActive = true;
     execCtx.pCmdBuffer->RecordCommand(streamlineCmd);
     EndRenderPassProfilingScope(execCtx.pCmdBuffer);
-
-    restoreColorOutReadLayout();
 }
 
 void DLSSPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
@@ -391,7 +362,7 @@ void DLSSPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
     builder.ReadTexture(RGResourceID::GBufferVelocity, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
     builder.ReadTexture(RGResourceID::DLSSExposure, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
-    auto resolve = builder.DeclareStorageTexture(RGResourceID::TemporalResolve, TexFormat::R16G16B16A16_FLOAT, RGSizeClass::RenderResolution);
+    auto resolve = builder.DeclareStorageTexture(RGResourceID::TemporalResolve, TexFormat::R16G16B16A16_FLOAT, RGSizeClass::OutputResolution);
     builder.WriteStorageImage(resolve, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_WRITE);
     builder.SetHasSideEffects();
 }

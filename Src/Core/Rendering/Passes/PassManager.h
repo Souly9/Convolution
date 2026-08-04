@@ -9,12 +9,10 @@
 #include "Core/Events/EventSystem.h"
 #include "Core/Rendering/Core/FrameTransitionRecorder.h"
 #include "Core/Rendering/Core/FrameResourceManager.h"
-#include "Core/Rendering/Core/RenderTargetManager.h"
 #include "Core/Rendering/Core/RenderTextureImGuiRegistry.h"
 #include "Core/Rendering/Core/RT/RTResourceManager.h"
 #include "Core/Rendering/Core/RT/RTSceneManager.h"
 #include "Core/Rendering/Core/ShadowMaps.h"
-#include "Core/Rendering/Core/ShadowMapManager.h"
 #include "Core/Rendering/Core/SharedResourceManager.h"
 #include "Core/Rendering/Core/RenderGraph/RenderGraph.h"
 #include "Core/Rendering/Core/View.h"
@@ -67,8 +65,8 @@ struct PassStage
     stltype::fixed_vector<PassType, 8> groups;
 };
 
-inline const stltype::fixed_vector<PassStage, 12> PASS_SCHEDULE = {
-    PassStage{{PassType::EarlyAsyncCompute}},
+inline const stltype::fixed_vector<PassStage, 13> PASS_SCHEDULE = {
+    PassStage{{PassType::LightTransformCompute, PassType::ClusterGenCompute, PassType::EarlyAsyncCompute, PassType::TileAssignmentCompute}},
     PassStage{{PassType::PreProcess}},
     PassStage{{PassType::DepthReliantCompute}},
     PassStage{{PassType::Main, PassType::Debug, PassType::Shadow}},
@@ -184,10 +182,10 @@ public:
         m_renderState.jitter = jitter;
     }
     ::SharedResourceManager& GetResourceManager() { return m_resourceManager; }
-    void RecreateShadowMapsPublic(u32 cascades, const mathstl::Vector2& extents) { RecreateShadowMaps(cascades, extents); }
-    void RegisterImGuiTexturesPublic() { m_imguiRegistry.RegisterShadowMapTextures(m_shadowMapManager.GetShadowMap()); }
+    void RegisterImGuiTexturesPublic() { m_imguiRegistry.RegisterShadowMapTextures(m_renderGraph.GetRegistry().GetShadowMap()); }
     void PreProcessMeshDataPublic(const stltype::vector<PassMeshData>& meshes, u32 lastFrame, u32 curFrame) { PreProcessMeshData(meshes, lastFrame, curFrame); }
     void TransferPassDataPublic(PassGeometryData&& passData, u32 frameIdx) { TransferPassData(std::move(passData), frameIdx); }
+    void RecreateShadowMapsPublic(u32 cascades, const mathstl::Vector2& extents) { RecreateShadowMaps(cascades, extents); }
 
 
     // Mainly used to hot reload shaders
@@ -235,8 +233,6 @@ private:
     RT::RTSceneManager m_rtSceneManager;
     RT::RTResourceManager m_rtResourceManager;
     FrameResourceManager m_frameResourceManager;
-    RenderTargetManager m_renderTargetManager;
-    ShadowMapManager m_shadowMapManager;
     RenderTextureImGuiRegistry m_imguiRegistry;
     FrameTransitionRecorder m_transitionRecorder;
     RenderGraph m_renderGraph;

@@ -64,7 +64,7 @@ void RenderGraph::BuildAdjacencyGraph()
     for (u32 nodeIdx = 0; nodeIdx < nodeCount; ++nodeIdx)
     {
         const auto& node = m_nodes[nodeIdx];
-        if (node.isCulled) continue;
+        if (node.IsCulled()) continue;
 
         for (const auto& read : node.reads)
         {
@@ -114,7 +114,7 @@ bool RenderGraph::ValidateSinglePass() const
     for (u32 nodeIdx = 0; nodeIdx < static_cast<u32>(m_nodes.size()); ++nodeIdx)
     {
         const auto& node = m_nodes[nodeIdx];
-        if (node.isCulled) continue;
+        if (node.IsCulled()) continue;
 
         if (node.exclusionGroup != ExclusionGroup::None)
         {
@@ -128,7 +128,7 @@ bool RenderGraph::ValidateSinglePass() const
             activeExclusionMask |= groupBit;
         }
 
-        if (node.requiresRT && !m_hasRTScene)
+        if (node.RequiresRT() && !m_hasRTScene)
         {
             DEBUG_LOG_WARNF("RenderGraph: Node '%s' requires RT, but TLAS is not ready", node.name.c_str());
         }
@@ -149,7 +149,7 @@ void RenderGraph::CullUnreferencedNodes()
 
     for (const auto& node : m_nodes)
     {
-        if (node.hasSideEffects)
+        if (node.HasSideEffects())
         {
             for (const auto& r : node.reads)
             {
@@ -165,7 +165,7 @@ void RenderGraph::CullUnreferencedNodes()
         changed = false;
         for (auto& node : m_nodes)
         {
-            if (node.isCulled || node.hasSideEffects) continue;
+            if (node.IsCulled() || node.HasSideEffects()) continue;
 
             bool satisfiesReference = false;
             for (const auto& w : node.writes)
@@ -179,7 +179,7 @@ void RenderGraph::CullUnreferencedNodes()
 
             if (!satisfiesReference)
             {
-                node.isCulled = true;
+                node.SetIsCulled(true);
                 changed = true;
             }
             else
@@ -203,7 +203,7 @@ void RenderGraph::TopologicalSort()
     stltype::vector<u32> readyQueue;
     for (u32 i = 0; i < nodeCount; ++i)
     {
-        if (!m_nodes[i].isCulled && inDegree[i] == 0)
+        if (!m_nodes[i].IsCulled() && inDegree[i] == 0)
             readyQueue.push_back(i);
     }
 
@@ -261,10 +261,15 @@ void RenderGraph::InsertBarriers()
 
     stltype::hash_map<RGResourceHandle, ResourceTrackingState> trackingMap;
 
+    for (u32 handle = 0; handle < m_registry.GetResourceCount(); ++handle)
+    {
+        trackingMap[handle].currentLayout = m_registry.GetInitialLayout(handle);
+    }
+
     for (u32 nodeIdx : m_sortedNodeIndices)
     {
         auto& node = m_nodes[nodeIdx];
-        if (node.isCulled || node.isOpaque) continue;
+        if (node.IsCulled() || node.IsOpaque()) continue;
 
         for (const auto& read : node.reads)
         {
@@ -278,7 +283,7 @@ void RenderGraph::InsertBarriers()
                 b.oldLayout = state.currentLayout;
                 b.newLayout = read.layout;
                 b.srcStage = state.lastWriterStage != SyncStages::NONE ? state.lastWriterStage : SyncStages::TOP_OF_PIPE;
-                b.dstStage = read.stage;
+                b.dstStage = read.stage != SyncStages::NONE ? read.stage : SyncStages::ALL_COMMANDS;
                 b.srcAccess = state.lastWriterAccess;
                 b.dstAccess = read.access;
 
@@ -299,7 +304,7 @@ void RenderGraph::InsertBarriers()
                 b.oldLayout = state.currentLayout;
                 b.newLayout = write.layout;
                 b.srcStage = state.lastWriterStage != SyncStages::NONE ? state.lastWriterStage : SyncStages::TOP_OF_PIPE;
-                b.dstStage = write.stage;
+                b.dstStage = write.stage != SyncStages::NONE ? write.stage : SyncStages::ALL_COMMANDS;
                 b.srcAccess = state.lastWriterAccess;
                 b.dstAccess = write.access;
 
@@ -316,6 +321,11 @@ void RenderGraph::InsertBarriers()
         {
             trackingMap[overrideLayout.handle].currentLayout = overrideLayout.layout;
         }
+    }
+
+    for (const auto& pair : trackingMap)
+    {
+        m_registry.SetResourceLayout(pair.first, pair.second.currentLayout);
     }
 }
 
@@ -343,8 +353,8 @@ void RenderGraph::PublishDebugState() const
         dNode.name = node.name;
         dNode.queueType = static_cast<u32>(node.queueType);
         dNode.exclusionGroup = static_cast<u32>(node.exclusionGroup);
-        dNode.isCulled = node.isCulled;
-        dNode.isOpaque = node.isOpaque;
+        dNode.isCulled = node.IsCulled();
+        dNode.isOpaque = node.IsOpaque();
 
         for (const auto& r : node.reads)
         {
@@ -357,7 +367,7 @@ void RenderGraph::PublishDebugState() const
             dNode.writeResources.push_back(spec ? spec->GetName() : "Resource");
         }
 
-        if (node.isCulled) snapshot.culledNodeCount++;
+        if (node.IsCulled()) snapshot.culledNodeCount++;
         else snapshot.activeNodeCount++;
 
         snapshot.nodes.push_back(stltype::move(dNode));
@@ -369,15 +379,15 @@ void RenderGraph::PublishDebugState() const
         if (!spec) continue;
 
         Texture* pTex = m_registry.Resolve(handle);
-        if (!pTex && !spec->isBuffer && spec->id == RGResourceID::Custom && spec->customName.empty())
+        if (!pTex && !spec->IsBuffer() && spec->id == RGResourceID::Custom && spec->customName.empty())
             continue;
 
         RendererState::RenderGraphDebugResource dRes{};
         dRes.name = spec->GetName();
         dRes.format = static_cast<u32>(spec->format);
         dRes.sizeClass = static_cast<u32>(spec->sizeClass);
-        dRes.isPingPong = spec->isPingPong;
-        dRes.isBuffer = spec->isBuffer;
+        dRes.isPingPong = spec->IsPingPong();
+        dRes.isBuffer = spec->IsBuffer();
         dRes.isImported = (spec->id == RGResourceID::Swapchain);
         dRes.isAllocated = (pTex != nullptr);
 
@@ -399,7 +409,7 @@ void RenderGraph::PublishDebugState() const
                 default: bpp = 4; break;
             }
             dRes.estimatedBytes = static_cast<u64>(dRes.width) * dRes.height * bpp;
-            if (spec->isPingPong) dRes.estimatedBytes *= 2;
+            if (spec->IsPingPong()) dRes.estimatedBytes *= 2;
             totalVRAM += dRes.estimatedBytes;
         }
 
@@ -416,7 +426,7 @@ void RenderGraph::PublishDebugState() const
 void RenderGraph::ExecuteNode(u32 nodeIdx, CommandBuffer* pCmdBuffer, const RenderPasses::MainPassData& data, const RenderPasses::FrameRendererContext& ctx)
 {
     auto& node = m_nodes[nodeIdx];
-    if (node.isCulled) return;
+    if (node.IsCulled()) return;
 
     if (nodeIdx < m_barriersByNode.size())
     {
@@ -516,7 +526,7 @@ void RenderGraph::BuildExecutionBatches(RenderPasses::FrameRendererContext& ctx)
     for (u32 nodeIdx : m_sortedNodeIndices)
     {
         auto& node = m_nodes[nodeIdx];
-        if (node.isCulled) continue;
+        if (node.IsCulled()) continue;
 
         u32 requiredBatchIndex = UINT32_MAX;
         if (nodeIdx < m_predecessors.size())

@@ -33,13 +33,11 @@ void main()
     else
     {
         uint aaType = GET_AA_TYPE(ubo.debugFlags);
-        if (aaType == AA_TYPE_TAA_SMAA || aaType == AA_TYPE_DLSS || aaType == AA_TYPE_XESS)
+        if (aaType == AA_TYPE_TAA_SMAA || aaType == AA_TYPE_DLSS || aaType == AA_TYPE_XESS || aaType == AA_TYPE_SMAA)
         {
             finalHDRColor = texture(GlobalBindlessTextures[gbufferUBO.finalTemporalColorBufferIdx], texCoords).xyz;
-        }
-        else if (aaType == AA_TYPE_SMAA)
-        {
-            finalHDRColor = texture(GlobalBindlessTextures[gbufferUBO.finalTemporalColorBufferIdx], texCoords).xyz;
+            finalHDRColor = clamp(finalHDRColor, vec3(0.0), vec3(0.999));
+            finalHDRColor = finalHDRColor / (vec3(1.0) - finalHDRColor);
         }
         else
         {

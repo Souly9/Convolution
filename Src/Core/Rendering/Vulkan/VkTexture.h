@@ -21,11 +21,16 @@ public:
     virtual void CleanUp() override;
 
     void SetImageView(VkImageView view);
+    void SetImageView2D(VkImageView view2D);
     void SetSampler(VkSampler sampler);
 
     VkImageView GetImageView() const
     {
         return m_imageView;
+    }
+    VkImageView GetImageView2D() const
+    {
+        return m_imageView2D != VK_NULL_HANDLE ? m_imageView2D : m_imageView;
     }
     VkImage GetImage() const
     {
@@ -43,4 +48,5 @@ protected:
     GPUMemoryHandle m_imageMemory{VK_NULL_HANDLE};
     VkSampler m_sampler{VK_NULL_HANDLE};
     VkImageView m_imageView{VK_NULL_HANDLE};
+    VkImageView m_imageView2D{VK_NULL_HANDLE};
 };

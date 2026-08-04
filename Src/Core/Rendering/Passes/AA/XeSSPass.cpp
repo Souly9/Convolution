@@ -87,25 +87,6 @@ void XeSSPass::RenderWithGraph(const MainPassData& data, const FrameRendererCont
 
     // Transition layouts for XeSS
     // ColorOut should be in GENERAL for writing
-    {
-        const ImageLayout oldColorOutLayout = (data.renderState.recreatedThisFrame || !m_wasActive)
-                                              ? ImageLayout::UNDEFINED
-                                              : ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-
-        ImageLayoutTransitionCmd colorOutGen(pColorOut);
-        colorOutGen.oldLayout = oldColorOutLayout;
-        colorOutGen.newLayout = ImageLayout::GENERAL;
-        VkTextureManager::SetLayoutBarrierMasks(colorOutGen, oldColorOutLayout, ImageLayout::GENERAL);
-        execCtx.pCmdBuffer->RecordCommand(colorOutGen);
-    }
-    const auto restoreColorOutReadLayout = [&]() {
-        ImageLayoutTransitionCmd colorOutRead(pColorOut);
-        colorOutRead.oldLayout = ImageLayout::GENERAL;
-        colorOutRead.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-        VkTextureManager::SetLayoutBarrierMasks(colorOutRead, ImageLayout::GENERAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-        execCtx.pCmdBuffer->RecordCommand(colorOutRead);
-    };
-
     auto to_xess_image_view = [](Texture* texture) -> xess_vk_image_view_info {
         TextureVulkan* pVkTex = static_cast<TextureVulkan*>(texture);
         xess_vk_image_view_info info = {};
@@ -167,8 +148,6 @@ void XeSSPass::RenderWithGraph(const MainPassData& data, const FrameRendererCont
     m_wasActive = true;
     execCtx.pCmdBuffer->RecordCommand(xessCmd);
     EndRenderPassProfilingScope(execCtx.pCmdBuffer);
-
-    restoreColorOutReadLayout();
 }
 
 void XeSSPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
@@ -177,7 +156,7 @@ void XeSSPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
     builder.ReadTexture(RGResourceID::MainDepth, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
     builder.ReadTexture(RGResourceID::GBufferVelocity, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
-    auto resolve = builder.DeclareStorageTexture(RGResourceID::TemporalResolve, TexFormat::R16G16B16A16_FLOAT, RGSizeClass::RenderResolution);
+    auto resolve = builder.DeclareStorageTexture(RGResourceID::TemporalResolve, TexFormat::R16G16B16A16_FLOAT, RGSizeClass::OutputResolution);
     builder.WriteStorageImage(resolve, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_WRITE);
     builder.SetHasSideEffects();
 }

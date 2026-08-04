@@ -2,14 +2,15 @@
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Global/Typedefs.h"
 #include "Core/Rendering/Core/RenderingForwardDecls.h"
+#include "Core/Rendering/Core/ShadowMaps.h"
 #include "RGResourceTypes.h"
 #include "../../../../Shaders/Globals/Types.h"
 
-class RenderTargetManager;
 namespace RenderPasses
 {
 struct MainPassData;
 struct FrameRendererContext;
+class FrameResourceManager;
 }
 
 class RGResourceRegistry
@@ -20,9 +21,11 @@ public:
 
     RGResourceHandle DeclareResource(const RGResourceSpec& spec);
     RGResourceHandle ImportTexture(RGResourceID id, Texture* pTexture, ImageLayout currentLayout = ImageLayout::UNDEFINED);
-    void ImportEngineResources(const RenderPasses::MainPassData& data,
-                               const RenderPasses::FrameRendererContext& ctx,
-                               const RenderTargetManager& rtm);
+    void DeclareEngineResources();
+
+    void RecreateShadowMap(u32 cascades, const mathstl::Vector2& extents, RenderPasses::FrameResourceManager& frameResourceManager);
+    const CascadedShadowMap& GetShadowMap() const { return m_shadowMap; }
+    CascadedShadowMap& GetShadowMap() { return m_shadowMap; }
 
     void OnResize(const mathstl::Vector2& renderRes, const mathstl::Vector2& outputRes);
     void AllocatePending();
@@ -48,12 +51,24 @@ public:
 
     RGResourceHandle GetHistoryHandle(RGResourceHandle handle) const;
     const RGResourceSpec* GetSpec(RGResourceHandle handle) const;
+    ImageLayout GetInitialLayout(RGResourceHandle handle) const;
+    void SetResourceLayout(RGResourceHandle handle, ImageLayout layout);
+    void MarkReferenced(RGResourceHandle handle);
 
     u32 GetResourceCount() const { return static_cast<u32>(m_resources.size()); }
-    bool IsImported(RGResourceHandle handle) const { return m_resources[handle].isImported; }
+    bool IsImported(RGResourceHandle handle) const { return m_resources[handle].IsImported(); }
 
     void ResetFrameState();
     void FreeAll();
+
+enum class RGManagedResourceFlags : u32
+{
+    None                = 0,
+    Allocated           = 1u << 0,
+    IsImported          = 1u << 1,
+    IsPersistent        = 1u << 2,
+    ReferencedThisFrame = 1u << 3
+};
 
 private:
     struct ManagedResource
@@ -67,12 +82,25 @@ private:
         BindlessTextureHandle historyBindlessHandle{0};
         mathstl::Vector2 allocatedExtents{0.0f, 0.0f};
         u32 framesUnreferenced{0};
-        bool allocated{false};
-        bool isImported{false};
-        bool referencedThisFrame{false};
+        ImageLayout currentLayout{ImageLayout::UNDEFINED};
+
+        u32 flags{0};
+
+        bool IsAllocated() const { return mathstl::isFlagSet(flags, (u32)RGManagedResourceFlags::Allocated); }
+        void SetAllocated(bool v = true) { mathstl::setFlag(flags, (u32)RGManagedResourceFlags::Allocated, v); }
+
+        bool IsImported() const { return mathstl::isFlagSet(flags, (u32)RGManagedResourceFlags::IsImported); }
+        void SetIsImported(bool v = true) { mathstl::setFlag(flags, (u32)RGManagedResourceFlags::IsImported, v); }
+
+        bool IsPersistent() const { return mathstl::isFlagSet(flags, (u32)RGManagedResourceFlags::IsPersistent); }
+        void SetIsPersistent(bool v = true) { mathstl::setFlag(flags, (u32)RGManagedResourceFlags::IsPersistent, v); }
+
+        bool IsReferencedThisFrame() const { return mathstl::isFlagSet(flags, (u32)RGManagedResourceFlags::ReferencedThisFrame); }
+        void SetReferencedThisFrame(bool v = true) { mathstl::setFlag(flags, (u32)RGManagedResourceFlags::ReferencedThisFrame, v); }
     };
 
     stltype::vector<ManagedResource> m_resources;
+    CascadedShadowMap m_shadowMap{};
     mathstl::Vector2 m_currentRenderRes{0.0f, 0.0f};
     mathstl::Vector2 m_currentOutputRes{0.0f, 0.0f};
     u32 m_currentFrameSlot{0};

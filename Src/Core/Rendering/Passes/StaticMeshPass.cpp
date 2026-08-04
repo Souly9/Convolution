@@ -2,6 +2,8 @@
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Rendering/Core/RenderDefinitions.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
+#include "Core/Rendering/Core/GBuffer.h"
+#include "Core/Rendering/Core/CommandBuffer.h"
 #include "Utils/RenderPassUtils.h"
 
 using namespace RenderPasses;
@@ -21,6 +23,9 @@ void StaticMainMeshPass::Init(RendererAttachmentInfo& attachmentInfo, const Shar
     ScopedZone("StaticMeshPass::Init");
 
     RecreateResolutionDependentResources(attachmentInfo, resourceManager);
+    BuildPipelines();
+
+    m_indirectCmdBuffers.resize(SWAPCHAIN_IMAGES);
     for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
         m_indirectCmdBuffers[i].Init(1000000);
     BuildPipelines();
@@ -31,7 +36,7 @@ void StaticMainMeshPass::RecreateResolutionDependentResources(RendererAttachment
 {
     ScopedZone("StaticMeshPass::RecreateResolutionDependentResources");
 
-    const auto& gbufferInfo = attachmentInfo.gbuffer;
+    GBufferInfo gbufferInfo{};
 
     const auto gbufferPosition =
         CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBufferAlbedo), LoadOp::CLEAR, nullptr);
@@ -45,7 +50,7 @@ void StaticMainMeshPass::RecreateResolutionDependentResources(RendererAttachment
         gbufferInfo.GetFormat(GBufferTextureType::GBufferRoughness), LoadOp::CLEAR, nullptr);
 
     m_mainRenderingData.depthAttachment =
-        CreateReadOnlyDepthAttachment(LoadOp::LOAD, attachmentInfo.depthAttachment.GetTexture());
+        CreateReadOnlyDepthAttachment(LoadOp::LOAD, nullptr);
     m_mainRenderingData.colorAttachments = {
         gbufferPosition, gbufferNormal, gbuffer3, gbufferVelocity, gbufferRoughness};
 

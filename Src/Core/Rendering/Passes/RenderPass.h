@@ -2,7 +2,8 @@
 #include "Core/Rendering/Core/Defines/DescriptorLayoutDefines.h"
 #include "Core/Rendering/Core/Defines/DescriptorLayoutPresets.h"
 #include "Core/Rendering/Core/RenderingForwardDecls.h"
-#include "Core/Rendering/Core/RenderTargetManager.h"
+#include "Core/Rendering/Core/Texture.h"
+#include "Core/Rendering/Core/CommandBuffer.h"
 #include "Core/Rendering/Core/Synchronization.h"
 #include "Core/Rendering/Core/TransferUtils/TransferDefines.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
@@ -10,6 +11,11 @@
 #include "Core/Rendering/Core/ProfilingUtils.h"
 #include "Core/Rendering/Core/Defines/VertexDefines.h"
 #include "Core/Rendering/Core/RenderGraph/RGExecutionContext.h"
+
+namespace RenderPasses
+{
+struct RendererAttachmentInfo {};
+}
 
 class SharedResourceManager;
 class GPUTimingQueryBase;

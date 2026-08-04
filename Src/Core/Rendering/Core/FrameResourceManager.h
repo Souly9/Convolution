@@ -180,6 +180,7 @@ public:
 
     UBO::LightClusterSSBO& GetLightCluster() { return *m_lightCluster; }
     ShadowMapState& GetShadowMapState() { return m_currentShadowMapState; }
+    StagingBuffer& GetDLSSExposureStagingBuffer() { return m_dlssExposureStagingBuffer; }
     const PassGeometryData& GetCurrentPassGeometryState() const { return m_currentPassGeometryState; }
     const DirectX::XMFLOAT4X4& GetCurrentTransform(u32 idx) const { return m_cachedTransformSSBO[idx]; }
 
@@ -235,6 +236,7 @@ private:
     u32 m_framesToRebuild{0};
 
     ShadowMapState m_currentShadowMapState{};
+    StagingBuffer m_dlssExposureStagingBuffer;
 
     TextureHandle m_skyboxTextureHandle{0};
     BindlessTextureHandle m_skyboxBindlessHandle{0};

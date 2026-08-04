@@ -100,6 +100,10 @@ void MainMenuBar::DrawMenuBar(f32 dt, ApplicationInfos& appInfos)
             {
                 m_renderGraphInspectorWindow.SetOpen(true);
             }
+            if (ImGui::MenuItem("Texture Viewer", ""))
+            {
+                m_textureViewerWindow.SetOpen(true);
+            }
             ImGui::EndMenu();
         }
         ImGui::EndMainMenuBar();
@@ -130,4 +134,5 @@ void MainMenuBar::DrawMenuBar(f32 dt, ApplicationInfos& appInfos)
     {
         m_renderGraphInspectorWindow.DrawWindow(dt);
     }
+    m_textureViewerWindow.DrawWindow(dt);
 }

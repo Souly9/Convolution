@@ -87,6 +87,7 @@ void LightGridComputePass::Setup(::RenderGraphBuilder& builder, const MainPassDa
 void LightGridComputePass::RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const RGExecutionContext& execCtx)
 {
     ScopedZone("LightGridComputePass::RenderWithGraph");
+    StartRenderPassProfilingScope(execCtx.pCmdBuffer);
 
     auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
 
@@ -100,6 +101,7 @@ void LightGridComputePass::RenderWithGraph(const MainPassData& data, const Frame
 
     if (!ctx.clusterGridDescriptor)
     {
+        EndRenderPassProfilingScope(execCtx.pCmdBuffer);
         return;
     }
 
@@ -117,6 +119,7 @@ void LightGridComputePass::RenderWithGraph(const MainPassData& data, const Frame
     cmd.descriptorSets = {ctx.sharedDataUBODescriptor, ctx.tileArraySSBODescriptor, ctx.clusterGridDescriptor, viewSpaceLightsDesc};
     cmd.SetPushConstants(0, m_pushConstants);
     execCtx.pCmdBuffer->RecordCommand(cmd);
+    EndRenderPassProfilingScope(execCtx.pCmdBuffer);
 }
 
 void LightGridComputePass::Render(const MainPassData& data,

@@ -80,10 +80,12 @@ void ClusterGeneratorComputePass::Setup(::RenderGraphBuilder& builder, const Mai
 void ClusterGeneratorComputePass::RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const RGExecutionContext& execCtx)
 {
     ScopedZone("ClusterGeneratorComputePass::RenderWithGraph");
+    StartRenderPassProfilingScope(execCtx.pCmdBuffer);
     auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
 
     if (!ctx.clusterGridDescriptor)
     {
+        EndRenderPassProfilingScope(execCtx.pCmdBuffer);
         return;
     }
 
@@ -102,6 +104,7 @@ void ClusterGeneratorComputePass::RenderWithGraph(const MainPassData& data, cons
     cmd.descriptorSets = {ctx.sharedDataUBODescriptor, ctx.tileArraySSBODescriptor, ctx.clusterGridDescriptor, viewSpaceLightsDesc};
     cmd.SetPushConstants(0, m_pushConstants);
     execCtx.pCmdBuffer->RecordCommand(cmd);
+    EndRenderPassProfilingScope(execCtx.pCmdBuffer);
 }
 
 void ClusterGeneratorComputePass::Render(const MainPassData& data,

@@ -84,15 +84,18 @@ STRUCTEND()
 STRUCTDECL(BloomPushConstants)
     STRUCTFIELD(float, threshold)
     STRUCTFIELD(float, intensity)
-    STRUCTFIELD(uint, isVerticalPass)
+    STRUCTFIELD(float, filterRadius)
+    STRUCTFIELD(uint, useKarisAverage)
     STRUCTFIELD(uint, width)
     STRUCTFIELD(uint, height)
     STRUCTFIELD(uint, outputWidth)
     STRUCTFIELD(uint, outputHeight)
     STRUCTFIELD(uint, inputTexIdx)
+    STRUCTFIELD(uint, inputTargetTexIdx)
     STRUCTFIELD(uint, outputImageIdx)
+    STRUCTFIELD(uint, lensTextureIdx)
+    STRUCTFIELD(uint, useLensTexture)
+    STRUCTFIELD(float, lensDirtIntensity)
 STRUCTEND()
 
 #endif // SHADERS_PUSH_CONSTANTS_H
-
-

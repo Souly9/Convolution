@@ -68,15 +68,15 @@ public:
     }
     void SetRequiresRT(bool requiresRT)
     {
-        m_node.requiresRT = requiresRT;
+        m_node.SetRequiresRT(requiresRT);
     }
     void SetHasSideEffects()
     {
-        m_node.hasSideEffects = true;
+        m_node.SetHasSideEffects(true);
     }
     void SetOpaque()
     {
-        m_node.isOpaque = true;
+        m_node.SetIsOpaque(true);
     }
     void AssumeOutputLayout(RGResourceHandle handle, ImageLayout layout);
 

@@ -16,6 +16,7 @@
 #include "Core/Rendering/Vulkan/VkDescriptorSetLayout.h"
 #include "Core/Rendering/Vulkan/VkSynchronization.h"
 #include "Core/Rendering/Vulkan/VkBuffer.h"
+#include "Core/Rendering/Core/Texture.h"
 #include "VkTexture.h"
 #include <EASTL/deque.h>
 #include <EASTL/queue.h>
@@ -219,6 +220,19 @@ public:
         return m_combinedBindlessDescriptorSet;
     }
 
+    struct LoadedTexInfo
+    {
+        stltype::string filePath;
+        TextureSemantic semantic{TextureSemantic::Auto};
+        TextureHandle handle;
+    };
+
+    const stltype::hash_map<TextureHandle, stltype::unique_ptr<Texture>>& GetTextures() const { return m_textures; }
+    const stltype::hash_map<TextureHandle, stltype::unique_ptr<Texture>>& GetPersistentTextures() const { return m_persistentTextures; }
+    const stltype::hash_map<TextureHandle, BindlessTextureHandle>& GetBindlessTextureHandleMap() const { return m_bindlessTextureHandleMap; }
+    const stltype::vector<LoadedTexInfo>& GetLoadedTextureCache() const { return m_loadedTextureCache; }
+    const stltype::vector<LoadedTexInfo>& GetPersistentLoadedTextureCache() const { return m_persistentLoadedTextureCache; }
+
     static void SetLayoutBarrierMasks(ImageLayoutTransitionCmd& transitionCmd,
                                       const ImageLayout oldLayout,
                                       const ImageLayout newLayout);
@@ -236,12 +250,6 @@ protected:
     void CreateTransferCommandBuffer();
     void CreateBindlessDescriptorSet();
 
-    struct LoadedTexInfo
-    {
-        stltype::string filePath;
-        TextureSemantic semantic{TextureSemantic::Auto};
-        TextureHandle handle;
-    };
     const LoadedTexInfo* IsAlreadyRequested(const stltype::string& filePath, TextureSemantic semantic) const;
 
 protected:

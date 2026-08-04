@@ -2,9 +2,12 @@
 #include "BackendDefines.h"
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Rendering/Core/Synchronization.h"
+#include "Core/Rendering/Core/StaticFunctions.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
+#include "VkCommandBuffer.h"
 #include "VkGlobals.h"
 #include "VkSynchronization.h"
+#include "Core/Rendering/Core/Nvidia/StreamlineManager.h"
 #include <vulkan/vulkan_core.h>
 
 namespace SRF
@@ -221,6 +224,8 @@ inline SwapchainPresentStatus SubmitForPresentationToMainSwapchain<Vulkan>(Semap
     presentInfo.pSwapchains = swapChains;
     presentInfo.pImageIndices = &swapChainIdx;
     presentInfo.pResults = nullptr;
+
+    Nvidia::StreamlineManager::OnPresent(swapChainIdx);
 
     const VkResult result = vkQueuePresentKHR(VkGlobals::GetPresentQueue(), &presentInfo);
     if (result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR)

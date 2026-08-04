@@ -1,29 +1,34 @@
 #pragma once
-#include "Core/Rendering/Core/RenderTargetManager.h"
+#include "Core/Global/GlobalDefines.h"
+#include "Core/Rendering/Core/RenderDefinitions.h"
+#include "Core/Rendering/Core/RenderingForwardDecls.h"
+#include <EASTL/fixed_vector.h>
+
+class RGResourceRegistry;
 
 class FrameTransitionRecorder
 {
 public:
     void RecordTemporalResourceInitialLayouts(CommandBuffer* pCmdBuffer,
-                                              GBuffer& gbuffer,
-                                              Texture* pDLSSExposureTexture,
+                                              RGResourceRegistry& registry,
                                               StagingBuffer& dlssExposureStagingBuffer);
     void RecordInitialLayoutTransitions(CommandBuffer* pCmdBuffer,
                                         const stltype::fixed_vector<const Texture*, 16>& allGbufferAndSwapchain,
-                                        const RenderPasses::RendererAttachmentInfo& attachments);
+                                        Texture* pMainDepthTexture,
+                                        Texture* pShadowMapTexture);
     void RecordPendingTextureUploadTransitions(CommandBuffer* pCmdBuffer);
     void RecordGBufferToShaderRead(CommandBuffer* pCmdBuffer,
                                    const stltype::fixed_vector<const Texture*, 8>& gbufferTextures,
-                                   const RenderPasses::RendererAttachmentInfo& attachments);
-    void RecordVelocityClear(CommandBuffer* pCmdBuffer, GBuffer& gbuffer);
-    void RecordDepthToReadOnly(CommandBuffer* pCmdBuffer, const RenderPasses::RendererAttachmentInfo& attachments);
-    void RecordThisFrameColorToRead(CommandBuffer* pCmdBuffer, GBuffer& gbuffer);
-    void RecordThisFrameColorToGeneral(CommandBuffer* pCmdBuffer, GBuffer& gbuffer);
-    void RecordThisFrameColorToGeneralDiscard(CommandBuffer* pCmdBuffer, GBuffer& gbuffer);
-    void RecordThisFrameColorFromGeneralToRead(CommandBuffer* pCmdBuffer, GBuffer& gbuffer);
-    void RecordResolveToGeneral(CommandBuffer* pCmdBuffer, GBuffer& gbuffer);
-    void RecordResolveToRead(CommandBuffer* pCmdBuffer, GBuffer& gbuffer);
-    void RecordCopyTextureToResolve(CommandBuffer* pCmdBuffer, GBuffer& gbuffer, Texture* pSourceTexture);
+                                   Texture* pShadowMapTexture);
+    void RecordVelocityClear(CommandBuffer* pCmdBuffer, Texture* pVelocityTexture);
+    void RecordDepthToReadOnly(CommandBuffer* pCmdBuffer, Texture* pMainDepthTexture);
+    void RecordThisFrameColorToRead(CommandBuffer* pCmdBuffer, Texture* pThisFrameColorTexture);
+    void RecordThisFrameColorToGeneral(CommandBuffer* pCmdBuffer, Texture* pThisFrameColorTexture);
+    void RecordThisFrameColorToGeneralDiscard(CommandBuffer* pCmdBuffer, Texture* pThisFrameColorTexture);
+    void RecordThisFrameColorFromGeneralToRead(CommandBuffer* pCmdBuffer, Texture* pThisFrameColorTexture);
+    void RecordResolveToGeneral(CommandBuffer* pCmdBuffer, Texture* pResolveTexture);
+    void RecordResolveToRead(CommandBuffer* pCmdBuffer, Texture* pResolveTexture);
+    void RecordCopyTextureToResolve(CommandBuffer* pCmdBuffer, Texture* pResolveTexture, Texture* pSourceTexture);
     static void RecordClearColorTexture(CommandBuffer* pCmdBuffer,
                                         Texture* pTexture,
                                         ImageLayout oldLayout,

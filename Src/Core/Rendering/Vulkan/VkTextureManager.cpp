@@ -554,6 +554,18 @@ void VkTextureManager::CreateImageViewForTexture(TextureVulkan* pTex, bool useMi
     VkImageView imageView = VK_NULL_HANDLE;
     DEBUG_ASSERT(vkCreateImageView(VK_LOGICAL_DEVICE, &createInfo, VulkanAllocator(), &imageView) == VK_SUCCESS);
     pTex->SetImageView(imageView);
+
+    if (pTex->GetInfo().extents.z > 1)
+    {
+        auto createInfo2D = createInfo;
+        createInfo2D.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        createInfo2D.subresourceRange.layerCount = 1;
+        VkImageView imageView2D = VK_NULL_HANDLE;
+        if (vkCreateImageView(VK_LOGICAL_DEVICE, &createInfo2D, VulkanAllocator(), &imageView2D) == VK_SUCCESS)
+        {
+            pTex->SetImageView2D(imageView2D);
+        }
+    }
 }
 
 void VkTextureManager::EnqueueAsyncImageLayoutTransition(const TextureHandle handle,
@@ -1130,6 +1142,27 @@ void VkTextureManager::SetLayoutBarrierMasks(ImageLayoutTransitionCmd& transitio
         transitionCmd.srcStage = SyncStages::TOP_OF_PIPE;
         transitionCmd.dstStage = SyncStages::FRAGMENT_SHADER | SyncStages::COMPUTE_SHADER;
     }
+    else if (oldLayout == ImageLayout::UNDEFINED && newLayout == ImageLayout::TRANSFER_DST_OPTIMAL)
+    {
+        transitionCmd.srcAccessMask = AccessFlags::NONE;
+        transitionCmd.dstAccessMask = AccessFlags::TRANSFER_WRITE;
+        transitionCmd.srcStage = SyncStages::TOP_OF_PIPE;
+        transitionCmd.dstStage = SyncStages::TRANSFER;
+    }
+    else if (oldLayout == ImageLayout::UNDEFINED && newLayout == ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+    {
+        transitionCmd.srcAccessMask = AccessFlags::NONE;
+        transitionCmd.dstAccessMask = AccessFlags::COLOR_ATTACHMENT_READ | AccessFlags::COLOR_ATTACHMENT_WRITE;
+        transitionCmd.srcStage = SyncStages::TOP_OF_PIPE;
+        transitionCmd.dstStage = SyncStages::COLOR_ATTACHMENT_OUTPUT;
+    }
+    else if (oldLayout == ImageLayout::TRANSFER_DST_OPTIMAL && newLayout == ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+    {
+        transitionCmd.srcAccessMask = AccessFlags::TRANSFER_WRITE;
+        transitionCmd.dstAccessMask = AccessFlags::SHADER_READ;
+        transitionCmd.srcStage = SyncStages::TRANSFER;
+        transitionCmd.dstStage = SyncStages::FRAGMENT_SHADER | SyncStages::COMPUTE_SHADER;
+    }
     else if (oldLayout == ImageLayout::UNDEFINED && newLayout == ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL)
     {
         transitionCmd.srcAccessMask = AccessFlags::NONE;
@@ -1226,9 +1259,42 @@ void VkTextureManager::SetLayoutBarrierMasks(ImageLayoutTransitionCmd& transitio
         transitionCmd.srcStage = SyncStages::FRAGMENT_SHADER | SyncStages::COMPUTE_SHADER;
         transitionCmd.dstStage = SyncStages::COLOR_ATTACHMENT_OUTPUT;
     }
+    else if (oldLayout == ImageLayout::GENERAL && newLayout == ImageLayout::TRANSFER_DST_OPTIMAL)
+    {
+        transitionCmd.srcAccessMask = AccessFlags::SHADER_STORAGE_WRITE;
+        transitionCmd.dstAccessMask = AccessFlags::TRANSFER_WRITE;
+        transitionCmd.srcStage = SyncStages::COMPUTE_SHADER;
+        transitionCmd.dstStage = SyncStages::TRANSFER;
+    }
+    else if (oldLayout == ImageLayout::TRANSFER_DST_OPTIMAL && newLayout == ImageLayout::GENERAL)
+    {
+        transitionCmd.srcAccessMask = AccessFlags::TRANSFER_WRITE;
+        transitionCmd.dstAccessMask = AccessFlags::SHADER_STORAGE_WRITE | AccessFlags::SHADER_STORAGE_READ;
+        transitionCmd.srcStage = SyncStages::TRANSFER;
+        transitionCmd.dstStage = SyncStages::COMPUTE_SHADER;
+    }
+    else if (oldLayout == ImageLayout::GENERAL && newLayout == ImageLayout::GENERAL)
+    {
+        transitionCmd.srcAccessMask = AccessFlags::SHADER_STORAGE_WRITE | AccessFlags::SHADER_STORAGE_READ;
+        transitionCmd.dstAccessMask = AccessFlags::SHADER_STORAGE_WRITE | AccessFlags::SHADER_STORAGE_READ;
+        transitionCmd.srcStage = SyncStages::COMPUTE_SHADER;
+        transitionCmd.dstStage = SyncStages::COMPUTE_SHADER;
+    }
+    else if (oldLayout == newLayout)
+    {
+        transitionCmd.srcAccessMask = AccessFlags::MEMORY_WRITE;
+        transitionCmd.dstAccessMask = AccessFlags::MEMORY_READ | AccessFlags::MEMORY_WRITE;
+        transitionCmd.srcStage = SyncStages::ALL_COMMANDS;
+        transitionCmd.dstStage = SyncStages::ALL_COMMANDS;
+    }
     else
     {
-        DEBUG_ASSERT(false);
+        DEBUG_LOG_WARNF("[VkTextureManager] SetLayoutBarrierMasks hit unhandled layout transition from {} to {}",
+                        static_cast<int>(oldLayout), static_cast<int>(newLayout));
+        transitionCmd.srcAccessMask = AccessFlags::NONE;
+        transitionCmd.dstAccessMask = AccessFlags::MEMORY_READ | AccessFlags::MEMORY_WRITE;
+        transitionCmd.srcStage = SyncStages::ALL_COMMANDS;
+        transitionCmd.dstStage = SyncStages::ALL_COMMANDS;
     }
 }
 

@@ -2,10 +2,12 @@
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Global/State/ApplicationState.h"
 #include "Core/Rendering/Core/Texture.h"
+#include "Core/Rendering/Vulkan/VkTexture.h"
+#include "Core/Rendering/Vulkan/VkTextureManager.h"
 #include "Core/Rendering/Core/Utils/DeleteQueue.h"
+#include "Core/Rendering/Core/RenderGraph/RGResourceRegistry.h"
 #include "RT/RTResourceManager.h"
 #include <imgui/backends/imgui_impl_vulkan.h>
-#include <vulkan/vulkan_core.h>
 
 namespace
 {
@@ -14,9 +16,18 @@ void ReleaseImGuiIds(stltype::vector<u64>& ids)
     if (ids.empty())
         return;
 
+    if (ImGui::GetCurrentContext() == nullptr)
+    {
+        ids.clear();
+        return;
+    }
+
     g_pDeleteQueue->RegisterDeleteForNextFrame(
         [oldIds = stltype::move(ids)]() mutable
         {
+            if (ImGui::GetCurrentContext() == nullptr)
+                return;
+
             for (const auto id : oldIds)
             {
                 if (id != 0)
@@ -26,6 +37,45 @@ void ReleaseImGuiIds(stltype::vector<u64>& ids)
             }
         });
     ids.clear();
+}
+
+RendererState::TextureViewerItem MakeItem(const stltype::string& name, const stltype::string& category, u64 imguiID, Texture* pTex)
+{
+    RendererState::TextureViewerItem item{};
+    item.name = name;
+    item.category = category;
+    item.imguiDescriptorId = imguiID;
+    if (pTex != nullptr)
+    {
+        const auto& info = pTex->GetInfo();
+        item.width = info.extents.x;
+        item.height = info.extents.y;
+        item.depth = info.extents.z;
+        item.mipLevels = info.mipLevels;
+        item.arrayLayers = info.extents.z;
+        item.estimatedBytes = info.size;
+        item.formatName = ToString(info.format);
+        item.channelCount = 4;
+    }
+    return item;
+}
+
+u64 AddImGuiTex(Texture* pTex)
+{
+    if (!pTex)
+        return 0;
+    auto* pTexVk = static_cast<TextureVulkan*>(pTex);
+    if (!pTexVk || pTexVk->GetImageView() == VK_NULL_HANDLE || pTexVk->GetSampler() == VK_NULL_HANDLE)
+        return 0;
+
+    VkImageView view = pTexVk->GetImageView2D();
+    if (view == VK_NULL_HANDLE)
+        return 0;
+
+    VkDescriptorSet ds = ImGui_ImplVulkan_AddTexture(pTexVk->GetSampler(), view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    if (ds == VK_NULL_HANDLE)
+        return 0;
+    return reinterpret_cast<u64>(ds);
 }
 }
 
@@ -37,10 +87,11 @@ void RenderTextureImGuiRegistry::ReleaseGBufferIdsForNextFrame()
     }
     if (m_historyColorIdB != 0 && m_historyColorIdB != m_historyColorIdA)
     {
-        m_gbufferImGuiIDs.push_back(m_historyColorIdB);
+        m_gbufferImGuiIDs.push_back(m_historyColorIdA);
     }
     ReleaseImGuiIds(m_gbufferImGuiIDs);
     ReleaseImGuiIds(m_rtImGuiIDs);
+    // Note: m_materialImGuiIDs persist across resolution resizes because scene material textures are not destroyed on resize
     m_pVelocityA = nullptr;
     m_pHistoryColorA = nullptr;
     m_velocityIdA = 0;
@@ -60,7 +111,7 @@ void RenderTextureImGuiRegistry::RegisterShadowMapTextures(const CascadedShadowM
     if (!shadowMap.pTexture || shadowMap.cascadeViews.empty())
     {
         g_pApplicationState->RegisterUpdateFunction([](ApplicationState& state)
-                                                    { state.renderState.csmCascadeImGuiIDs.clear(); });
+                                                     { state.renderState.csmCascadeImGuiIDs.clear(); });
         return;
     }
 
@@ -72,68 +123,190 @@ void RenderTextureImGuiRegistry::RegisterShadowMapTextures(const CascadedShadowM
             shadowMap.pTexture->GetSampler(), view, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL)));
     }
     g_pApplicationState->RegisterUpdateFunction([ids = m_csmCascadeImGuiIDs](ApplicationState& state)
-                                                { state.renderState.csmCascadeImGuiIDs = ids; });
+                                                 { state.renderState.csmCascadeImGuiIDs = ids; });
 }
 
-void RenderTextureImGuiRegistry::RegisterGBufferTextures(GBuffer& gbuffer, Texture* pScreenSpaceShadowTexture)
+void RenderTextureImGuiRegistry::RegisterGBufferTextures(RGResourceRegistry& registry)
 {
     ReleaseGBufferIdsForNextFrame();
 
-    auto addTex = [&](GBufferTextureType type)
+    // Preserve existing Material Textures items, clear only render-target / gbuffer / shadowmap items
+    stltype::vector<RendererState::TextureViewerItem> retainedItems;
+    for (const auto& item : m_textureViewerItems)
     {
-        auto* t = gbuffer.Get(type);
-        return reinterpret_cast<u64>(
-            ImGui_ImplVulkan_AddTexture(t->GetSampler(), t->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL));
+        if (item.category == "Material Textures")
+        {
+            retainedItems.push_back(item);
+        }
+    }
+    m_textureViewerItems = stltype::move(retainedItems);
+
+    auto addTexByID = [&](RGResourceID id)
+    {
+        auto* t = registry.ResolveByID(id);
+        return AddImGuiTex(t);
     };
 
-    m_gbufferImGuiIDs.push_back(addTex(GBufferTextureType::GBufferNormal));              // [0] Normals
-    m_gbufferImGuiIDs.push_back(addTex(GBufferTextureType::GBufferAlbedo));              // [1] Albedo
-    m_gbufferImGuiIDs.push_back(                                                         // [2] SSS
-        reinterpret_cast<u64>(ImGui_ImplVulkan_AddTexture(pScreenSpaceShadowTexture->GetSampler(),
-                                                          pScreenSpaceShadowTexture->GetImageView(),
-                                                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)));
+    Texture* pNormalTex = registry.ResolveByID(RGResourceID::GBufferNormal);
+    u64 normalsID = addTexByID(RGResourceID::GBufferNormal);
+    m_gbufferImGuiIDs.push_back(normalsID);
+    m_textureViewerItems.push_back(MakeItem("GBuffer Normals", "GBuffer", normalsID, pNormalTex));
 
-    m_pVelocityA = gbuffer.Get(GBufferTextureType::GBufferVelocity);
-    m_velocityIdA = addTex(GBufferTextureType::GBufferVelocity);
-    m_velocityIdB = addTex(GBufferTextureType::GBufferLastFrameVelocity);
-    m_gbufferImGuiIDs.push_back(m_velocityIdA);                                           // [3] Velocity
+    Texture* pAlbedoTex = registry.ResolveByID(RGResourceID::GBufferAlbedo);
+    u64 albedoID = addTexByID(RGResourceID::GBufferAlbedo);
+    m_gbufferImGuiIDs.push_back(albedoID);
+    m_textureViewerItems.push_back(MakeItem("GBuffer Albedo", "GBuffer", albedoID, pAlbedoTex));
 
-    m_gbufferImGuiIDs.push_back(addTex(GBufferTextureType::GBufferThisFrameColor));      // [4] Color
+    Texture* pScreenSpaceShadowTexture = registry.ResolveByID(RGResourceID::ScreenSpaceShadows);
+    u64 sssID = AddImGuiTex(pScreenSpaceShadowTexture);
+    m_gbufferImGuiIDs.push_back(sssID);
+    m_textureViewerItems.push_back(MakeItem("Screen Space Shadows", "GBuffer", sssID, pScreenSpaceShadowTexture));
 
-    m_pHistoryColorA = gbuffer.Get(GBufferTextureType::GBufferLastFrameColor);
-    m_historyColorIdA = addTex(GBufferTextureType::GBufferLastFrameColor);
-    m_historyColorIdB = addTex(GBufferTextureType::GBufferResolve);
-    m_gbufferImGuiIDs.push_back(m_historyColorIdA);                                       // [5] History
-    m_gbufferImGuiIDs.push_back(addTex(GBufferTextureType::GBufferPostAAColor));          // [6] Post AA
-    m_gbufferImGuiIDs.push_back(addTex(GBufferTextureType::BloomResult));                 // [7] Bloom Result
+    m_pVelocityA = registry.ResolveByID(RGResourceID::GBufferVelocity);
+    m_velocityIdA = addTexByID(RGResourceID::GBufferVelocity);
+    m_velocityIdB = AddImGuiTex(registry.ResolveHistoryByID(RGResourceID::GBufferVelocity));
+    m_gbufferImGuiIDs.push_back(m_velocityIdA);
+    m_textureViewerItems.push_back(MakeItem("GBuffer Velocity", "GBuffer", m_velocityIdA, m_pVelocityA));
 
-    static bool loggedImGuiOnce = false;
-    if (!loggedImGuiOnce)
+    Texture* pThisFrameColorTex = registry.ResolveByID(RGResourceID::GBufferThisFrameColor);
+    u64 thisColorID = addTexByID(RGResourceID::GBufferThisFrameColor);
+    m_gbufferImGuiIDs.push_back(thisColorID);
+    m_textureViewerItems.push_back(MakeItem("This Frame Color", "Render Targets", thisColorID, pThisFrameColorTex));
+
+    m_pHistoryColorA = registry.ResolveHistoryByID(RGResourceID::TemporalResolve);
+    m_historyColorIdA = AddImGuiTex(m_pHistoryColorA);
+    m_historyColorIdB = addTexByID(RGResourceID::TemporalResolve);
+    m_gbufferImGuiIDs.push_back(m_historyColorIdA);
+    m_textureViewerItems.push_back(MakeItem("History Color", "Render Targets", m_historyColorIdA, m_pHistoryColorA));
+
+    Texture* pPostAATex = registry.ResolveByID(RGResourceID::GBufferPostAAColor);
+    u64 postAAID = addTexByID(RGResourceID::GBufferPostAAColor);
+    m_gbufferImGuiIDs.push_back(postAAID);
+    m_textureViewerItems.push_back(MakeItem("Post AA Color", "Render Targets", postAAID, pPostAATex));
+
+    Texture* pBloomTex = registry.ResolveByID(RGResourceID::BloomMip0);
+    u64 bloomID = addTexByID(RGResourceID::BloomMip0);
+    m_gbufferImGuiIDs.push_back(bloomID);
+    m_textureViewerItems.push_back(MakeItem("Bloom Result", "Render Targets", bloomID, pBloomTex));
+
+    for (size_t i = 0; i < m_csmCascadeImGuiIDs.size(); ++i)
     {
-        DEBUG_LOGF("[RenderTextureImGuiRegistry] Registered GBuffer ImGui IDs: Normals=%llu, Albedo=%llu, SSS=%llu, Velocity=%llu, Color=%llu, History=%llu, PostAA=%llu",
-                   m_gbufferImGuiIDs[0], m_gbufferImGuiIDs[1], m_gbufferImGuiIDs[2], m_gbufferImGuiIDs[3], m_gbufferImGuiIDs[4], m_gbufferImGuiIDs[5], m_gbufferImGuiIDs[6]);
-        loggedImGuiOnce = true;
+        stltype::string csmName = "CSM Cascade " + stltype::to_string(i);
+        m_textureViewerItems.push_back(MakeItem(csmName, "Shadow Maps", m_csmCascadeImGuiIDs[i], nullptr));
     }
 
-    PublishGBufferTextureState(gbuffer);
+    RegisterMaterialTextures();
+    PublishGBufferTextureState(registry);
 }
 
-void RenderTextureImGuiRegistry::PublishGBufferTextureState(GBuffer& gbuffer)
+void RenderTextureImGuiRegistry::RegisterMaterialTextures()
 {
-    GBuffer* pGbuffer = &gbuffer;
+    if (g_pTexManager == nullptr)
+        return;
+
+    const auto& bindlessMap = g_pTexManager->GetBindlessTextureHandleMap();
+    const auto& loadedCache = g_pTexManager->GetLoadedTextureCache();
+    const auto& persistentCache = g_pTexManager->GetPersistentLoadedTextureCache();
+
+    stltype::hash_map<u32, stltype::string> handleToName;
+    for (const auto& info : loadedCache)
+    {
+        stltype::string name = info.filePath;
+        size_t lastSlash = name.find_last_of("/\\");
+        if (lastSlash != stltype::string::npos)
+            name = name.substr(lastSlash + 1);
+        handleToName[info.handle] = name;
+    }
+    for (const auto& info : persistentCache)
+    {
+        stltype::string name = info.filePath;
+        size_t lastSlash = name.find_last_of("/\\");
+        if (lastSlash != stltype::string::npos)
+            name = name.substr(lastSlash + 1);
+        handleToName[info.handle] = name;
+    }
+
+    bool newlyAdded = false;
+
+    auto processTexMap = [&](const auto& texMap)
+    {
+        for (const auto& pair : texMap)
+        {
+            u32 handle = pair.first;
+            Texture* pTex = pair.second.get();
+            if (!pTex || pTex->GetImageView() == VK_NULL_HANDLE || pTex->GetSampler() == VK_NULL_HANDLE)
+                continue;
+
+            if ((u32)pTex->GetInfo().usage & (u32)Usage::ShadowMap)
+                continue;
+
+            bool existsInList = false;
+            for (const auto& existingItem : m_textureViewerItems)
+            {
+                if (existingItem.textureHandle == handle && existingItem.category == "Material Textures")
+                {
+                    existsInList = true;
+                    break;
+                }
+            }
+
+            if (existsInList)
+                continue;
+
+            u64 imguiID = AddImGuiTex(pTex);
+            if (imguiID == 0)
+                continue;
+
+            m_materialImGuiIDs.push_back(imguiID);
+
+            stltype::string displayName;
+            auto nameIt = handleToName.find(handle);
+            if (nameIt != handleToName.end())
+                displayName = nameIt->second;
+            else
+                displayName = "Texture #" + stltype::to_string(handle);
+
+            u32 bindlessHandle = 0;
+            auto bIt = bindlessMap.find(handle);
+            if (bIt != bindlessMap.end())
+                bindlessHandle = bIt->second;
+
+            auto item = MakeItem(displayName, "Material Textures", imguiID, pTex);
+            item.textureHandle = handle;
+            item.bindlessHandle = bindlessHandle;
+            m_textureViewerItems.push_back(item);
+            newlyAdded = true;
+        }
+    };
+
+    processTexMap(g_pTexManager->GetTextures());
+    processTexMap(g_pTexManager->GetPersistentTextures());
+
+    if (newlyAdded)
+    {
+        g_pApplicationState->RegisterUpdateFunction([items = m_textureViewerItems](ApplicationState& state) {
+            state.renderState.textureViewerState.items = items;
+        });
+    }
+}
+
+void RenderTextureImGuiRegistry::PublishGBufferTextureState(RGResourceRegistry& registry)
+{
+    RGResourceRegistry* pRegistry = &registry;
     g_pApplicationState->RegisterUpdateFunction(
-        [this, pGbuffer](ApplicationState& state)
+        [this, pRegistry](ApplicationState& state)
         {
             state.renderState.csmCascadeImGuiIDs = m_csmCascadeImGuiIDs;
             state.renderState.gbufferImGuiIDs = m_gbufferImGuiIDs;
+            state.renderState.textureViewerState.items = m_textureViewerItems;
 
             if (state.renderState.gbufferImGuiIDs.size() < 7)
                 return;
 
-            const bool velocitySwapped = pGbuffer->Get(GBufferTextureType::GBufferVelocity) != m_pVelocityA;
+            const bool velocitySwapped = pRegistry->ResolveByID(RGResourceID::GBufferVelocity) != m_pVelocityA;
             state.renderState.gbufferImGuiIDs[3] = velocitySwapped ? m_velocityIdB : m_velocityIdA;
 
-            const bool colorSwapped = pGbuffer->Get(GBufferTextureType::GBufferLastFrameColor) != m_pHistoryColorA;
+            const bool colorSwapped = pRegistry->ResolveHistoryByID(RGResourceID::TemporalResolve) != m_pHistoryColorA;
             state.renderState.gbufferImGuiIDs[5] = colorSwapped ? m_historyColorIdB : m_historyColorIdA;
         });
 }
@@ -145,7 +318,7 @@ void RenderTextureImGuiRegistry::RegisterRTTextures(const RT::RTResourceManager&
     auto addRT = [&](RT::RTTextureType type)
     {
         const auto& res = rtResourceManager.Get(type);
-        if (res.pTexture != nullptr && res.pTexture->GetImageView() != VK_NULL_HANDLE)
+        if (res.pTexture != nullptr && res.pTexture->GetImageView() != VK_NULL_HANDLE && res.pTexture->GetSampler() != VK_NULL_HANDLE)
         {
             return reinterpret_cast<u64>(ImGui_ImplVulkan_AddTexture(
                 res.pTexture->GetSampler(), res.pTexture->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL));
@@ -153,10 +326,19 @@ void RenderTextureImGuiRegistry::RegisterRTTextures(const RT::RTResourceManager&
         return static_cast<u64>(0);
     };
 
-    m_rtImGuiIDs.push_back(addRT(RT::RTTextureType::DebugView));
-    m_rtImGuiIDs.push_back(addRT(RT::RTTextureType::Reflections));
-    m_rtImGuiIDs.push_back(addRT(RT::RTTextureType::RTAO));
+    u64 debugViewID = addRT(RT::RTTextureType::DebugView);
+    u64 reflectionsID = addRT(RT::RTTextureType::Reflections);
+    u64 rtaoID = addRT(RT::RTTextureType::RTAO);
 
-    g_pApplicationState->RegisterUpdateFunction([ids = m_rtImGuiIDs](ApplicationState& state)
-                                                { state.renderState.rtImGuiIDs = ids; });
+    m_rtImGuiIDs.push_back(debugViewID);
+    m_rtImGuiIDs.push_back(reflectionsID);
+    m_rtImGuiIDs.push_back(rtaoID);
+
+    if (debugViewID != 0) m_textureViewerItems.push_back(MakeItem("RT Debug View", "Ray Tracing", debugViewID, rtResourceManager.Get(RT::RTTextureType::DebugView).pTexture));
+    if (reflectionsID != 0) m_textureViewerItems.push_back(MakeItem("RT Reflections", "Ray Tracing", reflectionsID, rtResourceManager.Get(RT::RTTextureType::Reflections).pTexture));
+    if (rtaoID != 0) m_textureViewerItems.push_back(MakeItem("RT AO", "Ray Tracing", rtaoID, rtResourceManager.Get(RT::RTTextureType::RTAO).pTexture));
+
+    stltype::vector<u64> rtIDs = m_rtImGuiIDs;
+    g_pApplicationState->RegisterUpdateFunction([rtIDs](ApplicationState& state)
+                                                { state.renderState.rtImGuiIDs = rtIDs; });
 }

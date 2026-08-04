@@ -14,13 +14,14 @@ RGResourceHandle RenderGraphBuilder::DeclareStorageBuffer(RGResourceID id, u64 s
 {
     RGResourceSpec spec{};
     spec.id = id;
-    spec.isBuffer = true;
+    spec.SetIsBuffer(true);
     spec.bufferSize = sizeBytes;
     return m_registry.DeclareResource(spec);
 }
 
 RGResourceHandle RenderGraphBuilder::ReadTexture(RGResourceHandle handle, SyncStages stage, AccessFlags access, ImageLayout layout)
 {
+    m_registry.MarkReferenced(handle);
     RGResourceAccess r{};
     r.handle = handle;
     r.stage = stage;
@@ -40,6 +41,7 @@ RGResourceHandle RenderGraphBuilder::ReadTexture(RGResourceID id, SyncStages sta
 
 RGResourceHandle RenderGraphBuilder::WriteColorAttachment(RGResourceHandle handle, LoadOp loadOp, StoreOp storeOp)
 {
+    m_registry.MarkReferenced(handle);
     RGResourceAccess w{};
     w.handle = handle;
     w.stage = SyncStages::COLOR_ATTACHMENT_OUTPUT;
@@ -51,6 +53,7 @@ RGResourceHandle RenderGraphBuilder::WriteColorAttachment(RGResourceHandle handl
 
 RGResourceHandle RenderGraphBuilder::WriteDepthAttachment(RGResourceHandle handle, LoadOp loadOp, StoreOp storeOp)
 {
+    m_registry.MarkReferenced(handle);
     RGResourceAccess w{};
     w.handle = handle;
     w.stage = SyncStages::EARLY_FRAGMENT_TESTS | SyncStages::LATE_FRAGMENT_TESTS;
@@ -62,6 +65,7 @@ RGResourceHandle RenderGraphBuilder::WriteDepthAttachment(RGResourceHandle handl
 
 RGResourceHandle RenderGraphBuilder::WriteStorageImage(RGResourceHandle handle, SyncStages stage, AccessFlags access)
 {
+    m_registry.MarkReferenced(handle);
     RGResourceAccess w{};
     w.handle = handle;
     w.stage = stage;
@@ -73,6 +77,7 @@ RGResourceHandle RenderGraphBuilder::WriteStorageImage(RGResourceHandle handle, 
 
 RGResourceHandle RenderGraphBuilder::WriteStorageBuffer(RGResourceHandle handle, SyncStages stage, AccessFlags access)
 {
+    m_registry.MarkReferenced(handle);
     RGResourceAccess w{};
     w.handle = handle;
     w.stage = stage;
@@ -84,6 +89,7 @@ RGResourceHandle RenderGraphBuilder::WriteStorageBuffer(RGResourceHandle handle,
 
 RGResourceHandle RenderGraphBuilder::ReadStorageBuffer(RGResourceHandle handle, SyncStages stage, AccessFlags access)
 {
+    m_registry.MarkReferenced(handle);
     RGResourceAccess r{};
     r.handle = handle;
     r.stage = stage;
@@ -119,7 +125,7 @@ RGResourceHandle RenderGraphBuilder::WriteStorageBuffer(RGResourceID id, SyncSta
 {
     RGResourceSpec spec{};
     spec.id = id;
-    spec.isBuffer = true;
+    spec.SetIsBuffer(true);
     RGResourceHandle handle = m_registry.DeclareResource(spec);
     return WriteStorageBuffer(handle, stage, access);
 }
@@ -128,7 +134,7 @@ RGResourceHandle RenderGraphBuilder::ReadStorageBuffer(RGResourceID id, SyncStag
 {
     RGResourceSpec spec{};
     spec.id = id;
-    spec.isBuffer = true;
+    spec.SetIsBuffer(true);
     RGResourceHandle handle = m_registry.DeclareResource(spec);
     return ReadStorageBuffer(handle, stage, access);
 }

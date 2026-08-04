@@ -23,6 +23,7 @@ public:
                              FrameRendererContext& previousFrameCtx,
                              u32 thisFrameNum) override {}
     void Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer) override;
+    void RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const struct RGExecutionContext& execCtx) override;
     void Setup(::RenderGraphBuilder& builder, const MainPassData& data) override;
 
     bool WantsToRender() const override;
@@ -30,7 +31,9 @@ public:
 
 private:
     ComputePipeline m_downsamplePipeline;
-    ComputePipeline m_blurPipeline;
+    ComputePipeline m_upsamplePipeline;
     BloomPushConstants m_pushConstants;
+    TextureHandle m_hLens1{0};
+    TextureHandle m_hLens2{0};
 };
 } // namespace RenderPasses

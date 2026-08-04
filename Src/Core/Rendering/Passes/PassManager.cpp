@@ -166,8 +166,9 @@ void PassManager::RecreateResizeDependentResources(const mathstl::Vector2& swapc
     }
 
     m_imguiRegistry.ReleaseGBufferIdsForNextFrame();
-    m_renderTargetManager.Recreate(m_renderState.renderResolution, m_renderState.swapchainResolution);
-    m_renderTargetManager.GetAttachments().directionalLightShadowMap = m_shadowMapManager.GetShadowMap();
+    m_renderGraph.GetRegistry().OnResize(m_renderState.renderResolution, m_renderState.swapchainResolution);
+    m_renderGraph.GetRegistry().DeclareEngineResources();
+    m_renderGraph.GetRegistry().AllocatePending();
     m_rtResourceManager.Recreate(m_renderState.renderResolution);
 
     // Perform one-time layout transition and initial value setup for the newly recreated textures
@@ -177,9 +178,8 @@ void PassManager::RecreateResizeDependentResources(const mathstl::Vector2& swapc
         pInitCmdBuffer->ResetBuffer();
 
         m_transitionRecorder.RecordTemporalResourceInitialLayouts(pInitCmdBuffer,
-                                                                  m_renderTargetManager.GetGBuffer(),
-                                                                  m_renderTargetManager.GetDLSSExposureTexture(),
-                                                                  m_renderTargetManager.GetDLSSExposureStagingBuffer());
+                                                                  m_renderGraph.GetRegistry(),
+                                                                  m_frameResourceManager.GetDLSSExposureStagingBuffer());
 
         m_rtResourceManager.RecordOutputsToShaderRead(pInitCmdBuffer);
 
@@ -224,28 +224,26 @@ void PassManager::RecreateResizeDependentResources(const mathstl::Vector2& swapc
 
     g_pTexManager->PostRender();
 
-    // First creation owns full pass setup; later render-size changes only refresh cached resize state
-    // TODO: FIX THIS AND REMOVE THE BOOL
+    RendererAttachmentInfo dummyAttachments{};
     for (auto& [type, passes] : m_passes)
     {
         for (auto& pPass : passes)
         {
             if (m_passesInitialized)
             {
-                pPass->RecreateResolutionDependentResources(m_renderTargetManager.GetAttachments(), m_resourceManager);
+                pPass->RecreateResolutionDependentResources(dummyAttachments, m_resourceManager);
             }
             else
             {
-                pPass->Init(m_renderTargetManager.GetAttachments(), m_resourceManager);
+                pPass->Init(dummyAttachments, m_resourceManager);
             }
         }
     }
     m_passesInitialized = true;
 
     // Update UI Descriptors
-    m_imguiRegistry.RegisterShadowMapTextures(m_shadowMapManager.GetShadowMap());
-    m_imguiRegistry.RegisterGBufferTextures(m_renderTargetManager.GetGBuffer(),
-                                            m_renderTargetManager.GetScreenSpaceShadowTexture());
+    m_imguiRegistry.RegisterShadowMapTextures(m_renderGraph.GetRegistry().GetShadowMap());
+    m_imguiRegistry.RegisterGBufferTextures(m_renderGraph.GetRegistry());
     m_imguiRegistry.RegisterRTTextures(m_rtResourceManager);
 }
 
@@ -265,7 +263,7 @@ bool PassManager::AnyPassWantsToRender() const
 void PassManager::PrepareMainPassDataForFrame(MainPassData& mainPassData, FrameRendererContext& ctx, u32 frameIdx)
 {
     mainPassData.pResourceManager = &m_resourceManager;
-    mainPassData.pGbuffer = &m_renderTargetManager.GetGBuffer();
+    mainPassData.pGbuffer = nullptr;
     mainPassData.mainView.descriptorSet = ctx.sharedDataUBODescriptor;
     mainPassData.mainView.viewport.x = 0.0f;
     mainPassData.mainView.viewport.y = 0.0f;
@@ -274,7 +272,7 @@ void PassManager::PrepareMainPassDataForFrame(MainPassData& mainPassData, FrameR
     mainPassData.mainView.viewport.minDepth = 0.0f;
     mainPassData.mainView.viewport.maxDepth = 1.0f;
     mainPassData.renderState = m_renderState;
-    mainPassData.directionalLightShadowMap = m_shadowMapManager.GetShadowMap();
+    mainPassData.directionalLightShadowMap = m_renderGraph.GetRegistry().GetShadowMap();
     mainPassData.cascades = m_frameResourceManager.GetShadowMapState().cascadeCount;
     mainPassData.depthBufferBindlessHandle = mainPassData.temporalResources.currentDepthHandle;
     mainPassData.pMainDepthTexture = mainPassData.temporalResources.pCurrentDepthTexture;
@@ -300,32 +298,34 @@ void PassManager::PrepareMainPassDataForFrame(MainPassData& mainPassData, FrameR
     mainPassData.rtaoTextureHandle = rtAO.bindlessHandle;
     mainPassData.rtAccumulationTextureHandle = rtAccum.bindlessHandle;
 
-    mainPassData.pScreenSpaceShadowTexture = m_renderTargetManager.GetScreenSpaceShadowTexture();
-    mainPassData.screenSpaceShadows = m_renderTargetManager.GetScreenSpaceShadowBindlessHandle();
-    mainPassData.pSMAAEdgesTexture = m_renderTargetManager.GetSMAAEdgesTexture();
-    mainPassData.pSMAABlendTexture = m_renderTargetManager.GetSMAABlendTexture();
-    mainPassData.smaaEdges = m_renderTargetManager.GetSMAAEdgesBindlessHandle();
-    mainPassData.smaaBlend = m_renderTargetManager.GetSMAABlendBindlessHandle();
+    mainPassData.pScreenSpaceShadowTexture = m_renderGraph.GetRegistry().ResolveByID(RGResourceID::ScreenSpaceShadows);
+    mainPassData.screenSpaceShadows = m_renderGraph.GetRegistry().ResolveBindlessByID(RGResourceID::ScreenSpaceShadows);
+    mainPassData.pSMAAEdgesTexture = m_renderGraph.GetRegistry().ResolveByID(RGResourceID::SMAAEdges);
+    mainPassData.pSMAABlendTexture = m_renderGraph.GetRegistry().ResolveByID(RGResourceID::SMAABlend);
+    mainPassData.smaaEdges = m_renderGraph.GetRegistry().ResolveBindlessByID(RGResourceID::SMAAEdges);
+    mainPassData.smaaBlend = m_renderGraph.GetRegistry().ResolveBindlessByID(RGResourceID::SMAABlend);
 
-    ctx.pDLSSExposureTexture = m_renderTargetManager.GetDLSSExposureTexture();
+    ctx.pDLSSExposureTexture = m_renderGraph.GetRegistry().ResolveByID(RGResourceID::DLSSExposure);
+
+    m_imguiRegistry.RegisterMaterialTextures();
 }
 
 void PassManager::UpdateTemporalResources(MainPassData& mainPassData)
 {
     auto& temporal = mainPassData.temporalResources;
-    auto& gbuffer = m_renderTargetManager.GetGBuffer();
-    temporal.pCurrentColorTexture = gbuffer.Get(GBufferTextureType::GBufferThisFrameColor);
-    temporal.pHistoryColorTexture = gbuffer.Get(GBufferTextureType::GBufferLastFrameColor);
-    temporal.pResolveTexture = gbuffer.Get(GBufferTextureType::GBufferResolve);
-    temporal.pPostAAColorTexture = gbuffer.Get(GBufferTextureType::GBufferPostAAColor);
-    temporal.pCurrentDepthTexture = m_renderTargetManager.GetDepthTexture();
-    temporal.pHistoryDepthTexture = m_renderTargetManager.GetLastFrameDepthTexture();
-    temporal.currentColorHandle = gbuffer.GetHandle(GBufferTextureType::GBufferThisFrameColor);
-    temporal.historyColorHandle = gbuffer.GetHandle(GBufferTextureType::GBufferLastFrameColor);
-    temporal.resolveHandle = gbuffer.GetHandle(GBufferTextureType::GBufferResolve);
-    temporal.postAAColorHandle = gbuffer.GetHandle(GBufferTextureType::GBufferPostAAColor);
-    temporal.currentDepthHandle = m_renderTargetManager.GetDepthBindlessHandle();
-    temporal.historyDepthHandle = m_renderTargetManager.GetLastFrameDepthBindlessHandle();
+    auto& reg = m_renderGraph.GetRegistry();
+    temporal.pCurrentColorTexture = reg.ResolveByID(RGResourceID::GBufferThisFrameColor);
+    temporal.pHistoryColorTexture = reg.ResolveHistoryByID(RGResourceID::GBufferThisFrameColor);
+    temporal.pResolveTexture = reg.ResolveByID(RGResourceID::TemporalResolve);
+    temporal.pPostAAColorTexture = reg.ResolveByID(RGResourceID::GBufferPostAAColor);
+    temporal.pCurrentDepthTexture = reg.ResolveByID(RGResourceID::MainDepth);
+    temporal.pHistoryDepthTexture = reg.ResolveHistoryByID(RGResourceID::MainDepth);
+    temporal.currentColorHandle = reg.ResolveBindlessByID(RGResourceID::GBufferThisFrameColor);
+    temporal.historyColorHandle = reg.ResolveHistoryBindlessByID(RGResourceID::GBufferThisFrameColor);
+    temporal.resolveHandle = reg.ResolveBindlessByID(RGResourceID::TemporalResolve);
+    temporal.postAAColorHandle = reg.ResolveBindlessByID(RGResourceID::GBufferPostAAColor);
+    temporal.currentDepthHandle = reg.ResolveBindlessByID(RGResourceID::MainDepth);
+    temporal.historyDepthHandle = reg.ResolveHistoryBindlessByID(RGResourceID::MainDepth);
 }
 
 void PassManager::InitFrameContexts()
@@ -404,7 +404,8 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
     m_renderGraph.BeginFrame(ctx.currentFrame, mainPassData.renderState.renderResolution, mainPassData.renderState.swapchainResolution);
     m_renderGraph.SetRTSceneAvailable(mainPassData.pRTSceneManager != nullptr && mainPassData.pRTSceneManager->HasReadyTLAS(m_currentSwapChainIdx));
 
-    m_renderGraph.GetRegistry().ImportEngineResources(mainPassData, ctx, m_renderTargetManager);
+    if (ctx.pCurrentSwapchainTexture)
+        m_renderGraph.GetRegistry().ImportTexture(RGResourceID::Swapchain, ctx.pCurrentSwapchainTexture, ImageLayout::UNDEFINED);
 
     for (const auto& stage : PASS_SCHEDULE)
     {
@@ -512,9 +513,8 @@ void PassManager::UpdateGBufferUBO(const MainPassData& data)
     gbufferUBO.rtReflectionsIdx = reg.ResolveBindlessByID(RGResourceID::RTReflections);
     gbufferUBO.rtaoIdx = reg.ResolveBindlessByID(RGResourceID::RTAOOutput);
     gbufferUBO.deferredLightingColorIdx = reg.ResolveBindlessByID(RGResourceID::GBufferThisFrameColor);
-    gbufferUBO.bloomResultIdx = reg.ResolveBindlessByID(RGResourceID::BloomDownsample);
-
     const auto& appRenderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+    gbufferUBO.bloomResultIdx = appRenderState.bloom.enabled ? reg.ResolveBindlessByID(RGResourceID::BloomMip0) : 0;
     const bool taaModeActive = appRenderState.aaType == AntialiasingType::TAA_SMAA;
     const bool smaaModeActive = appRenderState.aaType == AntialiasingType::SMAA;
     const bool taaDebugOrSeed = appRenderState.taaSeedHistoryFromCurrentColor ||
@@ -703,12 +703,12 @@ void PassManager::PreProcessDataForCurrentFrame(u32 frameIdx, u64 jitterFrameNum
         }
     }
 
-    m_renderTargetManager.RotateHistory(frameIdx);
+    m_renderGraph.GetRegistry().RotateHistory(frameIdx);
     for (auto& mainPassData : m_mainPassData)
     {
         UpdateTemporalResources(mainPassData);
     }
-    m_imguiRegistry.PublishGBufferTextureState(m_renderTargetManager.GetGBuffer());
+    m_imguiRegistry.PublishGBufferTextureState(m_renderGraph.GetRegistry());
 
     m_frameResourceManager.PreProcessDataForCurrentFrame(frameIdx, jitterFrameNumber, m_currentSwapChainIdx, this);
 }
@@ -785,10 +785,9 @@ void PassManager::RecreateShadowMaps(u32 cascades, const mathstl::Vector2& exten
 {
     m_renderState.recreatedThisFrame = true;
     g_pApplicationState->RegisterUpdateFunction([](ApplicationState& state)
-                                                { state.renderState.renderTargetsRecreatedThisFrame = true; });
+                                                 { state.renderState.renderTargetsRecreatedThisFrame = true; });
     m_imguiRegistry.ReleaseShadowMapIdsForNextFrame();
-    m_shadowMapManager.Recreate(cascades, extents, m_frameResourceManager);
-    m_renderTargetManager.GetAttachments().directionalLightShadowMap = m_shadowMapManager.GetShadowMap();
+    m_renderGraph.GetRegistry().RecreateShadowMap(cascades, extents, m_frameResourceManager);
 
     auto& shadowPasses = m_passes.at(PassType::Shadow);
     for (auto& pass : shadowPasses)
@@ -796,6 +795,6 @@ void PassManager::RecreateShadowMaps(u32 cascades, const mathstl::Vector2& exten
             cp->SetCascadeCount(cascades);
     if (m_passesInitialized)
     {
-        m_imguiRegistry.RegisterShadowMapTextures(m_shadowMapManager.GetShadowMap());
+        m_imguiRegistry.RegisterShadowMapTextures(m_renderGraph.GetRegistry().GetShadowMap());
     }
 }

@@ -18,6 +18,10 @@ namespace SSSHelper
         mathstl::Matrix actualViewProj = mainCamInvViewProj.Invert();
 
         mathstl::Vector4 lightProjVec = DirectX::XMVector4Transform(lightDir, actualViewProj);
+        if (std::abs(lightProjVec.w) < 0.00001f)
+        {
+            lightProjVec.w = (lightProjVec.w >= 0.0f) ? 1.0f : -1.0f;
+        }
         
         float inLightProj[4] = { lightProjVec.x, lightProjVec.y, lightProjVec.z, lightProjVec.w };
         

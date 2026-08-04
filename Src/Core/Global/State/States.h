@@ -1,6 +1,8 @@
 #pragma once
 #include "Core/ECS/Entity.h"
 #include "Core/Global/Utils/EnumHelpers.h"
+#include <EASTL/string.h>
+#include <EASTL/vector.h>
 
 class Scene;
 
@@ -106,6 +108,31 @@ struct RendererState
         f32 aoIntensity{1.0f};
     } rt;
 
+    struct TextureViewerItem
+    {
+        stltype::string name;
+        stltype::string category;
+        stltype::string formatName;
+        u64 imguiDescriptorId{0};
+        u32 textureHandle{0};
+        u32 bindlessHandle{0};
+        u32 width{0};
+        u32 height{0};
+        u32 depth{1};
+        u32 mipLevels{1};
+        u32 arrayLayers{1};
+        u32 channelCount{4};
+        u64 estimatedBytes{0};
+    };
+
+    struct TextureViewerDebugState
+    {
+        stltype::vector<TextureViewerItem> items{};
+        s32 selectedIndex{-1};
+        s32 requestedFocusHandle{-1};
+        bool requestOpenWindow{false};
+    } textureViewerState;
+
     stltype::vector<u64> gbufferImGuiIDs{};
     stltype::vector<u64> rtImGuiIDs{}; // Per-RT-buffer ImGui texture IDs
     u64 depthbufferImGuiID{};
@@ -133,8 +160,10 @@ struct RendererState
     struct BloomSettings
     {
         bool enabled{true};
-        f32 threshold{1.0f};
-        f32 intensity{0.8f};
+        f32 threshold{0.5f};
+        f32 intensity{0.5f};
+        s32 lensTextureIndex{2}; // 0 = None, 1 = Starburst & Flare, 2 = Bokeh & Dirt
+        f32 lensDirtIntensity{0.4f};
     } bloom;
 
     // Render info

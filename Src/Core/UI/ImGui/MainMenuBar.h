@@ -5,6 +5,7 @@
 #include "DebugWindows/RenderSettingsWindow.h"
 #include "DebugWindows/PerformanceDiagnosticsWindow.h"
 #include "DebugWindows/RenderGraphInspectorWindow.h"
+#include "DebugWindows/TextureViewerWindow.h"
 #include "UIElement.h"
 #include <imgui/imgui.h>
 
@@ -28,4 +29,5 @@ private:
     RenderSettingsWindow m_renderSettingsWindow;
     PerformanceDiagnosticsWindow m_performanceDiagnosticsWindow;
     RenderGraphInspectorWindow m_renderGraphInspectorWindow;
+    TextureViewerWindow m_textureViewerWindow;
 };

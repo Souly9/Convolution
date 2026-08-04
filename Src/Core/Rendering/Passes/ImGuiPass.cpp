@@ -30,7 +30,10 @@ void ImGuiPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourc
 
     const auto vkContext = VkGlobals::GetContext();
 
-    m_descPool.Create({});
+    DescriptorPoolCreateInfo imguiPoolInfo{};
+    imguiPoolInfo.maxSets = 8192;
+    imguiPoolInfo.freeDescriptorSet = true;
+    m_descPool.Create(imguiPoolInfo);
 
     ImGui::CreateContext();
 

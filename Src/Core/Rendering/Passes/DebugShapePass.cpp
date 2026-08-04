@@ -1,4 +1,6 @@
 #include "DebugShapePass.h"
+#include "Core/Rendering/Core/GBuffer.h"
+#include "Core/Rendering/Core/CommandBuffer.h"
 #include "Utils/RenderPassUtils.h"
 
 using namespace RenderPasses;
@@ -32,13 +34,13 @@ void DebugShapePass::RecreateResolutionDependentResources(RendererAttachmentInfo
 {
     ScopedZone("DebugShapePass::RecreateResolutionDependentResources");
 
-    const auto& gbufferInfo = attachmentInfo.gbuffer;
+    GBufferInfo gbufferInfo{};
 
     const auto debugAttachment =
         CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBufferDebug), LoadOp::CLEAR, nullptr);
 
     m_mainRenderingData.depthAttachment =
-        CreateReadOnlyDepthAttachment(LoadOp::LOAD, attachmentInfo.depthAttachment.GetTexture());
+        CreateReadOnlyDepthAttachment(LoadOp::LOAD, nullptr);
     m_mainRenderingData.colorAttachments = {debugAttachment};
 
     InitBaseData(attachmentInfo);

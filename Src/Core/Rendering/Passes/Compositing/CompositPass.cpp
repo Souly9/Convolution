@@ -77,9 +77,9 @@ void CompositPass::Render(const MainPassData& data, FrameRendererContext& ctx, C
     const bool smaaActive = (appRenderState.aaType == AntialiasingType::SMAA || appRenderState.aaType == AntialiasingType::TAA_SMAA);
 
     ColorAttachment swapchainAttachment = m_mainRenderingData.colorAttachments[0];
-    if (smaaActive && data.pGbuffer && data.pGbuffer->Get(GBufferTextureType::GBufferPostAAColor))
+    if (smaaActive && data.temporalResources.pPostAAColorTexture)
     {
-        swapchainAttachment.SetTexture(data.pGbuffer->Get(GBufferTextureType::GBufferPostAAColor));
+        swapchainAttachment.SetTexture(data.temporalResources.pPostAAColorTexture);
     }
     else
     {
@@ -131,7 +131,7 @@ void CompositPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data
 {
     builder.ReadTexture(RGResourceID::TemporalResolve, SyncStages::FRAGMENT_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
     builder.ReadTexture(RGResourceID::GBufferThisFrameColor, SyncStages::FRAGMENT_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-    builder.ReadTexture(RGResourceID::BloomDownsample, SyncStages::FRAGMENT_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    builder.ReadTexture(RGResourceID::BloomMip0, SyncStages::FRAGMENT_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
     const auto& appRenderState = g_pApplicationState->GetCurrentApplicationState().renderState;
     const bool smaaActive = (appRenderState.aaType == AntialiasingType::SMAA || appRenderState.aaType == AntialiasingType::TAA_SMAA);

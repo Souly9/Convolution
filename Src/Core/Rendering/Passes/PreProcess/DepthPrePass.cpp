@@ -44,7 +44,7 @@ void DepthPrePass::RecreateResolutionDependentResources(RendererAttachmentInfo& 
     ScopedZone("DepthPrePass::RecreateResolutionDependentResources");
 
     m_mainRenderingData.depthAttachment =
-        CreateDefaultDepthAttachment(LoadOp::CLEAR, attachmentInfo.depthAttachment.GetTexture());
+        CreateDefaultDepthAttachment(LoadOp::CLEAR, nullptr);
 
     InitBaseData(attachmentInfo);
 }
@@ -155,6 +155,7 @@ void DepthPrePass::Setup(::RenderGraphBuilder& builder, const MainPassData& data
 void DepthPrePass::RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const RGExecutionContext& execCtx)
 {
     ScopedZone("DepthPrePass::RenderWithGraph");
+    StartRenderPassProfilingScope(execCtx.pCmdBuffer);
 
     const auto currentFrame = ctx.currentFrame;
     UpdateContextForFrame(currentFrame);
@@ -177,6 +178,7 @@ void DepthPrePass::RenderWithGraph(const MainPassData& data, const FrameRenderer
     if (!sceneGeometryBuffers.GetVertexBuffer().IsCreated() ||
         !sceneGeometryBuffers.GetIndexBuffer().IsCreated())
     {
+        EndRenderPassProfilingScope(execCtx.pCmdBuffer);
         return;
     }
 
@@ -191,6 +193,8 @@ void DepthPrePass::RenderWithGraph(const MainPassData& data, const FrameRenderer
     execCtx.pCmdBuffer->RecordCommand(geomBufferCmd);
     execCtx.pCmdBuffer->RecordCommand(cmd);
     execCtx.pCmdBuffer->RecordCommand(EndRenderingCmd{});
+
+    EndRenderPassProfilingScope(execCtx.pCmdBuffer);
 }
 
 bool DepthPrePass::WantsToRender() const

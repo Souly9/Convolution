@@ -2,6 +2,7 @@
 #include "Core/Global/GlobalDefines.h"
 #include "VkAccelerationStructure.h"
 #include "VkGlobals.h"
+#include "VkTexture.h"
 
 DescriptorPoolVulkan::DescriptorPoolVulkan()
 {
@@ -14,25 +15,26 @@ DescriptorPoolVulkan::~DescriptorPoolVulkan()
 
 void DescriptorPoolVulkan::Create(const DescriptorPoolCreateInfo& createInfo)
 {
+    const u32 maxSets = createInfo.maxSets > 0 ? createInfo.maxSets : MAX_DESCRIPTOR_SETS;
     stltype::vector<VkDescriptorPoolSize> poolSizes;
 
-    poolSizes.push_back(CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, MAX_DESCRIPTOR_SETS));
+    poolSizes.push_back(CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, maxSets));
 
     if (createInfo.enableBindlessTextureDescriptors)
     {
         poolSizes.push_back(
-            CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_BINDLESS_TEXTURES * 4));
+            CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, maxSets * 4));
         poolSizes.push_back(
-            CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, MAX_BINDLESS_TEXTURES * 2));
+            CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, maxSets * 2));
     }
     if (createInfo.enableStorageBufferDescriptors)
     {
-        poolSizes.push_back(CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, MAX_DESCRIPTOR_SETS));
+        poolSizes.push_back(CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, maxSets));
     }
     if (createInfo.enableAccelerationStructureDescriptors)
     {
         poolSizes.push_back(
-            CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, MAX_DESCRIPTOR_SETS));
+            CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, maxSets));
     }
 
     VkDescriptorPoolCreateInfo poolInfo{};
@@ -45,7 +47,7 @@ void DescriptorPoolVulkan::Create(const DescriptorPoolCreateInfo& createInfo)
 
     poolInfo.poolSizeCount = poolSizes.size();
     poolInfo.pPoolSizes = poolSizes.data();
-    poolInfo.maxSets = MAX_DESCRIPTOR_SETS;
+    poolInfo.maxSets = maxSets;
 
     DEBUG_ASSERT(vkCreateDescriptorPool(VK_LOGICAL_DEVICE, &poolInfo, VulkanAllocator(), &m_descriptorPool) ==
                  VK_SUCCESS);
@@ -54,17 +56,27 @@ void DescriptorPoolVulkan::Create(const DescriptorPoolCreateInfo& createInfo)
 stltype::vector<DescriptorSetVulkan*> DescriptorPoolVulkan::CreateDescriptorSetsUBO(
     const stltype::vector<VkDescriptorSetLayout>& layouts)
 {
-    DEBUG_ASSERT(m_descriptorSetCount + layouts.size() < MAX_DESCRIPTOR_SETS);
+    if (m_descriptorSetCount + layouts.size() > MAX_DESCRIPTOR_SETS)
+    {
+        DEBUG_LOG_ERRF("DescriptorPoolVulkan: Exceeded MAX_DESCRIPTOR_SETS limit ({} + {} > {})",
+                       m_descriptorSetCount, layouts.size(), MAX_DESCRIPTOR_SETS);
+        return {};
+    }
 
     VkDescriptorSetAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     allocInfo.descriptorPool = m_descriptorPool;
-    allocInfo.descriptorSetCount = layouts.size();
+    allocInfo.descriptorSetCount = static_cast<u32>(layouts.size());
     allocInfo.pSetLayouts = layouts.data();
 
     stltype::vector<VkDescriptorSet> descriptorSets;
     descriptorSets.resize(layouts.size());
-    DEBUG_ASSERT(vkAllocateDescriptorSets(VK_LOGICAL_DEVICE, &allocInfo, descriptorSets.data()) == VK_SUCCESS);
+    const VkResult allocRes = vkAllocateDescriptorSets(VK_LOGICAL_DEVICE, &allocInfo, descriptorSets.data());
+    if (allocRes != VK_SUCCESS)
+    {
+        DEBUG_LOG_ERRF("DescriptorPoolVulkan: vkAllocateDescriptorSets failed with error: {}", static_cast<int>(allocRes));
+        return {};
+    }
 
     stltype::vector<DescriptorSetVulkan*> rslt;
     rslt.reserve(layouts.size());
@@ -80,7 +92,12 @@ stltype::vector<DescriptorSetVulkan*> DescriptorPoolVulkan::CreateDescriptorSets
 
 DescriptorSetVulkan* DescriptorPoolVulkan::CreateDescriptorSet(const VkDescriptorSetLayout& layout)
 {
-    DEBUG_ASSERT(m_descriptorSetCount + 1 < MAX_DESCRIPTOR_SETS);
+    if (m_descriptorSetCount + 1 > MAX_DESCRIPTOR_SETS)
+    {
+        DEBUG_LOG_ERRF("DescriptorPoolVulkan: Exceeded MAX_DESCRIPTOR_SETS limit ({} >= {})",
+                       m_descriptorSetCount, MAX_DESCRIPTOR_SETS);
+        return nullptr;
+    }
 
     VkDescriptorSetAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -88,8 +105,13 @@ DescriptorSetVulkan* DescriptorPoolVulkan::CreateDescriptorSet(const VkDescripto
     allocInfo.descriptorSetCount = 1;
     allocInfo.pSetLayouts = &layout;
 
-    VkDescriptorSet descriptorSet;
-    DEBUG_ASSERT(vkAllocateDescriptorSets(VK_LOGICAL_DEVICE, &allocInfo, &descriptorSet) == VK_SUCCESS);
+    VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
+    const VkResult allocRes = vkAllocateDescriptorSets(VK_LOGICAL_DEVICE, &allocInfo, &descriptorSet);
+    if (allocRes != VK_SUCCESS || descriptorSet == VK_NULL_HANDLE)
+    {
+        DEBUG_LOG_ERRF("DescriptorPoolVulkan: vkAllocateDescriptorSets failed with error: {}", static_cast<int>(allocRes));
+        return nullptr;
+    }
 
     auto& set = m_createdDescriptorSets.emplace_back(descriptorSet);
 
@@ -138,6 +160,12 @@ void DescriptorSetVulkan::WriteSSBOUpdate(const GenBufferVulkan& buffer, u32 bin
 void DescriptorSetVulkan::WriteBufferUpdate(
     const GenBufferVulkan& buffer, bool isUBO, u32 size, u32 bindingSlot, u32 offset)
 {
+    if (GetRef() == VK_NULL_HANDLE)
+    {
+        DEBUG_LOG_ERR("DescriptorSetVulkan: Attempted WriteBufferUpdate on VK_NULL_HANDLE descriptor set");
+        return;
+    }
+
     if (bindingSlot == 0)
         bindingSlot = m_bindingSlot;
     DEBUG_ASSERT(bindingSlot != 0);
@@ -164,6 +192,12 @@ void DescriptorSetVulkan::WriteBufferUpdate(
 void DescriptorSetVulkan::WriteAccelerationStructureUpdate(const AccelerationStructure& accelerationStructure,
                                                            u32 bindingSlot)
 {
+    if (GetRef() == VK_NULL_HANDLE)
+    {
+        DEBUG_LOG_ERR("DescriptorSetVulkan: Attempted WriteAccelerationStructureUpdate on VK_NULL_HANDLE descriptor set");
+        return;
+    }
+
     const auto& vkAccelerationStructure = static_cast<const AccelerationStructureVulkan&>(accelerationStructure);
 
     VkAccelerationStructureKHR nativeHandle =
@@ -187,6 +221,12 @@ void DescriptorSetVulkan::WriteAccelerationStructureUpdate(const AccelerationStr
 
 void DescriptorSetVulkan::WriteBindlessTextureUpdate(const TextureVulkan* pTex, u32 idx, u32 bindingSlot)
 {
+    if (GetRef() == VK_NULL_HANDLE)
+    {
+        DEBUG_LOG_ERR("DescriptorSetVulkan: Attempted WriteBindlessTextureUpdate on VK_NULL_HANDLE descriptor set");
+        return;
+    }
+
     VkDescriptorImageInfo imageInfo{};
     
     auto usage = pTex->GetInfo().usage;
@@ -210,14 +250,20 @@ void DescriptorSetVulkan::WriteBindlessTextureUpdate(const TextureVulkan* pTex, 
     descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     descriptorWrite.descriptorCount = 1;
     descriptorWrite.pImageInfo = &imageInfo;
-    descriptorWrite.pBufferInfo = nullptr;      // Optional
-    descriptorWrite.pTexelBufferView = nullptr; // Optional
+    descriptorWrite.pBufferInfo = nullptr;
+    descriptorWrite.pTexelBufferView = nullptr;
 
     vkUpdateDescriptorSets(VK_LOGICAL_DEVICE, 1, &descriptorWrite, 0, nullptr);
 }
 
 void DescriptorSetVulkan::WriteBindlessImageUpdate(const TextureVulkan* pTex, u32 idx, u32 bindingSlot)
 {
+    if (GetRef() == VK_NULL_HANDLE)
+    {
+        DEBUG_LOG_ERR("DescriptorSetVulkan: Attempted WriteBindlessImageUpdate on VK_NULL_HANDLE descriptor set");
+        return;
+    }
+
     VkDescriptorImageInfo imageInfo{};
     imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
     imageInfo.imageView = pTex->GetImageView();
@@ -231,8 +277,8 @@ void DescriptorSetVulkan::WriteBindlessImageUpdate(const TextureVulkan* pTex, u3
     descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     descriptorWrite.descriptorCount = 1;
     descriptorWrite.pImageInfo = &imageInfo;
-    descriptorWrite.pBufferInfo = nullptr;      // Optional
-    descriptorWrite.pTexelBufferView = nullptr; // Optional
+    descriptorWrite.pBufferInfo = nullptr;
+    descriptorWrite.pTexelBufferView = nullptr;
 
     vkUpdateDescriptorSets(VK_LOGICAL_DEVICE, 1, &descriptorWrite, 0, nullptr);
 }

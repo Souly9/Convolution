@@ -4,6 +4,7 @@
 #include "Core/Global/State/ApplicationState.h"
 #include "Core/Global/Utils/MathFunctions.h"
 #include "Core/Rendering/Core/Defines/DescriptorLayoutPresets.h"
+#include "Core/Rendering/Core/CommandBuffer.h"
 #include "EASTL/algorithm.h"
 #include "SimpleMath/SimpleMath.h"
 #include "Utils/RenderPassUtils.h"

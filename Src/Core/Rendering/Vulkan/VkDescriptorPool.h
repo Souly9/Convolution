@@ -3,7 +3,7 @@
 #include "Core/Rendering/Core/RenderingForwardDecls.h"
 #include "Core/Rendering/Core/DescriptorPool.h"
 
-static inline constexpr u32 MAX_DESCRIPTOR_SETS = 128;
+static inline constexpr u32 MAX_DESCRIPTOR_SETS = 8192;
 
 class DescriptorSetVulkan : public DescriptorSetBase
 {
@@ -35,6 +35,7 @@ private:
 
 struct DescriptorPoolCreateInfo
 {
+    u32 maxSets{8192};
     bool enableBindlessTextureDescriptors{true};
     bool enableStorageBufferDescriptors{false};
     bool enableAccelerationStructureDescriptors{false};

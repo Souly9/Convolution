@@ -25,12 +25,18 @@ void BloomPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourc
 {
     ScopedZone("BloomPass::Init");
     BuildPipelines();
+
+    VkTextureManager::TexCreateInfo lens1Info("Textures/Bloom/lens_flare_1.png", true, TextureSemantic::Auto, true);
+    VkTextureManager::TexCreateInfo lens2Info("Textures/Bloom/lens_flare_2.png", true, TextureSemantic::Auto, true);
+
+    m_hLens1 = g_pTexManager->SubmitAsyncTextureCreation(lens1Info);
+    m_hLens2 = g_pTexManager->SubmitAsyncTextureCreation(lens2Info);
 }
 
 void BloomPass::BuildPipelines()
 {
     auto downsampleShader = Shader("Shaders/BloomDownsample.comp.spv", "main");
-    auto blurShader = Shader("Shaders/BloomBlur.comp.spv", "main");
+    auto upsampleShader = Shader("Shaders/BloomUpsample.comp.spv", "main");
 
     PipelineInfo pipeInfo{};
     pipeInfo.descriptorSetLayout.sharedDescriptors = m_sharedDescriptors;
@@ -45,9 +51,9 @@ void BloomPass::BuildPipelines()
     downsampleShaders.pComputeShader = &downsampleShader;
     m_downsamplePipeline = ComputePipeline(downsampleShaders, pipeInfo);
 
-    ShaderCollection blurShaders{};
-    blurShaders.pComputeShader = &blurShader;
-    m_blurPipeline = ComputePipeline(blurShaders, pipeInfo);
+    ShaderCollection upsampleShaders{};
+    upsampleShaders.pComputeShader = &upsampleShader;
+    m_upsamplePipeline = ComputePipeline(upsampleShaders, pipeInfo);
 }
 
 bool BloomPass::WantsToRender() const
@@ -63,97 +69,170 @@ void BloomPass::CreateSharedDescriptorLayout()
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalArrayTextures, 0));
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalImages, 1));
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::GBufferUBO, 2));
+    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::ShadowmapUBO, 2));
 }
 
 void BloomPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
 {
+}
+
+#include "Core/Rendering/Core/RenderGraph/RGExecutionContext.h"
+
+void BloomPass::RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const RGExecutionContext& execCtx)
+{
     ScopedZone("BloomPass::Render");
-    StartRenderPassProfilingScope(pCmdBuffer);
+    StartRenderPassProfilingScope(execCtx.pCmdBuffer);
 
     const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
-    if (!renderState.bloom.enabled || !data.pGbuffer)
+    if (!renderState.bloom.enabled || execCtx.pRegistry == nullptr)
     {
-        EndRenderPassProfilingScope(pCmdBuffer);
+        EndRenderPassProfilingScope(execCtx.pCmdBuffer);
         return;
     }
 
-    const u32 fullWidth = static_cast<u32>(data.renderState.renderResolution.x);
-    const u32 fullHeight = static_cast<u32>(data.renderState.renderResolution.y);
-    const u32 bloomWidth = stltype::max(1u, fullWidth / 2u);
-    const u32 bloomHeight = stltype::max(1u, fullHeight / 2u);
+    static const RGResourceID bloomResIDs[5] = {
+        RGResourceID::BloomMip0,
+        RGResourceID::BloomMip1,
+        RGResourceID::BloomMip2,
+        RGResourceID::BloomMip3,
+        RGResourceID::BloomMip4
+    };
+
+    struct MipDimension
+    {
+        u32 width;
+        u32 height;
+    };
+    MipDimension mips[5];
+    u32 currW = static_cast<u32>(data.renderState.renderResolution.x);
+    u32 currH = static_cast<u32>(data.renderState.renderResolution.y);
+    for (u32 i = 0; i < 5; ++i)
+    {
+        mips[i] = {currW, currH};
+        currW = stltype::max(1u, currW / 2u);
+        currH = stltype::max(1u, currH / 2u);
+    }
 
     const auto texArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessTextureArray);
     const auto imageArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessImageArray);
     const auto gbufferUBO = data.bufferDescriptors.at(UBO::DescriptorContentsType::GBuffer);
 
-    const auto inputTexHandle = data.pGbuffer->GetHandle(GBufferTextureType::GBufferThisFrameColor);
-    const auto downsampleHandle = data.pGbuffer->GetHandle(GBufferTextureType::BloomDownsample);
-    const auto resultHandle = data.pGbuffer->GetHandle(GBufferTextureType::BloomResult);
-
-    u32 groupCountX = (bloomWidth + 7u) / 8u;
-    u32 groupCountY = (bloomHeight + 7u) / 8u;
-
-    // Step 1: Downsample + Threshold pass (Full HDR -> BloomDownsample)
+    // ------------------------------------------------------------------------
+    // Step 1: Progressive Downsample Chain (Jimenez 13-Tap Filter)
+    // ------------------------------------------------------------------------
+    for (u32 i = 0; i < 5; ++i)
     {
+        const u32 srcW = (i == 0) ? static_cast<u32>(data.renderState.renderResolution.x) : mips[i - 1].width;
+        const u32 srcH = (i == 0) ? static_cast<u32>(data.renderState.renderResolution.y) : mips[i - 1].height;
+        const u32 dstW = mips[i].width;
+        const u32 dstH = mips[i].height;
+
+        BindlessTextureHandle srcTexHandle = (i == 0) 
+            ? execCtx.GetBindless(RGResourceID::GBufferThisFrameColor)
+            : execCtx.GetBindless(bloomResIDs[i - 1]);
+
+        BindlessTextureHandle dstImgHandle = execCtx.GetBindless(bloomResIDs[i]);
+
         m_pushConstants.threshold = renderState.bloom.threshold;
         m_pushConstants.intensity = renderState.bloom.intensity;
-        m_pushConstants.isVerticalPass = 0;
-        m_pushConstants.width = fullWidth;
-        m_pushConstants.height = fullHeight;
-        m_pushConstants.outputWidth = bloomWidth;
-        m_pushConstants.outputHeight = bloomHeight;
-        m_pushConstants.inputTexIdx = inputTexHandle;
-        m_pushConstants.outputImageIdx = downsampleHandle;
+        m_pushConstants.filterRadius = 1.0f;
+        m_pushConstants.useKarisAverage = (i == 0) ? 1u : 0u;
+        m_pushConstants.width = srcW;
+        m_pushConstants.height = srcH;
+        m_pushConstants.outputWidth = dstW;
+        m_pushConstants.outputHeight = dstH;
+        m_pushConstants.inputTexIdx = srcTexHandle;
+        m_pushConstants.inputTargetTexIdx = 0;
+        m_pushConstants.outputImageIdx = dstImgHandle;
+        m_pushConstants.useLensTexture = 0u;
+        m_pushConstants.lensTextureIdx = 0;
+        m_pushConstants.lensDirtIntensity = 0.0f;
 
-        GenericComputeDispatchCmd cmd(&m_downsamplePipeline, groupCountX, groupCountY, 1);
+        u32 groupX = (dstW + 7u) / 8u;
+        u32 groupY = (dstH + 7u) / 8u;
+
+        GenericComputeDispatchCmd cmd(&m_downsamplePipeline, groupX, groupY, 1);
         cmd.descriptorSets = {texArraySet, imageArraySet, gbufferUBO};
         cmd.SetPushConstants(0, m_pushConstants);
-        pCmdBuffer->RecordCommand(cmd);
+        execCtx.pCmdBuffer->RecordCommand(cmd);
+        execCtx.pCmdBuffer->RecordCommand(GlobalBarrierCmd(
+            SyncStages::COMPUTE_SHADER, SyncStages::COMPUTE_SHADER,
+            AccessFlags::SHADER_WRITE, AccessFlags::SHADER_READ | AccessFlags::SHADER_WRITE));
     }
 
-    // Step 2: Horizontal Blur (BloomDownsample -> BloomResult)
+    // ------------------------------------------------------------------------
+    // Step 2: Progressive Upsample & Additive Accumulation (9-Tap Tent Filter)
+    // ------------------------------------------------------------------------
+    for (s32 i = 3; i >= 0; --i)
     {
-        m_pushConstants.isVerticalPass = 0;
-        m_pushConstants.width = bloomWidth;
-        m_pushConstants.height = bloomHeight;
-        m_pushConstants.outputWidth = bloomWidth;
-        m_pushConstants.outputHeight = bloomHeight;
-        m_pushConstants.inputTexIdx = downsampleHandle;
-        m_pushConstants.outputImageIdx = resultHandle;
+        const u32 srcW = mips[i + 1].width;
+        const u32 srcH = mips[i + 1].height;
+        const u32 dstW = mips[i].width;
+        const u32 dstH = mips[i].height;
 
-        GenericComputeDispatchCmd cmd(&m_blurPipeline, groupCountX, groupCountY, 1);
+        BindlessTextureHandle lowerMipTexHandle = execCtx.GetBindless(bloomResIDs[i + 1]);
+        BindlessTextureHandle targetMipTexHandle = execCtx.GetBindless(bloomResIDs[i]);
+        BindlessTextureHandle targetMipImgHandle = execCtx.GetBindless(bloomResIDs[i]);
+
+        m_pushConstants.threshold = renderState.bloom.threshold;
+        m_pushConstants.intensity = renderState.bloom.intensity;
+        m_pushConstants.filterRadius = 1.0f;
+        m_pushConstants.useKarisAverage = (i == 0) ? 1u : 0u;
+        m_pushConstants.width = srcW;
+        m_pushConstants.height = srcH;
+        m_pushConstants.outputWidth = dstW;
+        m_pushConstants.outputHeight = dstH;
+        m_pushConstants.inputTexIdx = lowerMipTexHandle;
+        m_pushConstants.inputTargetTexIdx = targetMipTexHandle;
+        m_pushConstants.outputImageIdx = targetMipImgHandle;
+        m_pushConstants.useLensTexture = 0u;
+        m_pushConstants.lensTextureIdx = 0;
+        m_pushConstants.lensDirtIntensity = renderState.bloom.lensDirtIntensity;
+
+        if (i == 0 && renderState.bloom.lensTextureIndex > 0)
+        {
+            TextureHandle targetLensHandle = (renderState.bloom.lensTextureIndex == 1) ? m_hLens1 : m_hLens2;
+            TextureVulkan* pLensTex = g_pTexManager->GetTexture(targetLensHandle);
+            if (pLensTex)
+            {
+                BindlessTextureHandle bindlessIdx = g_pTexManager->MakeTextureBindless(pLensTex, true);
+                m_pushConstants.useLensTexture = 1u;
+                m_pushConstants.lensTextureIdx = bindlessIdx;
+            }
+        }
+
+        u32 groupX = (dstW + 7u) / 8u;
+        u32 groupY = (dstH + 7u) / 8u;
+
+        GenericComputeDispatchCmd cmd(&m_upsamplePipeline, groupX, groupY, 1);
         cmd.descriptorSets = {texArraySet, imageArraySet, gbufferUBO};
         cmd.SetPushConstants(0, m_pushConstants);
-        pCmdBuffer->RecordCommand(cmd);
+        execCtx.pCmdBuffer->RecordCommand(cmd);
+        execCtx.pCmdBuffer->RecordCommand(GlobalBarrierCmd(
+            SyncStages::COMPUTE_SHADER, SyncStages::COMPUTE_SHADER,
+            AccessFlags::SHADER_WRITE, AccessFlags::SHADER_READ | AccessFlags::SHADER_WRITE));
     }
 
-    // Step 3: Vertical Blur (BloomResult -> BloomDownsample)
-    {
-        m_pushConstants.isVerticalPass = 1;
-        m_pushConstants.width = bloomWidth;
-        m_pushConstants.height = bloomHeight;
-        m_pushConstants.outputWidth = bloomWidth;
-        m_pushConstants.outputHeight = bloomHeight;
-        m_pushConstants.inputTexIdx = resultHandle;
-        m_pushConstants.outputImageIdx = downsampleHandle;
-
-        GenericComputeDispatchCmd cmd(&m_blurPipeline, groupCountX, groupCountY, 1);
-        cmd.descriptorSets = {texArraySet, imageArraySet, gbufferUBO};
-        cmd.SetPushConstants(0, m_pushConstants);
-        pCmdBuffer->RecordCommand(cmd);
-    }
-
-    EndRenderPassProfilingScope(pCmdBuffer);
+    EndRenderPassProfilingScope(execCtx.pCmdBuffer);
 }
 
 void BloomPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
 {
     builder.ReadTexture(RGResourceID::GBufferThisFrameColor, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
-    auto downsample = builder.DeclareStorageTexture(RGResourceID::BloomDownsample, TexFormat::R16G16B16A16_FLOAT, RGSizeClass::RenderResolution);
-    auto result = builder.DeclareStorageTexture(RGResourceID::BloomResult, TexFormat::R16G16B16A16_FLOAT, RGSizeClass::RenderResolution);
+    static const RGResourceID bloomResIDs[5] = {
+        RGResourceID::BloomMip0,
+        RGResourceID::BloomMip1,
+        RGResourceID::BloomMip2,
+        RGResourceID::BloomMip3,
+        RGResourceID::BloomMip4
+    };
 
-    builder.WriteStorageImage(downsample, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_WRITE);
-    builder.WriteStorageImage(result, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_WRITE);
+    for (u32 i = 0; i < 5; ++i)
+    {
+        auto mip = builder.DeclareStorageTexture(bloomResIDs[i], TexFormat::R16G16B16A16_FLOAT, RGSizeClass::RenderResolution);
+        builder.WriteStorageImage(mip, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ | AccessFlags::SHADER_WRITE);
+    }
+
     builder.SetHasSideEffects();
 }

@@ -142,32 +142,17 @@ void DLSSRRPass::RenderWithGraph(const MainPassData& data, const FrameRendererCo
     if (Nvidia::StreamlineManager::IsDLSSDEvaluateBlocked())
         return;
 
-    // Transition layouts for DLSS
-    {
-        const ImageLayout oldColorOutLayout = (data.renderState.recreatedThisFrame || !m_wasActive)
-                                              ? ImageLayout::UNDEFINED
-                                              : ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-
-        ImageLayoutTransitionCmd colorOutGen(pColorOut);
-        colorOutGen.oldLayout = oldColorOutLayout;
-        colorOutGen.newLayout = ImageLayout::GENERAL;
-        VkTextureManager::SetLayoutBarrierMasks(colorOutGen, oldColorOutLayout, ImageLayout::GENERAL);
-        execCtx.pCmdBuffer->RecordCommand(colorOutGen);
-    }
-    const auto restoreColorOutReadLayout = [&]() {
-        ImageLayoutTransitionCmd colorOutRead(pColorOut);
-        colorOutRead.oldLayout = ImageLayout::GENERAL;
-        colorOutRead.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-        VkTextureManager::SetLayoutBarrierMasks(colorOutRead, ImageLayout::GENERAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-        execCtx.pCmdBuffer->RecordCommand(colorOutRead);
-    };
-
     sl::ViewportHandle viewport(0);
 
     stltype::fixed_vector<StreamlineTagDesc, 16> tagDescs;
-    auto pushTagDesc = [&](Texture* pTex, sl::BufferType type) {
+    auto pushTagDesc = [&](Texture* pTex, sl::BufferType type, VkFormat defaultFormat = VK_FORMAT_R8G8B8A8_UNORM) {
         if (!pTex)
         {
+            StreamlineTagDesc desc{};
+            desc.type = type;
+            desc.state = static_cast<uint32_t>(GetTaggedLayout(type));
+            desc.nativeFormat = static_cast<uint32_t>(defaultFormat);
+            tagDescs.push_back(desc);
             return true;
         }
         TextureVulkan* pVkTex = static_cast<TextureVulkan*>(pTex);
@@ -184,36 +169,36 @@ void DLSSRRPass::RenderWithGraph(const MainPassData& data, const FrameRendererCo
         desc.arrayLayers = pVkTex->GetInfo().extents.z > 0 ? pVkTex->GetInfo().extents.z : 1u;
         if (desc.nativeFormat == 0)
         {
-            DEBUG_LOG_WARNF("[DLSSRRPass] Texture format is UNDEFINED for BufferType %d, Engine Format %d", static_cast<int>(type), static_cast<int>(pVkTex->GetInfo().format));
+            DEBUG_LOG_WARNF("[DLSSRRPass] Texture format is UNDEFINED for BufferType %d, falling back to default format", static_cast<int>(type));
+            desc.nativeFormat = static_cast<uint32_t>(defaultFormat);
         }
         tagDescs.push_back(desc);
         return true;
     };
 
-    bool tagsOk = pushTagDesc(pColorIn, sl::kBufferTypeScalingInputColor) &&
-                  pushTagDesc(pColorOut, sl::kBufferTypeScalingOutputColor) &&
-                  pushTagDesc(pDepth, sl::kBufferTypeDepth) &&
-                  pushTagDesc(pMotion, sl::kBufferTypeMotionVectors);
+    bool tagsOk = pushTagDesc(pColorIn, sl::kBufferTypeScalingInputColor, VK_FORMAT_R16G16B16A16_SFLOAT) &&
+                  pushTagDesc(pColorOut, sl::kBufferTypeScalingOutputColor, VK_FORMAT_R16G16B16A16_SFLOAT) &&
+                  pushTagDesc(pDepth, sl::kBufferTypeDepth, VK_FORMAT_D32_SFLOAT) &&
+                  pushTagDesc(pMotion, sl::kBufferTypeMotionVectors, VK_FORMAT_R32G32_SFLOAT) &&
+                  pushTagDesc(pExposure, sl::kBufferTypeExposure, VK_FORMAT_R32_SFLOAT);
 
     if (tagsOk)
     {
-        pushTagDesc(pExposure, sl::kBufferTypeExposure);
-
         Texture* pAlbedo = execCtx.GetTexture(RGResourceID::GBufferAlbedo);
         Texture* pNormal = execCtx.GetTexture(RGResourceID::GBufferNormal);
         Texture* pRoughness = execCtx.GetTexture(RGResourceID::GBufferRoughness);
         Texture* pNoisyReflections = execCtx.GetTexture(RGResourceID::RTReflections);
 
-        pushTagDesc(pAlbedo, sl::kBufferTypeAlbedo);
-        pushTagDesc(pAlbedo, sl::kBufferTypeSpecularAlbedo);
-        pushTagDesc(pNormal, sl::kBufferTypeNormals);
-        pushTagDesc(pRoughness, sl::kBufferTypeRoughness);
-        pushTagDesc(pNoisyReflections, sl::kBufferTypeSpecularHitNoisy);
+        pushTagDesc(pAlbedo, sl::kBufferTypeAlbedo, VK_FORMAT_R16G16B16A16_SFLOAT);
+        pushTagDesc(pAlbedo, sl::kBufferTypeSpecularAlbedo, VK_FORMAT_R16G16B16A16_SFLOAT);
+        pushTagDesc(pNormal, sl::kBufferTypeNormals, VK_FORMAT_R16G16B16A16_SFLOAT);
+        pushTagDesc(pRoughness, sl::kBufferTypeRoughness, VK_FORMAT_R8_UNORM);
+        pushTagDesc(pNoisyReflections, sl::kBufferTypeSpecularHitNoisy, VK_FORMAT_R16G16B16A16_SFLOAT);
+        pushTagDesc(nullptr, sl::kBufferTypeDiffuseHitNoisy, VK_FORMAT_R16G16B16A16_SFLOAT);
     }
 
     if (!tagsOk)
     {
-        restoreColorOutReadLayout();
         return;
     }
 
@@ -314,27 +299,43 @@ void DLSSRRPass::RenderWithGraph(const MainPassData& data, const FrameRendererCo
 
         for (const auto& td : tagDescs)
         {
-            sl::Resource res(
-                sl::ResourceType::eTex2d,
-                reinterpret_cast<void*>(td.native),
-                nullptr,
-                reinterpret_cast<void*>(td.view),
-                td.state
-            );
-            res.width = td.width;
-            res.height = td.height;
-            res.nativeFormat = td.nativeFormat;
-            res.usage = td.usage;
-            res.mipLevels = td.mipLevels;
-            res.arrayLayers = td.arrayLayers;
-            res.flags = 0;
+            if (td.native == 0 && td.view == 0)
+            {
+                sl::Resource res(
+                    sl::ResourceType::eTex2d,
+                    nullptr,
+                    nullptr,
+                    nullptr,
+                    td.state
+                );
+                res.nativeFormat = td.nativeFormat;
+                frameData.resources.push_back(res);
+            }
+            else
+            {
+                sl::Resource res(
+                    sl::ResourceType::eTex2d,
+                    reinterpret_cast<void*>(td.native),
+                    nullptr,
+                    reinterpret_cast<void*>(td.view),
+                    td.state
+                );
+                res.width = td.width;
+                res.height = td.height;
+                res.nativeFormat = td.nativeFormat;
+                res.usage = td.usage;
+                res.mipLevels = td.mipLevels;
+                res.arrayLayers = td.arrayLayers;
+                res.flags = 0;
 
-            frameData.resources.push_back(res);
+                frameData.resources.push_back(res);
+            }
         }
 
         for (size_t i = 0; i < frameData.resources.size(); ++i)
         {
-            frameData.tags.emplace_back(&frameData.resources[i], tagDescs[i].type, sl::ResourceLifecycle::eValidUntilPresent);
+            const bool isNull = (tagDescs[i].native == 0 && tagDescs[i].view == 0);
+            frameData.tags.emplace_back(isNull ? nullptr : &frameData.resources[i], tagDescs[i].type, sl::ResourceLifecycle::eValidUntilPresent);
         }
 
         const sl::Result tagRes =
@@ -364,14 +365,11 @@ void DLSSRRPass::RenderWithGraph(const MainPassData& data, const FrameRendererCo
     {
         DEBUG_LOG_WARNF("[DLSSRRPass] slSetConstants failed with result: 0x{:X}", static_cast<u32>(constRes));
         EndRenderPassProfilingScope(execCtx.pCmdBuffer);
-        restoreColorOutReadLayout();
         return;
     }
     m_wasActive = true;
     execCtx.pCmdBuffer->RecordCommand(streamlineCmd);
     EndRenderPassProfilingScope(execCtx.pCmdBuffer);
-
-    restoreColorOutReadLayout();
 }
 
 void DLSSRRPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
@@ -385,7 +383,7 @@ void DLSSRRPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
     builder.ReadTexture(RGResourceID::RTReflections, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
     builder.ReadTexture(RGResourceID::DLSSExposure, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
-    auto resolve = builder.DeclareStorageTexture(RGResourceID::TemporalResolve, TexFormat::R16G16B16A16_FLOAT, RGSizeClass::RenderResolution);
+    auto resolve = builder.DeclareStorageTexture(RGResourceID::TemporalResolve, TexFormat::R16G16B16A16_FLOAT, RGSizeClass::OutputResolution);
     builder.WriteStorageImage(resolve, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_WRITE);
     builder.SetHasSideEffects();
 }

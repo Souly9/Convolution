@@ -162,6 +162,30 @@ public:
                             { state.renderState.bloom.intensity = bloomIntensity; });
                         needsUpdate = true;
                     }
+
+                    static const char* lensBloomTextures[] = {"None (Clean Bloom)",
+                                                              "Lens Pattern 1 (Starburst & Flare)",
+                                                              "Lens Pattern 2 (Bokeh & Dirt)"};
+                    int currentLensTex = renderState.bloom.lensTextureIndex;
+                    if (ImGui::Combo("Lens Bloom Texture", &currentLensTex, lensBloomTextures, IM_ARRAYSIZE(lensBloomTextures)))
+                    {
+                        g_pApplicationState->RegisterUpdateFunction(
+                            [currentLensTex](ApplicationState& state)
+                            { state.renderState.bloom.lensTextureIndex = currentLensTex; });
+                        needsUpdate = true;
+                    }
+
+                    if (currentLensTex > 0)
+                    {
+                        float lensDirtIntensity = renderState.bloom.lensDirtIntensity;
+                        if (ImGui::SliderFloat("Lens Dirt Intensity", &lensDirtIntensity, 0.0f, 5.0f))
+                        {
+                            g_pApplicationState->RegisterUpdateFunction(
+                                [lensDirtIntensity](ApplicationState& state)
+                                { state.renderState.bloom.lensDirtIntensity = lensDirtIntensity; });
+                            needsUpdate = true;
+                        }
+                    }
                 }
 
                 if (ImGui::CollapsingHeader("Shadow Settings", ImGuiTreeNodeFlags_DefaultOpen))

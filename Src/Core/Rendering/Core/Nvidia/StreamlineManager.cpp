@@ -116,7 +116,7 @@ bool StreamlineManager::EarlyInit()
     pref.featuresToLoad = features;
     pref.numFeaturesToLoad = 2u;
     pref.renderAPI = sl::RenderAPI::eVulkan;
-    pref.flags |= sl::PreferenceFlags::eUseFrameBasedResourceTagging;
+    pref.flags |= sl::PreferenceFlags::eUseFrameBasedResourceTagging | sl::PreferenceFlags::eUseManualHooking;
     pref.logMessageCallback = SL_LoggingCallback;
     pref.logLevel = sl::LogLevel::eOff;
     const std::wstring exeDir = GetExecutableDirectory();
@@ -281,6 +281,16 @@ void StreamlineManager::Shutdown()
 
 static sl::FrameToken* s_frameTokens[8] = {nullptr};
 
+void StreamlineManager::OnPresent(u32 frameIdx)
+{
+    if (!g_slInitialized) return;
+    sl::FrameToken* pFrameToken = s_frameTokens[frameIdx % 8];
+    if (pFrameToken)
+    {
+        // Notify Streamline of frame presentation
+    }
+}
+
 void StreamlineManager::AcquireNewFrameToken(u32 frameIdx)
 {
     if (!g_slInitialized) return;
@@ -375,6 +385,7 @@ bool StreamlineManager::SetDLSSOptions(u32 width, u32 height, sl::DLSSMode mode)
     options.outputWidth = width;
     options.outputHeight = height;
     options.colorBuffersHDR = sl::Boolean::eTrue;
+    options.useAutoExposure = sl::Boolean::eTrue;
 
     sl::ViewportHandle viewport(0);
     const auto res = slDLSSSetOptions(viewport, options);
@@ -693,6 +704,8 @@ bool StreamlineManager::s_initialized = false;
 bool StreamlineManager::EarlyInit() { return false; }
 bool StreamlineManager::Init() { return false; }
 void StreamlineManager::Shutdown() {}
+
+void StreamlineManager::OnPresent(u32 frameIdx) {}
 
 void StreamlineManager::AcquireNewFrameToken(u32 frameIdx) {}
 bool StreamlineManager::GetFrameToken(u32 frameIdx, sl::FrameToken*& pFrameToken) { return false; }

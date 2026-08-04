@@ -34,7 +34,7 @@ void ScreenSpaceShadowPass::RecreateResolutionDependentResources(RendererAttachm
                                                                  const SharedResourceManager& resourceManager)
 {
     ScopedZone("ScreenSpaceShadowPass::RecreateResolutionDependentResources");
-    m_pDepthTex = static_cast<const Texture*>(attachmentInfo.depthAttachment.GetTexture());
+    m_pDepthTex = nullptr;
 }
 
 void ScreenSpaceShadowPass::BuildPipelines()
@@ -70,29 +70,30 @@ bool ScreenSpaceShadowPass::WantsToRender() const
 
 void ScreenSpaceShadowPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
 {
+}
+
+#include "Core/Rendering/Core/RenderGraph/RGExecutionContext.h"
+
+void ScreenSpaceShadowPass::RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const RGExecutionContext& execCtx)
+{
     ScopedZone("ScreenSpaceShadowPass::Render");
 
-    if (data.csmViews.empty())
+    mathstl::Vector3 lightDir(0.0f, 1.0f, 0.0f);
+    if (!data.csmViews.empty())
     {
-        if (data.pScreenSpaceShadowTexture)
-        {
-            FrameTransitionRecorder::RecordClearColorTexture(
-                pCmdBuffer, data.pScreenSpaceShadowTexture, ImageLayout::UNDEFINED, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-        }
-        return;
+        lightDir = -data.csmViews[0].dir;
     }
-    
-    // Use the directional light from the csmViews
-    const mathstl::Vector3& lightDir = -data.csmViews[0].dir;
 
-    auto depthExtents = m_pDepthTex->GetInfo().extents;
+    const auto* pDepthTex = execCtx.GetTexture(RGResourceID::MainDepth);
+    DirectX::XMUINT3 depthExtents = pDepthTex ? pDepthTex->GetInfo().extents
+                                              : DirectX::XMUINT3((u32)data.renderState.renderResolution.x, (u32)data.renderState.renderResolution.y, 1);
 
     Bend::DispatchList dispatchList = SSSHelper::BuildBendDispatchList(lightDir, data.mainCamInvViewProj, depthExtents);
     
-    StartRenderPassProfilingScope(pCmdBuffer);
+    StartRenderPassProfilingScope(execCtx.pCmdBuffer);
 
-    m_pushConstants.depthTexIdx = data.depthBufferBindlessHandle;
-    m_pushConstants.outputTexIdx = data.screenSpaceShadows;
+    m_pushConstants.depthTexIdx = execCtx.GetBindless(RGResourceID::MainDepth);
+    m_pushConstants.outputTexIdx = execCtx.GetBindless(RGResourceID::ScreenSpaceShadows);
     m_pushConstants.invDepthTextureSize = mathstl::Vector2(1.0f / depthExtents.x, 1.0f / depthExtents.y);
 
     m_pushConstants.lightCoordinate = mathstl::Vector4(
@@ -115,10 +116,10 @@ void ScreenSpaceShadowPass::Render(const MainPassData& data, FrameRendererContex
         cmd.descriptorSets.push_back(imageArraySet);
         cmd.SetPushConstants(0, m_pushConstants);
 
-        pCmdBuffer->RecordCommand(cmd);
+        execCtx.pCmdBuffer->RecordCommand(cmd);
     }
     
-    EndRenderPassProfilingScope(pCmdBuffer);
+    EndRenderPassProfilingScope(execCtx.pCmdBuffer);
 }
 
 #include "Core/Rendering/Core/RenderGraph/RenderGraphBuilder.h"

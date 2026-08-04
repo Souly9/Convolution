@@ -164,6 +164,8 @@ void FrameResourceManager::Init()
     m_skyboxTextureHandle = g_pTexManager->SubmitAsyncTextureCreation(
         {"../../Resources/Skyboxes/mpumalanga_veld_puresky_4k.hdr", false, TextureSemantic::Auto, true});
     m_skyboxBindlessHandle = g_pTexManager->MakeTextureBindless(m_skyboxTextureHandle, true);
+
+    m_dlssExposureStagingBuffer.EnsureCapacity(sizeof(float));
 }
 
 void FrameResourceManager::CreatePassObjectsAndLayouts()

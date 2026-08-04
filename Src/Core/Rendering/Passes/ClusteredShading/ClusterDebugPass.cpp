@@ -2,6 +2,7 @@
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Global/Utils/MathFunctions.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
+#include "Core/Rendering/Core/GBuffer.h"
 #include "Core/Rendering/Core/Pipeline.h"
 #include "Core/Rendering/Passes/PassManager.h" // For MainPassData definition
 #include "Core/Rendering/Passes/Utils/RenderPassUtils.h"
@@ -19,9 +20,10 @@ void ClusterDebugPass::Init(RendererAttachmentInfo& attachmentInfo, const Shared
 {
     ScopedZone("ClusterDebugPass::Init");
 
-    RecreateResolutionDependentResources(attachmentInfo, resourceManager);
+    for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
+        m_indirectCmdBuffers[i].Init(1000000);
 
-    BuildBuffers();
+    RecreateResolutionDependentResources(attachmentInfo, resourceManager);
     BuildPipelines();
 }
 
@@ -30,14 +32,14 @@ void ClusterDebugPass::RecreateResolutionDependentResources(RendererAttachmentIn
 {
     ScopedZone("ClusterDebugPass::RecreateResolutionDependentResources");
 
-    const auto& gbufferInfo = attachmentInfo.gbuffer;
+    GBufferInfo gbufferInfo{};
     const auto gbufferDebug =
         CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBufferDebug), LoadOp::LOAD, nullptr);
 
     m_mainRenderingData.colorAttachments.clear();
     m_mainRenderingData.colorAttachments.push_back(std::move(gbufferDebug));
     m_mainRenderingData.depthAttachment =
-        CreateReadOnlyDepthAttachment(LoadOp::LOAD, attachmentInfo.depthAttachment.GetTexture());
+        CreateReadOnlyDepthAttachment(LoadOp::LOAD, nullptr);
 
     InitBaseData(attachmentInfo);
 }

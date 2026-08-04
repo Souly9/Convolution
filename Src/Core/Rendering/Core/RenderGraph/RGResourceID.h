@@ -23,8 +23,11 @@ enum class RGResourceID : u32
     DLSSExposure,
     Swapchain,
     TileAssignmentBuffer,
-    BloomDownsample,
-    BloomResult
+    BloomMip0,
+    BloomMip1,
+    BloomMip2,
+    BloomMip3,
+    BloomMip4
 };
 
 inline const char* ToString(RGResourceID id)
@@ -50,8 +53,11 @@ inline const char* ToString(RGResourceID id)
         case RGResourceID::DLSSExposure: return "DLSSExposure";
         case RGResourceID::Swapchain: return "Swapchain";
         case RGResourceID::TileAssignmentBuffer: return "TileAssignmentBuffer";
-        case RGResourceID::BloomDownsample: return "BloomDownsample";
-        case RGResourceID::BloomResult: return "BloomResult";
-        default: return "CustomResource";
+        case RGResourceID::BloomMip0: return "BloomMip0";
+        case RGResourceID::BloomMip1: return "BloomMip1";
+        case RGResourceID::BloomMip2: return "BloomMip2";
+        case RGResourceID::BloomMip3: return "BloomMip3";
+        case RGResourceID::BloomMip4: return "BloomMip4";
+        default: return "Custom";
     }
 }

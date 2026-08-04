@@ -54,6 +54,8 @@ public:
     static bool Init();
     static void Shutdown();
 
+    static void OnPresent(u32 frameIdx);
+
     static void AcquireNewFrameToken(u32 frameIdx);
     static bool GetFrameToken(u32 frameIdx, sl::FrameToken*& pFrameToken);
     static bool GetDLSSFeatureRequirements(sl::FeatureRequirements& requirements);

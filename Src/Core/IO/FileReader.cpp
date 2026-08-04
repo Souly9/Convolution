@@ -206,20 +206,38 @@ void FileReader::ReadImageFile(const IORequest& request)
         if (isHDR)
         {
             float* floatPixels = stbi_loadf(request.filePath.data(), &info.extents.x, &info.extents.y, &info.texChannels, STBI_rgb_alpha);
+            if (!floatPixels && (request.filePath.rfind("Textures/", 0) == 0 || request.filePath.rfind("Textures\\", 0) == 0))
+            {
+                stltype::string fallbackPath = "../../" + request.filePath;
+                floatPixels = stbi_loadf(fallbackPath.data(), &info.extents.x, &info.extents.y, &info.texChannels, STBI_rgb_alpha);
+            }
             info.pixels = reinterpret_cast<unsigned char*>(floatPixels);
             info.dataSize = (u64)info.extents.x * info.extents.y * 4 * sizeof(float);
             info.ddsFormat = 0;
             info.supportsAlpha = true;
-            DEBUG_ASSERT(info.pixels);
+            if (!info.pixels)
+            {
+                DEBUG_LOG_ERRF("[FileReader] Failed to load HDR image: {}", request.filePath.c_str());
+                return;
+            }
         }
         else
         {
             info.pixels =
                 stbi_load(request.filePath.data(), &info.extents.x, &info.extents.y, &info.texChannels, STBI_rgb_alpha);
+            if (!info.pixels && (request.filePath.rfind("Textures/", 0) == 0 || request.filePath.rfind("Textures\\", 0) == 0))
+            {
+                stltype::string fallbackPath = "../../" + request.filePath;
+                info.pixels = stbi_load(fallbackPath.data(), &info.extents.x, &info.extents.y, &info.texChannels, STBI_rgb_alpha);
+            }
             info.dataSize = (u64)info.extents.x * info.extents.y * 4;
             info.ddsFormat = 0; // Standard RGBA8
             info.supportsAlpha = true;
-            DEBUG_ASSERT(info.pixels);
+            if (!info.pixels)
+            {
+                DEBUG_LOG_ERRF("[FileReader] Failed to load image: {}", request.filePath.c_str());
+                return;
+            }
         }
     }
 

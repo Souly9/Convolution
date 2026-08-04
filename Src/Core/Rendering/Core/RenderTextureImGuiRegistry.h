@@ -1,6 +1,9 @@
 #pragma once
-#include "Core/Rendering/Core/GBuffer.h"
+#include "Core/Global/GlobalDefines.h"
+#include "Core/Global/State/States.h"
 #include "Core/Rendering/Core/ShadowMaps.h"
+
+class RGResourceRegistry;
 
 namespace RT
 {
@@ -13,14 +16,17 @@ public:
     void ReleaseGBufferIdsForNextFrame();
     void ReleaseShadowMapIdsForNextFrame();
     void RegisterShadowMapTextures(const CascadedShadowMap& shadowMap);
-    void RegisterGBufferTextures(GBuffer& gbuffer, Texture* pScreenSpaceShadowTexture);
+    void RegisterGBufferTextures(RGResourceRegistry& registry);
     void RegisterRTTextures(const RT::RTResourceManager& rtResourceManager);
-    void PublishGBufferTextureState(GBuffer& gbuffer);
+    void RegisterMaterialTextures();
+    void PublishGBufferTextureState(RGResourceRegistry& registry);
 
 private:
+    stltype::vector<RendererState::TextureViewerItem> m_textureViewerItems{};
     stltype::vector<u64> m_csmCascadeImGuiIDs{};
     stltype::vector<u64> m_gbufferImGuiIDs{};
     stltype::vector<u64> m_rtImGuiIDs{};
+    stltype::vector<u64> m_materialImGuiIDs{};
     Texture* m_pVelocityA{nullptr};
     Texture* m_pHistoryColorA{nullptr};
     u64 m_velocityIdA{0};

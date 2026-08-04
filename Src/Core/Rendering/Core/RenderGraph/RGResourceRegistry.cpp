@@ -2,6 +2,7 @@
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Rendering/Core/TextureManager.h"
 #include "Core/Rendering/Core/Utils/DeleteQueue.h"
+#include "Core/Rendering/Vulkan/VkGlobals.h"
 
 RGResourceRegistry::~RGResourceRegistry()
 {
@@ -29,8 +30,11 @@ static TexFormat GetDefaultFormatForRGResourceID(RGResourceID id)
         case RGResourceID::SMAAEdges: return TexFormat::R8G8_UNORM;
         case RGResourceID::SMAABlend: return TexFormat::R8G8B8A8_UNORM;
         case RGResourceID::DLSSExposure: return TexFormat::R32_FLOAT;
-        case RGResourceID::BloomDownsample: return TexFormat::R16G16B16A16_FLOAT;
-        case RGResourceID::BloomResult: return TexFormat::R16G16B16A16_FLOAT;
+        case RGResourceID::BloomMip0:
+        case RGResourceID::BloomMip1:
+        case RGResourceID::BloomMip2:
+        case RGResourceID::BloomMip3:
+        case RGResourceID::BloomMip4: return TexFormat::R16G16B16A16_FLOAT;
         default: return TexFormat::UNDEFINED;
     }
 }
@@ -48,14 +52,14 @@ RGResourceHandle RGResourceRegistry::DeclareResource(const RGResourceSpec& spec)
     }
     if (finalSpec.id == RGResourceID::GBufferVelocity || finalSpec.id == RGResourceID::TemporalResolve)
     {
-        finalSpec.isPingPong = true;
+        finalSpec.SetIsPingPong(true);
     }
 
     for (u32 i = 0; i < static_cast<u32>(m_resources.size()); ++i)
     {
         if (m_resources[i].spec.MatchesIdentity(finalSpec))
         {
-            m_resources[i].referencedThisFrame = true;
+            m_resources[i].SetReferencedThisFrame(true);
             m_resources[i].framesUnreferenced = 0;
             // Update usage flags and properties if newly declared spec is broader
             m_resources[i].spec.usage |= finalSpec.usage;
@@ -67,9 +71,26 @@ RGResourceHandle RGResourceRegistry::DeclareResource(const RGResourceSpec& spec)
             {
                 m_resources[i].spec.sizeClass = finalSpec.sizeClass;
             }
+            if (finalSpec.scale.x != 1.0f || finalSpec.scale.y != 1.0f)
+            {
+                m_resources[i].spec.scale = finalSpec.scale;
+            }
             if (finalSpec.fixedExtents.x > 1.0f || finalSpec.fixedExtents.y > 1.0f)
             {
                 m_resources[i].spec.fixedExtents = finalSpec.fixedExtents;
+            }
+            if (finalSpec.minFilter != TextureFilter::NEAREST)
+            {
+                m_resources[i].spec.minFilter = finalSpec.minFilter;
+            }
+            if (finalSpec.magFilter != TextureFilter::NEAREST)
+            {
+                m_resources[i].spec.magFilter = finalSpec.magFilter;
+            }
+            if (finalSpec.IsPersistent())
+            {
+                m_resources[i].SetIsPersistent(true);
+                m_resources[i].spec.SetIsPersistent(true);
             }
             return i;
         }
@@ -77,7 +98,8 @@ RGResourceHandle RGResourceRegistry::DeclareResource(const RGResourceSpec& spec)
 
     ManagedResource res{};
     res.spec = finalSpec;
-    res.referencedThisFrame = true;
+    res.SetIsPersistent(finalSpec.IsPersistent());
+    res.SetReferencedThisFrame(true);
     res.framesUnreferenced = 0;
     m_resources.push_back(res);
     return static_cast<RGResourceHandle>(m_resources.size() - 1);
@@ -100,13 +122,18 @@ RGResourceHandle RGResourceRegistry::ImportTexture(RGResourceID id, Texture* pTe
     {
         if (m_resources[i].spec.MatchesIdentity(spec))
         {
+            const bool textureChanged = (m_resources[i].pTexture != pTexture);
             m_resources[i].pTexture = pTexture;
             m_resources[i].bindlessHandle = bindlessHandle;
-            m_resources[i].isImported = true;
-            m_resources[i].allocated = true;
-            m_resources[i].referencedThisFrame = true;
+            m_resources[i].SetIsImported(true);
+            m_resources[i].SetAllocated(true);
+            m_resources[i].SetReferencedThisFrame(true);
             m_resources[i].framesUnreferenced = 0;
             m_resources[i].spec.usage |= spec.usage;
+            if (textureChanged || m_resources[i].currentLayout == ImageLayout::UNDEFINED)
+            {
+                m_resources[i].currentLayout = currentLayout;
+            }
             if (pTexture)
             {
                 m_resources[i].spec.format = pTexture->GetInfo().format;
@@ -119,10 +146,11 @@ RGResourceHandle RGResourceRegistry::ImportTexture(RGResourceID id, Texture* pTe
     res.spec = spec;
     res.pTexture = pTexture;
     res.bindlessHandle = bindlessHandle;
-    res.isImported = true;
-    res.allocated = true;
-    res.referencedThisFrame = true;
+    res.SetIsImported(true);
+    res.SetAllocated(true);
+    res.SetReferencedThisFrame(true);
     res.framesUnreferenced = 0;
+    res.currentLayout = currentLayout;
     m_resources.push_back(res);
     return static_cast<RGResourceHandle>(m_resources.size() - 1);
 }
@@ -134,7 +162,7 @@ void RGResourceRegistry::OnResize(const mathstl::Vector2& renderRes, const maths
 
     for (auto& res : m_resources)
     {
-        if (res.isImported || res.spec.isBuffer) continue;
+        if (res.IsImported() || res.spec.IsBuffer()) continue;
 
         mathstl::Vector2 targetExtents = m_currentRenderRes;
         if (res.spec.sizeClass == RGSizeClass::OutputResolution)
@@ -142,10 +170,13 @@ void RGResourceRegistry::OnResize(const mathstl::Vector2& renderRes, const maths
         else if (res.spec.sizeClass == RGSizeClass::Fixed)
             targetExtents = res.spec.fixedExtents;
 
-        if (res.allocated && (res.allocatedExtents.x != targetExtents.x || res.allocatedExtents.y != targetExtents.y))
+        targetExtents.x = stltype::max(1.0f, targetExtents.x * res.spec.scale.x);
+        targetExtents.y = stltype::max(1.0f, targetExtents.y * res.spec.scale.y);
+
+        if (res.IsAllocated() && (res.allocatedExtents.x != targetExtents.x || res.allocatedExtents.y != targetExtents.y))
         {
             // Mark for reallocation
-            res.allocated = false;
+            res.SetAllocated(false);
         }
     }
 }
@@ -156,7 +187,7 @@ void RGResourceRegistry::AllocatePending()
 
     for (auto& res : m_resources)
     {
-        if (res.isImported || res.allocated || !res.referencedThisFrame || res.spec.isBuffer || res.spec.format == TexFormat::UNDEFINED)
+        if (res.IsImported() || res.IsAllocated() || (!res.IsPersistent() && !res.IsReferencedThisFrame()) || res.spec.IsBuffer() || res.spec.format == TexFormat::UNDEFINED)
             continue;
 
         mathstl::Vector2 extents = m_currentRenderRes;
@@ -164,6 +195,9 @@ void RGResourceRegistry::AllocatePending()
             extents = m_currentOutputRes;
         else if (res.spec.sizeClass == RGSizeClass::Fixed)
             extents = res.spec.fixedExtents;
+
+        extents.x = stltype::max(1.0f, extents.x * res.spec.scale.x);
+        extents.y = stltype::max(1.0f, extents.y * res.spec.scale.y);
 
         if (extents.x <= 0.0f || extents.y <= 0.0f)
             continue;
@@ -183,10 +217,10 @@ void RGResourceRegistry::AllocatePending()
 
         res.textureHandle = req.handle;
         res.pTexture = static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(req));
-        if (res.spec.needsBindless)
+        if (res.spec.NeedsBindless())
             res.bindlessHandle = g_pTexManager->MakeTextureBindless(req.handle, true);
 
-        if (res.spec.isPingPong)
+        if (res.spec.IsPingPong())
         {
             DynamicTextureRequest historyReq = req;
             historyReq.handle = g_pTexManager->GenerateHandle();
@@ -194,12 +228,12 @@ void RGResourceRegistry::AllocatePending()
 
             res.historyTextureHandle = historyReq.handle;
             res.pHistoryTexture = static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(historyReq));
-            if (res.spec.needsBindless)
+            if (res.spec.NeedsBindless())
                 res.historyBindlessHandle = g_pTexManager->MakeTextureBindless(historyReq.handle, true);
         }
 
         res.allocatedExtents = extents;
-        res.allocated = true;
+        res.SetAllocated(true);
     }
 
     if (!oldHandles.empty())
@@ -217,12 +251,12 @@ void RGResourceRegistry::TickUnreferenced()
 {
     for (auto& res : m_resources)
     {
-        if (res.isImported) continue;
+        if (res.IsImported() || res.IsPersistent()) continue;
 
-        if (!res.referencedThisFrame)
+        if (!res.IsReferencedThisFrame())
         {
             res.framesUnreferenced++;
-            if (res.framesUnreferenced > kFreeAfterFrames && res.allocated)
+            if (res.framesUnreferenced > kFreeAfterFrames && res.IsAllocated())
             {
                 if (res.textureHandle != 0) g_pTexManager->FreeTexture(res.textureHandle);
                 if (res.historyTextureHandle != 0) g_pTexManager->FreeTexture(res.historyTextureHandle);
@@ -232,7 +266,7 @@ void RGResourceRegistry::TickUnreferenced()
                 res.historyTextureHandle = 0;
                 res.bindlessHandle = 0;
                 res.historyBindlessHandle = 0;
-                res.allocated = false;
+                res.SetAllocated(false);
             }
         }
     }
@@ -244,7 +278,7 @@ void RGResourceRegistry::RotateHistory(u32 frameSlot)
 
     for (auto& res : m_resources)
     {
-        if (res.spec.isPingPong && res.allocated)
+        if (res.spec.IsPingPong() && res.IsAllocated())
         {
             stltype::swap(res.pTexture, res.pHistoryTexture);
             stltype::swap(res.textureHandle, res.historyTextureHandle);
@@ -263,7 +297,7 @@ Texture* RGResourceRegistry::ResolveHistory(RGResourceHandle handle) const
 {
     if (handle >= m_resources.size()) return nullptr;
     const auto& res = m_resources[handle];
-    return res.spec.isPingPong ? res.pHistoryTexture : res.pTexture;
+    return res.spec.IsPingPong() ? res.pHistoryTexture : res.pTexture;
 }
 
 BindlessTextureHandle RGResourceRegistry::ResolveBindless(RGResourceHandle handle) const
@@ -276,7 +310,7 @@ BindlessTextureHandle RGResourceRegistry::ResolveHistoryBindless(RGResourceHandl
 {
     if (handle >= m_resources.size()) return 0;
     const auto& res = m_resources[handle];
-    return res.spec.isPingPong ? res.historyBindlessHandle : res.bindlessHandle;
+    return res.spec.IsPingPong() ? res.historyBindlessHandle : res.bindlessHandle;
 }
 
 TextureHandle RGResourceRegistry::ResolveTextureHandle(RGResourceHandle handle) const
@@ -289,7 +323,7 @@ TextureHandle RGResourceRegistry::ResolveHistoryTextureHandle(RGResourceHandle h
 {
     if (handle >= m_resources.size()) return 0;
     const auto& res = m_resources[handle];
-    return res.spec.isPingPong ? res.historyTextureHandle : res.textureHandle;
+    return res.spec.IsPingPong() ? res.historyTextureHandle : res.textureHandle;
 }
 
 RGResourceHandle RGResourceRegistry::GetHistoryHandle(RGResourceHandle handle) const
@@ -303,11 +337,34 @@ const RGResourceSpec* RGResourceRegistry::GetSpec(RGResourceHandle handle) const
     return &m_resources[handle].spec;
 }
 
+ImageLayout RGResourceRegistry::GetInitialLayout(RGResourceHandle handle) const
+{
+    if (handle >= m_resources.size()) return ImageLayout::UNDEFINED;
+    return m_resources[handle].currentLayout;
+}
+
+void RGResourceRegistry::SetResourceLayout(RGResourceHandle handle, ImageLayout layout)
+{
+    if (handle < m_resources.size())
+    {
+        m_resources[handle].currentLayout = layout;
+    }
+}
+
+void RGResourceRegistry::MarkReferenced(RGResourceHandle handle)
+{
+    if (handle < m_resources.size())
+    {
+        m_resources[handle].SetReferencedThisFrame(true);
+        m_resources[handle].framesUnreferenced = 0;
+    }
+}
+
 void RGResourceRegistry::ResetFrameState()
 {
     for (auto& res : m_resources)
     {
-        res.referencedThisFrame = false;
+        res.SetReferencedThisFrame(false);
     }
 }
 
@@ -315,13 +372,27 @@ void RGResourceRegistry::FreeAll()
 {
     for (auto& res : m_resources)
     {
-        if (!res.isImported && res.allocated)
+        if (!res.IsImported() && res.IsAllocated())
         {
             if (res.textureHandle != 0) g_pTexManager->FreeTexture(res.textureHandle);
             if (res.historyTextureHandle != 0) g_pTexManager->FreeTexture(res.historyTextureHandle);
         }
     }
     m_resources.clear();
+
+    if (m_shadowMap.handle != 0)
+    {
+        g_pTexManager->FreeTexture(m_shadowMap.handle);
+        m_shadowMap.handle = 0;
+    }
+    for (const auto view : m_shadowMap.cascadeViews)
+    {
+        if (view != VK_NULL_HANDLE)
+        {
+            vkDestroyImageView(VkGlobals::GetLogicalDevice(), view, nullptr);
+        }
+    }
+    m_shadowMap.cascadeViews.clear();
 }
 
 RGResourceHandle RGResourceRegistry::FindByID(RGResourceID id) const
@@ -365,58 +436,113 @@ TextureHandle RGResourceRegistry::ResolveHistoryTextureHandleByID(RGResourceID i
     return ResolveHistoryTextureHandle(FindByID(id));
 }
 
-#include "Core/Rendering/Core/RenderTargetManager.h"
+#include "Core/Rendering/Core/Defines/DescriptorLayoutDefines.h"
+#include "Core/Rendering/Core/Defines/GlobalBuffers.h"
 #include "Core/Rendering/Core/FrameResourceManager.h"
-#include "Core/Rendering/Passes/MainPassData.h"
+#include "Core/Rendering/Core/Utils/DeleteQueue.h"
+#include "Core/Rendering/Vulkan/Utils/VkEnumHelpers.h"
+#include "Core/Rendering/Vulkan/VkGlobals.h"
+#include <cstring>
 
-void RGResourceRegistry::ImportEngineResources(const RenderPasses::MainPassData& data,
-                                               const RenderPasses::FrameRendererContext& ctx,
-                                               const RenderTargetManager& rtm)
+void RGResourceRegistry::DeclareEngineResources()
 {
-    if (ctx.pCurrentSwapchainTexture)
-        ImportTexture(RGResourceID::Swapchain, ctx.pCurrentSwapchainTexture);
+    auto Declare = [this](RGResourceID id, RGSizeClass sizeClass, Usage usage, bool pingPong = false, mathstl::Vector2 fixedExtents = {0.0f, 0.0f}, mathstl::Vector2 scale = {1.0f, 1.0f}, TextureFilter minFilter = TextureFilter::NEAREST, TextureFilter magFilter = TextureFilter::NEAREST) {
+        RGResourceSpec spec{};
+        spec.id = id;
+        spec.format = GetDefaultFormatForRGResourceID(id);
+        spec.sizeClass = sizeClass;
+        spec.usage = usage;
+        spec.SetIsPingPong(pingPong);
+        spec.fixedExtents = fixedExtents;
+        spec.scale = scale;
+        spec.minFilter = minFilter;
+        spec.magFilter = magFilter;
+        spec.SetNeedsBindless(true);
+        spec.SetIsPersistent(true);
+        DeclareResource(spec);
+    };
 
-    if (data.pMainDepthTexture)
-        ImportTexture(RGResourceID::MainDepth, data.pMainDepthTexture);
+    Declare(RGResourceID::MainDepth, RGSizeClass::RenderResolution, Usage::DepthAttachment | Usage::Sampled, true);
+    Declare(RGResourceID::GBufferAlbedo, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
+    Declare(RGResourceID::GBufferNormal, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
+    Declare(RGResourceID::GBufferUVMat, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
+    Declare(RGResourceID::GBufferVelocity, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage, true);
+    Declare(RGResourceID::GBufferRoughness, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
+    Declare(RGResourceID::GBufferDebug, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
+    Declare(RGResourceID::GBufferThisFrameColor, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
+    Declare(RGResourceID::TemporalResolve, RGSizeClass::OutputResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage, true);
+    Declare(RGResourceID::GBufferPostAAColor, RGSizeClass::OutputResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
 
-    const auto& gbuffer = rtm.GetGBuffer();
-    if (gbuffer.Get(GBufferTextureType::GBufferAlbedo))
-        ImportTexture(RGResourceID::GBufferAlbedo, gbuffer.Get(GBufferTextureType::GBufferAlbedo));
-    if (gbuffer.Get(GBufferTextureType::GBufferNormal))
-        ImportTexture(RGResourceID::GBufferNormal, gbuffer.Get(GBufferTextureType::GBufferNormal));
-    if (gbuffer.Get(GBufferTextureType::TexCoordMatData))
-        ImportTexture(RGResourceID::GBufferUVMat, gbuffer.Get(GBufferTextureType::TexCoordMatData));
-    if (gbuffer.Get(GBufferTextureType::GBufferVelocity))
-        ImportTexture(RGResourceID::GBufferVelocity, gbuffer.Get(GBufferTextureType::GBufferVelocity));
-    if (gbuffer.Get(GBufferTextureType::GBufferRoughness))
-        ImportTexture(RGResourceID::GBufferRoughness, gbuffer.Get(GBufferTextureType::GBufferRoughness));
-    if (gbuffer.Get(GBufferTextureType::GBufferDebug))
-        ImportTexture(RGResourceID::GBufferDebug, gbuffer.Get(GBufferTextureType::GBufferDebug));
-    if (gbuffer.Get(GBufferTextureType::GBufferThisFrameColor))
-        ImportTexture(RGResourceID::GBufferThisFrameColor, gbuffer.Get(GBufferTextureType::GBufferThisFrameColor));
-    if (gbuffer.Get(GBufferTextureType::GBufferResolve))
-        ImportTexture(RGResourceID::TemporalResolve, gbuffer.Get(GBufferTextureType::GBufferResolve));
-    if (gbuffer.Get(GBufferTextureType::GBufferPostAAColor))
-        ImportTexture(RGResourceID::GBufferPostAAColor, gbuffer.Get(GBufferTextureType::GBufferPostAAColor));
-    if (gbuffer.Get(GBufferTextureType::BloomDownsample))
-        ImportTexture(RGResourceID::BloomDownsample, gbuffer.Get(GBufferTextureType::BloomDownsample));
-    if (gbuffer.Get(GBufferTextureType::BloomResult))
-        ImportTexture(RGResourceID::BloomResult, gbuffer.Get(GBufferTextureType::BloomResult));
+    Declare(RGResourceID::BloomMip0, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage, false, {0.0f, 0.0f}, {1.0f, 1.0f}, TextureFilter::LINEAR, TextureFilter::LINEAR);
+    Declare(RGResourceID::BloomMip1, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage, false, {0.0f, 0.0f}, {0.5f, 0.5f}, TextureFilter::LINEAR, TextureFilter::LINEAR);
+    Declare(RGResourceID::BloomMip2, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage, false, {0.0f, 0.0f}, {0.25f, 0.25f}, TextureFilter::LINEAR, TextureFilter::LINEAR);
+    Declare(RGResourceID::BloomMip3, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage, false, {0.0f, 0.0f}, {0.125f, 0.125f}, TextureFilter::LINEAR, TextureFilter::LINEAR);
+    Declare(RGResourceID::BloomMip4, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage, false, {0.0f, 0.0f}, {0.0625f, 0.0625f}, TextureFilter::LINEAR, TextureFilter::LINEAR);
 
-    if (data.pScreenSpaceShadowTexture)
-        ImportTexture(RGResourceID::ScreenSpaceShadows, data.pScreenSpaceShadowTexture);
-    if (data.pSMAAEdgesTexture)
-        ImportTexture(RGResourceID::SMAAEdges, data.pSMAAEdgesTexture);
-    if (data.pSMAABlendTexture)
-        ImportTexture(RGResourceID::SMAABlend, data.pSMAABlendTexture);
+    Declare(RGResourceID::ScreenSpaceShadows, RGSizeClass::RenderResolution, Usage::Storage | Usage::Sampled);
+    Declare(RGResourceID::SMAAEdges, RGSizeClass::OutputResolution, Usage::ColorAttachment | Usage::Sampled);
+    Declare(RGResourceID::SMAABlend, RGSizeClass::OutputResolution, Usage::ColorAttachment | Usage::Sampled);
+    Declare(RGResourceID::RTAOOutput, RGSizeClass::RenderResolution, Usage::Storage | Usage::Sampled);
+    Declare(RGResourceID::RTReflections, RGSizeClass::RenderResolution, Usage::Storage | Usage::Sampled);
+    Declare(RGResourceID::DLSSExposure, RGSizeClass::Fixed, Usage::Sampled | Usage::TransferDst, false, {1.0f, 1.0f});
+}
 
-    if (data.pRTAOTexture)
-        ImportTexture(RGResourceID::RTAOOutput, data.pRTAOTexture);
-    if (data.pRTReflectionsTexture)
-        ImportTexture(RGResourceID::RTReflections, data.pRTReflectionsTexture);
-    if (data.pRTDebugViewTexture)
-        ImportTexture(RGResourceID::GBufferDebug, data.pRTDebugViewTexture);
+void RGResourceRegistry::RecreateShadowMap(u32 cascades,
+                                           const mathstl::Vector2& extents,
+                                           RenderPasses::FrameResourceManager& frameResourceManager)
+{
+    const TextureHandle oldHandle = m_shadowMap.handle;
+    auto oldCascadeViews = stltype::move(m_shadowMap.cascadeViews);
+    if (oldHandle != 0 || !oldCascadeViews.empty())
+    {
+        g_pDeleteQueue->RegisterDeleteForNextFrame(
+            [oldHandle, oldCascadeViews = stltype::move(oldCascadeViews)]() mutable
+            {
+                for (const auto view : oldCascadeViews)
+                {
+                    if (view != VK_NULL_HANDLE)
+                    {
+                        vkDestroyImageView(VkGlobals::GetLogicalDevice(), view, nullptr);
+                    }
+                }
 
-    if (ctx.pDLSSExposureTexture)
-        ImportTexture(RGResourceID::DLSSExposure, ctx.pDLSSExposureTexture);
+                if (oldHandle != 0)
+                {
+                    g_pTexManager->FreeTexture(oldHandle);
+                }
+            });
+    }
+
+    m_shadowMap.cascades = cascades;
+    m_shadowMap.format = DEPTH_BUFFER_FORMAT;
+
+    DynamicTextureRequest req{};
+    req.AddName("Directional Light CSM");
+    req.isPersistent = true;
+    m_shadowMap.handle = req.handle = g_pTexManager->GenerateHandle();
+    req.extents = DirectX::XMUINT3(static_cast<u32>(extents.x), static_cast<u32>(extents.y), cascades);
+    req.format = m_shadowMap.format;
+    req.usage = Usage::ShadowMap;
+    req.samplerInfo.wrapU = req.samplerInfo.wrapV = req.samplerInfo.wrapW = TextureWrapMode::CLAMP_TO_BORDER;
+    m_shadowMap.pTexture = static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(req));
+    m_shadowMap.bindlessHandle = g_pTexManager->MakeTextureBindless(req.handle, true);
+
+    m_shadowMap.cascadeViews.resize(cascades, VK_NULL_HANDLE);
+    for (u32 i = 0; i < cascades; ++i)
+    {
+        VkImageViewCreateInfo viewInfo{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+        viewInfo.image = m_shadowMap.pTexture->GetImage();
+        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        viewInfo.format = Conv(m_shadowMap.format);
+        viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        viewInfo.subresourceRange.baseMipLevel = 0;
+        viewInfo.subresourceRange.levelCount = 1;
+        viewInfo.subresourceRange.baseArrayLayer = i;
+        viewInfo.subresourceRange.layerCount = 1;
+        vkCreateImageView(VkGlobals::GetLogicalDevice(), &viewInfo, nullptr, &m_shadowMap.cascadeViews[i]);
+    }
+
+    UBO::ShadowMapUBO shadowMapUBO{};
+    shadowMapUBO.directionalShadowMapIdx = m_shadowMap.bindlessHandle;
+    std::memcpy(frameResourceManager.GetMappedShadowMapUBO(), &shadowMapUBO, sizeof(shadowMapUBO));
 }

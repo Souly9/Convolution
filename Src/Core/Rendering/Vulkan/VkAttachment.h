@@ -1,14 +1,19 @@
 #pragma once
 #include "BackendDefines.h"
 #include "Core/Global/GlobalDefines.h"
+#include "Core/Rendering/Core/RenderingForwardDecls.h"
 #include "Core/Rendering/Core/Attachment.h"
 
 class AttachmentBaseVulkan : public AttachmentBase
 {
 public:
-    AttachmentBaseVulkan()
-    {
-    }
+    AttachmentBaseVulkan() = default;
+    AttachmentBaseVulkan(const VkAttachmentDescription& attachmentDesc,
+                         Texture* pTexture,
+                         TexFormat format,
+                         LoadOp loadOp,
+                         StoreOp storeOp,
+                         ImageLayout renderingLayout);
 
     TexFormat GetFormat() const
     {
@@ -34,6 +39,8 @@ public:
         m_pTexture = pTexture;
     }
 
+    void SetClearValue(const mathstl::Vector4& clearValue);
+
     LoadOp GetLoadOp() const
     {
         return m_loadOp;
@@ -44,64 +51,78 @@ public:
         return m_storeOp;
     }
 
+    StoreOp GetStencilStoreOp() const
+    {
+        return m_stencilStoreOp;
+    }
+
+    LoadOp GetStencilLoadOp() const
+    {
+        return m_stencilLoadOp;
+    }
+
+    ImageLayout GetInitialLayout() const
+    {
+        return m_initialLayout;
+    }
+
+    ImageLayout GetFinalLayout() const
+    {
+        return m_finalLayout;
+    }
+
     ImageLayout GetRenderingLayout() const
     {
         return m_renderingLayout;
     }
 
-    VkClearValue GetClearValue() const
+    u32 GetSamples() const
     {
-        return m_clearValue;
+        return m_samples;
     }
 
-    void SetClearValue(const mathstl::Vector4& clearValue);
-
 protected:
-    AttachmentBaseVulkan(const VkAttachmentDescription& attachmentDesc,
+    VkAttachmentDescription m_attachmentDesc{};
+    TexFormat m_format{TexFormat::UNDEFINED};
+    LoadOp m_loadOp{LoadOp::CLEAR};
+    StoreOp m_storeOp{StoreOp::STORE};
+
+    LoadOp m_stencilLoadOp{LoadOp::DONT_CARE};
+    StoreOp m_stencilStoreOp{StoreOp::DONT_CARE};
+
+    ImageLayout m_initialLayout{ImageLayout::UNDEFINED};
+    ImageLayout m_finalLayout{ImageLayout::PRESENT_SRC_KHR};
+    ImageLayout m_renderingLayout{ImageLayout::COLOR_ATTACHMENT_OPTIMAL};
+    u32 m_samples{1u};
+
+    Texture* m_pTexture{nullptr};
+    VkClearValue m_clearValue{};
+};
+
+class ColorAttachmentVulkan : public AttachmentBaseVulkan
+{
+public:
+    ColorAttachmentVulkan() = default;
+    ColorAttachmentVulkan(const VkAttachmentDescription& attachmentDesc,
                          Texture* pTexture,
                          TexFormat format,
                          LoadOp loadOp,
                          StoreOp storeOp,
                          ImageLayout renderingLayout);
 
-    VkAttachmentDescription m_attachmentDesc{};
-    TexFormat m_format{TexFormat::UNDEFINED};
-    // This is the texture that this attachment is attached to, if any
-    Texture* m_pTexture{nullptr};
-    LoadOp m_loadOp{LoadOp::DONT_CARE};
-    StoreOp m_storeOp{StoreOp::DONT_CARE};
-    ImageLayout m_renderingLayout{ImageLayout::UNDEFINED};
-    VkClearValue m_clearValue{g_BlackCLearColor};
-};
-
-class ColorAttachmentVulkan : public AttachmentBaseVulkan, public ColorAttachmentBase
-{
-public:
     static ColorAttachmentVulkan Create(const ColorAttachmentInfo& createInfo, Texture* pTexture = nullptr);
-
-protected:
-    ColorAttachmentVulkan(const VkAttachmentDescription& attachmentDesc,
-                          Texture* pTexture,
-                          TexFormat format,
-                          LoadOp loadOp,
-                          StoreOp storeOp,
-                          ImageLayout renderingLayout);
 };
 
-class DepthAttachmentVulkan : public AttachmentBaseVulkan, public DepthAttachmentBase
+class DepthAttachmentVulkan : public AttachmentBaseVulkan
 {
 public:
-    DepthAttachmentVulkan()
-    {
-    }
+    DepthAttachmentVulkan() = default;
+    DepthAttachmentVulkan(const VkAttachmentDescription& attachmentDesc,
+                         Texture* pTexture,
+                         TexFormat format,
+                         LoadOp loadOp,
+                         StoreOp storeOp,
+                         ImageLayout renderingLayout);
 
     static DepthAttachmentVulkan Create(const DepthBufferAttachmentInfo& createInfo, Texture* pTexture = nullptr);
-
-protected:
-    DepthAttachmentVulkan(const VkAttachmentDescription& attachmentDesc,
-                          Texture* pTexture,
-                          TexFormat format,
-                          LoadOp loadOp,
-                          StoreOp storeOp,
-                          ImageLayout renderingLayout);
 };
