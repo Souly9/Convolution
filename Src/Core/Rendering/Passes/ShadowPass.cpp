@@ -22,7 +22,7 @@ CSMPass::CSMPass() : GenericGeometryPass("ShadowPass")
     CreateSharedDescriptorLayout();
 }
 
-void CSMPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager)
+void CSMPass::Init(const SharedResourceManager& resourceManager)
 {
     ScopedZone("ShadowPass::Init");
 
@@ -37,7 +37,7 @@ void CSMPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceM
     const auto cascadeAttachment = DepthAttachment::Create(depthInfo, nullptr);
     m_mainRenderingData.depthAttachment = cascadeAttachment;
 
-    InitBaseData(attachmentInfo);
+    InitBaseData();
     for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
         m_indirectCmdBuffers[i].Init(1000000);
 
@@ -93,12 +93,13 @@ void CSMPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
     cmdBuf.FillCmds();
 }
 
-void CSMPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
+void CSMPass::RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const RGExecutionContext& execCtx)
 {
     ScopedZone("ShadowPass::Render");
 
+    CommandBuffer* pCmdBuffer = execCtx.pCmdBuffer;
     auto& sceneGeometryBuffers = data.pResourceManager->GetSceneGeometryBuffers();
-    const auto currentFrame = ctx.currentFrame;
+    const auto currentFrame = execCtx.GetFrameIndex();
     UpdateContextForFrame(currentFrame);
     const auto& passCtx = m_perObjectFrameContexts[currentFrame];
 
@@ -118,15 +119,8 @@ void CSMPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comman
     GenericIndirectDrawCmd cmd{&m_mainPSO, cmdBuf};
     cmd.drawCount = cmdBuf.GetDrawCmdNum();
 
-    if (data.bufferDescriptors.empty())
-        cmd.descriptorSets = {DescriptorSet::Cast(g_pTexManager->GetBindlessDescriptorSet())};
-    else
-    {
-        const auto transformSSBOSet = data.bufferDescriptors.at(UBO::DescriptorContentsType::GlobalInstanceData);
-        const auto texArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessTextureArray);
-        cmd.descriptorSets = {
-            texArraySet, ctx.sharedDataUBODescriptor, transformSSBOSet, passCtx.m_perObjectDescriptor};
-    }
+    cmd.descriptorSets = execCtx.GetDescriptors();
+    cmd.descriptorSets.push_back(passCtx.m_perObjectDescriptor);
     cmdBegin.drawCmdBuffer = &cmdBuf;
     StartRenderPassProfilingScope(pCmdBuffer);
     if (data.csmViews.empty() == false)
@@ -139,6 +133,16 @@ void CSMPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comman
         pCmdBuffer->RecordCommand(EndRenderingCmd{});
     }
     EndRenderPassProfilingScope(pCmdBuffer);
+}
+
+void CSMPass::SetCascadeCount(u32 cascades)
+{
+    if (m_cascadeCount != cascades)
+    {
+        m_cascadeCount = cascades;
+        // Needed for multiview rendering
+        BuildPipelines();
+    }
 }
 
 void CSMPass::CreateSharedDescriptorLayout()
@@ -163,16 +167,6 @@ bool CSMPass::WantsToRender() const
     return hasDraws &&
            mathstl::isFlagSet(g_pApplicationState->GetCurrentApplicationState().renderState.debugFlags,
                               (u32)DebugFlags::ShadowsEnabled);
-}
-
-void CSMPass::SetCascadeCount(u32 cascades)
-{
-    if (m_cascadeCount != cascades)
-    {
-        m_cascadeCount = cascades;
-        // Needed for multiview rendering
-        BuildPipelines();
-    }
 }
 
 void CSMPass::ComputeLightViewProjMatrices(u32 cascades,
@@ -232,8 +226,6 @@ void CSMPass::ComputeLightViewProjMatrices(u32 cascades,
 
         mathstl::Matrix projMat = mathstl::Matrix::CreatePerspectiveFieldOfView(
             DirectX::XMConvertToRadians(fov), aspectRatio, sliceFar, sliceNearClamped);
-        // projMat.m[2][2] = 1.0f - projMat.m[2][2];
-        // projMat.m[3][2] = -projMat.m[3][2];
         mathstl::Matrix viewProj = view * projMat;
         auto viewProjInv = viewProj.Invert();
 
@@ -249,23 +241,19 @@ void CSMPass::ComputeLightViewProjMatrices(u32 cascades,
         center *= (1.0f / 8.0f);
 
         const auto radius = (frustumCornersWS[0] - frustumCornersWS[6]).Length() * 0.5f;
-        // Create a temporary view matrix to transform center to light space
         mathstl::Vector3 eye = -(lightDirection);
         mathstl::Matrix lightView = mathstl::Matrix::CreateLookAt(mathstl::Vector3(0, 0, 0), eye, up);
 
         float shadowMapSizef = static_cast<float>(shadowMapSize);
         float worldUnitsPerTexel = (shadowMapSizef / (2.0f * radius));
         lightView = mathstl::Matrix::CreateScale(worldUnitsPerTexel) * lightView;
-        // Transform center to light view space
         mathstl::Vector3 centerLightSpace = mathstl::Vector3::Transform(center, lightView);
 
-        // Snap to texel grid
         centerLightSpace.x = mathstl::floor(centerLightSpace.x);
         centerLightSpace.y = mathstl::floor(centerLightSpace.y);
 
         center = mathstl::Vector3::Transform(centerLightSpace, lightView.Invert());
 
-        // Re-create view matrix with snapped center
         eye = center - (lightDirection * radius * 2.0f);
         lightView = mathstl::Matrix::CreateLookAt(eye, center, up);
 
@@ -288,8 +276,15 @@ void CSMPass::ComputeLightViewProjMatrices(u32 cascades,
 }
 
 #include "Core/Rendering/Core/RenderGraph/RenderGraphBuilder.h"
+#include "Core/Rendering/Core/RenderGraph/RGExecutionContext.h"
 
 void CSMPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
 {
+    builder.DeclareContexts<
+        PassCtx::Bindless,
+        PassCtx::ShadowView,
+        PassCtx::GlobalInstance>();
+
+    builder.WriteDepthAttachment(RGResourceID::CSMShadowMap, LoadOp::CLEAR, StoreOp::STORE);
     builder.SetHasSideEffects();
 }

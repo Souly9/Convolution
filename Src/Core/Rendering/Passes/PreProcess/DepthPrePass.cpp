@@ -28,25 +28,24 @@ void DepthPrePass::BuildPipelines()
         ShaderCollection{&mainVert, &mainFrag}, PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions}, info);
 }
 
-void DepthPrePass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager)
+void DepthPrePass::Init(const SharedResourceManager& resourceManager)
 {
     ScopedZone("DepthPrePass::Init");
 
-    RecreateResolutionDependentResources(attachmentInfo, resourceManager);
+    RecreateResolutionDependentResources(resourceManager);
     for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
         m_indirectCmdBuffers[i].Init(1000000);
     BuildPipelines();
 }
 
-void DepthPrePass::RecreateResolutionDependentResources(RendererAttachmentInfo& attachmentInfo,
-                                                        const SharedResourceManager& resourceManager)
+void DepthPrePass::RecreateResolutionDependentResources(const SharedResourceManager& resourceManager)
 {
     ScopedZone("DepthPrePass::RecreateResolutionDependentResources");
 
     m_mainRenderingData.depthAttachment =
         CreateDefaultDepthAttachment(LoadOp::CLEAR, nullptr);
 
-    InitBaseData(attachmentInfo);
+    InitBaseData();
 }
 
 void DepthPrePass::BuildBuffers()
@@ -83,55 +82,10 @@ void DepthPrePass::RebuildInternalData(const stltype::vector<PassMeshData>& mesh
     cmdBuf.FillCmds();
 }
 
-void DepthPrePass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
-{
-    ScopedZone("DepthPrePass::Render");
-
-    const auto currentFrame = ctx.currentFrame;
-    UpdateContextForFrame(currentFrame);
-    const auto& passCtx = m_perObjectFrameContexts[currentFrame];
-
-    const auto ex = m_mainRenderingData.depthAttachment.GetTexture()->GetInfo().extents;
-    const DirectX::XMINT2 extents(ex.x, ex.y);
-
-    stltype::vector<ColorAttachment> colorAttachments;
-    m_mainRenderingData.depthAttachment.SetTexture(data.pMainDepthTexture);
-    BeginRenderingCmd cmdBegin{&m_mainPSO,
-                               ToRenderAttachmentInfos(colorAttachments),
-                               ToRenderAttachmentInfo(m_mainRenderingData.depthAttachment)};
-    cmdBegin.extents = extents;
-    cmdBegin.viewport = data.mainView.viewport;
-
-    auto& cmdBuf = m_indirectCmdBuffers[currentFrame];
-    GenericIndirectDrawCmd cmd{&m_mainPSO, cmdBuf};
-    cmd.drawCount = cmdBuf.GetDrawCmdNum();
-
-    auto& sceneGeometryBuffers = data.pResourceManager->GetSceneGeometryBuffers();
-    if (!sceneGeometryBuffers.GetVertexBuffer().IsCreated() ||
-        !sceneGeometryBuffers.GetIndexBuffer().IsCreated())
-    {
-        return;
-    }
-
-    const auto transformSSBOSet = data.bufferDescriptors.at(UBO::DescriptorContentsType::GlobalInstanceData);
-    const auto texArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessTextureArray);
-    cmd.descriptorSets = {texArraySet, ctx.sharedDataUBODescriptor, transformSSBOSet, passCtx.m_perObjectDescriptor};
-
-    cmdBegin.drawCmdBuffer = &cmdBuf;
-
-    StartRenderPassProfilingScope(pCmdBuffer);
-    pCmdBuffer->RecordCommand(cmdBegin);
-    BinRenderDataCmd geomBufferCmd(sceneGeometryBuffers.GetVertexBuffer(), sceneGeometryBuffers.GetIndexBuffer());
-    pCmdBuffer->RecordCommand(geomBufferCmd);
-    pCmdBuffer->RecordCommand(cmd);
-    pCmdBuffer->RecordCommand(EndRenderingCmd{});
-    EndRenderPassProfilingScope(pCmdBuffer);
-}
-
 void DepthPrePass::CreateSharedDescriptorLayout()
 {
     m_sharedDescriptors.clear();
-    AppendLayoutPreset(DescriptorPresets::Bindless());
+    AppendLayoutPreset(DescriptorPresets::Bindless(true));
     AppendLayoutPreset(DescriptorPresets::View());
     AppendLayoutPreset(DescriptorPresets::GlobalInstanceData());
     m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::PerPassObjectSSBO, 3));
@@ -148,7 +102,6 @@ void DepthPrePass::Setup(::RenderGraphBuilder& builder, const MainPassData& data
         PassCtx::GlobalInstance>();
 
     auto mainDepth = builder.WriteDepthAttachment(RGResourceID::MainDepth, LoadOp::CLEAR, StoreOp::STORE);
-    builder.AssumeOutputLayout(mainDepth, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
     builder.SetHasSideEffects();
 }
 
@@ -182,9 +135,8 @@ void DepthPrePass::RenderWithGraph(const MainPassData& data, const FrameRenderer
         return;
     }
 
-    const auto transformSSBOSet = data.bufferDescriptors.at(UBO::DescriptorContentsType::GlobalInstanceData);
-    const auto texArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessTextureArray);
-    cmd.descriptorSets = {texArraySet, ctx.sharedDataUBODescriptor, transformSSBOSet, passCtx.m_perObjectDescriptor};
+    cmd.descriptorSets = execCtx.GetDescriptors();
+    cmd.descriptorSets.push_back(passCtx.m_perObjectDescriptor);
 
     cmdBegin.drawCmdBuffer = &cmdBuf;
 

@@ -10,7 +10,7 @@
 #include "Core/Rendering/Core/FrameTransitionRecorder.h"
 #include "Core/Rendering/Core/FrameResourceManager.h"
 #include "Core/Rendering/Core/RenderTextureImGuiRegistry.h"
-#include "Core/Rendering/Core/RT/RTResourceManager.h"
+
 #include "Core/Rendering/Core/RT/RTSceneManager.h"
 #include "Core/Rendering/Core/ShadowMaps.h"
 #include "Core/Rendering/Core/SharedResourceManager.h"
@@ -27,85 +27,10 @@ namespace RenderPasses
 {
 class ConvolutionRenderPass;
 
-enum class PassType
-{
-    LightTransformCompute,
-    ClusterGenCompute,
-    TileAssignmentCompute,
-    EarlyAsyncCompute,
-    PreProcess,
-    DepthReliantCompute,
-    Main,
-    Lighting,    // Full screen lighting pass
-    TAA,         // Temporal Anti-Aliasing
-    SMAA,        // Subpixel Morphological Anti-Aliasing
-    DLSS,        // Deep Learning Super Sampling
-    DLSS_RR,     // Deep Learning Super Sampling Ray Reconstruction
-    XeSS,        // Intel XeSS
-    Composite,
-    UI,
-    Debug,
-    Shadow,
-    PostProcess, // General post process
-    RTAOCompute,
-    RTReflectionsCompute,
-    RTComposite,
-    Bloom,
-};
-
-// ============================================================================
-// PASS SCHEDULE
-// Defines stages of execution. Groups within the same stage run in parallel
-// on the GPU (each submits independently, waiting on the same timeline value).
-// Stages are sequentially ordered — each stage waits for the previous to finish.
-// Edit PASS_SCHEDULE to control which groups are parallel.
-// ============================================================================
-struct PassStage
-{
-    stltype::fixed_vector<PassType, 8> groups;
-};
-
-inline const stltype::fixed_vector<PassStage, 13> PASS_SCHEDULE = {
-    PassStage{{PassType::LightTransformCompute, PassType::ClusterGenCompute, PassType::EarlyAsyncCompute, PassType::TileAssignmentCompute}},
-    PassStage{{PassType::PreProcess}},
-    PassStage{{PassType::DepthReliantCompute}},
-    PassStage{{PassType::Main, PassType::Debug, PassType::Shadow}},
-    PassStage{{PassType::Lighting}},
-    PassStage{{PassType::RTAOCompute, PassType::RTReflectionsCompute}},
-    PassStage{{PassType::RTComposite}},
-    PassStage{{PassType::TAA, PassType::DLSS, PassType::DLSS_RR, PassType::XeSS}},
-    PassStage{{PassType::Bloom}},
-    PassStage{{PassType::Composite}},
-    PassStage{{PassType::SMAA}},
-    PassStage{{PassType::UI}},
-};
-inline const u32 STAGE_COUNT = PASS_SCHEDULE.size();
-
-inline bool IsComputePass(PassType type)
-{
-    return type == PassType::EarlyAsyncCompute || 
-           type == PassType::LightTransformCompute || 
-           type == PassType::ClusterGenCompute ||
-           type == PassType::TileAssignmentCompute ||
-           type == PassType::PostProcess ||
-           type == PassType::TAA ||
-           type == PassType::DLSS ||
-           type == PassType::DLSS_RR ||
-           type == PassType::XeSS ||
-           type == PassType::RTAOCompute ||
-           type == PassType::RTReflectionsCompute ||
-           type == PassType::RTComposite ||
-           type == PassType::Bloom;
-}
-
 struct GraphicsFrameContext
 {
     CommandPool cmdPool;
     stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> cmdBuffers{SWAPCHAIN_IMAGES};
-    stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> lightingCmdBuffers{SWAPCHAIN_IMAGES};
-    stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> compositeCmdBuffers{SWAPCHAIN_IMAGES};
-    stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> presentTransitionCmdBuffers{SWAPCHAIN_IMAGES};
-    stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> depthPrePassCmdBuffers{SWAPCHAIN_IMAGES};
     stltype::vector<CommandBuffer*> batchCmdBuffers[SWAPCHAIN_IMAGES];
     bool initialized{false};
 };
@@ -114,13 +39,9 @@ struct ComputeFrameContext
 {
     CommandPool cmdPool;
     stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> cmdBuffers{SWAPCHAIN_IMAGES};
-    stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> sssComputeCmdBuffers{SWAPCHAIN_IMAGES};
-    stltype::fixed_vector<CommandBuffer*, SWAPCHAIN_IMAGES> rtComputeCmdBuffers{SWAPCHAIN_IMAGES};
     stltype::vector<CommandBuffer*> batchCmdBuffers[SWAPCHAIN_IMAGES];
     bool initialized{false};
 };
-
-
 
 struct InstancedMeshDataInfo
 {
@@ -147,7 +68,7 @@ public:
     void Init();
     bool NeedsResizeDependentResourceRecreate(const mathstl::Vector2& swapchainResolution) const;
     void RecreateResizeDependentResources(const mathstl::Vector2& swapchainResolution, bool swapchainRecreated);
-    void AddPass(PassType type, stltype::unique_ptr<ConvolutionRenderPass>&& pass);
+    void AddPass(stltype::unique_ptr<ConvolutionRenderPass>&& pass);
     void TransferPassData(const PassGeometryData& passData, u32 frameIdx);
 
     void ExecutePasses(u32 frameIdx);
@@ -182,6 +103,8 @@ public:
         m_renderState.jitter = jitter;
     }
     ::SharedResourceManager& GetResourceManager() { return m_resourceManager; }
+    RenderGraph& GetRenderGraph() { return m_renderGraph; }
+    const RenderGraph& GetRenderGraph() const { return m_renderGraph; }
     void RegisterImGuiTexturesPublic() { m_imguiRegistry.RegisterShadowMapTextures(m_renderGraph.GetRegistry().GetShadowMap()); }
     void PreProcessMeshDataPublic(const stltype::vector<PassMeshData>& meshes, u32 lastFrame, u32 curFrame) { PreProcessMeshData(meshes, lastFrame, curFrame); }
     void TransferPassDataPublic(PassGeometryData&& passData, u32 frameIdx) { TransferPassData(std::move(passData), frameIdx); }
@@ -212,7 +135,6 @@ protected:
     void InitPassesAndImGui();
 
     bool AnyPassWantsToRender() const;
-    void UpdateTemporalResources(MainPassData& mainPassData);
     void PrepareMainPassDataForFrame(MainPassData& mainPassData, FrameRendererContext& ctx, u32 frameIdx);
     void RenderAllPassGroups(const MainPassData& mainPassData,
                              FrameRendererContext& ctx,
@@ -231,14 +153,14 @@ private:
     // Resource Manager
     ::SharedResourceManager m_resourceManager;
     RT::RTSceneManager m_rtSceneManager;
-    RT::RTResourceManager m_rtResourceManager;
+
     FrameResourceManager m_frameResourceManager;
     RenderTextureImGuiRegistry m_imguiRegistry;
     FrameTransitionRecorder m_transitionRecorder;
     RenderGraph m_renderGraph;
 
     // Pass data for each frame
-    stltype::hash_map<PassType, stltype::vector<stltype::unique_ptr<ConvolutionRenderPass>>> m_passes{};
+    stltype::vector<stltype::unique_ptr<ConvolutionRenderPass>> m_passes{};
     stltype::fixed_vector<MainPassData, SWAPCHAIN_IMAGES> m_mainPassData{};
     stltype::fixed_vector<Semaphore, SWAPCHAIN_IMAGES> m_imageAvailableSemaphores{};
     stltype::fixed_vector<Fence, SWAPCHAIN_IMAGES> m_imageAvailableFences{};

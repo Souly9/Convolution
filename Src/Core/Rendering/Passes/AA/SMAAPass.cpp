@@ -24,10 +24,10 @@ SMAAPass::~SMAAPass()
 {
 }
 
-void SMAAPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager)
+void SMAAPass::Init(const SharedResourceManager& resourceManager)
 {
     ScopedZone("SMAAPass::Init");
-    InitBaseData(attachmentInfo);
+    InitBaseData();
     
     for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
     {
@@ -111,10 +111,9 @@ bool SMAAPass::WantsToRender() const
 
 void SMAAPass::CreateSharedDescriptorLayout()
 {
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalTextures, 0));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalArrayTextures, 0));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::GBufferUBO, 1));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::ShadowmapUBO, 1));
+    m_sharedDescriptors.clear();
+    AppendLayoutPreset(DescriptorPresets::Bindless(false));
+    AppendLayoutPreset(DescriptorPresets::GBuffer());
 }
 
 void SMAAPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
@@ -150,9 +149,6 @@ void SMAAPass::RenderWithGraph(const MainPassData& data, const FrameRendererCont
     }
     
     BinRenderDataCmd geomBufferCmd(sceneGeometryBuffers.GetVertexBuffer(), sceneGeometryBuffers.GetIndexBuffer());
-    
-    auto gbufferUBOSet = data.bufferDescriptors.at(UBO::DescriptorContentsType::GBuffer);
-    auto texArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessTextureArray);
 
     SMAAPushConstants pc;
     pc.metrics = mathstl::Vector4(1.0f / extents.x, 1.0f / extents.y, (f32)extents.x, (f32)extents.y);
@@ -176,7 +172,7 @@ void SMAAPass::RenderWithGraph(const MainPassData& data, const FrameRendererCont
 
         GenericIndirectDrawCmd cmdEdges{&m_edgePSO, cmdBuf};
         cmdEdges.drawCount = cmdBuf.GetDrawCmdNum();
-        cmdEdges.descriptorSets = { texArraySet, gbufferUBOSet };
+        cmdEdges.descriptorSets = execCtx.GetDescriptors();
         pc.tex1 = inputColorHandle;
         pc.tex2 = m_searchTexBindless;
         cmdEdges.SetPushConstants(0, pc, ShaderTypeBits::Vertex | ShaderTypeBits::Fragment);
@@ -198,7 +194,7 @@ void SMAAPass::RenderWithGraph(const MainPassData& data, const FrameRendererCont
 
         GenericIndirectDrawCmd cmdBlend{&m_blendPSO, cmdBuf};
         cmdBlend.drawCount = cmdBuf.GetDrawCmdNum();
-        cmdBlend.descriptorSets = { texArraySet, gbufferUBOSet };
+        cmdBlend.descriptorSets = execCtx.GetDescriptors();
         pc.tex1 = execCtx.GetBindless(RGResourceID::SMAAEdges);
         pc.tex2 = m_areaTexBindless;
         pc.tex3 = m_searchTexBindless;
@@ -221,7 +217,7 @@ void SMAAPass::RenderWithGraph(const MainPassData& data, const FrameRendererCont
 
         GenericIndirectDrawCmd cmdNeighbor{&m_neighborhoodPSO, cmdBuf};
         cmdNeighbor.drawCount = cmdBuf.GetDrawCmdNum();
-        cmdNeighbor.descriptorSets = { texArraySet, gbufferUBOSet };
+        cmdNeighbor.descriptorSets = execCtx.GetDescriptors();
         pc.tex1 = inputColorHandle; // Post-tonemap LDR color
         pc.tex2 = execCtx.GetBindless(RGResourceID::SMAABlend);
         cmdNeighbor.SetPushConstants(0, pc, ShaderTypeBits::Vertex | ShaderTypeBits::Fragment);
@@ -243,6 +239,10 @@ void SMAAPass::RenderWithGraph(const MainPassData& data, const FrameRendererCont
 
 void SMAAPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
 {
+    builder.DeclareContexts<
+        PassCtx::Bindless,
+        PassCtx::GBufferCtx>();
+
     builder.ReadTexture(RGResourceID::GBufferPostAAColor, SyncStages::FRAGMENT_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
     auto smaaEdges = builder.DeclareStorageTexture(RGResourceID::SMAAEdges, TexFormat::R8G8_UNORM, RGSizeClass::OutputResolution);

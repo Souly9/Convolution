@@ -49,13 +49,13 @@
 #define TransformSSBOSet 2
 #endif
 #ifndef GBufferUBOSet
-#define GBufferUBOSet 4
+#define GBufferUBOSet 3
 #endif
 #ifndef PassPerObjectDataSet
 #define PassPerObjectDataSet 3
 #endif
 #ifndef TileArraySet
-#define TileArraySet 3
+#define TileArraySet 4
 #endif
 #ifndef RTSceneASSet
 #define RTSceneASSet 5

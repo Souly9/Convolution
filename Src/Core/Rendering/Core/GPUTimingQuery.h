@@ -1,6 +1,7 @@
 #pragma once
 #include "RenderTraitsMacros.h"
 #include "Core/Global/GlobalDefines.h"
+#include "Core/Rendering/Core/RenderDefinitions.h"
 #include "RenderingForwardDecls.h"
 
 struct PassTimingResult
@@ -25,7 +26,8 @@ public:
     virtual void Init(u32 maxPasses) = 0;
     virtual void Destroy() = 0;
 
-    virtual void ResetQueries(u32 frameIdx, CommandBuffer* pCmdBuffer = nullptr) = 0;
+    virtual void ResetQueries(u32 frameIdx, CommandBuffer* pGraphicsCmdBuffer = nullptr, CommandBuffer* pComputeCmdBuffer = nullptr) = 0;
+    virtual void ResetQueriesForQueue(u32 frameIdx, CommandBuffer* pCmdBuffer, QueueType queueType) = 0;
     virtual void ReadResults(u32 frameIdx) = 0;
 
     void SetCurrentFrameIdx(u32 frameIdx)
@@ -65,7 +67,7 @@ public:
         WriteTimestampImpl(pCmdBuffer, passIndex, false);
     }
 
-    void ClearRunFlags(u32 frameIdx)
+    virtual void ClearRunFlags(u32 frameIdx)
     {
         u32 f = frameIdx % SWAPCHAIN_IMAGES;
         for (auto& ran : m_passRanThisFrame[f])

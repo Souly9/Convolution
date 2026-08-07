@@ -24,8 +24,7 @@ LightGridComputePass::LightGridComputePass() : ConvolutionRenderPass("LightGridC
 
 LightGridComputePass::~LightGridComputePass() = default;
 
-void LightGridComputePass::Init(RendererAttachmentInfo& attachmentInfo,
-                               const SharedResourceManager& resourceManager)
+void LightGridComputePass::Init(const SharedResourceManager& resourceManager)
 {
     ScopedZone("LightGridComputePass::Init");
     BuildBuffers();
@@ -58,22 +57,20 @@ void LightGridComputePass::BuildPipelines()
 
 void LightGridComputePass::CreateSharedDescriptorLayout()
 {
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::View, ViewSet));
-
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::TileArraySSBO, LightClusterSet));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::LightUniformsUBO, LightClusterSet));
-
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::ClusterAABBsSSBO, ClusterGridSet));
-
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::ViewSpaceLightsSSBO, ViewSpaceLightsSet));
+    m_sharedDescriptors.clear();
+    AppendLayoutPreset({PipelineDescriptorLayout(UBO::BufferType::View, 0)});
+    AppendLayoutPreset(DescriptorPresets::LightCluster(1));
+    AppendLayoutPreset(DescriptorPresets::ClusterGrid(2));
+    AppendLayoutPreset({PipelineDescriptorLayout(UBO::BufferType::ViewSpaceLightsSSBO, 3)});
 }
 
 void LightGridComputePass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
 {
     builder.DeclareContexts<
-        PassCtx::View,
-        PassCtx::LightCluster,
-        PassCtx::ClusterGrid>();
+        PassCtx::ClusteredView,
+        PassCtx::ClusteredLightCluster,
+        PassCtx::ClusterGrid,
+        PassCtx::ViewSpaceLights>();
 
     auto viewSpaceLights = builder.DeclareStorageBuffer(RGResourceID::Custom, UBO::ViewSpaceLightsSSBOSize);
     builder.SetCustomResourceName(viewSpaceLights, "ViewSpaceLightsSSBO");
@@ -92,77 +89,25 @@ void LightGridComputePass::RenderWithGraph(const MainPassData& data, const Frame
     auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
 
     const u32 totalClusters = renderState.clusterCount.x * renderState.clusterCount.y * renderState.clusterCount.z;
-    const u32 numLightsEvaluated = ctx.numLights;
+    const u32 numLightsEvaluated = execCtx.GetNumLights();
     g_pApplicationState->RegisterUpdateFunction([totalClusters, numLightsEvaluated](ApplicationState& state)
                                                 {
                                                     state.renderState.totalClusterCount = totalClusters;
                                                     state.renderState.numLightsEvaluated = numLightsEvaluated;
                                                 });
 
-    if (!ctx.clusterGridDescriptor)
-    {
-        EndRenderPassProfilingScope(execCtx.pCmdBuffer);
-        return;
-    }
-
     m_pushConstants.clusterCount = renderState.clusterCount;
-    m_pushConstants.nearFar = mathstl::Vector4(ctx.zNear, ctx.zFar, 0.0f, 0.0f);
-    m_pushConstants.numLights = ctx.numLights;
+    m_pushConstants.nearFar = mathstl::Vector4(execCtx.GetZNear(), execCtx.GetZFar(), 0.0f, 0.0f);
+    m_pushConstants.numLights = execCtx.GetNumLights();
 
     const u32 workgroupsX = (m_pushConstants.clusterCount.x + 7) / 8;
     const u32 workgroupsY = (m_pushConstants.clusterCount.y + 7) / 8;
     const u32 workgroupsZ = m_pushConstants.clusterCount.z;
 
-    DescriptorSet::Ptr viewSpaceLightsDesc = data.pResourceManager->GetViewSpaceLightsDescriptorSet(ctx.currentFrame);
-
     GenericComputeDispatchCmd cmd(&m_lightCullingComputePipeline, workgroupsX, workgroupsY, workgroupsZ);
-    cmd.descriptorSets = {ctx.sharedDataUBODescriptor, ctx.tileArraySSBODescriptor, ctx.clusterGridDescriptor, viewSpaceLightsDesc};
+    cmd.descriptorSets = execCtx.GetDescriptors();
     cmd.SetPushConstants(0, m_pushConstants);
     execCtx.pCmdBuffer->RecordCommand(cmd);
     EndRenderPassProfilingScope(execCtx.pCmdBuffer);
 }
 
-void LightGridComputePass::Render(const MainPassData& data,
-                                  FrameRendererContext& ctx,
-                                  CommandBuffer* pCmdBuffer)
-{
-    ScopedZone("LightGridComputePass::Render");
-
-    StartRenderPassProfilingScope(pCmdBuffer);
-
-    auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
-
-    const u32 totalClusters = renderState.clusterCount.x * renderState.clusterCount.y * renderState.clusterCount.z;
-    const u32 numLightsEvaluated = ctx.numLights;
-    g_pApplicationState->RegisterUpdateFunction([totalClusters, numLightsEvaluated](ApplicationState& state)
-                                                {
-                                                    state.renderState.totalClusterCount = totalClusters;
-                                                    state.renderState.numLightsEvaluated = numLightsEvaluated;
-                                                });
-
-    if (!ctx.clusterGridDescriptor)
-    {
-        EndRenderPassProfilingScope(pCmdBuffer);
-        return;
-    }
-
-    m_pushConstants.clusterCount = renderState.clusterCount;
-    m_pushConstants.nearFar = mathstl::Vector4(ctx.zNear, ctx.zFar, 0.0f, 0.0f);
-    m_pushConstants.numLights = ctx.numLights;
-
-    const u32 workgroupsX = (m_pushConstants.clusterCount.x + 7) / 8;
-    const u32 workgroupsY = (m_pushConstants.clusterCount.y + 7) / 8;
-    const u32 workgroupsZ = m_pushConstants.clusterCount.z;
-
-    DescriptorSet::Ptr viewSpaceLightsDesc = data.pResourceManager->GetViewSpaceLightsDescriptorSet(ctx.currentFrame);
-
-    // Cull lights for each cluster
-    {
-        GenericComputeDispatchCmd cmd(&m_lightCullingComputePipeline, workgroupsX, workgroupsY, workgroupsZ);
-        cmd.descriptorSets = {ctx.sharedDataUBODescriptor, ctx.tileArraySSBODescriptor, ctx.clusterGridDescriptor, viewSpaceLightsDesc};
-        cmd.SetPushConstants(0, m_pushConstants);
-        pCmdBuffer->RecordCommand(cmd);
-    }
-
-    EndRenderPassProfilingScope(pCmdBuffer);
-}

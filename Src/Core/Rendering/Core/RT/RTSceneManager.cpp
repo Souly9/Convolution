@@ -3,11 +3,14 @@
 #include "Core/Global/LogDefines.h"
 #include "Core/Global/State/ApplicationState.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
+#include "Core/Rendering/Core/Defines/BindingSlots.h"
+#include "Core/Rendering/Core/Defines/DescriptorLayoutPresets.h"
 #include "Core/Rendering/Core/Defines/VertexDefines.h"
 #include "Core/Rendering/Core/FrameResourceManager.h"
 #include "Core/Rendering/Core/SharedResourceManager.h"
 #include "Core/Rendering/Core/Synchronization.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
+#include "Core/Rendering/Vulkan/Utils/VkDescriptorLayoutUtils.h"
 #include <EASTL/algorithm.h>
 #include <EASTL/sort.h>
 
@@ -49,17 +52,17 @@ AccelerationStructureBuildDesc BuildTLASDesc(const TLASFrameData& frameData, u32
     return desc;
 }
 
-bool HasInstanceDataChanged(const stltype::vector<RTInstanceRecord>& lhs, const stltype::vector<RTInstanceRecord>& rhs)
+bool HasInstanceDataChanged(const stltype::vector<RTInstanceRecord>& prev,
+                            const stltype::vector<RTInstanceRecord>& curr)
 {
-    if (lhs.size() != rhs.size())
+    if (prev.size() != curr.size())
         return true;
 
-    for (u32 i = 0; i < lhs.size(); ++i)
+    for (size_t i = 0; i < curr.size(); ++i)
     {
-        if (!(lhs[i] == rhs[i]))
+        if (!(prev[i] == curr[i]))
             return true;
     }
-
     return false;
 }
 
@@ -80,6 +83,32 @@ void RTSceneManager::Init(SharedResourceManager* pResourceManager, u32 graphicsQ
     m_blasBuilder.Init(graphicsQueueFamilyIdx);
     m_tlasBuildCommandPool = CommandPool::Create(graphicsQueueFamilyIdx);
     m_tlasBuildCommandPool.SetName("RT TLAS Build Command Pool");
+
+    m_descriptorPool = DescriptorPool();
+    m_descriptorPool.Create({.enableBindlessTextureDescriptors = false,
+                             .enableStorageBufferDescriptors = true,
+                             .enableAccelerationStructureDescriptors = true,
+                             .freeDescriptorSet = true});
+    m_descriptorPool.SetName("RTSceneManager Descriptor Pool");
+
+    const auto rtLayouts = DescriptorPresets::RTScene(true);
+    stltype::vector<PipelineDescriptorLayout> setLocalLayouts;
+    setLocalLayouts.reserve(rtLayouts.size());
+    for (auto l : rtLayouts)
+    {
+        l.setIndex = 0;
+        setLocalLayouts.push_back(l);
+    }
+    m_tlasDescriptorLayout = DescriptorLayoutUtils::CreateOneDescriptorSetForAll(setLocalLayouts);
+    m_tlasDescriptorLayout.SetName("RTSceneManager TLAS Layout");
+
+    for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
+    {
+        m_tlasDescriptors[i] = m_descriptorPool.CreateDescriptorSet(m_tlasDescriptorLayout);
+        m_tlasDescriptors[i]->SetBindingSlot(s_rtSceneASBindingSlot);
+        m_tlasDescriptors[i]->SetName("RTSceneManager TLAS Set " + stltype::to_string(i));
+    }
+
     PublishDebugState();
 }
 
@@ -110,6 +139,22 @@ void RTSceneManager::RegisterSceneMeshes(const stltype::vector<stltype::unique_p
     }
 
     PublishDebugState();
+}
+
+void RTSceneManager::UpdateTLASDescriptorSet(u32 frameSlot, const TLASFrameData& frameData)
+{
+    if (m_pResourceManager == nullptr || !frameData.accelerationStructure || !frameData.hitDataBuffer.IsCreated())
+        return;
+
+    auto& sceneGeometryBuffers = m_pResourceManager->GetSceneGeometryBuffers();
+    if (!sceneGeometryBuffers.GetVertexBuffer().IsCreated() || !sceneGeometryBuffers.GetIndexBuffer().IsCreated())
+        return;
+
+    auto& descSet = m_tlasDescriptors[frameSlot % SWAPCHAIN_IMAGES];
+    descSet->WriteAccelerationStructureUpdate(frameData.accelerationStructure, s_rtSceneASBindingSlot);
+    descSet->WriteSSBOUpdate(frameData.hitDataBuffer, s_rtInstanceHitDataBindingSlot);
+    descSet->WriteSSBOUpdate(sceneGeometryBuffers.GetVertexBuffer(), s_rtSceneVertexBufferBindingSlot);
+    descSet->WriteSSBOUpdate(sceneGeometryBuffers.GetIndexBuffer(), s_rtSceneIndexBufferBindingSlot);
 }
 
 bool RTSceneManager::Update(u32 frameIdx,
@@ -148,6 +193,11 @@ bool RTSceneManager::Update(u32 frameIdx,
         ReleaseTLASFrameData(frameData);
     }
 
+    if (HasReadyTLAS(frameIdx))
+    {
+        UpdateTLASDescriptorSet(frameSlot, frameData);
+    }
+
     m_previousSortedInstances = m_currentSortedInstances;
     PublishDebugState();
     return builtThisFrame;
@@ -163,6 +213,11 @@ bool RTSceneManager::HasReadyTLAS(u32 frameIdx) const
 const TLASFrameData* RTSceneManager::GetTLASFrameData(u32 frameIdx) const
 {
     return &m_tlasFrameData[frameIdx % SWAPCHAIN_IMAGES];
+}
+
+DescriptorSet::Ptr RTSceneManager::GetTLASDescriptorSet(u32 frameIdx) const
+{
+    return m_tlasDescriptors[frameIdx % SWAPCHAIN_IMAGES];
 }
 
 void RTSceneManager::BuildCurrentInstanceList(const RenderPasses::FrameResourceManager& frameResourceManager)

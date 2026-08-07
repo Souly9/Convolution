@@ -8,6 +8,8 @@ namespace RenderPasses
 class FrameResourceManager;
 }
 
+#include "Core/Rendering/Core/DescriptorPool.h"
+#include "Core/Rendering/Core/DescriptorSetLayout.h"
 #include "Core/Rendering/Core/RenderingForwardDecls.h"
 
 namespace RT
@@ -26,6 +28,7 @@ public:
 
     bool HasReadyTLAS(u32 frameIdx) const;
     const TLASFrameData* GetTLASFrameData(u32 frameIdx) const;
+    DescriptorSet::Ptr GetTLASDescriptorSet(u32 frameIdx) const;
 
 private:
     void BuildCurrentInstanceList(const RenderPasses::FrameResourceManager& frameResourceManager);
@@ -35,6 +38,7 @@ private:
                            TimelineSemaphore* pSignalTimeline = nullptr,
                            u64 signalValue = 0);
     void PublishDebugState() const;
+    void UpdateTLASDescriptorSet(u32 frameSlot, const TLASFrameData& frameData);
 
     SharedResourceManager* m_pResourceManager{nullptr};
     BLASBuilder m_blasBuilder;
@@ -43,5 +47,9 @@ private:
     stltype::vector<RTInstanceRecord> m_previousSortedInstances{};
     stltype::vector<RTInstanceRecord> m_currentSortedInstances{};
     u32 m_residentInstanceCount{0};
+
+    DescriptorPool m_descriptorPool{};
+    DescriptorSetLayout m_tlasDescriptorLayout{};
+    stltype::fixed_vector<DescriptorSet::Ptr, SWAPCHAIN_IMAGES> m_tlasDescriptors{SWAPCHAIN_IMAGES};
 };
 } // namespace RT

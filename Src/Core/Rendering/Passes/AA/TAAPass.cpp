@@ -22,7 +22,7 @@ TAAPass::~TAAPass()
 {
 }
 
-void TAAPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager)
+void TAAPass::Init(const SharedResourceManager& resourceManager)
 {
     ScopedZone("TAAPass::Init");
     BuildPipelines();
@@ -60,11 +60,9 @@ bool TAAPass::WantsToRender() const
 void TAAPass::CreateSharedDescriptorLayout()
 {
     m_sharedDescriptors.clear();
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalTextures, 0));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalArrayTextures, 0));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalImages, 1));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::GBufferUBO, 2));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::ShadowmapUBO, 2));
+    AppendLayoutPreset(DescriptorPresets::Bindless(true));
+    AppendLayoutPreset(DescriptorPresets::View());
+    AppendLayoutPreset(DescriptorPresets::GBuffer());
 }
 
 void TAAPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
@@ -73,9 +71,29 @@ void TAAPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
 {
 }
 
-void TAAPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
+#include "Core/Rendering/Core/RenderGraph/RenderGraphBuilder.h"
+#include "Core/Rendering/Core/RenderGraph/RGExecutionContext.h"
+
+void TAAPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
+{
+    builder.DeclareContexts<
+        PassCtx::BindlessWithImages,
+        PassCtx::View,
+        PassCtx::GBufferCtx>();
+
+    builder.ReadTexture(RGResourceID::GBufferThisFrameColor, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    builder.ReadTexture(RGResourceID::MainDepth, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+    builder.ReadTexture(RGResourceID::GBufferVelocity, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+
+    auto resolve = builder.DeclareStorageTexture(RGResourceID::TemporalResolve, TexFormat::R16G16B16A16_FLOAT, RGSizeClass::OutputResolution);
+    builder.WriteStorageImage(resolve, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_WRITE);
+    builder.SetHasSideEffects();
+}
+
+void TAAPass::RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const RGExecutionContext& execCtx)
 {
     ScopedZone("TAAPass::Render");
+    CommandBuffer* pCmdBuffer = execCtx.pCmdBuffer;
     StartRenderPassProfilingScope(pCmdBuffer);
 
     const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
@@ -98,13 +116,13 @@ void TAAPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comman
         m_pushConstants.resetHistory = 0;
     }
 
-    m_pushConstants.frameIndex = ctx.currentFrame;
-    m_pushConstants.resolutionX = data.renderState.renderResolution.x;
-    m_pushConstants.resolutionY = data.renderState.renderResolution.y;
-    m_pushConstants.outputResolutionX = data.renderState.swapchainResolution.x;
-    m_pushConstants.outputResolutionY = data.renderState.swapchainResolution.y;
-    m_pushConstants.zNear = ctx.zNear;
-    m_pushConstants.zFar = ctx.zFar;
+    m_pushConstants.frameIndex = execCtx.GetFrameIndex();
+    m_pushConstants.resolutionX = execCtx.GetRenderResolution().x;
+    m_pushConstants.resolutionY = execCtx.GetRenderResolution().y;
+    m_pushConstants.outputResolutionX = execCtx.GetSwapchainResolution().x;
+    m_pushConstants.outputResolutionY = execCtx.GetSwapchainResolution().y;
+    m_pushConstants.zNear = execCtx.GetZNear();
+    m_pushConstants.zFar = execCtx.GetZFar();
     m_pushConstants.currentJitterX = data.renderState.jitter.x;
     m_pushConstants.currentJitterY = data.renderState.jitter.y;
     m_pushConstants.previousJitterX = data.renderState.previousJitter.x;
@@ -114,35 +132,16 @@ void TAAPass::Render(const MainPassData& data, FrameRendererContext& ctx, Comman
     m_pushConstants.debugMode = currentDebugMode;
     m_pushConstants.forceHistory = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::TAAForceHistory) ? 1u : 0u;
 
-    u32 groupCountX = (static_cast<u32>(data.renderState.swapchainResolution.x) + 7) / 8;
-    u32 groupCountY = (static_cast<u32>(data.renderState.swapchainResolution.y) + 7) / 8;
+    u32 groupCountX = (static_cast<u32>(execCtx.GetSwapchainResolution().x) + 7) / 8;
+    u32 groupCountY = (static_cast<u32>(execCtx.GetSwapchainResolution().y) + 7) / 8;
     u32 groupCountZ = 1;
 
     {
         GenericComputeDispatchCmd cmd(&m_taaPipeline, groupCountX, groupCountY, groupCountZ);
-        const auto texArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessTextureArray);
-        const auto imageArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessImageArray);
-        const auto gbufferUBO = data.bufferDescriptors.at(UBO::DescriptorContentsType::GBuffer);
-        
-        cmd.descriptorSets = {texArraySet,
-                              imageArraySet,
-                              gbufferUBO};
+        cmd.descriptorSets = execCtx.GetDescriptors();
         cmd.SetPushConstants(0, m_pushConstants);
         pCmdBuffer->RecordCommand(cmd);
     }
 
     EndRenderPassProfilingScope(pCmdBuffer);
-}
-
-#include "Core/Rendering/Core/RenderGraph/RenderGraphBuilder.h"
-
-void TAAPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
-{
-    builder.ReadTexture(RGResourceID::GBufferThisFrameColor, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-    builder.ReadTexture(RGResourceID::MainDepth, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
-    builder.ReadTexture(RGResourceID::GBufferVelocity, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-
-    auto resolve = builder.DeclareStorageTexture(RGResourceID::TemporalResolve, TexFormat::R16G16B16A16_FLOAT, RGSizeClass::OutputResolution);
-    builder.WriteStorageImage(resolve, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_WRITE);
-    builder.SetHasSideEffects();
 }

@@ -2,7 +2,7 @@
 #extension GL_EXT_nonuniform_qualifier : require
 #extension GL_ARB_shading_language_include : enable
 
-#define GBufferUBOSet 2
+#define GBufferUBOSet 3
 #include "../../Globals/Bindless.h"
 #include "../../Globals/Common.h"
 #include "../../Globals/GBuffer/GBufferSampling.h"

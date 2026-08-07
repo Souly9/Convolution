@@ -83,6 +83,6 @@ private:
     stltype::vector<u32> m_freeRTMeshIds;
 };
 
-extern stltype::unique_ptr<MeshManager> g_pMeshManager;
+
 
 static inline constexpr MeshManager::PrimitiveType s_lightDebugMeshPrimitive = MeshManager::PrimitiveType::Cube;

@@ -24,4 +24,5 @@ struct APITraits
     using GPUTimingQueryType = void;
     using ShaderType = void;
     using AccelerationStructureType = void;
+    using TracyGPUManagerType = void;
 };

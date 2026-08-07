@@ -22,10 +22,12 @@ void DescriptorPoolVulkan::Create(const DescriptorPoolCreateInfo& createInfo)
 
     if (createInfo.enableBindlessTextureDescriptors)
     {
+        const u32 samplerCount = stltype::max(maxSets * 4, MAX_BINDLESS_TEXTURES * 8);
+        const u32 storageImageCount = stltype::max(maxSets * 2, MAX_BINDLESS_TEXTURES * 4);
         poolSizes.push_back(
-            CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, maxSets * 4));
+            CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, samplerCount));
         poolSizes.push_back(
-            CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, maxSets * 2));
+            CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, storageImageCount));
     }
     if (createInfo.enableStorageBufferDescriptors)
     {

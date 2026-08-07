@@ -27,7 +27,9 @@ enum class RGResourceID : u32
     BloomMip1,
     BloomMip2,
     BloomMip3,
-    BloomMip4
+    BloomMip4,
+    RTAccumulation,
+    CSMShadowMap
 };
 
 inline const char* ToString(RGResourceID id)
@@ -58,6 +60,8 @@ inline const char* ToString(RGResourceID id)
         case RGResourceID::BloomMip2: return "BloomMip2";
         case RGResourceID::BloomMip3: return "BloomMip3";
         case RGResourceID::BloomMip4: return "BloomMip4";
+        case RGResourceID::RTAccumulation: return "RTAccumulation";
+        case RGResourceID::CSMShadowMap: return "CSMShadowMap";
         default: return "Custom";
     }
 }

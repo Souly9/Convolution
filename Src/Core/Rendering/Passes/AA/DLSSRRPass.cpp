@@ -92,7 +92,7 @@ DLSSRRPass::~DLSSRRPass()
 {
 }
 
-void DLSSRRPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager)
+void DLSSRRPass::Init(const SharedResourceManager& resourceManager)
 {
 }
 

@@ -45,7 +45,7 @@ XeSSPass::~XeSSPass()
 {
 }
 
-void XeSSPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager)
+void XeSSPass::Init(const SharedResourceManager& resourceManager)
 {
 }
 

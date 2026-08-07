@@ -6,7 +6,7 @@
 #include "Core/Rendering/Vulkan/VkTextureManager.h"
 #include "Core/Rendering/Core/Utils/DeleteQueue.h"
 #include "Core/Rendering/Core/RenderGraph/RGResourceRegistry.h"
-#include "RT/RTResourceManager.h"
+
 #include <imgui/backends/imgui_impl_vulkan.h>
 
 namespace
@@ -311,32 +311,32 @@ void RenderTextureImGuiRegistry::PublishGBufferTextureState(RGResourceRegistry& 
         });
 }
 
-void RenderTextureImGuiRegistry::RegisterRTTextures(const RT::RTResourceManager& rtResourceManager)
+void RenderTextureImGuiRegistry::RegisterRTTextures(const RGResourceRegistry& registry)
 {
     ReleaseImGuiIds(m_rtImGuiIDs);
 
-    auto addRT = [&](RT::RTTextureType type)
+    auto addRT = [&](RGResourceID id)
     {
-        const auto& res = rtResourceManager.Get(type);
-        if (res.pTexture != nullptr && res.pTexture->GetImageView() != VK_NULL_HANDLE && res.pTexture->GetSampler() != VK_NULL_HANDLE)
+        const Texture* pTex = registry.ResolveByID(id);
+        if (pTex != nullptr && pTex->GetImageView() != VK_NULL_HANDLE && pTex->GetSampler() != VK_NULL_HANDLE)
         {
             return reinterpret_cast<u64>(ImGui_ImplVulkan_AddTexture(
-                res.pTexture->GetSampler(), res.pTexture->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL));
+                pTex->GetSampler(), pTex->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL));
         }
         return static_cast<u64>(0);
     };
 
-    u64 debugViewID = addRT(RT::RTTextureType::DebugView);
-    u64 reflectionsID = addRT(RT::RTTextureType::Reflections);
-    u64 rtaoID = addRT(RT::RTTextureType::RTAO);
+    u64 debugViewID = addRT(RGResourceID::GBufferDebug);
+    u64 reflectionsID = addRT(RGResourceID::RTReflections);
+    u64 rtaoID = addRT(RGResourceID::RTAOOutput);
 
     m_rtImGuiIDs.push_back(debugViewID);
     m_rtImGuiIDs.push_back(reflectionsID);
     m_rtImGuiIDs.push_back(rtaoID);
 
-    if (debugViewID != 0) m_textureViewerItems.push_back(MakeItem("RT Debug View", "Ray Tracing", debugViewID, rtResourceManager.Get(RT::RTTextureType::DebugView).pTexture));
-    if (reflectionsID != 0) m_textureViewerItems.push_back(MakeItem("RT Reflections", "Ray Tracing", reflectionsID, rtResourceManager.Get(RT::RTTextureType::Reflections).pTexture));
-    if (rtaoID != 0) m_textureViewerItems.push_back(MakeItem("RT AO", "Ray Tracing", rtaoID, rtResourceManager.Get(RT::RTTextureType::RTAO).pTexture));
+    if (debugViewID != 0) m_textureViewerItems.push_back(MakeItem("RT Debug View", "Ray Tracing", debugViewID, registry.ResolveByID(RGResourceID::GBufferDebug)));
+    if (reflectionsID != 0) m_textureViewerItems.push_back(MakeItem("RT Reflections", "Ray Tracing", reflectionsID, registry.ResolveByID(RGResourceID::RTReflections)));
+    if (rtaoID != 0) m_textureViewerItems.push_back(MakeItem("RT AO", "Ray Tracing", rtaoID, registry.ResolveByID(RGResourceID::RTAOOutput)));
 
     stltype::vector<u64> rtIDs = m_rtImGuiIDs;
     g_pApplicationState->RegisterUpdateFunction([rtIDs](ApplicationState& state)

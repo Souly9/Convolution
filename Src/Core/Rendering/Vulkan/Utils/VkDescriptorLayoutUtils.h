@@ -45,7 +45,7 @@ static inline VkDescriptorBindingFlags ConvFlags(const DescriptorType& m)
             DEBUG_ASSERT(false);
     }
 
-    return 0; // Fixed: was returning VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER which is wrong for flags
+    return 0;
 }
 
 namespace DescriptorLayoutUtils
@@ -85,10 +85,8 @@ static inline DescriptorSetLayout CreateOneDescriptorSetForAll(
     descriptorLayout.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     descriptorLayout.bindingCount = bindings.size();
     descriptorLayout.pBindings = bindings.data();
-    // Set binding flags
     descriptorLayout.pNext = &bindingFlags;
 
-    // If we need to support bindless we need this flag
     if (needsToSupportBindless)
     {
         descriptorLayout.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
@@ -111,7 +109,6 @@ static inline stltype::vector<DescriptorSetLayout> CreateOneDescriptorSetLayoutP
 {
     stltype::vector<DescriptorSetLayout> rslt;
 
-    // Sort all layouts for sets, mainly done here so it's easier to write outside
     stltype::hash_map<u32, stltype::vector<PipelineDescriptorLayout>> setLayoutMap;
     u32 setCount = 0;
     for (const auto& layout : layoutInfos)
@@ -122,10 +119,7 @@ static inline stltype::vector<DescriptorSetLayout> CreateOneDescriptorSetLayoutP
     }
     for (u32 i = 0; i <= setCount; ++i)
     {
-        if (!setLayoutMap[i].empty())
-        {
-            rslt.push_back(CreateOneDescriptorSetForAll(setLayoutMap[i]));
-        }
+        rslt.push_back(CreateOneDescriptorSetForAll(setLayoutMap[i]));
     }
     return rslt;
 }

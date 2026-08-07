@@ -4,6 +4,7 @@
 #include "Core/Rendering/RenderLayer.h"
 #include "Core/Rendering/Vulkan/VkGlobals.h"
 #include "Core/Rendering/Vulkan/VkProfiler.h"
+#include "Core/Rendering/Core/Utils/DeleteQueue.h"
 #include "Scenes/BistroExteriorScene.h"
 #include "Scenes/ClusteredLightingScene.h"
 #include "Scenes/SampleScene.h"
@@ -79,6 +80,7 @@ Application::~Application()
     m_pProfiler->Destroy();
     VkGlobals::SetProfiler(nullptr);
 
+    g_pDeleteQueue->ForceEmptyQueue();
     m_imGuiManager.CleanUp();
 }
 

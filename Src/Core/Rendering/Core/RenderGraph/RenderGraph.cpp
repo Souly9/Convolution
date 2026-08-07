@@ -1,6 +1,7 @@
 #include "RenderGraph.h"
 #include "Core/Global/LogDefines.h"
 #include "Core/Global/State/ApplicationState.h"
+#include "Core/Rendering/Core/GPUTimingQuery.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
 #include "Core/Rendering/Passes/PassManager.h"
 
@@ -8,7 +9,6 @@ void RenderGraph::BeginFrame(u32 frameSlot, const mathstl::Vector2& renderRes, c
 {
     Reset();
     m_registry.ResetFrameState();
-    m_registry.RotateHistory(frameSlot);
     m_registry.OnResize(renderRes, outputRes);
 }
 
@@ -613,13 +613,15 @@ void RenderGraph::Execute(const RenderPasses::MainPassData& data,
                           RenderPasses::FrameRendererContext& ctx,
                           Semaphore* pImageAvailableSemaphore,
                           stltype::vector<CommandBuffer*>& availableGraphicsCmdBuffers,
-                          stltype::vector<CommandBuffer*>& availableComputeCmdBuffers)
+                          stltype::vector<CommandBuffer*>& availableComputeCmdBuffers,
+                          GPUTimingQueryBase* pTimingQuery)
 {
     BuildExecutionBatches(ctx);
 
     u32 graphicsIdx = 0;
     u32 computeIdx = 0;
     bool isFirstGraphicsBatch = true;
+    bool isFirstComputeBatch = true;
 
     u32 totalGraphicsBatches = 0;
     for (const auto& b : m_batches)
@@ -652,10 +654,26 @@ void RenderGraph::Execute(const RenderPasses::MainPassData& data,
         pCmdBuffer->ResetBuffer();
         pCmdBuffer->SetFrameIdx(ctx.currentFrame);
 
+        if (pTimingQuery && pTimingQuery->IsEnabled())
+        {
+            if (batch.queueType == QueueType::Graphics && isFirstGraphicsBatch)
+            {
+                pTimingQuery->ResetQueriesForQueue(ctx.currentFrame, pCmdBuffer, QueueType::Graphics);
+            }
+            else if (batch.queueType == QueueType::Compute && isFirstComputeBatch)
+            {
+                pTimingQuery->ResetQueriesForQueue(ctx.currentFrame, pCmdBuffer, QueueType::Compute);
+            }
+        }
+
         if (batch.queueType == QueueType::Graphics && isFirstGraphicsBatch)
         {
             isFirstGraphicsBatch = false;
             EmitSwapchainInit(pCmdBuffer, ctx.pCurrentSwapchainTexture, pImageAvailableSemaphore);
+        }
+        else if (batch.queueType == QueueType::Compute && isFirstComputeBatch)
+        {
+            isFirstComputeBatch = false;
         }
 
         for (const auto& wait : batch.waits)
@@ -682,6 +700,10 @@ void RenderGraph::Execute(const RenderPasses::MainPassData& data,
         }
 
         pCmdBuffer->Bake();
-        g_pQueueHandler->SubmitCommandBufferThisFrame({pCmdBuffer, batch.queueType, ctx.currentFrame});
+        AsyncQueueHandler::CommandBufferRequest req{};
+        req.pBuffer = pCmdBuffer;
+        req.queueType = batch.queueType;
+        req.frameIdx = ctx.currentFrame;
+        g_pQueueHandler->SubmitCommandBufferThisFrame(req);
     }
 }

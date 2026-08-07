@@ -22,11 +22,11 @@ ImGuiPass::ImGuiPass() : ConvolutionRenderPass("ImGuiPass")
 {
 }
 
-void ImGuiPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager)
+void ImGuiPass::Init(const SharedResourceManager& resourceManager)
 {
     ScopedZone("ImGuiPass::Init");
 
-    RecreateResolutionDependentResources(attachmentInfo, resourceManager);
+    RecreateResolutionDependentResources(resourceManager);
 
     const auto vkContext = VkGlobals::GetContext();
 
@@ -68,28 +68,32 @@ void ImGuiPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourc
     ImGui_ImplVulkan_Init(&info);
 }
 
-void ImGuiPass::RecreateResolutionDependentResources(RendererAttachmentInfo& attachmentInfo,
-                                                     const SharedResourceManager& resourceManager)
+void ImGuiPass::RecreateResolutionDependentResources(const SharedResourceManager& resourceManager)
 {
     ScopedZone("ImGuiPass::RecreateResolutionDependentResources");
 
     const auto swapchainAttachment = CreateDefaultColorAttachment(SWAPCHAIN_FORMAT, LoadOp::LOAD, nullptr);
     m_mainRenderingData.colorAttachments = {swapchainAttachment};
 
-    InitBaseData(attachmentInfo);
+    InitBaseData();
 }
 
-void ImGuiPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
+void ImGuiPass::RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const RGExecutionContext& execCtx)
 {
     ScopedZone("ImGuiPass::Render");
 
+    CommandBuffer* pCmdBuffer = execCtx.pCmdBuffer;
+    Texture* pSwapchainTex = execCtx.GetTexture(RGResourceID::Swapchain);
+    if (!pSwapchainTex)
+        pSwapchainTex = ctx.pCurrentSwapchainTexture;
+
     ImGui::Render();
     ColorAttachment swapChainColorAttachment = m_mainRenderingData.colorAttachments[0];
-    swapChainColorAttachment.SetTexture(ctx.pCurrentSwapchainTexture);
+    swapChainColorAttachment.SetTexture(pSwapchainTex);
 
     stltype::vector<ColorAttachment> colorAttachments;
     colorAttachments.push_back(swapChainColorAttachment);
-    const auto ex = ctx.pCurrentSwapchainTexture->GetInfo().extents;
+    const auto ex = pSwapchainTex->GetInfo().extents;
     const DirectX::XMINT2 extents(ex.x, ex.y);
 
     BeginRenderingBaseCmd cmdBegin(ToRenderAttachmentInfos(colorAttachments));

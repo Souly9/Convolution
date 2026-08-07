@@ -4,7 +4,7 @@
 #extension GL_EXT_scalar_block_layout : enable
 
 #define SharedDataUBOSet 1
-#define GBufferUBOSet    2
+#define GBufferUBOSet    3
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 

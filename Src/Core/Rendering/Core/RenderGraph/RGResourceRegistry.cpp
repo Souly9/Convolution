@@ -351,6 +351,14 @@ void RGResourceRegistry::SetResourceLayout(RGResourceHandle handle, ImageLayout 
     }
 }
 
+void RGResourceRegistry::SetCustomResourceName(RGResourceHandle handle, const stltype::string& name)
+{
+    if (handle < m_resources.size())
+    {
+        m_resources[handle].spec.customName = name;
+    }
+}
+
 void RGResourceRegistry::MarkReferenced(RGResourceHandle handle)
 {
     if (handle < m_resources.size())
@@ -466,11 +474,11 @@ void RGResourceRegistry::DeclareEngineResources()
     Declare(RGResourceID::GBufferAlbedo, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
     Declare(RGResourceID::GBufferNormal, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
     Declare(RGResourceID::GBufferUVMat, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
-    Declare(RGResourceID::GBufferVelocity, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage, true);
+    Declare(RGResourceID::GBufferVelocity, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage | Usage::TransferDst, true);
     Declare(RGResourceID::GBufferRoughness, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
     Declare(RGResourceID::GBufferDebug, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
     Declare(RGResourceID::GBufferThisFrameColor, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
-    Declare(RGResourceID::TemporalResolve, RGSizeClass::OutputResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage, true);
+    Declare(RGResourceID::TemporalResolve, RGSizeClass::OutputResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage | Usage::TransferDst, true);
     Declare(RGResourceID::GBufferPostAAColor, RGSizeClass::OutputResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
 
     Declare(RGResourceID::BloomMip0, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage, false, {0.0f, 0.0f}, {1.0f, 1.0f}, TextureFilter::LINEAR, TextureFilter::LINEAR);

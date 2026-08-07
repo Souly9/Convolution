@@ -8,7 +8,7 @@
 layout(set = 0, binding = GlobalBindlessTextureBufferSlot) uniform sampler2D GlobalBindlessTextures[];
 layout(set = 0, binding = GlobalBindlessArrayTextureBufferSlot) uniform sampler2DArray GlobalBindlessArrayTextures[];
 #ifndef BindlessImageSet
-#define BindlessImageSet 1
+#define BindlessImageSet 0
 #endif
 layout(set = BindlessImageSet, binding = GlobalBindlessImageBufferSlot) uniform writeonly image2D GlobalBindlessImages[];
 

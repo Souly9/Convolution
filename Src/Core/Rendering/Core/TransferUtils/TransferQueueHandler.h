@@ -149,4 +149,3 @@ private:
     void InitStagingBufferPool(u32 initialCount, u64 initialSize);
 };
 
-extern stltype::unique_ptr<AsyncQueueHandler> g_pQueueHandler;

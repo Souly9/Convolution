@@ -17,21 +17,20 @@ ScreenSpaceShadowPass::ScreenSpaceShadowPass() : ConvolutionRenderPass("ScreenSp
 
 void ScreenSpaceShadowPass::CreateSharedDescriptorLayout()
 {
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalTextures, 0));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalArrayTextures, 0));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalImages, 1));
+    m_sharedDescriptors.clear();
+    AppendLayoutPreset(DescriptorPresets::Bindless(true));
+    AppendLayoutPreset(DescriptorPresets::View());
 }
 
-void ScreenSpaceShadowPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager)
+void ScreenSpaceShadowPass::Init(const SharedResourceManager& resourceManager)
 {
     ScopedZone("ScreenSpaceShadowPass::Init");
 
-    RecreateResolutionDependentResources(attachmentInfo, resourceManager);
+    RecreateResolutionDependentResources(resourceManager);
     BuildPipelines();
 }
 
-void ScreenSpaceShadowPass::RecreateResolutionDependentResources(RendererAttachmentInfo& attachmentInfo,
-                                                                 const SharedResourceManager& resourceManager)
+void ScreenSpaceShadowPass::RecreateResolutionDependentResources(const SharedResourceManager& resourceManager)
 {
     ScopedZone("ScreenSpaceShadowPass::RecreateResolutionDependentResources");
     m_pDepthTex = nullptr;
@@ -86,7 +85,7 @@ void ScreenSpaceShadowPass::RenderWithGraph(const MainPassData& data, const Fram
 
     const auto* pDepthTex = execCtx.GetTexture(RGResourceID::MainDepth);
     DirectX::XMUINT3 depthExtents = pDepthTex ? pDepthTex->GetInfo().extents
-                                              : DirectX::XMUINT3((u32)data.renderState.renderResolution.x, (u32)data.renderState.renderResolution.y, 1);
+                                              : DirectX::XMUINT3((u32)execCtx.GetRenderResolution().x, (u32)execCtx.GetRenderResolution().y, 1);
 
     Bend::DispatchList dispatchList = SSSHelper::BuildBendDispatchList(lightDir, data.mainCamInvViewProj, depthExtents);
     
@@ -103,17 +102,13 @@ void ScreenSpaceShadowPass::RenderWithGraph(const MainPassData& data, const Fram
         dispatchList.LightCoordinate_Shader[3]
     );
 
-    auto texArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessTextureArray);
-    auto imageArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessImageArray);
-
     for (int i = 0; i < dispatchList.DispatchCount; i++)
     {
         const auto& dispatch = dispatchList.Dispatch[i];
         m_pushConstants.waveOffset.x = dispatch.WaveOffset_Shader[0];
         m_pushConstants.waveOffset.y = dispatch.WaveOffset_Shader[1];
         GenericComputeDispatchCmd cmd(&m_computePipeline, dispatch.WaveCount[0], dispatch.WaveCount[1], dispatch.WaveCount[2]);
-        cmd.descriptorSets.push_back(texArraySet);
-        cmd.descriptorSets.push_back(imageArraySet);
+        cmd.descriptorSets = execCtx.GetDescriptors();
         cmd.SetPushConstants(0, m_pushConstants);
 
         execCtx.pCmdBuffer->RecordCommand(cmd);
@@ -126,6 +121,10 @@ void ScreenSpaceShadowPass::RenderWithGraph(const MainPassData& data, const Fram
 
 void ScreenSpaceShadowPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
 {
+    builder.DeclareContexts<
+        PassCtx::BindlessWithImages,
+        PassCtx::View>();
+
     builder.ReadTexture(RGResourceID::MainDepth, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
     auto sss = builder.DeclareStorageTexture(RGResourceID::ScreenSpaceShadows, TexFormat::R8_UNORM, RGSizeClass::RenderResolution);
     builder.WriteStorageImage(sss, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_WRITE);

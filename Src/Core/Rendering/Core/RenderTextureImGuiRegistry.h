@@ -5,10 +5,6 @@
 
 class RGResourceRegistry;
 
-namespace RT
-{
-class RTResourceManager;
-}
 
 class RenderTextureImGuiRegistry
 {
@@ -17,7 +13,7 @@ public:
     void ReleaseShadowMapIdsForNextFrame();
     void RegisterShadowMapTextures(const CascadedShadowMap& shadowMap);
     void RegisterGBufferTextures(RGResourceRegistry& registry);
-    void RegisterRTTextures(const RT::RTResourceManager& rtResourceManager);
+    void RegisterRTTextures(const class RGResourceRegistry& registry);
     void RegisterMaterialTextures();
     void PublishGBufferTextureState(RGResourceRegistry& registry);
 

@@ -15,8 +15,7 @@ FrustumCullingComputePass::FrustumCullingComputePass() : ConvolutionRenderPass("
 
 FrustumCullingComputePass::~FrustumCullingComputePass() = default;
 
-void FrustumCullingComputePass::Init(RendererAttachmentInfo& attachmentInfo,
-                                     const SharedResourceManager& resourceManager)
+void FrustumCullingComputePass::Init(const SharedResourceManager& resourceManager)
 {
     ScopedZone("FrustumCullingComputePass::Init");
     BuildPipelines();
@@ -94,4 +93,21 @@ void FrustumCullingComputePass::Render(const MainPassData& data,
     }
 
     EndRenderPassProfilingScope(pCmdBuffer);
+}
+
+#include "Core/Rendering/Core/RenderGraph/RenderGraphBuilder.h"
+#include "Core/Rendering/Core/RenderGraph/RGExecutionContext.h"
+
+void FrustumCullingComputePass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
+{
+    builder.DeclareContexts<
+        PassCtx::View,
+        PassCtx::GlobalInstance>();
+
+    builder.SetHasSideEffects();
+}
+
+void FrustumCullingComputePass::RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const RGExecutionContext& execCtx)
+{
+    Render(data, const_cast<FrameRendererContext&>(ctx), execCtx.pCmdBuffer);
 }

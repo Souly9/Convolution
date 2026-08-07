@@ -27,7 +27,7 @@ void ConvolutionRenderPass::SetVertexInputDescriptions(VertexInputDefines::Verte
     m_vertexInputDescription.inputRate = VertexInputRate::Vertex;
 }
 
-void ConvolutionRenderPass::InitBaseData(const RendererAttachmentInfo& attachmentInfo)
+void ConvolutionRenderPass::InitBaseData()
 {
 }
 

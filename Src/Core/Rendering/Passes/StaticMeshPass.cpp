@@ -18,11 +18,11 @@ StaticMainMeshPass::StaticMainMeshPass() : GenericGeometryPass("StaticMainMeshPa
     CreateSharedDescriptorLayout();
 }
 
-void StaticMainMeshPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager)
+void StaticMainMeshPass::Init(const SharedResourceManager& resourceManager)
 {
     ScopedZone("StaticMeshPass::Init");
 
-    RecreateResolutionDependentResources(attachmentInfo, resourceManager);
+    RecreateResolutionDependentResources(resourceManager);
     BuildPipelines();
 
     m_indirectCmdBuffers.resize(SWAPCHAIN_IMAGES);
@@ -31,8 +31,7 @@ void StaticMainMeshPass::Init(RendererAttachmentInfo& attachmentInfo, const Shar
     BuildPipelines();
 }
 
-void StaticMainMeshPass::RecreateResolutionDependentResources(RendererAttachmentInfo& attachmentInfo,
-                                                              const SharedResourceManager& resourceManager)
+void StaticMainMeshPass::RecreateResolutionDependentResources(const SharedResourceManager& resourceManager)
 {
     ScopedZone("StaticMeshPass::RecreateResolutionDependentResources");
 
@@ -54,7 +53,7 @@ void StaticMainMeshPass::RecreateResolutionDependentResources(RendererAttachment
     m_mainRenderingData.colorAttachments = {
         gbufferPosition, gbufferNormal, gbuffer3, gbufferVelocity, gbufferRoughness};
 
-    InitBaseData(attachmentInfo);
+    InitBaseData();
 }
 
 void StaticMainMeshPass::BuildPipelines()
@@ -106,6 +105,11 @@ void StaticMainMeshPass::RebuildInternalData(const stltype::vector<PassMeshData>
 
 void StaticMainMeshPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
 {
+    builder.DeclareContexts<
+        PassCtx::Bindless,
+        PassCtx::View,
+        PassCtx::GlobalInstance>();
+
     builder.WriteGBuffer(RGResourceID::GBufferAlbedo);
     builder.WriteGBuffer(RGResourceID::GBufferNormal);
     builder.WriteGBuffer(RGResourceID::GBufferUVMat);
@@ -119,7 +123,7 @@ void StaticMainMeshPass::RenderWithGraph(const MainPassData& data, const FrameRe
 {
     ScopedZone("StaticMeshPass::Render");
 
-    const auto currentFrame = ctx.currentFrame;
+    const auto currentFrame = execCtx.GetFrameIndex();
     UpdateContextForFrame(currentFrame);
     const auto& passCtx = m_perObjectFrameContexts[currentFrame];
 
@@ -137,7 +141,7 @@ void StaticMainMeshPass::RenderWithGraph(const MainPassData& data, const FrameRe
     stltype::vector<ColorAttachment> colorAttachments = {
         gbufferPosition, gbufferNormal, gbuffer3, gbufferVelocity, gbufferRoughness};
 
-    const DirectX::XMINT2 extents(data.renderState.renderResolution.x, data.renderState.renderResolution.y);
+    const DirectX::XMINT2 extents(execCtx.GetRenderResolution().x, execCtx.GetRenderResolution().y);
 
     m_mainRenderingData.depthAttachment.SetTexture(execCtx.GetTexture(RGResourceID::MainDepth));
     BeginRenderingCmd cmdBegin{&m_mainPSO,
@@ -157,17 +161,8 @@ void StaticMainMeshPass::RenderWithGraph(const MainPassData& data, const FrameRe
         return;
     }
 
-    if (data.bufferDescriptors.empty())
-    {
-        cmd.descriptorSets = {DescriptorSet::Cast(g_pTexManager->GetBindlessDescriptorSet())};
-    }
-    else
-    {
-        const auto transformSSBOSet = data.bufferDescriptors.at(UBO::DescriptorContentsType::GlobalInstanceData);
-        const auto texArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessTextureArray);
-        cmd.descriptorSets = {
-            texArraySet, data.mainView.descriptorSet, transformSSBOSet, passCtx.m_perObjectDescriptor};
-    }
+    cmd.descriptorSets = execCtx.GetDescriptors();
+    cmd.descriptorSets.push_back(passCtx.m_perObjectDescriptor);
 
     cmdBegin.drawCmdBuffer = &cmdBuf;
     StartRenderPassProfilingScope(execCtx.pCmdBuffer);

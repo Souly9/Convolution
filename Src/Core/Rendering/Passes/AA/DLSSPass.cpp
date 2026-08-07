@@ -91,7 +91,7 @@ DLSSPass::~DLSSPass()
 {
 }
 
-void DLSSPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager)
+void DLSSPass::Init(const SharedResourceManager& resourceManager)
 {
 }
 

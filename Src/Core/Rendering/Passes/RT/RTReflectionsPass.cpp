@@ -25,12 +25,10 @@ void RTReflectionsPass::CreateSharedDescriptorLayout()
     AppendLayoutPreset(DescriptorPresets::RTScene());
 }
 
-void RTReflectionsPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager)
+void RTReflectionsPass::Init(const SharedResourceManager& resourceManager)
 {
     ScopedZone("RTReflectionsPass::Init");
-    (void)attachmentInfo;
     (void)resourceManager;
-    CreateTLASDescriptorResources(true);
     BuildPipelines();
 }
 
@@ -73,79 +71,50 @@ bool RTReflectionsPass::WantsToRender() const
 
 void RTReflectionsPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
 {
+    builder.DeclareContexts<
+        PassCtx::BindlessWithImages,
+        PassCtx::View,
+        PassCtx::GlobalInstance,
+        PassCtx::GBufferCtx,
+        PassCtx::LightCluster,
+        PassCtx::RTScene>();
+
     builder.ReadTexture(RGResourceID::MainDepth, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
-    builder.ReadTexture(RGResourceID::GBufferNormal, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-    builder.ReadTexture(RGResourceID::GBufferRoughness, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
     builder.ReadTexture(RGResourceID::GBufferAlbedo, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    builder.ReadTexture(RGResourceID::GBufferNormal, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    builder.ReadTexture(RGResourceID::GBufferUVMat, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    builder.ReadTexture(RGResourceID::GBufferRoughness, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
     auto reflections = builder.DeclareStorageTexture(RGResourceID::RTReflections, TexFormat::R16G16B16A16_FLOAT, RGSizeClass::RenderResolution);
     builder.WriteStorageImage(reflections, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_WRITE);
     builder.SetHasSideEffects();
 }
 
-void RTReflectionsPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
+#include "Core/Rendering/Core/RenderGraph/RGExecutionContext.h"
+
+void RTReflectionsPass::RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const RGExecutionContext& execCtx)
 {
-    if (data.pRTSceneManager == nullptr ||
-        data.pResourceManager == nullptr ||
-        data.rtReflectionsTextureHandle == 0)
-    {
-        return;
-    }
+    ScopedZone("RTReflectionsPass::Render");
 
-    const auto& sceneGeometryBuffers = data.pResourceManager->GetSceneGeometryBuffers();
-    if (!sceneGeometryBuffers.GetVertexBuffer().IsCreated() || !sceneGeometryBuffers.GetIndexBuffer().IsCreated())
-    {
-        return;
-    }
-
+    CommandBuffer* pCmdBuffer = execCtx.pCmdBuffer;
     StartRenderPassProfilingScope(pCmdBuffer);
 
-    const bool hasReadyTLAS = data.pRTSceneManager->HasReadyTLAS(ctx.imageIdx);
-    if (!hasReadyTLAS)
-    {
-        EndRenderPassProfilingScope(pCmdBuffer);
-        return;
-    }
-
-    {
-        const RT::TLASFrameData* pTLASFrameData = data.pRTSceneManager->GetTLASFrameData(ctx.imageIdx);
-        if (pTLASFrameData == nullptr || !pTLASFrameData->hitDataBuffer.IsCreated())
-        {
-            EndRenderPassProfilingScope(pCmdBuffer);
-            return;
-        }
-        else
-        {
-            m_tlasDescriptors[ctx.currentFrame]->WriteAccelerationStructureUpdate(pTLASFrameData->accelerationStructure,
-                                                                              s_rtSceneASBindingSlot);
-            m_tlasDescriptors[ctx.currentFrame]->WriteSSBOUpdate(pTLASFrameData->hitDataBuffer,
-                                                             s_rtInstanceHitDataBindingSlot);
-            m_tlasDescriptors[ctx.currentFrame]->WriteSSBOUpdate(sceneGeometryBuffers.GetVertexBuffer(),
-                                                             s_rtSceneVertexBufferBindingSlot);
-            m_tlasDescriptors[ctx.currentFrame]->WriteSSBOUpdate(sceneGeometryBuffers.GetIndexBuffer(),
-                                                             s_rtSceneIndexBufferBindingSlot);
-        }
-    }
+    const bool hasReadyTLAS = execCtx.HasReadyTLAS();
 
     const auto& rtState = g_pApplicationState->GetCurrentApplicationState().renderState.rt;
-    m_pushConstants.reflectionsTexIdx = data.rtReflectionsTextureHandle;
+    m_pushConstants.reflectionsTexIdx = execCtx.GetBindless(RGResourceID::RTReflections);
     m_pushConstants.debugMode = static_cast<u32>(rtState.reflectionsDebugMode);
-    m_pushConstants.maxRayDistance = ctx.zFar;
+    m_pushConstants.maxRayDistance = execCtx.GetZFar();
     m_pushConstants.reflectionIntensity = 1.0f;
     m_pushConstants.hasReadyTLAS = hasReadyTLAS ? 1u : 0u;
-    m_pushConstants.frameIndex = ctx.currentFrame;
+    m_pushConstants.frameIndex = execCtx.GetFrameIndex();
     m_pushConstants.raysPerPixel = rtState.reflectionsRaysPerPixel;
 
-    const u32 groupCountX = (static_cast<u32>(data.renderState.renderResolution.x) + 7) / 8;
-    const u32 groupCountY = (static_cast<u32>(data.renderState.renderResolution.y) + 7) / 8;
+    const u32 groupCountX = (static_cast<u32>(execCtx.GetRenderResolution().x) + 7) / 8;
+    const u32 groupCountY = (static_cast<u32>(execCtx.GetRenderResolution().y) + 7) / 8;
 
     GenericComputeDispatchCmd dispatchCmd(&m_computePipeline, groupCountX, groupCountY, 1);
-    dispatchCmd.descriptorSets = {g_pTexManager->GetCombinedBindlessDescriptorSet(),
-                                  data.mainView.descriptorSet,
-                                  data.bufferDescriptors.at(UBO::DescriptorContentsType::GlobalInstanceData),
-                                  data.bufferDescriptors.at(UBO::DescriptorContentsType::GBuffer),
-                                  data.bufferDescriptors.at(UBO::DescriptorContentsType::LightData),
-                                  m_tlasDescriptors[ctx.currentFrame]};
+    dispatchCmd.descriptorSets = execCtx.GetDescriptors();
     dispatchCmd.SetPushConstants(0, m_pushConstants);
     pCmdBuffer->RecordCommand(dispatchCmd);
 

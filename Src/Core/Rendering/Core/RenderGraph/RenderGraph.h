@@ -5,8 +5,9 @@
 #include "Core/Rendering/Core/FrameResourceManager.h"
 #include "Core/Rendering/Core/RenderDefinitions.h"
 #include "RGNode.h"
-#include "RGResourceRegistry.h"
 #include "RenderGraphBuilder.h"
+
+class GPUTimingQueryBase;
 
 class RenderGraph
 {
@@ -42,7 +43,8 @@ public:
                  RenderPasses::FrameRendererContext& ctx,
                  Semaphore* pImageAvailableSemaphore,
                  stltype::vector<CommandBuffer*>& availableGraphicsCmdBuffers,
-                 stltype::vector<CommandBuffer*>& availableComputeCmdBuffers);
+                 stltype::vector<CommandBuffer*>& availableComputeCmdBuffers,
+                 GPUTimingQueryBase* pTimingQuery = nullptr);
 
     const stltype::vector<ExecutionBatch>& GetExecutionBatches() const { return m_batches; }
 

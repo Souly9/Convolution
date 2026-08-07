@@ -3,8 +3,8 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_EXT_scalar_block_layout : enable
 
-#define BindlessImageSet 1
-#define GBufferUBOSet    2
+#define BindlessImageSet 0
+#define GBufferUBOSet    3
 
 #include "../../Globals/Bindless.h"
 #include "../../Globals/Common.h"

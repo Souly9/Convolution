@@ -347,7 +347,7 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
 
             m_currentSharedDataUBO.cascadeCount = (s32)renderState.directionalLightCascades;
             m_currentSharedDataUBO.screenSpaceShadows =
-                pPassManager->GetMainPassData(currentSwapChainIdx).screenSpaceShadows;
+                pPassManager->GetRenderGraph().GetRegistry().ResolveBindlessByID(RGResourceID::ScreenSpaceShadows);
             for (u32 i = 0; i < 4; ++i)
             {
                 m_currentSharedDataUBO.cascadeSplits[i] =

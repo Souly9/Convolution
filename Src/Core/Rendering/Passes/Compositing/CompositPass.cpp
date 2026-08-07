@@ -16,19 +16,17 @@ CompositPass::CompositPass() : GenericGeometryPass("CompositPass")
     CreateSharedDescriptorLayout();
 }
 
-void CompositPass::Init(RendererAttachmentInfo& attachmentInfo,
-                                      const SharedResourceManager& resourceManager)
+void CompositPass::Init(const SharedResourceManager& resourceManager)
 {
     ScopedZone("CompositPass::Init");
 
-    RecreateResolutionDependentResources(attachmentInfo, resourceManager);
+    RecreateResolutionDependentResources(resourceManager);
     for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
         m_indirectCmdBuffers[i].Init(10);
     BuildPipelines();
 }
 
-void CompositPass::RecreateResolutionDependentResources(RendererAttachmentInfo& attachmentInfo,
-                                                        const SharedResourceManager& resourceManager)
+void CompositPass::RecreateResolutionDependentResources(const SharedResourceManager& resourceManager)
 {
     ScopedZone("CompositPass::RecreateResolutionDependentResources");
 
@@ -36,7 +34,7 @@ void CompositPass::RecreateResolutionDependentResources(RendererAttachmentInfo& 
         CreateDefaultColorAttachment(SWAPCHAIN_FORMAT, LoadOp::CLEAR, nullptr);
     m_mainRenderingData.colorAttachments = {swapChainAttachment};
 
-    InitBaseData(attachmentInfo);
+    InitBaseData();
 }
 
 void CompositPass::BuildPipelines()
@@ -68,22 +66,24 @@ void CompositPass::RebuildInternalData(const stltype::vector<PassMeshData>& mesh
     cmdBuf.FillCmds();
 }
 
-void CompositPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
+void CompositPass::RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const RGExecutionContext& execCtx)
 {
-    const auto currentFrame = ctx.currentFrame;
-    UpdateContextForFrame(currentFrame);
+    ScopedZone("CompositPass::Render");
+
+    CommandBuffer* pCmdBuffer = execCtx.pCmdBuffer;
+    ColorAttachment swapchainAttachment = m_mainRenderingData.colorAttachments[0];
 
     const auto& appRenderState = g_pApplicationState->GetCurrentApplicationState().renderState;
     const bool smaaActive = (appRenderState.aaType == AntialiasingType::SMAA || appRenderState.aaType == AntialiasingType::TAA_SMAA);
-
-    ColorAttachment swapchainAttachment = m_mainRenderingData.colorAttachments[0];
-    if (smaaActive && data.temporalResources.pPostAAColorTexture)
+    if (smaaActive)
     {
-        swapchainAttachment.SetTexture(data.temporalResources.pPostAAColorTexture);
+        Texture* pTarget = execCtx.GetTexture(RGResourceID::GBufferPostAAColor);
+        swapchainAttachment.SetTexture(pTarget);
     }
     else
     {
-        swapchainAttachment.SetTexture(ctx.pCurrentSwapchainTexture);
+        Texture* pTarget = execCtx.GetTexture(RGResourceID::Swapchain);
+        swapchainAttachment.SetTexture(pTarget != nullptr ? pTarget : ctx.pCurrentSwapchainTexture);
     }
 
     stltype::vector<ColorAttachment> colorAttachments = {swapchainAttachment};
@@ -102,22 +102,11 @@ void CompositPass::Render(const MainPassData& data, FrameRendererContext& ctx, C
         return;
     }
     BinRenderDataCmd geomBufferCmd(sceneGeometryBuffers.GetVertexBuffer(), sceneGeometryBuffers.GetIndexBuffer());
-    
-    auto& cmdBuf = m_indirectCmdBuffers[ctx.currentFrame];
+
+    auto& cmdBuf = m_indirectCmdBuffers[execCtx.GetFrameIndex()];
     GenericIndirectDrawCmd cmd{&m_mainPSO, cmdBuf};
     cmd.drawCount = cmdBuf.GetDrawCmdNum();
-
-    if (data.bufferDescriptors.empty() == false)
-    {
-        // For now, use same descriptors as lighting, will adjust as needed
-        const auto transformSSBOSet = data.bufferDescriptors.at(UBO::DescriptorContentsType::GlobalInstanceData);
-        const auto texArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessTextureArray);
-        const auto gbufferUBOSet = data.bufferDescriptors.at(UBO::DescriptorContentsType::GBuffer);
-        cmd.descriptorSets = {texArraySet,
-                               data.mainView.descriptorSet,
-                               transformSSBOSet,
-                               gbufferUBOSet};
-    }
+    cmd.descriptorSets = execCtx.GetDescriptors();
 
     StartRenderPassProfilingScope(pCmdBuffer);
     pCmdBuffer->RecordCommand(cmdBegin);
@@ -129,6 +118,12 @@ void CompositPass::Render(const MainPassData& data, FrameRendererContext& ctx, C
 
 void CompositPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
 {
+    builder.DeclareContexts<
+        PassCtx::Bindless,
+        PassCtx::View,
+        PassCtx::GlobalInstance,
+        PassCtx::GBufferCtx>();
+
     builder.ReadTexture(RGResourceID::TemporalResolve, SyncStages::FRAGMENT_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
     builder.ReadTexture(RGResourceID::GBufferThisFrameColor, SyncStages::FRAGMENT_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
     builder.ReadTexture(RGResourceID::BloomMip0, SyncStages::FRAGMENT_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
@@ -146,17 +141,15 @@ void CompositPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data
     builder.SetHasSideEffects();
 }
 
+#include "Core/Rendering/Core/RenderGraph/RGExecutionContext.h"
+
 void CompositPass::CreateSharedDescriptorLayout()
 {
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalTextures, 0));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalArrayTextures, 0));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::View, 1));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::TransformSSBO, 2));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::GlobalObjectDataSSBOs, 2));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::InstanceDataSSBO, 2));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::PrevTransformSSBO, 2));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::GBufferUBO, 3));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::ShadowmapUBO, 3));
+    m_sharedDescriptors.clear();
+    AppendLayoutPreset(DescriptorPresets::Bindless(false));
+    AppendLayoutPreset(DescriptorPresets::View());
+    AppendLayoutPreset(DescriptorPresets::GlobalInstanceData());
+    AppendLayoutPreset(DescriptorPresets::GBuffer());
 }
 
 bool CompositPass::WantsToRender() const

@@ -1,19 +1,17 @@
 #pragma once
 #include "Core/Global/Typedefs.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
+#include "Core/Rendering/Core/FrameResourceManager.h"
+#include "Core/Rendering/Core/RT/RTSceneManager.h"
 #include "Core/Rendering/Core/RenderingForwardDecls.h"
+#include "Core/Rendering/Passes/MainPassData.h"
 #include "RGResourceRegistry.h"
-
-namespace RenderPasses
-{
-struct FrameRendererContext;
-struct MainPassData;
-}
 
 struct RGExecutionContext
 {
     CommandBuffer* pCmdBuffer{nullptr};
     const RenderPasses::FrameRendererContext* pFrameCtx{nullptr};
+    const RenderPasses::MainPassData* pMainPassData{nullptr};
     const stltype::vector<DescriptorSet::Ptr>* pResolvedDescriptors{nullptr};
     RGResourceRegistry* pRegistry{nullptr};
 
@@ -21,6 +19,42 @@ struct RGExecutionContext
     {
         DEBUG_ASSERT(pResolvedDescriptors != nullptr);
         return *pResolvedDescriptors;
+    }
+
+    u32 GetFrameIndex() const
+    {
+        return pFrameCtx ? pFrameCtx->currentFrame : 0;
+    }
+
+    f32 GetZNear() const
+    {
+        return pFrameCtx ? pFrameCtx->zNear : 0.1f;
+    }
+
+    f32 GetZFar() const
+    {
+        return pFrameCtx ? pFrameCtx->zFar : 300.0f;
+    }
+
+    u32 GetNumLights() const
+    {
+        return pFrameCtx ? pFrameCtx->numLights : 0;
+    }
+
+    mathstl::Vector2 GetRenderResolution() const
+    {
+        return pMainPassData ? pMainPassData->renderState.renderResolution : mathstl::Vector2{0.0f, 0.0f};
+    }
+
+    mathstl::Vector2 GetSwapchainResolution() const
+    {
+        return pMainPassData ? pMainPassData->renderState.swapchainResolution : mathstl::Vector2{0.0f, 0.0f};
+    }
+
+    bool HasReadyTLAS() const
+    {
+        return pMainPassData && pMainPassData->pRTSceneManager && pFrameCtx &&
+               pMainPassData->pRTSceneManager->HasReadyTLAS(pFrameCtx->currentFrame);
     }
 
     Texture* GetTexture(RGResourceHandle handle) const

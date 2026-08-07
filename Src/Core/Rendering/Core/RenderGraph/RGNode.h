@@ -61,8 +61,8 @@ struct RGNode
     bool IsCulled() const { return mathstl::isFlagSet(flags, (u32)RGNodeFlags::IsCulled); }
     void SetIsCulled(bool v = true) { mathstl::setFlag(flags, (u32)RGNodeFlags::IsCulled, v); }
 
-    stltype::fixed_vector<RGResourceAccess, 8> reads;
-    stltype::fixed_vector<RGResourceAccess, 8> writes;
+    stltype::fixed_vector<RGResourceAccess, 16> reads;
+    stltype::fixed_vector<RGResourceAccess, 16> writes;
 
     stltype::vector<PipelineDescriptorLayout> declaredLayouts;
 

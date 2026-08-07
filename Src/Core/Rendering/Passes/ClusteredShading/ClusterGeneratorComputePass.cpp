@@ -20,8 +20,7 @@ ClusterGeneratorComputePass::ClusterGeneratorComputePass() : ConvolutionRenderPa
     CreateSharedDescriptorLayout();
 }
 
-void ClusterGeneratorComputePass::Init(RendererAttachmentInfo& attachmentInfo,
-                                       const SharedResourceManager& resourceManager)
+void ClusterGeneratorComputePass::Init(const SharedResourceManager& resourceManager)
 {
     ScopedZone("ClusterGeneratorComputePass::Init");
     BuildBuffers();
@@ -54,19 +53,20 @@ void ClusterGeneratorComputePass::BuildPipelines()
 
 void ClusterGeneratorComputePass::CreateSharedDescriptorLayout()
 {
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::View, ViewSet));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::TileArraySSBO, LightClusterSet));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::LightUniformsUBO, LightClusterSet));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::ClusterAABBsSSBO, ClusterGridSet));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::ViewSpaceLightsSSBO, ViewSpaceLightsSet));
+    m_sharedDescriptors.clear();
+    AppendLayoutPreset({PipelineDescriptorLayout(UBO::BufferType::View, 0)});
+    AppendLayoutPreset(DescriptorPresets::LightCluster(1));
+    AppendLayoutPreset(DescriptorPresets::ClusterGrid(2));
+    AppendLayoutPreset({PipelineDescriptorLayout(UBO::BufferType::ViewSpaceLightsSSBO, 3)});
 }
 
 void ClusterGeneratorComputePass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
 {
     builder.DeclareContexts<
-        PassCtx::View,
-        PassCtx::LightCluster,
-        PassCtx::ClusterGrid>();
+        PassCtx::ClusteredView,
+        PassCtx::ClusteredLightCluster,
+        PassCtx::ClusterGrid,
+        PassCtx::ViewSpaceLights>();
 
     auto viewSpaceLights = builder.DeclareStorageBuffer(RGResourceID::Custom, UBO::ViewSpaceLightsSSBOSize);
     builder.SetCustomResourceName(viewSpaceLights, "ViewSpaceLightsSSBO");
@@ -83,61 +83,17 @@ void ClusterGeneratorComputePass::RenderWithGraph(const MainPassData& data, cons
     StartRenderPassProfilingScope(execCtx.pCmdBuffer);
     auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
 
-    if (!ctx.clusterGridDescriptor)
-    {
-        EndRenderPassProfilingScope(execCtx.pCmdBuffer);
-        return;
-    }
-
     m_pushConstants.clusterCount = renderState.clusterCount;
-    m_pushConstants.nearFar = mathstl::Vector4(ctx.zNear, ctx.zFar, 0.0f, 0.0f);
-    m_pushConstants.numLights = ctx.numLights;
+    m_pushConstants.nearFar = mathstl::Vector4(execCtx.GetZNear(), execCtx.GetZFar(), 0.0f, 0.0f);
+    m_pushConstants.numLights = execCtx.GetNumLights();
 
     const u32 workgroupsX = (m_pushConstants.clusterCount.x + 7) / 8;
     const u32 workgroupsY = (m_pushConstants.clusterCount.y + 7) / 8;
     const u32 workgroupsZ = m_pushConstants.clusterCount.z;
 
     GenericComputeDispatchCmd cmd(&m_pipeline, workgroupsX, workgroupsY, workgroupsZ);
-    
-    DescriptorSet::Ptr viewSpaceLightsDesc = data.pResourceManager->GetViewSpaceLightsDescriptorSet(ctx.currentFrame);
-    
-    cmd.descriptorSets = {ctx.sharedDataUBODescriptor, ctx.tileArraySSBODescriptor, ctx.clusterGridDescriptor, viewSpaceLightsDesc};
+    cmd.descriptorSets = execCtx.GetDescriptors();
     cmd.SetPushConstants(0, m_pushConstants);
     execCtx.pCmdBuffer->RecordCommand(cmd);
     EndRenderPassProfilingScope(execCtx.pCmdBuffer);
-}
-
-void ClusterGeneratorComputePass::Render(const MainPassData& data,
-                                         FrameRendererContext& ctx,
-                                         CommandBuffer* pCmdBuffer)
-{
-    ScopedZone("ClusterGeneratorComputePass::Render");
-
-    StartRenderPassProfilingScope(pCmdBuffer);
-
-    auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
-
-    if (!ctx.clusterGridDescriptor)
-    {
-        EndRenderPassProfilingScope(pCmdBuffer);
-        return;
-    }
-
-    m_pushConstants.clusterCount = renderState.clusterCount;
-    m_pushConstants.nearFar = mathstl::Vector4(ctx.zNear, ctx.zFar, 0.0f, 0.0f);
-    m_pushConstants.numLights = ctx.numLights;
-
-    const u32 workgroupsX = (m_pushConstants.clusterCount.x + 7) / 8;
-    const u32 workgroupsY = (m_pushConstants.clusterCount.y + 7) / 8;
-    const u32 workgroupsZ = m_pushConstants.clusterCount.z;
-
-    GenericComputeDispatchCmd cmd(&m_pipeline, workgroupsX, workgroupsY, workgroupsZ);
-    
-    DescriptorSet::Ptr viewSpaceLightsDesc = data.pResourceManager->GetViewSpaceLightsDescriptorSet(ctx.currentFrame);
-    
-    cmd.descriptorSets = {ctx.sharedDataUBODescriptor, ctx.tileArraySSBODescriptor, ctx.clusterGridDescriptor, viewSpaceLightsDesc};
-    cmd.SetPushConstants(0, m_pushConstants);
-    pCmdBuffer->RecordCommand(cmd);
-
-    EndRenderPassProfilingScope(pCmdBuffer);
 }

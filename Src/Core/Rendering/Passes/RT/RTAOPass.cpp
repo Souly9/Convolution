@@ -25,12 +25,10 @@ void RTAOPass::CreateSharedDescriptorLayout()
     AppendLayoutPreset(DescriptorPresets::RTScene());
 }
 
-void RTAOPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager)
+void RTAOPass::Init(const SharedResourceManager& resourceManager)
 {
     ScopedZone("RTAOPass::Init");
-    (void)attachmentInfo;
     (void)resourceManager;
-    CreateTLASDescriptorResources(true);
     BuildPipelines();
 }
 
@@ -73,6 +71,14 @@ bool RTAOPass::WantsToRender() const
 
 void RTAOPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
 {
+    builder.DeclareContexts<
+        PassCtx::BindlessWithImages,
+        PassCtx::View,
+        PassCtx::GlobalInstance,
+        PassCtx::GBufferCtx,
+        PassCtx::LightCluster,
+        PassCtx::RTScene>();
+
     builder.ReadTexture(RGResourceID::MainDepth, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
     builder.ReadTexture(RGResourceID::GBufferNormal, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
@@ -81,66 +87,30 @@ void RTAOPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
     builder.SetHasSideEffects();
 }
 
-void RTAOPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
+#include "Core/Rendering/Core/RenderGraph/RGExecutionContext.h"
+
+void RTAOPass::RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const RGExecutionContext& execCtx)
 {
-    if (data.pRTSceneManager == nullptr || data.pResourceManager == nullptr || data.rtaoTextureHandle == 0)
-    {
-        return;
-    }
+    ScopedZone("RTAOPass::Render");
 
-    const auto& sceneGeometryBuffers = data.pResourceManager->GetSceneGeometryBuffers();
-    if (!sceneGeometryBuffers.GetVertexBuffer().IsCreated() || !sceneGeometryBuffers.GetIndexBuffer().IsCreated())
-    {
-        return;
-    }
-
+    CommandBuffer* pCmdBuffer = execCtx.pCmdBuffer;
     StartRenderPassProfilingScope(pCmdBuffer);
 
-    const bool hasReadyTLAS = data.pRTSceneManager->HasReadyTLAS(ctx.imageIdx);
-    if (!hasReadyTLAS)
-    {
-        EndRenderPassProfilingScope(pCmdBuffer);
-        return;
-    }
-
-    {
-        const RT::TLASFrameData* pTLASFrameData = data.pRTSceneManager->GetTLASFrameData(ctx.imageIdx);
-        if (pTLASFrameData == nullptr || !pTLASFrameData->hitDataBuffer.IsCreated())
-        {
-            EndRenderPassProfilingScope(pCmdBuffer);
-            return;
-        }
-        else
-        {
-            m_tlasDescriptors[ctx.currentFrame]->WriteAccelerationStructureUpdate(pTLASFrameData->accelerationStructure,
-                                                                                  s_rtSceneASBindingSlot);
-            m_tlasDescriptors[ctx.currentFrame]->WriteSSBOUpdate(pTLASFrameData->hitDataBuffer,
-                                                                 s_rtInstanceHitDataBindingSlot);
-            m_tlasDescriptors[ctx.currentFrame]->WriteSSBOUpdate(sceneGeometryBuffers.GetVertexBuffer(),
-                                                                 s_rtSceneVertexBufferBindingSlot);
-            m_tlasDescriptors[ctx.currentFrame]->WriteSSBOUpdate(sceneGeometryBuffers.GetIndexBuffer(),
-                                                                 s_rtSceneIndexBufferBindingSlot);
-        }
-    }
+    const bool hasReadyTLAS = execCtx.HasReadyTLAS();
 
     const auto& rtState = g_pApplicationState->GetCurrentApplicationState().renderState.rt;
-    m_pushConstants.rtaoTexIdx = data.rtaoTextureHandle;
+    m_pushConstants.rtaoTexIdx = execCtx.GetBindless(RGResourceID::RTAOOutput);
     m_pushConstants.hasReadyTLAS = hasReadyTLAS ? 1u : 0u;
-    m_pushConstants.frameIndex = ctx.currentFrame;
+    m_pushConstants.frameIndex = execCtx.GetFrameIndex();
     m_pushConstants.raysPerPixel = rtState.aoRaysPerPixel;
     m_pushConstants.aoRadius = rtState.aoRadius;
     m_pushConstants.aoIntensity = rtState.aoIntensity;
 
-    const u32 groupCountX = (static_cast<u32>(data.renderState.renderResolution.x) + 7) / 8;
-    const u32 groupCountY = (static_cast<u32>(data.renderState.renderResolution.y) + 7) / 8;
+    const u32 groupCountX = (static_cast<u32>(execCtx.GetRenderResolution().x) + 7) / 8;
+    const u32 groupCountY = (static_cast<u32>(execCtx.GetRenderResolution().y) + 7) / 8;
 
     GenericComputeDispatchCmd dispatchCmd(&m_computePipeline, groupCountX, groupCountY, 1);
-    dispatchCmd.descriptorSets = {g_pTexManager->GetCombinedBindlessDescriptorSet(),
-                                  data.mainView.descriptorSet,
-                                  data.bufferDescriptors.at(UBO::DescriptorContentsType::GlobalInstanceData),
-                                  data.bufferDescriptors.at(UBO::DescriptorContentsType::GBuffer),
-                                  data.bufferDescriptors.at(UBO::DescriptorContentsType::LightData),
-                                  m_tlasDescriptors[ctx.currentFrame]};
+    dispatchCmd.descriptorSets = execCtx.GetDescriptors();
     dispatchCmd.SetPushConstants(0, m_pushConstants);
     pCmdBuffer->RecordCommand(dispatchCmd);
 

@@ -175,6 +175,7 @@ RGResourceHandle RenderGraphBuilder::WriteDepth(RGResourceID id, LoadOp loadOp)
 
 void RenderGraphBuilder::SetCustomResourceName(RGResourceHandle handle, const stltype::string& name)
 {
+    m_registry.SetCustomResourceName(handle, name);
 }
 
 RGResourceHandle RenderGraphBuilder::GetHistory(RGResourceHandle handle) const

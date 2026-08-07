@@ -16,19 +16,18 @@ ClusterDebugPass::ClusterDebugPass() : ConvolutionRenderPass("ClusterDebugPass")
     CreateSharedDescriptorLayout();
 }
 
-void ClusterDebugPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager)
+void ClusterDebugPass::Init(const SharedResourceManager& resourceManager)
 {
     ScopedZone("ClusterDebugPass::Init");
 
     for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
         m_indirectCmdBuffers[i].Init(1000000);
 
-    RecreateResolutionDependentResources(attachmentInfo, resourceManager);
+    RecreateResolutionDependentResources(resourceManager);
     BuildPipelines();
 }
 
-void ClusterDebugPass::RecreateResolutionDependentResources(RendererAttachmentInfo& attachmentInfo,
-                                                            const SharedResourceManager& resourceManager)
+void ClusterDebugPass::RecreateResolutionDependentResources(const SharedResourceManager& resourceManager)
 {
     ScopedZone("ClusterDebugPass::RecreateResolutionDependentResources");
 
@@ -41,7 +40,7 @@ void ClusterDebugPass::RecreateResolutionDependentResources(RendererAttachmentIn
     m_mainRenderingData.depthAttachment =
         CreateReadOnlyDepthAttachment(LoadOp::LOAD, nullptr);
 
-    InitBaseData(attachmentInfo);
+    InitBaseData();
 }
 
 void ClusterDebugPass::BuildBuffers()
@@ -108,6 +107,11 @@ void ClusterDebugPass::RebuildInternalData(const stltype::vector<PassMeshData>& 
 
 void ClusterDebugPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
 {
+    builder.DeclareContexts<
+        PassCtx::Bindless,
+        PassCtx::View,
+        PassCtx::ClusterGrid>();
+
     builder.WriteGBuffer(RGResourceID::GBufferDebug, LoadOp::LOAD);
     builder.ReadDepth(RGResourceID::MainDepth);
     builder.SetHasSideEffects();
@@ -127,13 +131,13 @@ void ClusterDebugPass::RenderWithGraph(const MainPassData& data,
     if (totalClusters == 0)
         return;
 
-    m_currentFrameIdx = ctx.currentFrame;
+    m_currentFrameIdx = execCtx.GetFrameIndex();
     auto& cmdBuf = m_indirectCmdBuffers[m_currentFrameIdx];
     cmdBuf.EmptyCmds();
     cmdBuf.AddIndexedDrawCmd(24, totalClusters, 0, 0, 0);
     cmdBuf.FillCmds();
 
-    const DirectX::XMINT2 extents(data.renderState.renderResolution.x, data.renderState.renderResolution.y);
+    const DirectX::XMINT2 extents(execCtx.GetRenderResolution().x, execCtx.GetRenderResolution().y);
 
     ColorAttachment gbufferDebug = m_mainRenderingData.colorAttachments[0];
     gbufferDebug.SetTexture(execCtx.GetTexture(RGResourceID::GBufferDebug));
@@ -149,17 +153,7 @@ void ClusterDebugPass::RenderWithGraph(const MainPassData& data,
 
     GenericIndirectDrawCmd cmd{&m_pipeline, cmdBuf};
     cmd.drawCount = 1;
-
-    if (data.bufferDescriptors.empty())
-        cmd.descriptorSets = {DescriptorSet::Cast(g_pTexManager->GetBindlessDescriptorSet()),
-                              data.mainView.descriptorSet,
-                              ctx.clusterGridDescriptor};
-    else
-    {
-        const auto texArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessTextureArray);
-        const auto clusterGridSet = data.bufferDescriptors.at(UBO::DescriptorContentsType::ClusterGrid);
-        cmd.descriptorSets = {texArraySet, data.mainView.descriptorSet, clusterGridSet};
-    }
+    cmd.descriptorSets = execCtx.GetDescriptors();
 
     StartRenderPassProfilingScope(execCtx.pCmdBuffer);
     execCtx.pCmdBuffer->RecordCommand(cmdBegin);

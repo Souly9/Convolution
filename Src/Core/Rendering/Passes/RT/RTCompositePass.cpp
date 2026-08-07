@@ -15,9 +15,8 @@ RTCompositePass::RTCompositePass() : ConvolutionRenderPass("RTCompositePass")
     CreateSharedDescriptorLayout();
 }
 
-void RTCompositePass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager)
+void RTCompositePass::Init(const SharedResourceManager& resourceManager)
 {
-    (void)attachmentInfo;
     (void)resourceManager;
     BuildPipelines();
 }
@@ -41,9 +40,32 @@ void RTCompositePass::BuildPipelines()
     m_pipeline = ComputePipeline(shaders, pipeInfo);
 }
 
-void RTCompositePass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
+#include "Core/Rendering/Core/RenderGraph/RenderGraphBuilder.h"
+
+void RTCompositePass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
+{
+    builder.DeclareContexts<
+        PassCtx::BindlessWithImages,
+        PassCtx::View,
+        PassCtx::GlobalInstance,
+        PassCtx::GBufferCtx>();
+
+    builder.ReadTexture(RGResourceID::MainDepth, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+    builder.ReadTexture(RGResourceID::GBufferVelocity, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    builder.ReadTexture(RGResourceID::RTAOOutput, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    builder.ReadTexture(RGResourceID::RTReflections, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+
+    auto sceneColor = builder.DeclareStorageTexture(RGResourceID::GBufferThisFrameColor, TexFormat::R16G16B16A16_FLOAT, RGSizeClass::RenderResolution);
+    builder.WriteStorageImage(sceneColor, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ | AccessFlags::SHADER_WRITE);
+    builder.SetHasSideEffects();
+}
+
+#include "Core/Rendering/Core/RenderGraph/RGExecutionContext.h"
+
+void RTCompositePass::RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const RGExecutionContext& execCtx)
 {
     ScopedZone("RTCompositePass::Render");
+    CommandBuffer* pCmdBuffer = execCtx.pCmdBuffer;
     StartRenderPassProfilingScope(pCmdBuffer);
 
     const bool shouldReset = !m_wasActive || data.renderState.recreatedThisFrame;
@@ -62,25 +84,17 @@ void RTCompositePass::Render(const MainPassData& data, FrameRendererContext& ctx
 
     m_pushConstants.resetHistory = shouldReset ? 1u : 0u;
     m_pushConstants.accumRate = 1.0f / static_cast<float>(m_accumFrameCount + 1);
-    m_pushConstants.accumTexIdx = data.rtAccumulationTextureHandle;
-    m_pushConstants.rtaoTexIdx = rtaoEnabled ? data.rtaoTextureHandle : 0u;
-    m_pushConstants.rtReflectionsTexIdx = reflectionsEnabled ? data.rtReflectionsTextureHandle : 0u;
+    m_pushConstants.accumTexIdx = execCtx.GetBindless(RGResourceID::RTAccumulation);
+    m_pushConstants.rtaoTexIdx = rtaoEnabled ? execCtx.GetBindless(RGResourceID::RTAOOutput) : 0u;
+    m_pushConstants.rtReflectionsTexIdx = reflectionsEnabled ? execCtx.GetBindless(RGResourceID::RTReflections) : 0u;
 
-    const u32 groupCountX = (static_cast<u32>(data.renderState.renderResolution.x) + 7) / 8;
-    const u32 groupCountY = (static_cast<u32>(data.renderState.renderResolution.y) + 7) / 8;
+    const u32 groupCountX = (static_cast<u32>(execCtx.GetRenderResolution().x) + 7) / 8;
+    const u32 groupCountY = (static_cast<u32>(execCtx.GetRenderResolution().y) + 7) / 8;
     const u32 groupCountZ = 1;
 
     GenericComputeDispatchCmd cmd(&m_pipeline, groupCountX, groupCountY, groupCountZ);
-    if (!data.bufferDescriptors.empty())
-    {
-        const auto gbufferUBOSet = data.bufferDescriptors.at(UBO::DescriptorContentsType::GBuffer);
-
-        cmd.descriptorSets = {g_pTexManager->GetCombinedBindlessDescriptorSet(),
-                              data.mainView.descriptorSet,
-                              data.bufferDescriptors.at(UBO::DescriptorContentsType::GlobalInstanceData),
-                              gbufferUBOSet};
-        cmd.SetPushConstants(0, m_pushConstants);
-    }
+    cmd.descriptorSets = execCtx.GetDescriptors();
+    cmd.SetPushConstants(0, m_pushConstants);
     pCmdBuffer->RecordCommand(cmd);
 
     EndRenderPassProfilingScope(pCmdBuffer);
@@ -108,18 +122,4 @@ bool RTCompositePass::WantsToRender() const
         m_wasActive = false;
     }
     return wantsToRender;
-}
-
-#include "Core/Rendering/Core/RenderGraph/RenderGraphBuilder.h"
-
-void RTCompositePass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
-{
-    builder.ReadTexture(RGResourceID::MainDepth, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
-    builder.ReadTexture(RGResourceID::GBufferVelocity, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-    builder.ReadTexture(RGResourceID::RTAOOutput, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-    builder.ReadTexture(RGResourceID::RTReflections, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-
-    auto sceneColor = builder.DeclareStorageTexture(RGResourceID::GBufferThisFrameColor, TexFormat::R16G16B16A16_FLOAT, RGSizeClass::RenderResolution);
-    builder.WriteStorageImage(sceneColor, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ | AccessFlags::SHADER_WRITE);
-    builder.SetHasSideEffects();
 }

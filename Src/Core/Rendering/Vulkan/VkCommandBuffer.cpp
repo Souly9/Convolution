@@ -8,6 +8,7 @@
 #include "Core/Rendering/Vulkan/VulkanTraits.h"
 #include "Utils/VkEnumHelpers.h"
 #include "VkGlobals.h"
+#include "VkTracyManager.h"
 #include <backends/imgui_impl_vulkan.h>
 #include <imgui.h>
 
@@ -122,6 +123,11 @@ static void RecordCommand(StartProfilingScopeCmd& cmd, CBufferVulkan& buffer)
     {
         vkBeginDebugUtilsLabel(buffer.GetRef(), &profilingScopeInfo);
     }
+
+    if (VkGlobals::GetTracyManager())
+    {
+        VkGlobals::GetTracyManager()->StartZone(CommandBuffer::Cast(&buffer), cmd.name, cmd.color);
+    }
 }
 
 static void RecordCommand(EndProfilingScopeCmd& cmd, CBufferVulkan& buffer)
@@ -129,6 +135,11 @@ static void RecordCommand(EndProfilingScopeCmd& cmd, CBufferVulkan& buffer)
     if (vkCmdEndDebugUtilsLabel)
     {
         vkCmdEndDebugUtilsLabel(buffer.GetRef());
+    }
+
+    if (VkGlobals::GetTracyManager())
+    {
+        VkGlobals::GetTracyManager()->EndZone(CommandBuffer::Cast(&buffer));
     }
 }
 
@@ -183,26 +194,29 @@ static void RecordCommand(GenericIndirectDrawCmd& cmd, CBufferVulkan& buffer)
 {
     if (cmd.descriptorSets.empty() == false)
     {
-        stltype::vector<VkDescriptorSet> sets(cmd.descriptorSets.size());
-        for (u32 i = 0; i < sets.size(); ++i)
-            sets[i] = cmd.descriptorSets[i]->GetRef();
-
-        vkCmdBindDescriptorSets(buffer.GetRef(),
-                                VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                cmd.pso->GetLayout(),
-                                0,
-                                cmd.descriptorSets.size(),
-                                sets.data(),
-                                0,
-                                nullptr);
-        buffer.TrackBoundDescriptorSets(VK_PIPELINE_BIND_POINT_GRAPHICS,
+        for (u32 setIdx = 0; setIdx < cmd.descriptorSets.size(); ++setIdx)
+        {
+            if (cmd.descriptorSets[setIdx] != nullptr && cmd.descriptorSets[setIdx]->GetRef() != VK_NULL_HANDLE)
+            {
+                VkDescriptorSet setHandle = cmd.descriptorSets[setIdx]->GetRef();
+                vkCmdBindDescriptorSets(buffer.GetRef(),
+                                        VK_PIPELINE_BIND_POINT_GRAPHICS,
                                         cmd.pso->GetLayout(),
-                                        0,
-                                        static_cast<u32>(sets.size()),
-                                        sets.data(),
+                                        setIdx,
+                                        1,
+                                        &setHandle,
                                         0,
                                         nullptr);
-        buffer.GetStats().descriptorBinds += cmd.descriptorSets.size();
+                buffer.TrackBoundDescriptorSets(VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                                cmd.pso->GetLayout(),
+                                                setIdx,
+                                                1,
+                                                &setHandle,
+                                                0,
+                                                nullptr);
+                buffer.GetStats().descriptorBinds++;
+            }
+        }
     }
 
     if (cmd.pushConstantSize > 0)
@@ -228,27 +242,29 @@ static void RecordCommand(GenericInstancedDrawCmd& cmd, CBufferVulkan& buffer)
 {
     if (cmd.descriptorSets.empty() == false)
     {
-        stltype::vector<VkDescriptorSet> sets(cmd.descriptorSets.size());
-        for (u32 i = 0; i < sets.size(); ++i)
-            sets[i] = cmd.descriptorSets[i]->GetRef();
-
-        vkCmdBindDescriptorSets(buffer.GetRef(),
-                                VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                cmd.pso->GetLayout(),
-                                0,
-                                cmd.descriptorSets.size(),
-                                sets.data(),
-                                0,
-                                nullptr);
-        buffer.TrackBoundDescriptorSets(VK_PIPELINE_BIND_POINT_GRAPHICS,
+        for (u32 setIdx = 0; setIdx < cmd.descriptorSets.size(); ++setIdx)
+        {
+            if (cmd.descriptorSets[setIdx] != nullptr && cmd.descriptorSets[setIdx]->GetRef() != VK_NULL_HANDLE)
+            {
+                VkDescriptorSet setHandle = cmd.descriptorSets[setIdx]->GetRef();
+                vkCmdBindDescriptorSets(buffer.GetRef(),
+                                        VK_PIPELINE_BIND_POINT_GRAPHICS,
                                         cmd.pso->GetLayout(),
-                                        0,
-                                        static_cast<u32>(sets.size()),
-                                        sets.data(),
+                                        setIdx,
+                                        1,
+                                        &setHandle,
                                         0,
                                         nullptr);
-
-        buffer.GetStats().descriptorBinds += cmd.descriptorSets.size();
+                buffer.TrackBoundDescriptorSets(VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                                cmd.pso->GetLayout(),
+                                                setIdx,
+                                                1,
+                                                &setHandle,
+                                                0,
+                                                nullptr);
+                buffer.GetStats().descriptorBinds++;
+            }
+        }
     }
 
     if (cmd.pushConstantSize > 0)
@@ -514,27 +530,29 @@ static void RecordCommand(GenericComputeDispatchCmd& cmd, CBufferVulkan& buffer)
 
     if (cmd.descriptorSets.empty() == false)
     {
-        stltype::vector<VkDescriptorSet> sets(cmd.descriptorSets.size());
-        for (u32 i = 0; i < sets.size(); ++i)
-            sets[i] = cmd.descriptorSets[i]->GetRef();
-
-        vkCmdBindDescriptorSets(buffer.GetRef(),
-                                VK_PIPELINE_BIND_POINT_COMPUTE,
-                                cmd.pPipeline->GetLayout(),
-                                0,
-                                static_cast<u32>(sets.size()),
-                                sets.data(),
-                                0,
-                                nullptr);
-        buffer.TrackBoundDescriptorSets(VK_PIPELINE_BIND_POINT_COMPUTE,
+        for (u32 setIdx = 0; setIdx < cmd.descriptorSets.size(); ++setIdx)
+        {
+            if (cmd.descriptorSets[setIdx] != nullptr && cmd.descriptorSets[setIdx]->GetRef() != VK_NULL_HANDLE)
+            {
+                VkDescriptorSet setHandle = cmd.descriptorSets[setIdx]->GetRef();
+                vkCmdBindDescriptorSets(buffer.GetRef(),
+                                        VK_PIPELINE_BIND_POINT_COMPUTE,
                                         cmd.pPipeline->GetLayout(),
-                                        0,
-                                        static_cast<u32>(sets.size()),
-                                        sets.data(),
+                                        setIdx,
+                                        1,
+                                        &setHandle,
                                         0,
                                         nullptr);
-
-        buffer.GetStats().descriptorBinds += sets.size();
+                buffer.TrackBoundDescriptorSets(VK_PIPELINE_BIND_POINT_COMPUTE,
+                                                cmd.pPipeline->GetLayout(),
+                                                setIdx,
+                                                1,
+                                                &setHandle,
+                                                0,
+                                                nullptr);
+                buffer.GetStats().descriptorBinds++;
+            }
+        }
     }
 
     if (cmd.pushConstantSize > 0)

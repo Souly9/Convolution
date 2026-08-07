@@ -12,21 +12,10 @@
 #include "Core/Rendering/Core/Defines/VertexDefines.h"
 #include "Core/Rendering/Core/RenderGraph/RGExecutionContext.h"
 
-namespace RenderPasses
-{
-struct RendererAttachmentInfo {};
-}
-
+class RenderGraphBuilder;
 class SharedResourceManager;
 class GPUTimingQueryBase;
-class RenderGraphBuilder;
 
-namespace VertexInputDefines
-{
-enum class VertexAttributeTemplates;
-
-enum class VertexAttributes;
-} // namespace VertexInputDefines
 namespace RenderPasses
 {
 struct PassMeshData;
@@ -52,22 +41,16 @@ public:
                                      FrameRendererContext& previousFrameCtx,
                                      u32 thisFrameNum) = 0;
 
-    virtual void Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer) = 0;
+    virtual void Setup(RenderGraphBuilder& builder, const MainPassData& data) = 0;
 
-    virtual void Setup(::RenderGraphBuilder& builder, const MainPassData& data)
-    {
-    }
-
-    virtual void RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const struct RGExecutionContext& execCtx)
-    {
-        Render(data, const_cast<FrameRendererContext&>(ctx), execCtx.pCmdBuffer);
-    }
+    virtual void RenderWithGraph(const MainPassData& data,
+                                 const FrameRendererContext& ctx,
+                                 const struct RGExecutionContext& execCtx) = 0;
 
     virtual void CreateSharedDescriptorLayout() = 0;
 
-    virtual void Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager) = 0;
-    virtual void RecreateResolutionDependentResources(RendererAttachmentInfo& attachmentInfo,
-                                                      const SharedResourceManager& resourceManager)
+    virtual void Init(const SharedResourceManager& resourceManager) = 0;
+    virtual void RecreateResolutionDependentResources(const SharedResourceManager& resourceManager)
     {
     }
     virtual void BuildPipelines()
@@ -85,7 +68,7 @@ public:
         return QueueType::Graphics;
     }
 
-    void InitBaseData(const RendererAttachmentInfo& attachmentInfo);
+    void InitBaseData();
 
     const stltype::string& GetName() const
     {

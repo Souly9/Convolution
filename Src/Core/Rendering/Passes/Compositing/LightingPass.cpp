@@ -10,23 +10,22 @@ using LightingContext = PassContextPack<
     PassCtx::BindlessWithImages,
     PassCtx::View,
     PassCtx::GlobalInstance,
-    PassCtx::LightCluster,
-    PassCtx::GBufferCtx>;
+    PassCtx::GBufferCtx,
+    PassCtx::LightCluster>;
 
 LightingPass::LightingPass() : ConvolutionRenderPass("LightingPass")
 {
     CreateSharedDescriptorLayout();
 }
 
-void LightingPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager)
+void LightingPass::Init(const SharedResourceManager& resourceManager)
 {
     ScopedZone("LightingPass::Init");
-    RecreateResolutionDependentResources(attachmentInfo, resourceManager);
+    RecreateResolutionDependentResources(resourceManager);
     BuildPipelines();
 }
 
-void LightingPass::RecreateResolutionDependentResources(RendererAttachmentInfo& attachmentInfo,
-                                                        const SharedResourceManager& resourceManager)
+void LightingPass::RecreateResolutionDependentResources(const SharedResourceManager& resourceManager)
 {
 }
 
@@ -50,8 +49,8 @@ void LightingPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data
         PassCtx::BindlessWithImages,
         PassCtx::View,
         PassCtx::GlobalInstance,
-        PassCtx::LightCluster,
-        PassCtx::GBufferCtx>();
+        PassCtx::GBufferCtx,
+        PassCtx::LightCluster>();
 
     builder.ReadTexture(RGResourceID::MainDepth, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
     builder.ReadTexture(RGResourceID::GBufferAlbedo, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
@@ -80,43 +79,14 @@ void LightingPass::RenderWithGraph(const MainPassData& data, const FrameRenderer
     EndRenderPassProfilingScope(execCtx.pCmdBuffer);
 }
 
-void LightingPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
-{
-    ScopedZone("LightingPass::Render");
-    StartRenderPassProfilingScope(pCmdBuffer);
-
-    const u32 groupCountX = (static_cast<u32>(data.renderState.renderResolution.x) + 7) / 8;
-    const u32 groupCountY = (static_cast<u32>(data.renderState.renderResolution.y) + 7) / 8;
-    const u32 groupCountZ = 1;
-
-    GenericComputeDispatchCmd cmd(&m_computePipeline, groupCountX, groupCountY, groupCountZ);
-
-    if (!data.bufferDescriptors.empty())
-    {
-        const auto transformSSBOSet = data.bufferDescriptors.at(UBO::DescriptorContentsType::GlobalInstanceData);
-        const auto combinedBindlessSet = DescriptorSet::Cast(g_pTexManager->GetCombinedBindlessDescriptorSet());
-        const auto tileArraySSBOSet = data.bufferDescriptors.at(UBO::DescriptorContentsType::LightData);
-        const auto gbufferUBO = data.bufferDescriptors.at(UBO::DescriptorContentsType::GBuffer);
-
-        cmd.descriptorSets = {combinedBindlessSet,
-                              data.mainView.descriptorSet,
-                              transformSSBOSet,
-                              tileArraySSBOSet,
-                              gbufferUBO};
-    }
-
-    pCmdBuffer->RecordCommand(cmd);
-    EndRenderPassProfilingScope(pCmdBuffer);
-}
-
 void LightingPass::CreateSharedDescriptorLayout()
 {
     m_sharedDescriptors.clear();
     AppendLayoutPreset(DescriptorPresets::Bindless(true));
     AppendLayoutPreset(DescriptorPresets::View());
     AppendLayoutPreset(DescriptorPresets::GlobalInstanceData());
-    AppendLayoutPreset(DescriptorPresets::LightCluster(3));
-    AppendLayoutPreset(DescriptorPresets::GBuffer(4));
+    AppendLayoutPreset(DescriptorPresets::GBuffer());
+    AppendLayoutPreset(DescriptorPresets::LightCluster());
 }
 
 bool LightingPass::WantsToRender() const

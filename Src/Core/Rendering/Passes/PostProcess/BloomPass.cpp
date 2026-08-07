@@ -21,7 +21,7 @@ BloomPass::~BloomPass()
 {
 }
 
-void BloomPass::Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager)
+void BloomPass::Init(const SharedResourceManager& resourceManager)
 {
     ScopedZone("BloomPass::Init");
     BuildPipelines();
@@ -65,11 +65,9 @@ bool BloomPass::WantsToRender() const
 void BloomPass::CreateSharedDescriptorLayout()
 {
     m_sharedDescriptors.clear();
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalTextures, 0));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalArrayTextures, 0));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalImages, 1));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::GBufferUBO, 2));
-    m_sharedDescriptors.emplace_back(PipelineDescriptorLayout(UBO::BufferType::ShadowmapUBO, 2));
+    AppendLayoutPreset(DescriptorPresets::Bindless(true));
+    AppendLayoutPreset(DescriptorPresets::View());
+    AppendLayoutPreset(DescriptorPresets::GBuffer());
 }
 
 void BloomPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
@@ -113,17 +111,13 @@ void BloomPass::RenderWithGraph(const MainPassData& data, const FrameRendererCon
         currH = stltype::max(1u, currH / 2u);
     }
 
-    const auto texArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessTextureArray);
-    const auto imageArraySet = data.bufferDescriptors.at(UBO::DescriptorContentsType::BindlessImageArray);
-    const auto gbufferUBO = data.bufferDescriptors.at(UBO::DescriptorContentsType::GBuffer);
-
     // ------------------------------------------------------------------------
     // Step 1: Progressive Downsample Chain (Jimenez 13-Tap Filter)
     // ------------------------------------------------------------------------
     for (u32 i = 0; i < 5; ++i)
     {
-        const u32 srcW = (i == 0) ? static_cast<u32>(data.renderState.renderResolution.x) : mips[i - 1].width;
-        const u32 srcH = (i == 0) ? static_cast<u32>(data.renderState.renderResolution.y) : mips[i - 1].height;
+        const u32 srcW = (i == 0) ? static_cast<u32>(execCtx.GetRenderResolution().x) : mips[i - 1].width;
+        const u32 srcH = (i == 0) ? static_cast<u32>(execCtx.GetRenderResolution().y) : mips[i - 1].height;
         const u32 dstW = mips[i].width;
         const u32 dstH = mips[i].height;
 
@@ -152,7 +146,7 @@ void BloomPass::RenderWithGraph(const MainPassData& data, const FrameRendererCon
         u32 groupY = (dstH + 7u) / 8u;
 
         GenericComputeDispatchCmd cmd(&m_downsamplePipeline, groupX, groupY, 1);
-        cmd.descriptorSets = {texArraySet, imageArraySet, gbufferUBO};
+        cmd.descriptorSets = execCtx.GetDescriptors();
         cmd.SetPushConstants(0, m_pushConstants);
         execCtx.pCmdBuffer->RecordCommand(cmd);
         execCtx.pCmdBuffer->RecordCommand(GlobalBarrierCmd(
@@ -205,7 +199,7 @@ void BloomPass::RenderWithGraph(const MainPassData& data, const FrameRendererCon
         u32 groupY = (dstH + 7u) / 8u;
 
         GenericComputeDispatchCmd cmd(&m_upsamplePipeline, groupX, groupY, 1);
-        cmd.descriptorSets = {texArraySet, imageArraySet, gbufferUBO};
+        cmd.descriptorSets = execCtx.GetDescriptors();
         cmd.SetPushConstants(0, m_pushConstants);
         execCtx.pCmdBuffer->RecordCommand(cmd);
         execCtx.pCmdBuffer->RecordCommand(GlobalBarrierCmd(
@@ -218,6 +212,11 @@ void BloomPass::RenderWithGraph(const MainPassData& data, const FrameRendererCon
 
 void BloomPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
 {
+    builder.DeclareContexts<
+        PassCtx::BindlessWithImages,
+        PassCtx::View,
+        PassCtx::GBufferCtx>();
+
     builder.ReadTexture(RGResourceID::GBufferThisFrameColor, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
     static const RGResourceID bloomResIDs[5] = {

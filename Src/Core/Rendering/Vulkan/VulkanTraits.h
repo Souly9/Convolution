@@ -27,6 +27,7 @@ class DepthAttachmentVulkan;
 class GPUTimingQueryVulkan;
 class ShaderVulkan;
 class AccelerationStructureVulkan;
+class VkTracyGPUManager;
 
 template<>
 struct APITraits<API_Vulkan>
@@ -56,5 +57,5 @@ struct APITraits<API_Vulkan>
     using GPUTimingQueryType = GPUTimingQueryVulkan;
     using ShaderType = ShaderVulkan;
     using AccelerationStructureType = AccelerationStructureVulkan;
-    // Add other types as we migrate them...
+    using TracyGPUManagerType = VkTracyGPUManager;
 };

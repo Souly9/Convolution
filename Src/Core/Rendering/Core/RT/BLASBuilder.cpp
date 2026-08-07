@@ -1,4 +1,5 @@
 #include "BLASBuilder.h"
+#include "Core/Global/ConvolutionState.h"
 #include "Core/Global/LogDefines.h"
 #include <format>
 #include "Core/Rendering/Core/CommandBuffer.h"

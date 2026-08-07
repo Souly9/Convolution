@@ -53,6 +53,7 @@ public:
     const RGResourceSpec* GetSpec(RGResourceHandle handle) const;
     ImageLayout GetInitialLayout(RGResourceHandle handle) const;
     void SetResourceLayout(RGResourceHandle handle, ImageLayout layout);
+    void SetCustomResourceName(RGResourceHandle handle, const stltype::string& name);
     void MarkReferenced(RGResourceHandle handle);
 
     u32 GetResourceCount() const { return static_cast<u32>(m_resources.size()); }

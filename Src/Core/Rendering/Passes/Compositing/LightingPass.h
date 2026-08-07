@@ -9,15 +9,13 @@ class LightingPass : public ConvolutionRenderPass
 public:
     LightingPass();
     virtual void BuildBuffers() override {}
-    virtual void Init(RendererAttachmentInfo& attachmentInfo, const SharedResourceManager& resourceManager) override;
-    virtual void RecreateResolutionDependentResources(RendererAttachmentInfo& attachmentInfo,
-                                                      const SharedResourceManager& resourceManager) override;
+    virtual void Init(const SharedResourceManager& resourceManager) override;
+    virtual void RecreateResolutionDependentResources(const SharedResourceManager& resourceManager) override;
     virtual void BuildPipelines() override;
 
     virtual void RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
                                      FrameRendererContext& previousFrameCtx,
                                      u32 thisFrameNum) override {}
-    virtual void Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer) override;
     virtual void Setup(::RenderGraphBuilder& builder, const MainPassData& data) override;
     virtual void RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const struct RGExecutionContext& execCtx) override;
     virtual void CreateSharedDescriptorLayout() override;
