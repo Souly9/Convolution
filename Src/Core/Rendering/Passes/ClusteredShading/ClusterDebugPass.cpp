@@ -30,16 +30,6 @@ void ClusterDebugPass::Init(const SharedResourceManager& resourceManager)
 void ClusterDebugPass::RecreateResolutionDependentResources(const SharedResourceManager& resourceManager)
 {
     ScopedZone("ClusterDebugPass::RecreateResolutionDependentResources");
-
-    GBufferInfo gbufferInfo{};
-    const auto gbufferDebug =
-        CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBufferDebug), LoadOp::LOAD, nullptr);
-
-    m_mainRenderingData.colorAttachments.clear();
-    m_mainRenderingData.colorAttachments.push_back(std::move(gbufferDebug));
-    m_mainRenderingData.depthAttachment =
-        CreateReadOnlyDepthAttachment(LoadOp::LOAD, nullptr);
-
     InitBaseData();
 }
 
@@ -74,9 +64,8 @@ void ClusterDebugPass::BuildPipelines()
     PipelineInfo info{};
     info.descriptorSetLayout.sharedDescriptors = m_sharedDescriptors;
 
-    // Match the attachments
-    info.attachmentInfos =
-        CreateAttachmentInfo({m_mainRenderingData.colorAttachments}, m_mainRenderingData.depthAttachment);
+    info.attachmentInfos.colorAttachments = { TexFormat::R16G16B16A16_FLOAT };
+    info.attachmentInfos.depthAttachmentFormat = TexFormat::D32_SFLOAT;
 
     // Topology: Line List
     info.topology = Topology::Lines;
@@ -139,15 +128,10 @@ void ClusterDebugPass::RenderWithGraph(const MainPassData& data,
 
     const DirectX::XMINT2 extents(execCtx.GetRenderResolution().x, execCtx.GetRenderResolution().y);
 
-    ColorAttachment gbufferDebug = m_mainRenderingData.colorAttachments[0];
-    gbufferDebug.SetTexture(execCtx.GetTexture(RGResourceID::GBufferDebug));
+    RenderAttachmentInfo colorAttachment = execCtx.GetColorAttachment(RGResourceID::GBufferDebug, LoadOp::LOAD);
+    RenderAttachmentInfo depthAttachment = execCtx.GetReadOnlyDepthAttachment(RGResourceID::MainDepth);
 
-    stltype::vector<ColorAttachment> colorAttachments = {gbufferDebug};
-
-    m_mainRenderingData.depthAttachment.SetTexture(execCtx.GetTexture(RGResourceID::MainDepth));
-    BeginRenderingCmd cmdBegin{&m_pipeline,
-                               ToRenderAttachmentInfos(colorAttachments),
-                               ToRenderAttachmentInfo(m_mainRenderingData.depthAttachment)};
+    BeginRenderingCmd cmdBegin{&m_pipeline, {colorAttachment}, depthAttachment};
     cmdBegin.extents = extents;
     cmdBegin.viewport = data.mainView.viewport;
 

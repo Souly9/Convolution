@@ -13,5 +13,6 @@ public:
     }
 
     QueueType GetQueueType() const override { return QueueType::Compute; }
+    PassStage GetPassStage() const override { return PassStage::Lighting; }
 };
 } // namespace RenderPasses

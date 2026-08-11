@@ -302,8 +302,12 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
         g_pMaterialManager->MarkBufferUploaded();
     }
 
+    if (m_dataToBePreProcessed.mainView.zFar > 0.0f)
     {
-        const auto& mainView = m_dataToBePreProcessed.mainView;
+        m_cachedMainView = m_dataToBePreProcessed.mainView;
+    }
+    {
+        const auto& mainView = (m_dataToBePreProcessed.mainView.zFar > 0.0f) ? m_dataToBePreProcessed.mainView : m_cachedMainView;
         auto& ctx = m_frameRendererContexts[currentSwapChainIdx];
         mathstl::Matrix viewMat{};
         mathstl::Matrix viewProj{};
@@ -727,6 +731,10 @@ void FrameResourceManager::SetLightDeltaForFrame(stltype::vector<LightDeltaUpdat
 void FrameResourceManager::SetSharedData(RenderView&& mainView, u32 frameIdx)
 {
     m_passDataMutex.lock();
+    if (mainView.zFar > 0.0f)
+    {
+        m_cachedMainView = mainView;
+    }
     m_dataToBePreProcessed.mainView = std::move(mainView);
     m_dataToBePreProcessed.frameIdx = frameIdx;
     m_passDataMutex.unlock();
@@ -786,6 +794,7 @@ void FrameResourceManager::ClearGeometryCaches()
     SimpleScopedGuard lock(m_passDataMutex);
     m_currentPassGeometryState = PassGeometryData{};
     m_dataToBePreProcessed.Clear();
+    m_cachedMainView = RenderView{};
     m_entityToTransformUBOIdx.clear();
     m_entityToObjectDataIdx.clear();
     m_cachedTransformSSBO.clear();

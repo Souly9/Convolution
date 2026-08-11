@@ -28,14 +28,13 @@ public:
     void Setup(::RenderGraphBuilder& builder, const MainPassData& data) override;
 
     bool WantsToRender() const override;
+    PassStage GetPassStage() const override { return PassStage::PostProcess; }
 
 private:
     PSO m_edgePSO;
     PSO m_blendPSO;
     PSO m_neighborhoodPSO;
 
-    
-    
     BindlessTextureHandle m_searchTexBindless{0};
     BindlessTextureHandle m_areaTexBindless{0};
     u32 m_currentFrameIdx{0};

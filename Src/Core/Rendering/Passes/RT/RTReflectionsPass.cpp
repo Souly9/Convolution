@@ -99,14 +99,18 @@ void RTReflectionsPass::RenderWithGraph(const MainPassData& data, const FrameRen
     CommandBuffer* pCmdBuffer = execCtx.pCmdBuffer;
     StartRenderPassProfilingScope(pCmdBuffer);
 
-    const bool hasReadyTLAS = execCtx.HasReadyTLAS();
+    if (!execCtx.HasReadyTLAS())
+    {
+        EndRenderPassProfilingScope(pCmdBuffer);
+        return;
+    }
 
     const auto& rtState = g_pApplicationState->GetCurrentApplicationState().renderState.rt;
     m_pushConstants.reflectionsTexIdx = execCtx.GetBindless(RGResourceID::RTReflections);
     m_pushConstants.debugMode = static_cast<u32>(rtState.reflectionsDebugMode);
     m_pushConstants.maxRayDistance = execCtx.GetZFar();
     m_pushConstants.reflectionIntensity = 1.0f;
-    m_pushConstants.hasReadyTLAS = hasReadyTLAS ? 1u : 0u;
+    m_pushConstants.hasReadyTLAS = 1u;
     m_pushConstants.frameIndex = execCtx.GetFrameIndex();
     m_pushConstants.raysPerPixel = rtState.reflectionsRaysPerPixel;
 

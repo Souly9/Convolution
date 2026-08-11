@@ -196,6 +196,7 @@ private:
 
     ProfiledLockable(CustomMutex, m_passDataMutex);
     RenderDataForPreProcessing m_dataToBePreProcessed;
+    RenderView m_cachedMainView{};
 
     StorageBuffer m_lightClusterSSBO;
     StorageBuffer m_clusterGridSSBO;

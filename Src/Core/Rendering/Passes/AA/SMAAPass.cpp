@@ -1,14 +1,14 @@
 #include "SMAAPass.h"
-#include "Core/Global/GlobalVariables.h"
-#include "Core/Rendering/Core/CommandBuffer.h"
-#include "Core/Rendering/Core/SharedResourceManager.h"
-#include "Core/Rendering/Core/ShaderManager.h"
-#include "Core/Rendering/Vulkan/VkTextureManager.h"
-#include "Core/Rendering/Passes/PassManager.h"
-#include "Core/Global/Profiling.h"
-#include "AreaTex.h"
-#include "SearchTex.h"
 #include "../../../../../Shaders/Globals/PushConstants.h"
+#include "AreaTex.h"
+#include "Core/Global/GlobalVariables.h"
+#include "Core/Global/Profiling.h"
+#include "Core/Rendering/Core/CommandBuffer.h"
+#include "Core/Rendering/Core/ShaderManager.h"
+#include "Core/Rendering/Core/SharedResourceManager.h"
+#include "Core/Rendering/Passes/PassManager.h"
+#include "Core/Rendering/Vulkan/VkTextureManager.h"
+#include "SearchTex.h"
 #include <DirectXMath.h>
 
 namespace RenderPasses
@@ -28,17 +28,17 @@ void SMAAPass::Init(const SharedResourceManager& resourceManager)
 {
     ScopedZone("SMAAPass::Init");
     InitBaseData();
-    
+
     for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
     {
         m_indirectCmdBuffers[i].Init(10);
     }
-        
+
     // Upload SMAA textures
 
     auto searchHandle = g_pTexManager->SubmitAsyncTextureCreation(
         {"Resources\\Textures\\SearchTex.dds", false, TextureSemantic::Data, true});
-    
+
     ReadTextureInfo areaTexInfo{};
     areaTexInfo.pixels = (unsigned char*)areaTexBytes;
     areaTexInfo.extents = {AREATEX_WIDTH, AREATEX_HEIGHT};
@@ -55,7 +55,7 @@ void SMAAPass::Init(const SharedResourceManager& resourceManager)
     areaReq.semantic = TextureSemantic::Data;
 
     g_pTexManager->SubmitTextureRequest(areaReq);
-    
+
     m_searchTexBindless = g_pTexManager->MakeTextureBindless(searchHandle, true);
     m_areaTexBindless = g_pTexManager->MakeTextureBindless(areaReq.handle, true);
 
@@ -65,42 +65,45 @@ void SMAAPass::Init(const SharedResourceManager& resourceManager)
 void SMAAPass::BuildPipelines()
 {
     ScopedZone("SMAAPass::BuildPipelines");
-    
+
     // 1. Edge Detection PSO
     auto edgeVert = Shader("Shaders/SMAAEdge.vert.spv", "main");
     auto edgeFrag = Shader("Shaders/SMAAEdge.frag.spv", "main");
     PipelineInfo edgeInfo{};
     edgeInfo.descriptorSetLayout.sharedDescriptors = m_sharedDescriptors;
-    edgeInfo.attachmentInfos = CreateAttachmentInfo({
-        CreateDefaultColorAttachment(TexFormat::R8G8_UNORM, LoadOp::CLEAR, nullptr)
-    });
-    edgeInfo.pushConstantInfo.constants = {{ShaderTypeBits::Vertex | ShaderTypeBits::Fragment, 0, (u32)sizeof(SMAAPushConstants)}};
+    edgeInfo.attachmentInfos.colorAttachments = { TexFormat::R8G8_UNORM };
+    edgeInfo.pushConstantInfo.constants = {
+        {ShaderTypeBits::Vertex | ShaderTypeBits::Fragment, 0, (u32)sizeof(SMAAPushConstants)}};
     edgeInfo.hasDepth = false;
-    m_edgePSO = PSO(ShaderCollection{&edgeVert, &edgeFrag}, PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions}, edgeInfo);
+    m_edgePSO = PSO(ShaderCollection{&edgeVert, &edgeFrag},
+                    PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions},
+                    edgeInfo);
 
     // 2. Blend Weight Calculation PSO
     auto blendVert = Shader("Shaders/SMAABlend.vert.spv", "main");
     auto blendFrag = Shader("Shaders/SMAABlend.frag.spv", "main");
     PipelineInfo blendInfo{};
     blendInfo.descriptorSetLayout.sharedDescriptors = m_sharedDescriptors;
-    blendInfo.attachmentInfos = CreateAttachmentInfo({
-        CreateDefaultColorAttachment(TexFormat::R8G8B8A8_UNORM, LoadOp::CLEAR, nullptr)
-    });
-    blendInfo.pushConstantInfo.constants = {{ShaderTypeBits::Vertex | ShaderTypeBits::Fragment, 0, (u32)sizeof(SMAAPushConstants)}};
+    blendInfo.attachmentInfos.colorAttachments = { TexFormat::R8G8B8A8_UNORM };
+    blendInfo.pushConstantInfo.constants = {
+        {ShaderTypeBits::Vertex | ShaderTypeBits::Fragment, 0, (u32)sizeof(SMAAPushConstants)}};
     blendInfo.hasDepth = false;
-    m_blendPSO = PSO(ShaderCollection{&blendVert, &blendFrag}, PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions}, blendInfo);
+    m_blendPSO = PSO(ShaderCollection{&blendVert, &blendFrag},
+                     PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions},
+                     blendInfo);
 
     // 3. Neighborhood Blending PSO
     auto neighborVert = Shader("Shaders/SMAANeighborhood.vert.spv", "main");
     auto neighborFrag = Shader("Shaders/SMAANeighborhood.frag.spv", "main");
     PipelineInfo neighborInfo{};
     neighborInfo.descriptorSetLayout.sharedDescriptors = m_sharedDescriptors;
-    neighborInfo.attachmentInfos = CreateAttachmentInfo({
-        CreateDefaultColorAttachment(TexFormat::R16G16B16A16_FLOAT, LoadOp::LOAD, nullptr)
-    });
-    neighborInfo.pushConstantInfo.constants = {{ShaderTypeBits::Vertex | ShaderTypeBits::Fragment, 0, (u32)sizeof(SMAAPushConstants)}};
+    neighborInfo.attachmentInfos.colorAttachments = { SWAPCHAIN_FORMAT };
+    neighborInfo.pushConstantInfo.constants = {
+        {ShaderTypeBits::Vertex | ShaderTypeBits::Fragment, 0, (u32)sizeof(SMAAPushConstants)}};
     neighborInfo.hasDepth = false;
-    m_neighborhoodPSO = PSO(ShaderCollection{&neighborVert, &neighborFrag}, PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions}, neighborInfo);
+    m_neighborhoodPSO = PSO(ShaderCollection{&neighborVert, &neighborFrag},
+                            PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions},
+                            neighborInfo);
 }
 
 bool SMAAPass::WantsToRender() const
@@ -130,7 +133,9 @@ void SMAAPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
     cmdBuf.FillCmds();
 }
 
-void SMAAPass::RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const RGExecutionContext& execCtx)
+void SMAAPass::RenderWithGraph(const MainPassData& data,
+                               const FrameRendererContext& ctx,
+                               const RGExecutionContext& execCtx)
 {
     ScopedZone("SMAAPass::Render");
     StartRenderPassProfilingScope(execCtx.pCmdBuffer);
@@ -142,12 +147,11 @@ void SMAAPass::RenderWithGraph(const MainPassData& data, const FrameRendererCont
     const DirectX::XMINT2 extents(extentsXY.x, extentsXY.y);
     const auto displayViewport = RenderViewUtils::CreateViewportFromData(extentsXY, ctx.zNear, ctx.zFar);
     auto& sceneGeometryBuffers = data.pResourceManager->GetSceneGeometryBuffers();
-    if (!sceneGeometryBuffers.GetVertexBuffer().IsCreated() ||
-        !sceneGeometryBuffers.GetIndexBuffer().IsCreated())
+    if (!sceneGeometryBuffers.GetVertexBuffer().IsCreated() || !sceneGeometryBuffers.GetIndexBuffer().IsCreated())
     {
         return;
     }
-    
+
     BinRenderDataCmd geomBufferCmd(sceneGeometryBuffers.GetVertexBuffer(), sceneGeometryBuffers.GetIndexBuffer());
 
     SMAAPushConstants pc;
@@ -155,18 +159,10 @@ void SMAAPass::RenderWithGraph(const MainPassData& data, const FrameRendererCont
 
     const u32 inputColorHandle = execCtx.GetBindless(RGResourceID::GBufferPostAAColor);
 
-    static bool loggedOnce = false;
-    if (!loggedOnce)
-    {
-        DEBUG_LOGF("[SMAAPass] Input color handle selected: %u", inputColorHandle);
-        loggedOnce = true;
-    }
-
     // 1. Edge Detection
     {
-        Texture* pEdgesTex = execCtx.GetTexture(RGResourceID::SMAAEdges);
-        ColorAttachment attach = CreateDefaultColorAttachment(pEdgesTex ? pEdgesTex->GetInfo().format : TexFormat::R8G8_UNORM, LoadOp::CLEAR, ImageLayout::SHADER_READ_ONLY_OPTIMAL, pEdgesTex);
-        BeginRenderingCmd beginEdges{&m_edgePSO, ToRenderAttachmentInfos(stltype::vector<ColorAttachment>{attach})};
+        RenderAttachmentInfo edgeAttachment = execCtx.GetColorAttachment(RGResourceID::SMAAEdges, LoadOp::CLEAR, StoreOp::STORE);
+        BeginRenderingCmd beginEdges{&m_edgePSO, {edgeAttachment}};
         beginEdges.extents = extents;
         beginEdges.viewport = displayViewport;
 
@@ -186,9 +182,8 @@ void SMAAPass::RenderWithGraph(const MainPassData& data, const FrameRendererCont
 
     // 2. Blending Weight Calculation
     {
-        Texture* pBlendTex = execCtx.GetTexture(RGResourceID::SMAABlend);
-        ColorAttachment attach = CreateDefaultColorAttachment(pBlendTex ? pBlendTex->GetInfo().format : TexFormat::R8G8B8A8_UNORM, LoadOp::CLEAR, ImageLayout::SHADER_READ_ONLY_OPTIMAL, pBlendTex);
-        BeginRenderingCmd beginBlend{&m_blendPSO, ToRenderAttachmentInfos(stltype::vector<ColorAttachment>{attach})};
+        RenderAttachmentInfo blendAttachment = execCtx.GetColorAttachment(RGResourceID::SMAABlend, LoadOp::CLEAR, StoreOp::STORE);
+        BeginRenderingCmd beginBlend{&m_blendPSO, {blendAttachment}};
         beginBlend.extents = extents;
         beginBlend.viewport = displayViewport;
 
@@ -209,9 +204,11 @@ void SMAAPass::RenderWithGraph(const MainPassData& data, const FrameRendererCont
 
     // 3. Neighborhood Blending
     {
-        Texture* pOutputTexture = ctx.pCurrentSwapchainTexture;
-        ColorAttachment attach = CreateDefaultColorAttachment(pOutputTexture ? pOutputTexture->GetInfo().format : SWAPCHAIN_FORMAT, LoadOp::CLEAR, pOutputTexture);
-        BeginRenderingCmd beginNeighbor{&m_neighborhoodPSO, ToRenderAttachmentInfos(stltype::vector<ColorAttachment>{attach})};
+        RenderAttachmentInfo neighborAttachment = execCtx.GetColorAttachment(RGResourceID::Swapchain, LoadOp::LOAD, StoreOp::STORE);
+        if (!neighborAttachment.pTexture)
+            neighborAttachment.pTexture = ctx.pCurrentSwapchainTexture;
+        BeginRenderingCmd beginNeighbor{
+            &m_neighborhoodPSO, {neighborAttachment}};
         beginNeighbor.extents = extents;
         beginNeighbor.viewport = displayViewport;
 
@@ -230,7 +227,6 @@ void SMAAPass::RenderWithGraph(const MainPassData& data, const FrameRendererCont
 
         m_outputWritten = true;
     }
-    
 
     EndRenderPassProfilingScope(execCtx.pCmdBuffer);
 }
@@ -243,14 +239,19 @@ void SMAAPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
         PassCtx::Bindless,
         PassCtx::GBufferCtx>();
 
-    builder.ReadTexture(RGResourceID::GBufferPostAAColor, SyncStages::FRAGMENT_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    builder.ReadTexture(RGResourceID::GBufferPostAAColor,
+                        SyncStages::FRAGMENT_SHADER,
+                        AccessFlags::SHADER_READ,
+                        ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
-    auto smaaEdges = builder.DeclareStorageTexture(RGResourceID::SMAAEdges, TexFormat::R8G8_UNORM, RGSizeClass::OutputResolution);
-    auto smaaBlend = builder.DeclareStorageTexture(RGResourceID::SMAABlend, TexFormat::R8G8B8A8_UNORM, RGSizeClass::OutputResolution);
+    auto smaaEdges =
+        builder.DeclareStorageTexture(RGResourceID::SMAAEdges, TexFormat::R8G8_UNORM, RGSizeClass::OutputResolution);
+    auto smaaBlend = builder.DeclareStorageTexture(
+        RGResourceID::SMAABlend, TexFormat::R8G8B8A8_UNORM, RGSizeClass::OutputResolution);
 
     builder.WriteColorAttachment(smaaEdges, LoadOp::CLEAR, StoreOp::STORE);
     builder.WriteColorAttachment(smaaBlend, LoadOp::CLEAR, StoreOp::STORE);
-    builder.WriteColorAttachment(RGResourceID::Swapchain, LoadOp::CLEAR, StoreOp::STORE);
+    builder.WriteColorAttachment(RGResourceID::Swapchain, LoadOp::LOAD, StoreOp::STORE);
     builder.SetHasSideEffects();
 }
 } // namespace RenderPasses

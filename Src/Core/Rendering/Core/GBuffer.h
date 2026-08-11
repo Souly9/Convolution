@@ -17,6 +17,7 @@ enum class GBufferTextureType
     GBufferResolve,
     GBufferPostAAColor,
     GBufferRoughness,
+    GBufferEntityID,
     BloomMip0,
     BloomMip1,
     BloomMip2,
@@ -57,6 +58,8 @@ struct GBufferInfo
                 return TexFormat::D32_SFLOAT;
             case GBufferTextureType::GBufferRoughness:
                 return TexFormat::R8_UNORM;
+            case GBufferTextureType::GBufferEntityID:
+                return TexFormat::R32_UINT;
             default:
                 DEBUG_ASSERT(false);
                 return TexFormat::UNDEFINED;
@@ -92,6 +95,7 @@ struct GBuffer : public GBufferInfo
             case GBufferTextureType::GBufferResolve: return m_temporalResolveFrameTargets[m_currentHistoryFrameSlot].pTexture;
             case GBufferTextureType::GBufferPostAAColor: return m_pPostAAColorTexture;
             case GBufferTextureType::GBufferRoughness: return m_pRoughnessTexture;
+            case GBufferTextureType::GBufferEntityID: return m_pEntityIDTexture;
             case GBufferTextureType::BloomMip0: return m_pBloomMipTextures[0];
             case GBufferTextureType::BloomMip1: return m_pBloomMipTextures[1];
             case GBufferTextureType::BloomMip2: return m_pBloomMipTextures[2];
@@ -124,6 +128,7 @@ struct GBuffer : public GBufferInfo
             case GBufferTextureType::GBufferResolve: m_temporalResolveFrameTargets[m_currentHistoryFrameSlot].pTexture = pTexture; break;
             case GBufferTextureType::GBufferPostAAColor: m_pPostAAColorTexture = pTexture; break;
             case GBufferTextureType::GBufferRoughness: m_pRoughnessTexture = pTexture; break;
+            case GBufferTextureType::GBufferEntityID: m_pEntityIDTexture = pTexture; break;
             case GBufferTextureType::BloomMip0: m_pBloomMipTextures[0] = pTexture; break;
             case GBufferTextureType::BloomMip1: m_pBloomMipTextures[1] = pTexture; break;
             case GBufferTextureType::BloomMip2: m_pBloomMipTextures[2] = pTexture; break;
@@ -153,6 +158,7 @@ struct GBuffer : public GBufferInfo
             case GBufferTextureType::GBufferResolve: m_temporalResolveFrameTargets[m_currentHistoryFrameSlot].bindlessHandle = handle; break;
             case GBufferTextureType::GBufferPostAAColor: m_hPostAAColor = handle; break;
             case GBufferTextureType::GBufferRoughness: m_hRoughness = handle; break;
+            case GBufferTextureType::GBufferEntityID: m_hEntityID = handle; break;
             case GBufferTextureType::BloomMip0: m_hBloomMip[0] = handle; break;
             case GBufferTextureType::BloomMip1: m_hBloomMip[1] = handle; break;
             case GBufferTextureType::BloomMip2: m_hBloomMip[2] = handle; break;
@@ -242,6 +248,7 @@ struct GBuffer : public GBufferInfo
                 return m_temporalResolveFrameTargets[m_currentHistoryFrameSlot].bindlessHandle;
             case GBufferTextureType::GBufferPostAAColor: return m_hPostAAColor;
             case GBufferTextureType::GBufferRoughness: return m_hRoughness;
+            case GBufferTextureType::GBufferEntityID: return m_hEntityID;
             case GBufferTextureType::BloomMip0: return m_hBloomMip[0];
             case GBufferTextureType::BloomMip1: return m_hBloomMip[1];
             case GBufferTextureType::BloomMip2: return m_hBloomMip[2];
@@ -329,6 +336,7 @@ private:
     Texture* m_pLastFrameDepthTexture{nullptr};
     Texture* m_pPostAAColorTexture{nullptr};
     Texture* m_pRoughnessTexture{nullptr};
+    Texture* m_pEntityIDTexture{nullptr};
     Texture* m_pBloomMipTextures[5]{nullptr, nullptr, nullptr, nullptr, nullptr};
 
     BindlessTextureHandle m_hAlbedo{0};
@@ -339,6 +347,7 @@ private:
     BindlessTextureHandle m_hLastFrameDepth{0};
     BindlessTextureHandle m_hPostAAColor{0};
     BindlessTextureHandle m_hRoughness{0};
+    BindlessTextureHandle m_hEntityID{0};
     BindlessTextureHandle m_hBloomMip[5]{0, 0, 0, 0, 0};
     u32 m_currentHistoryFrameSlot{0};
     stltype::array<FrameTextureTarget, SWAPCHAIN_IMAGES> m_velocityFrameTargets{};

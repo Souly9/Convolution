@@ -54,9 +54,3 @@ protected:
     IndexBuffer m_indexBuffer;
     VertexBuffer m_vertexBuffer;
 };
-
-struct RenderingData : BufferData
-{
-    stltype::vector<ColorAttachment> colorAttachments;
-    DepthAttachment depthAttachment;
-};

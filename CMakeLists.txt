@@ -114,7 +114,7 @@ FetchContent_Declare(GLFW3 GIT_REPOSITORY "https://github.com/glfw/glfw.git" GIT
 FetchContent_Declare(IMGUI GIT_REPOSITORY "https://github.com/ocornut/imgui.git" GIT_TAG "v1.91.5-docking" SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/imgui")
 FetchContent_Declare(DIRECTXMATH GIT_REPOSITORY "https://github.com/microsoft/DirectXMath.git" GIT_TAG "58f045a6caaaad6ce15049bba3cd075ed419c85e" SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/DirectXMath")
 FetchContent_Declare(ASSIMP GIT_REPOSITORY "https://github.com/assimp/assimp.git" GIT_TAG "ec563823b63c084101e947278f451268da80529d" SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/Assimp")
-FetchContent_Declare(TRACY GIT_REPOSITORY "https://github.com/wolfpld/tracy" GIT_TAG "v0.12.2" SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/Tracy")
+FetchContent_Declare(TRACY GIT_REPOSITORY "https://github.com/wolfpld/tracy" GIT_TAG "v0.13.1" SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/Tracy")
 FetchContent_Declare(ImGuizmo GIT_REPOSITORY "https://github.com/CedricGuillemet/ImGuizmo" GIT_TAG "1.83" SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/ImGuizmo")
 
 set(EXTERNAL_HEADERS 

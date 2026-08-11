@@ -25,6 +25,7 @@ public:
     virtual void Setup(::RenderGraphBuilder& builder, const MainPassData& data) override;
 
     virtual bool WantsToRender() const override;
+    virtual PassStage GetPassStage() const override { return PassStage::MainGeometry; }
 
 protected:
     PSO m_solidDebugObjectsPSO;

@@ -18,11 +18,9 @@ void DepthPrePass::BuildPipelines()
 
     PipelineInfo info{};
     info.descriptorSetLayout.sharedDescriptors = m_sharedDescriptors;
-    info.attachmentInfos =
-        CreateAttachmentInfo({m_mainRenderingData.colorAttachments}, m_mainRenderingData.depthAttachment);
+    info.attachmentInfos.depthAttachmentFormat = TexFormat::D32_SFLOAT;
     info.depthCompareOp = DepthCompareOp::GREATER_OR_EQUAL;
     info.depthWriteEnable = true;
-    // info.rasterizerInfo.cullmode = CullMode::BACK;
 
     m_mainPSO = PSO(
         ShaderCollection{&mainVert, &mainFrag}, PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions}, info);
@@ -41,10 +39,6 @@ void DepthPrePass::Init(const SharedResourceManager& resourceManager)
 void DepthPrePass::RecreateResolutionDependentResources(const SharedResourceManager& resourceManager)
 {
     ScopedZone("DepthPrePass::RecreateResolutionDependentResources");
-
-    m_mainRenderingData.depthAttachment =
-        CreateDefaultDepthAttachment(LoadOp::CLEAR, nullptr);
-
     InitBaseData();
 }
 
@@ -101,7 +95,7 @@ void DepthPrePass::Setup(::RenderGraphBuilder& builder, const MainPassData& data
         PassCtx::View,
         PassCtx::GlobalInstance>();
 
-    auto mainDepth = builder.WriteDepthAttachment(RGResourceID::MainDepth, LoadOp::CLEAR, StoreOp::STORE);
+    builder.WriteDepthAttachment(RGResourceID::MainDepth, LoadOp::CLEAR, StoreOp::STORE);
     builder.SetHasSideEffects();
 }
 
@@ -114,12 +108,9 @@ void DepthPrePass::RenderWithGraph(const MainPassData& data, const FrameRenderer
     UpdateContextForFrame(currentFrame);
     const auto& passCtx = m_perObjectFrameContexts[currentFrame];
 
-    m_mainRenderingData.depthAttachment.SetTexture(execCtx.GetTexture(RGResourceID::MainDepth));
+    RenderAttachmentInfo depthAttachment = execCtx.GetDepthAttachment(RGResourceID::MainDepth, LoadOp::CLEAR, StoreOp::STORE);
     const DirectX::XMINT2 extents(data.renderState.renderResolution.x, data.renderState.renderResolution.y);
-    stltype::vector<ColorAttachment> colorAttachments;
-    BeginRenderingCmd cmdBegin{&m_mainPSO,
-                               ToRenderAttachmentInfos(colorAttachments),
-                               ToRenderAttachmentInfo(m_mainRenderingData.depthAttachment)};
+    BeginRenderingCmd cmdBegin{&m_mainPSO, {}, depthAttachment};
     cmdBegin.extents = extents;
     cmdBegin.viewport = data.mainView.viewport;
 

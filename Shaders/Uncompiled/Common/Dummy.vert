@@ -23,6 +23,8 @@ layout(location = 0) out VertexOut
 }
 OUT;
 
+invariant gl_Position;
+
 void main()
 {
     uint instanceIdx = perObjectDataSSBO.transformDataIdx[gl_InstanceIndex];
@@ -32,5 +34,7 @@ void main()
     OUT.fragTexCoord = inTexCoord0;
 
     vec4 localPosition = vec4(inPosition, 1.0);
-    gl_Position = ApplyFrameJitter(ubo.viewProjection * worldMat * localPosition);
+    vec4 unjitteredClipPos = ubo.viewProjection * worldMat * localPosition;
+    vec4 jitteredClipPos = ApplyFrameJitter(unjitteredClipPos);
+    gl_Position = IsVisible(iData) ? jitteredClipPos : vec4(0.0 / 0.0);
 }

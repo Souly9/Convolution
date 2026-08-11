@@ -1,5 +1,7 @@
 #include "RenderGraph.h"
+#include "RenderGraphDumper.h"
 #include "Core/Global/LogDefines.h"
+#include "Core/Global/Profiling.h"
 #include "Core/Global/State/ApplicationState.h"
 #include "Core/Rendering/Core/GPUTimingQuery.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
@@ -7,16 +9,18 @@
 
 void RenderGraph::BeginFrame(u32 frameSlot, const mathstl::Vector2& renderRes, const mathstl::Vector2& outputRes)
 {
+    ScopedZone("RenderGraph::BeginFrame");
     Reset();
     m_registry.ResetFrameState();
     m_registry.OnResize(renderRes, outputRes);
 }
 
-RenderGraphBuilder RenderGraph::AddNode(const stltype::string& name, QueueType queueType)
+RenderGraphBuilder RenderGraph::AddNode(const stltype::string& name, QueueType queueType, PassStage stage)
 {
     RGNode node{};
     node.name = name;
     node.queueType = queueType;
+    node.stage = stage;
     m_nodes.push_back(node);
     return RenderGraphBuilder(m_nodes.back(), m_registry);
 }
@@ -34,6 +38,7 @@ void RenderGraph::Reset()
 
 void RenderGraph::BuildAdjacencyGraph()
 {
+    ScopedZone("RenderGraph::BuildAdjacencyGraph");
     const u32 nodeCount = static_cast<u32>(m_nodes.size());
     m_adjList.clear();
     m_adjList.resize(nodeCount);
@@ -48,7 +53,7 @@ void RenderGraph::BuildAdjacencyGraph()
         stltype::fixed_vector<u32, 16> readers;
     };
 
-    const u32 resourceCount = stltype::max<u32>(64, m_registry.GetResourceCount());
+    const u32 resourceCount = m_registry.GetResourceCount();
     stltype::vector<ResourceAccessTracker> resourceTrackers(resourceCount);
 
     auto AddEdge = [&](u32 u, u32 v) {
@@ -108,6 +113,7 @@ void RenderGraph::BuildAdjacencyGraph()
 
 bool RenderGraph::ValidateSinglePass() const
 {
+    ScopedZone("RenderGraph::ValidateSinglePass");
     u32 activeExclusionMask = 0;
     bool isValid = true;
 
@@ -139,6 +145,7 @@ bool RenderGraph::ValidateSinglePass() const
 
 void RenderGraph::CullUnreferencedNodes()
 {
+    ScopedZone("RenderGraph::CullUnreferencedNodes");
     stltype::vector<bool> referencedResources(m_registry.GetResourceCount(), false);
 
     for (u32 i = 0; i < m_registry.GetResourceCount(); ++i)
@@ -196,6 +203,7 @@ void RenderGraph::CullUnreferencedNodes()
 
 void RenderGraph::TopologicalSort()
 {
+    ScopedZone("RenderGraph::TopologicalSort");
     m_sortedNodeIndices.clear();
     const u32 nodeCount = static_cast<u32>(m_nodes.size());
     stltype::vector<u32> inDegree = m_inDegree;
@@ -218,19 +226,15 @@ void RenderGraph::TopologicalSort()
         {
             u32 nodeIdx = readyQueue[k];
             const auto& node = m_nodes[nodeIdx];
-            int score = 0;
 
-            if (node.queueType == QueueType::Compute)
-            {
-                score += 1000;
-            }
+            // Primary ordering: PassStage (lower enum value = earlier stage)
+            int score = -static_cast<int>(node.stage) * 100;
 
+            // Batching optimization: Prefer keeping current queue type to avoid context switches
             if (node.queueType == lastQueue)
             {
-                score += 100;
+                score += 10;
             }
-
-            score -= static_cast<int>(nodeIdx);
 
             if (score > bestScore)
             {
@@ -256,6 +260,7 @@ void RenderGraph::TopologicalSort()
 
 void RenderGraph::InsertBarriers()
 {
+    ScopedZone("RenderGraph::InsertBarriers");
     m_barriersByNode.clear();
     m_barriersByNode.resize(m_nodes.size());
 
@@ -277,8 +282,15 @@ void RenderGraph::InsertBarriers()
 
             if (state.currentLayout != read.layout && read.layout != ImageLayout::UNDEFINED)
             {
+                u32 barrierTargetNode = nodeIdx;
+                if (state.lastWriterNodeIndex != UINT32_MAX &&
+                    m_nodes[state.lastWriterNodeIndex].queueType != node.queueType)
+                {
+                    barrierTargetNode = state.lastWriterNodeIndex;
+                }
+
                 BarrierCmdDesc b{};
-                b.nodeIndex = nodeIdx;
+                b.nodeIndex = barrierTargetNode;
                 b.resourceHandle = read.handle;
                 b.oldLayout = state.currentLayout;
                 b.newLayout = read.layout;
@@ -287,7 +299,7 @@ void RenderGraph::InsertBarriers()
                 b.srcAccess = state.lastWriterAccess;
                 b.dstAccess = read.access;
 
-                m_barriersByNode[nodeIdx].push_back(b);
+                m_barriersByNode[barrierTargetNode].push_back(b);
                 state.currentLayout = read.layout;
             }
         }
@@ -331,6 +343,7 @@ void RenderGraph::InsertBarriers()
 
 void RenderGraph::Compile()
 {
+    ScopedZone("RenderGraph::Compile");
     m_registry.AllocatePending();
     ValidateSinglePass();
     CullUnreferencedNodes();
@@ -373,7 +386,8 @@ void RenderGraph::PublishDebugState() const
         snapshot.nodes.push_back(stltype::move(dNode));
     }
 
-    for (RGResourceHandle handle = 0; handle < 32; ++handle)
+    const u32 resourceCount = m_registry.GetResourceCount();
+    for (RGResourceHandle handle = 0; handle < resourceCount; ++handle)
     {
         const auto* spec = m_registry.GetSpec(handle);
         if (!spec) continue;
@@ -425,25 +439,65 @@ void RenderGraph::PublishDebugState() const
 
 void RenderGraph::ExecuteNode(u32 nodeIdx, CommandBuffer* pCmdBuffer, const RenderPasses::MainPassData& data, const RenderPasses::FrameRendererContext& ctx)
 {
+    ScopedZone("RenderGraph::ExecuteNode");
     auto& node = m_nodes[nodeIdx];
     if (node.IsCulled()) return;
 
-    if (nodeIdx < m_barriersByNode.size())
+    if (nodeIdx < m_barriersByNode.size() && !m_barriersByNode[nodeIdx].empty())
     {
+        struct BarrierGroupKey
+        {
+            ImageLayout oldLayout;
+            ImageLayout newLayout;
+            SyncStages srcStage;
+            SyncStages dstStage;
+            AccessFlags srcAccess;
+            AccessFlags dstAccess;
+
+            bool operator==(const BarrierGroupKey& o) const
+            {
+                return oldLayout == o.oldLayout && newLayout == o.newLayout &&
+                       srcStage == o.srcStage && dstStage == o.dstStage &&
+                       srcAccess == o.srcAccess && dstAccess == o.dstAccess;
+            }
+        };
+
+        stltype::vector<stltype::pair<BarrierGroupKey, stltype::vector<const Texture*>>> groupedBarriers;
+
         for (const auto& barrier : m_barriersByNode[nodeIdx])
         {
             Texture* pTex = m_registry.Resolve(barrier.resourceHandle);
-            if (pTex)
+            if (!pTex) continue;
+
+            BarrierGroupKey key{barrier.oldLayout, barrier.newLayout, barrier.srcStage, barrier.dstStage, barrier.srcAccess, barrier.dstAccess};
+
+            bool foundGroup = false;
+            for (auto& group : groupedBarriers)
             {
-                ImageLayoutTransitionCmd transition(pTex);
-                transition.oldLayout = barrier.oldLayout;
-                transition.newLayout = barrier.newLayout;
-                transition.srcStage = barrier.srcStage;
-                transition.dstStage = barrier.dstStage;
-                transition.srcAccessMask = barrier.srcAccess;
-                transition.dstAccessMask = barrier.dstAccess;
-                pCmdBuffer->RecordCommand(transition);
+                if (group.first == key)
+                {
+                    group.second.push_back(pTex);
+                    foundGroup = true;
+                    break;
+                }
             }
+
+            if (!foundGroup)
+            {
+                groupedBarriers.push_back({key, {pTex}});
+            }
+        }
+
+        for (const auto& group : groupedBarriers)
+        {
+            ImageLayoutTransitionCmd transition(group.second);
+            transition.oldLayout = group.first.oldLayout;
+            transition.newLayout = group.first.newLayout;
+            transition.srcStage = group.first.srcStage;
+            transition.dstStage = group.first.dstStage;
+            transition.srcAccessMask = group.first.srcAccess;
+            transition.dstAccessMask = group.first.dstAccess;
+            pCmdBuffer->RecordCommand(transition);
         }
     }
 
@@ -459,17 +513,10 @@ void RenderGraph::ExecuteNode(u32 nodeIdx, CommandBuffer* pCmdBuffer, const Rend
     execCtx.pResolvedDescriptors = &resolvedDescriptors;
     execCtx.pRegistry = &m_registry;
 
-    StartProfilingScopeCmd startProfiling{};
-    startProfiling.name = node.name.c_str();
-    pCmdBuffer->RecordCommand(startProfiling);
-
     if (node.executeCallback)
     {
         node.executeCallback(data, ctx, execCtx);
     }
-
-    EndProfilingScopeCmd endProfiling{};
-    pCmdBuffer->RecordCommand(endProfiling);
 }
 
 void RenderGraph::EmitSwapchainInit(CommandBuffer* pCmdBuffer, Texture* pSwapchainTexture, Semaphore* pImageAvailableSemaphore)
@@ -513,6 +560,7 @@ void RenderGraph::EmitSwapchainPresent(CommandBuffer* pCmdBuffer, Texture* pSwap
 
 void RenderGraph::BuildExecutionBatches(RenderPasses::FrameRendererContext& ctx)
 {
+    ScopedZone("RenderGraph::BuildExecutionBatches");
     m_batches.clear();
     stltype::hash_map<u32, u32> nodeToBatchMap;
 
@@ -616,7 +664,12 @@ void RenderGraph::Execute(const RenderPasses::MainPassData& data,
                           stltype::vector<CommandBuffer*>& availableComputeCmdBuffers,
                           GPUTimingQueryBase* pTimingQuery)
 {
+    ScopedZone("RenderGraph::Execute");
     BuildExecutionBatches(ctx);
+
+#if CONVOLUTION_DUMP_RENDERGRAPH
+    RenderGraphDumper::DumpToFile(*this, ctx.currentFrame);
+#endif
 
     u32 graphicsIdx = 0;
     u32 computeIdx = 0;

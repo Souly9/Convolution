@@ -24,5 +24,6 @@ protected:
     void Init(const SharedResourceManager& resourceManager) override;
     void RecreateResolutionDependentResources(const SharedResourceManager& resourceManager) override;
     bool WantsToRender() const override;
+    PassStage GetPassStage() const override { return PassStage::PreProcess; }
 };
 } // namespace RenderPasses

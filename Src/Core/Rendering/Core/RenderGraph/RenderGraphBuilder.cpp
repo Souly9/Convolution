@@ -10,10 +10,11 @@ RGResourceHandle RenderGraphBuilder::DeclareStorageTexture(RGResourceID id, TexF
     return m_registry.DeclareResource(spec);
 }
 
-RGResourceHandle RenderGraphBuilder::DeclareStorageBuffer(RGResourceID id, u64 sizeBytes)
+RGResourceHandle RenderGraphBuilder::DeclareStorageBuffer(RGResourceID id, u64 sizeBytes, const stltype::string& customName)
 {
     RGResourceSpec spec{};
     spec.id = id;
+    spec.customName = customName;
     spec.SetIsBuffer(true);
     spec.bufferSize = sizeBytes;
     return m_registry.DeclareResource(spec);
@@ -99,26 +100,27 @@ RGResourceHandle RenderGraphBuilder::ReadStorageBuffer(RGResourceHandle handle, 
     return handle;
 }
 
-RGResourceHandle RenderGraphBuilder::WriteColorAttachment(RGResourceID id, LoadOp loadOp, StoreOp storeOp)
-{
-    RGResourceSpec spec{};
-    spec.id = id;
-    spec.format = TexFormat::R8G8B8A8_UNORM;
-    spec.sizeClass = RGSizeClass::RenderResolution;
-    spec.usage = Usage::ColorAttachment;
-    RGResourceHandle handle = m_registry.DeclareResource(spec);
-    return WriteColorAttachment(handle, loadOp, storeOp);
-}
-
 RGResourceHandle RenderGraphBuilder::WriteDepthAttachment(RGResourceID id, LoadOp loadOp, StoreOp storeOp)
 {
     RGResourceSpec spec{};
     spec.id = id;
-    spec.format = TexFormat::D32_SFLOAT;
+    spec.format = m_registry.GetResourceFormatByID(id);
+    if (spec.format == TexFormat::UNDEFINED) spec.format = DEPTH_BUFFER_FORMAT;
     spec.sizeClass = RGSizeClass::RenderResolution;
     spec.usage = Usage::DepthAttachment | Usage::Sampled;
     RGResourceHandle handle = m_registry.DeclareResource(spec);
     return WriteDepthAttachment(handle, loadOp, storeOp);
+}
+
+RGResourceHandle RenderGraphBuilder::WriteColorAttachment(RGResourceID id, LoadOp loadOp, StoreOp storeOp)
+{
+    RGResourceSpec spec{};
+    spec.id = id;
+    spec.format = m_registry.GetResourceFormatByID(id);
+    spec.sizeClass = RGSizeClass::RenderResolution;
+    spec.usage = Usage::ColorAttachment | Usage::Sampled;
+    RGResourceHandle handle = m_registry.DeclareResource(spec);
+    return WriteColorAttachment(handle, loadOp, storeOp);
 }
 
 RGResourceHandle RenderGraphBuilder::WriteStorageBuffer(RGResourceID id, SyncStages stage, AccessFlags access)
@@ -149,23 +151,20 @@ RGResourceHandle RenderGraphBuilder::ReadGBuffer(RGResourceID id, SyncStages sta
 
 RGResourceHandle RenderGraphBuilder::WriteGBuffer(RGResourceID id, LoadOp loadOp)
 {
-    RGResourceSpec spec{};
-    spec.id = id;
-    spec.sizeClass = RGSizeClass::RenderResolution;
-    spec.usage = Usage::ColorAttachment | Usage::Sampled;
-    RGResourceHandle handle = m_registry.DeclareResource(spec);
-    return WriteColorAttachment(handle, loadOp, StoreOp::STORE);
+    return WriteColorAttachment(id, loadOp, StoreOp::STORE);
 }
 
 RGResourceHandle RenderGraphBuilder::ReadDepth(RGResourceID id, SyncStages stage)
 {
     RGResourceSpec spec{};
     spec.id = id;
-    spec.format = TexFormat::D32_SFLOAT;
+    spec.format = m_registry.GetResourceFormatByID(id);
+    if (spec.format == TexFormat::UNDEFINED) spec.format = DEPTH_BUFFER_FORMAT;
     spec.sizeClass = RGSizeClass::RenderResolution;
     spec.usage = Usage::DepthAttachment | Usage::Sampled;
     RGResourceHandle handle = m_registry.DeclareResource(spec);
-    return ReadTexture(handle, stage, AccessFlags::SHADER_READ, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+    ReadTexture(handle, stage, AccessFlags::SHADER_READ, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+    return handle;
 }
 
 RGResourceHandle RenderGraphBuilder::WriteDepth(RGResourceID id, LoadOp loadOp)

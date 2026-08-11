@@ -35,7 +35,7 @@ protected:
     StorageBuffer m_perObjectSSBO;
     GPUMappedMemoryHandle m_mappedPerObjectSSBO;
     DescriptorSetLayout m_perObjectLayout;
-    RenderingData m_mainRenderingData;
+    BufferData m_mainRenderingData;
 
     struct PerObjectFrameContext
     {

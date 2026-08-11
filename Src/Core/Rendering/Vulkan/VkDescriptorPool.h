@@ -48,6 +48,11 @@ public:
     DescriptorPoolVulkan();
     ~DescriptorPoolVulkan();
 
+    DescriptorPoolVulkan(const DescriptorPoolVulkan&) = delete;
+    DescriptorPoolVulkan& operator=(const DescriptorPoolVulkan&) = delete;
+    DescriptorPoolVulkan(DescriptorPoolVulkan&&) = default;
+    DescriptorPoolVulkan& operator=(DescriptorPoolVulkan&&) = default;
+
     void Create(const DescriptorPoolCreateInfo& createInfo);
 
     stltype::vector<DescriptorSetVulkan*> CreateDescriptorSetsUBO(
@@ -71,7 +76,7 @@ protected:
     VkDescriptorPoolSize CreateNewPoolSizeForType(VkDescriptorType type, u32 count) const;
 
 protected:
-    stltype::fixed_vector<DescriptorSetVulkan, MAX_DESCRIPTOR_SETS> m_createdDescriptorSets{};
+    stltype::vector<stltype::unique_ptr<DescriptorSetVulkan>> m_createdDescriptorSets{};
     VkDescriptorPool m_descriptorPool{VK_NULL_HANDLE};
     u32 m_descriptorSetCount = 0;
 };

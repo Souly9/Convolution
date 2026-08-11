@@ -21,6 +21,7 @@ public:
     virtual void CreateSharedDescriptorLayout() override;
     virtual bool WantsToRender() const override;
     virtual QueueType GetQueueType() const override { return QueueType::Compute; }
+    virtual PassStage GetPassStage() const override { return PassStage::Lighting; }
 
 protected:
     ComputePipeline m_computePipeline;

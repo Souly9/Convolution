@@ -98,14 +98,19 @@ void RTResourceManager::RecordTransition(CommandBuffer* pCmdBuffer,
                                          RTTextureResource& resource,
                                          ImageLayout newLayout)
 {
-    if (resource.pTexture == nullptr || resource.currentLayout == newLayout)
+    if (resource.pTexture == nullptr)
+        return;
+
+    ImageLayout currentLayout = resource.pTexture->GetInfo().layout;
+    if (currentLayout == newLayout)
         return;
 
     ImageLayoutTransitionCmd cmd(resource.pTexture);
-    cmd.oldLayout = resource.currentLayout;
+    cmd.oldLayout = currentLayout;
     cmd.newLayout = newLayout;
-    VkTextureManager::SetLayoutBarrierMasks(cmd, resource.currentLayout, newLayout);
+    VkTextureManager::SetLayoutBarrierMasks(cmd, currentLayout, newLayout);
     pCmdBuffer->RecordCommand(cmd);
+    resource.pTexture->GetInfo().layout = newLayout;
     resource.currentLayout = newLayout;
 }
 
@@ -113,16 +118,21 @@ void RTResourceManager::RecordTransitionComputeOnly(CommandBuffer* pCmdBuffer,
                                                     RTTextureResource& resource,
                                                     ImageLayout newLayout)
 {
-    if (resource.pTexture == nullptr || resource.currentLayout == newLayout)
+    if (resource.pTexture == nullptr)
+        return;
+
+    ImageLayout currentLayout = resource.pTexture->GetInfo().layout;
+    if (currentLayout == newLayout)
         return;
 
     ImageLayoutTransitionCmd cmd(resource.pTexture);
-    cmd.oldLayout = resource.currentLayout;
+    cmd.oldLayout = currentLayout;
     cmd.newLayout = newLayout;
-    VkTextureManager::SetLayoutBarrierMasks(cmd, resource.currentLayout, newLayout);
+    VkTextureManager::SetLayoutBarrierMasks(cmd, currentLayout, newLayout);
     cmd.srcStage &= ~SyncStages::FRAGMENT_SHADER;
     cmd.dstStage &= ~SyncStages::FRAGMENT_SHADER;
     pCmdBuffer->RecordCommand(cmd);
+    resource.pTexture->GetInfo().layout = newLayout;
     resource.currentLayout = newLayout;
 }
 

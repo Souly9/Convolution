@@ -45,7 +45,21 @@ struct RGNode
 {
     stltype::string name;
     QueueType queueType{QueueType::Graphics};
+    PassStage stage{PassStage::MainGeometry};
     ExclusionGroup exclusionGroup{ExclusionGroup::None};
+    u32 viewMask{1};
+
+    u32 GetViewCount() const
+    {
+        u32 v = viewMask;
+        u32 count = 0;
+        while (v > 0)
+        {
+            count += (v & 1u);
+            v >>= 1u;
+        }
+        return count > 0 ? count : 1;
+    }
 
     u32 flags{0};
 

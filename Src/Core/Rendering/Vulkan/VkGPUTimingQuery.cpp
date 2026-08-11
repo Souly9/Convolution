@@ -7,9 +7,7 @@
 u32 GPUTimingQueryVulkan::GetPoolIndex(u32 queueFamilyIndex) const
 {
     const auto& families = VkGlobals::GetQueueFamilyIndices();
-    if (families.computeFamily.has_value() &&
-        families.computeFamily.value() != families.graphicsFamily.value() &&
-        queueFamilyIndex == families.computeFamily.value())
+    if (families.computeFamily.has_value() && queueFamilyIndex == families.computeFamily.value())
     {
         return COMPUTE_POOL_IDX;
     }
@@ -105,35 +103,21 @@ void GPUTimingQueryVulkan::ResetQueriesForQueue(u32 frameIdx, CommandBuffer* pCm
     if (!m_enabled || !pCmdBuffer)
         return;
 
-    m_poolInitialized[m_currentFrameIdx] = true;
+    u32 frameSlot = frameIdx % SWAPCHAIN_IMAGES;
+    m_poolInitialized[frameSlot] = true;
 
-    u32 poolIdx = GRAPHICS_POOL_IDX;
-    auto* pVulkanCmd = static_cast<CBufferVulkan*>(pCmdBuffer);
-    if (pVulkanCmd && pVulkanCmd->GetPool())
-    {
-        u32 queueFamily = pVulkanCmd->GetPool()->GetQueueFamilyIndex();
-        poolIdx = GetPoolIndex(queueFamily);
-    }
-    else if (queueType == QueueType::Compute)
-    {
-        const auto& families = VkGlobals::GetQueueFamilyIndices();
-        if (families.computeFamily.has_value() &&
-            families.computeFamily.value() != families.graphicsFamily.value())
-        {
-            poolIdx = COMPUTE_POOL_IDX;
-        }
-    }
+    u32 poolIdx = (queueType == QueueType::Compute) ? COMPUTE_POOL_IDX : GRAPHICS_POOL_IDX;
 
-    if (m_poolResetThisFrame[m_currentFrameIdx][poolIdx])
+    if (m_poolResetThisFrame[frameSlot][poolIdx])
     {
         return;
     }
 
-    auto poolHandle = m_queryPools[m_currentFrameIdx][poolIdx].GetRef();
+    auto poolHandle = m_queryPools[frameSlot][poolIdx].GetRef();
     if (poolHandle != VK_NULL_HANDLE)
     {
-        pCmdBuffer->RecordCommand(ResetQueryPoolCmd(&m_queryPools[m_currentFrameIdx][poolIdx], 0, m_queryCount));
-        m_poolResetThisFrame[m_currentFrameIdx][poolIdx] = true;
+        pCmdBuffer->RecordCommand(ResetQueryPoolCmd(&m_queryPools[frameSlot][poolIdx], 0, m_queryCount));
+        m_poolResetThisFrame[frameSlot][poolIdx] = true;
     }
 }
 
@@ -181,7 +165,10 @@ void GPUTimingQueryVulkan::ReadResults(u32 frameIdx)
             u32 queueFamily = m_results[i].queueFamilyIndex;
             u32 poolIdx = GetPoolIndex(queueFamily);
 
-            u64 startTs = m_timestampResults[readFrameIdx][poolIdx][i * 2];
+            const u32 startQueryIdx = GetQueryOffset(i);
+            u64 startTs = (startQueryIdx < m_timestampResults[readFrameIdx][poolIdx].size())
+                              ? m_timestampResults[readFrameIdx][poolIdx][startQueryIdx]
+                              : 0;
             if (startTs != 0 && startTs < globalMinTs) globalMinTs = startTs;
         }
     }
@@ -205,8 +192,11 @@ void GPUTimingQueryVulkan::ReadResults(u32 frameIdx)
         u32 poolIdx = GetPoolIndex(queueFamily);
 
         auto& results = m_timestampResults[readFrameIdx][poolIdx];
-        u64 startTs = results[i * 2];
-        u64 endTs = results[i * 2 + 1];
+        const u32 startQueryIdx = GetQueryOffset(i);
+        const u32 endQueryIdx = startQueryIdx + GetViewCount(i);
+
+        u64 startTs = (startQueryIdx < results.size()) ? results[startQueryIdx] : 0;
+        u64 endTs = (endQueryIdx < results.size()) ? results[endQueryIdx] : 0;
 
         m_results[i].startMs = static_cast<f32>(static_cast<f64>(startTs - globalMinTs) * nsToMs);
         m_results[i].endMs = static_cast<f32>(static_cast<f64>(endTs - globalMinTs) * nsToMs);
@@ -225,10 +215,14 @@ void GPUTimingQueryVulkan::ReadResults(u32 frameIdx)
 
 void GPUTimingQueryVulkan::WriteTimestampImpl(CommandBuffer* pCmdBuffer, u32 passIndex, bool isStart)
 {
-    u32 queryIndex = passIndex * 2 + (isStart ? 0 : 1);
-    if (queryIndex >= m_queryCount)
+    const u32 startQueryIdx = GetQueryOffset(passIndex);
+    const u32 viewCount = GetViewCount(passIndex);
+    const u32 queryIndex = startQueryIdx + (isStart ? 0 : viewCount);
+
+    if (queryIndex >= m_queryCount || !pCmdBuffer)
         return;
 
+    u32 frameSlot = pCmdBuffer->GetFrameIdx() % SWAPCHAIN_IMAGES;
     u32 poolIdx = GRAPHICS_POOL_IDX;
     auto* pVulkanCmd = static_cast<CBufferVulkan*>(pCmdBuffer);
     if (pVulkanCmd && pVulkanCmd->GetPool())
@@ -240,11 +234,11 @@ void GPUTimingQueryVulkan::WriteTimestampImpl(CommandBuffer* pCmdBuffer, u32 pas
         poolIdx = GetPoolIndex(queueFamily);
     }
 
-    if (m_queryPools[m_currentFrameIdx][poolIdx].GetRef() == VK_NULL_HANDLE)
+    if (m_queryPools[frameSlot][poolIdx].GetRef() == VK_NULL_HANDLE)
         return;
 
     WriteTimestampCmd cmd{};
-    cmd.queryPool = &m_queryPools[m_currentFrameIdx][poolIdx];
+    cmd.queryPool = &m_queryPools[frameSlot][poolIdx];
     cmd.query = queryIndex;
     cmd.isStart = isStart;
     pCmdBuffer->RecordCommand(cmd);

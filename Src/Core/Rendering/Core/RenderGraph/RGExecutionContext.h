@@ -67,6 +67,31 @@ struct RGExecutionContext
         return pRegistry ? pRegistry->ResolveByID(id) : nullptr;
     }
 
+    RenderAttachmentInfo GetColorAttachment(RGResourceID id, LoadOp loadOp = LoadOp::CLEAR, StoreOp storeOp = StoreOp::STORE, ImageLayout layout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL) const
+    {
+        return pRegistry ? pRegistry->GetColorAttachment(id, loadOp, storeOp, layout) : RenderAttachmentInfo{};
+    }
+
+    RenderAttachmentInfo GetDepthAttachment(RGResourceID id, LoadOp loadOp = LoadOp::CLEAR, StoreOp storeOp = StoreOp::STORE, ImageLayout layout = ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL) const
+    {
+        return pRegistry ? pRegistry->GetDepthAttachment(id, loadOp, storeOp, layout) : RenderAttachmentInfo{};
+    }
+
+    RenderAttachmentInfo GetReadOnlyDepthAttachment(RGResourceID id = RGResourceID::MainDepth, LoadOp loadOp = LoadOp::LOAD) const
+    {
+        return pRegistry ? pRegistry->GetReadOnlyDepthAttachment(id, loadOp) : RenderAttachmentInfo{};
+    }
+
+    RenderAttachmentInfo GetColorAttachment(RGResourceHandle handle, LoadOp loadOp = LoadOp::CLEAR, StoreOp storeOp = StoreOp::STORE, ImageLayout layout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL) const
+    {
+        return pRegistry ? pRegistry->GetColorAttachment(handle, loadOp, storeOp, layout) : RenderAttachmentInfo{};
+    }
+
+    RenderAttachmentInfo GetDepthAttachment(RGResourceHandle handle, LoadOp loadOp = LoadOp::CLEAR, StoreOp storeOp = StoreOp::STORE, ImageLayout layout = ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL) const
+    {
+        return pRegistry ? pRegistry->GetDepthAttachment(handle, loadOp, storeOp, layout) : RenderAttachmentInfo{};
+    }
+
     Texture* GetHistoryTexture(RGResourceHandle handle) const
     {
         return pRegistry ? pRegistry->ResolveHistory(handle) : nullptr;

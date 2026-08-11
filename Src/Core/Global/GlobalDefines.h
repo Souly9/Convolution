@@ -6,10 +6,30 @@
 #include "Typedefs.h"
 
 // Configuration Macros
+#ifndef CONVOLUTION_DUMP_RENDERGRAPH
+#define CONVOLUTION_DUMP_RENDERGRAPH 1
+#endif
+
 #ifdef CONV_DEBUG
-#define ASSERT(x) do { if (!(x)) { printf("ASSERT FAILED: %s at %s:%d\n", #x, __FILE__, __LINE__); abort(); } } while(0)
+#define ASSERT(x)                                                                                                      \
+    do                                                                                                                 \
+    {                                                                                                                  \
+        if (!(x))                                                                                                      \
+        {                                                                                                              \
+            printf("ASSERT FAILED: %s at %s:%d\n", #x, __FILE__, __LINE__);                                            \
+            abort();                                                                                                   \
+        }                                                                                                              \
+    } while (0)
 #else
-#define ASSERT(x) do { if (!(x)) { printf("ASSERT FAILED: %s at %s:%d\n", #x, __FILE__, __LINE__); abort(); } } while(0)
+#define ASSERT(x)                                                                                                      \
+    do                                                                                                                 \
+    {                                                                                                                  \
+        if (!(x))                                                                                                      \
+        {                                                                                                              \
+            printf("ASSERT FAILED: %s at %s:%d\n", #x, __FILE__, __LINE__);                                            \
+            abort();                                                                                                   \
+        }                                                                                                              \
+    } while (0)
 #endif
 #define DEBUG_ASSERT(x) ASSERT(x)
 

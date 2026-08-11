@@ -26,6 +26,7 @@ public:
 
     bool WantsToRender() const override { return true; }
     QueueType GetQueueType() const override { return QueueType::Compute; }
+    PassStage GetPassStage() const override { return PassStage::EarlyCompute; }
 
 protected:
     ComputePipeline m_pipeline;

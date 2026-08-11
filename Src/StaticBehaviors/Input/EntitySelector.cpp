@@ -3,6 +3,7 @@
 #undef min
 #include "Core/Events/EventSystem.h"
 #include "Core/Global/GlobalVariables.h"
+#include "Core/SceneGraph/Mesh.h"
 
 mathstl::Matrix invProj{};
 mathstl::Matrix invView{};
@@ -105,6 +106,9 @@ void EntitySelector::OnLeftMouseClick(const LeftMouseClickEventData& data)
     using namespace DirectX::SimpleMath;
     const Vector2 mousePos{(f32)data.mousePosX, (f32)data.mousePosY};
     const auto& resolution = FrameGlobals::GetSwapChainExtent();
+    if (resolution.x <= 0.0f || resolution.y <= 0.0f)
+        return;
+
     const float x = (2.0f * ((mousePos.x) / (resolution.x))) - 1.0f;
     const float y = 1.0f - (2.0f * ((mousePos.y) / (resolution.y)));
     const DirectX::XMFLOAT4 deviceCoords = {x, y, 0, 1};
@@ -112,27 +116,52 @@ void EntitySelector::OnLeftMouseClick(const LeftMouseClickEventData& data)
 
     f32 overallMinDist = FLT_MAX;
     ECS::Entity rsltEntity;
-    const Vector3 dirInverted = ray.invDirection;
+
+    const auto& meshAABBs = g_pMeshManager->GetMeshAABBs();
 
     auto checkIntersections = [&](const auto& comps)
     {
         for (size_t i = 0; i < comps.size(); i++)
         {
-            const auto& aabb = comps[i].component.boundingBox;
-            const Vector4 aabbCenter = aabb.center;
-            const Vector4 aabbExtents = aabb.extents;
-            const Vector3 aabbMin =
-                Vector3(aabbCenter.x - aabbExtents.x, aabbCenter.y - aabbExtents.y, aabbCenter.z - aabbExtents.z);
-            const Vector3 aabbMax =
-                Vector3(aabbCenter.x + aabbExtents.x, aabbCenter.y + aabbExtents.y, aabbCenter.z + aabbExtents.z);
+            const auto entity = comps[i].entity;
+            const auto* pTransform = g_pEntityManager->GetComponent<ECS::Components::Transform>(entity);
+            if (!pTransform)
+                continue;
 
-            f32 dist;
-            if (RayAABBIntersection(ray.worldOrigin, dirInverted, ray.distance, aabbMin, aabbMax, dist))
+            const auto* pMesh = comps[i].component.pMesh;
+            if (!pMesh)
+                continue;
+
+            auto meshIt = meshAABBs.find(pMesh);
+            if (meshIt == meshAABBs.end())
+                continue;
+
+            const auto& localAABB = meshIt->second;
+            const Vector4 localCenter = localAABB.center;
+            const Vector4 localExtents = localAABB.extents;
+
+            const Vector3 aabbMin =
+                Vector3(localCenter.x - localExtents.x, localCenter.y - localExtents.y, localCenter.z - localExtents.z);
+            const Vector3 aabbMax =
+                Vector3(localCenter.x + localExtents.x, localCenter.y + localExtents.y, localCenter.z + localExtents.z);
+
+            Matrix invWorld = pTransform->worldModelMatrix.Invert();
+            Vector3 localRayOrigin = Vector3::Transform(ray.worldOrigin, invWorld);
+            Vector3 localRayDir = Vector3::TransformNormal(ray.direction, invWorld);
+            localRayDir.Normalize();
+            Vector3 localInvRayDir = Vector3(1.0f) / localRayDir;
+
+            f32 localDist;
+            if (RayAABBIntersection(localRayOrigin, localInvRayDir, ray.distance, aabbMin, aabbMax, localDist))
             {
-                if (dist < overallMinDist)
+                Vector3 localHitPoint = localRayOrigin + localRayDir * localDist;
+                Vector3 worldHitPoint = Vector3::Transform(localHitPoint, pTransform->worldModelMatrix);
+                f32 worldDist = Vector3::Distance(ray.worldOrigin, worldHitPoint);
+
+                if (worldDist < overallMinDist)
                 {
-                    overallMinDist = dist;
-                    rsltEntity = comps[i].entity;
+                    overallMinDist = worldDist;
+                    rsltEntity = entity;
                 }
             }
         }
@@ -184,12 +213,12 @@ void EntitySelector::OnLeftMouseClick(const LeftMouseClickEventData& data)
 EntitySelector::WorldPosMouseRay EntitySelector::CreateRay(const mathstl::Vector4& deviceOrigin)
 {
     auto deviceBegin = deviceOrigin;
-    deviceBegin.z = -1;
+    deviceBegin.z = 1.0f;
     deviceBegin.w = 1.f;
     mathstl::Vector4 tmpBegin = mathstl::Vector4::Transform(deviceBegin, invProj);
 
     auto deviceEnd = deviceOrigin;
-    deviceEnd.z = 1.f;
+    deviceEnd.z = 0.0f;
     deviceEnd.w = 1.f;
     mathstl::Vector4 tmpEnd = mathstl::Vector4::Transform(deviceEnd, invProj);
 

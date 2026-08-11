@@ -1,6 +1,7 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Global/Typedefs.h"
+#include "Core/Rendering/Core/CommandBuffer.h"
 #include "Core/Rendering/Core/RenderingForwardDecls.h"
 #include "Core/Rendering/Core/ShadowMaps.h"
 #include "RGResourceTypes.h"
@@ -49,8 +50,17 @@ public:
     TextureHandle ResolveTextureHandleByID(RGResourceID id) const;
     TextureHandle ResolveHistoryTextureHandleByID(RGResourceID id) const;
 
+    RenderAttachmentInfo GetColorAttachment(RGResourceID id, LoadOp loadOp = LoadOp::CLEAR, StoreOp storeOp = StoreOp::STORE, ImageLayout renderingLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+    RenderAttachmentInfo GetDepthAttachment(RGResourceID id, LoadOp loadOp = LoadOp::CLEAR, StoreOp storeOp = StoreOp::STORE, ImageLayout renderingLayout = ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+    RenderAttachmentInfo GetReadOnlyDepthAttachment(RGResourceID id = RGResourceID::MainDepth, LoadOp loadOp = LoadOp::LOAD);
+
+    RenderAttachmentInfo GetColorAttachment(RGResourceHandle handle, LoadOp loadOp = LoadOp::CLEAR, StoreOp storeOp = StoreOp::STORE, ImageLayout renderingLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+    RenderAttachmentInfo GetDepthAttachment(RGResourceHandle handle, LoadOp loadOp = LoadOp::CLEAR, StoreOp storeOp = StoreOp::STORE, ImageLayout renderingLayout = ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+
     RGResourceHandle GetHistoryHandle(RGResourceHandle handle) const;
     const RGResourceSpec* GetSpec(RGResourceHandle handle) const;
+    TexFormat GetResourceFormat(RGResourceHandle handle) const;
+    TexFormat GetResourceFormatByID(RGResourceID id) const;
     ImageLayout GetInitialLayout(RGResourceHandle handle) const;
     void SetResourceLayout(RGResourceHandle handle, ImageLayout layout);
     void SetCustomResourceName(RGResourceHandle handle, const stltype::string& name);
@@ -62,16 +72,16 @@ public:
     void ResetFrameState();
     void FreeAll();
 
-enum class RGManagedResourceFlags : u32
-{
-    None                = 0,
-    Allocated           = 1u << 0,
-    IsImported          = 1u << 1,
-    IsPersistent        = 1u << 2,
-    ReferencedThisFrame = 1u << 3
-};
+public:
+    enum class RGManagedResourceFlags : u32
+    {
+        None                = 0,
+        Allocated           = 1u << 0,
+        IsImported          = 1u << 1,
+        IsPersistent        = 1u << 2,
+        ReferencedThisFrame = 1u << 3
+    };
 
-private:
     struct ManagedResource
     {
         RGResourceSpec spec;
@@ -100,6 +110,9 @@ private:
         void SetReferencedThisFrame(bool v = true) { mathstl::setFlag(flags, (u32)RGManagedResourceFlags::ReferencedThisFrame, v); }
     };
 
+    const stltype::vector<ManagedResource>& GetResources() const { return m_resources; }
+
+private:
     stltype::vector<ManagedResource> m_resources;
     CascadedShadowMap m_shadowMap{};
     mathstl::Vector2 m_currentRenderRes{0.0f, 0.0f};

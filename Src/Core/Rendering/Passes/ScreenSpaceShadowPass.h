@@ -20,6 +20,7 @@ public:
     virtual void Setup(::RenderGraphBuilder& builder, const MainPassData& data) override;
     virtual bool WantsToRender() const override;
     virtual QueueType GetQueueType() const override { return QueueType::Compute; }
+    virtual PassStage GetPassStage() const override { return PassStage::Lighting; }
     virtual void BuildBuffers() override {}
 
 protected:

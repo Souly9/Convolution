@@ -6,12 +6,14 @@
 #define GBUFFER_MAT_TEXCOORD_OUTPUT_IDX 2
 #define GBUFFER_VELOCITY_OUTPUT_IDX     3
 #define GBUFFER_ROUGHNESS_OUTPUT_IDX    4
+#define GBUFFER_ENTITY_ID_OUTPUT_IDX    5
 
 layout(location = GBUFFER_ALBEDO_OUTPUT_IDX) out vec4 outColor;
 layout(location = GBUFFER_NORMAL_OUTPUT_IDX) out vec4 outNormal;
 layout(location = GBUFFER_MAT_TEXCOORD_OUTPUT_IDX) out vec4 outTexCoordMat;
 layout(location = GBUFFER_VELOCITY_OUTPUT_IDX) out vec2 outVelocity;
 layout(location = GBUFFER_ROUGHNESS_OUTPUT_IDX) out float outRoughness;
+layout(location = GBUFFER_ENTITY_ID_OUTPUT_IDX) out uint outEntityID;
 
 FUNC_QUALIFIER void StoreNormalAndMaterialInGBuffer(vec3 normal, uint matIdx)
 {
@@ -30,6 +32,11 @@ FUNC_QUALIFIER void StoreAlbedoInGBuffer(vec4 albedo)
 FUNC_QUALIFIER void StoreVelocityInGBuffer(vec2 velocity)
 {
     outVelocity = velocity;
+}
+
+FUNC_QUALIFIER void StoreEntityIDInGBuffer(uint entityID)
+{
+    outEntityID = entityID;
 }
 
 #endif // SHADERS_GBUFFER_SAMPLING_H

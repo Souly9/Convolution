@@ -30,6 +30,7 @@ STRUCTDECL(InstanceData)
     STRUCTFIELD(vec4, aabbCenterTransIdx)
     STRUCTFIELD(vec4, aabbExtentsMatIdx)
     STRUCTFIELD(uint, flags)
+    STRUCTFIELD(uint, entityID)
 
 #ifdef __cplusplus
     void SetTransformIdx(u32 idx)
@@ -45,6 +46,11 @@ STRUCTDECL(InstanceData)
     void SetVisible(bool visible)
     {
         flags = visible ? 1u : 0u;
+    }
+
+    void SetEntityID(u32 id)
+    {
+        entityID = id;
     }
 #endif
 STRUCTEND()

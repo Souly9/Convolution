@@ -25,6 +25,7 @@ public:
     virtual void CreateSharedDescriptorLayout() override;
     virtual void Setup(::RenderGraphBuilder& builder, const MainPassData& data) override;
     virtual bool WantsToRender() const override;
+    virtual PassStage GetPassStage() const override { return PassStage::MainGeometry; }
 
 protected:
     // Every pass should only have one pipeline as we're working with uber shaders + bindless

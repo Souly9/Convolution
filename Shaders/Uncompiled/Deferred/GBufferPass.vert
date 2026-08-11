@@ -13,7 +13,6 @@
 #include "../../Globals/GeometryHelpers.h"
 #include "../../Globals/GeometryPassData.h"
 
-
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;
 layout(location = 2) in vec2 inTexCoord0;
@@ -28,8 +27,11 @@ layout(location = 0) out VertexOut
     vec3 worldNormal;
     vec2 fragTexCoord;
     flat uint matIdx;
+    flat uint entityID;
 }
 OUT;
+
+invariant gl_Position;
 
 void main()
 {
@@ -42,6 +44,7 @@ void main()
 
     OUT.TBN = BuildWorldTBN(worldMat, OUT.worldNormal, inTangent);
     OUT.matIdx = GetMaterialIdx(iData);
+    OUT.entityID = iData.entityID;
     OUT.fragTexCoord = inTexCoord0;
 
     vec4 localPosition = vec4(inPosition, 1.0);
@@ -49,5 +52,5 @@ void main()
     OUT.jitteredClipPos = ApplyFrameJitter(OUT.unjitteredClipPos);
     OUT.prevUnjitteredClipPos =
         ubo.prevViewProjection * prevGlobalTransformSSBO.prevModelMatrices[transformIdx] * localPosition;
-    gl_Position = IsVisible(iData) ? OUT.jitteredClipPos : vec4(0.0 / 0.0);
+    gl_Position = OUT.jitteredClipPos;
 }

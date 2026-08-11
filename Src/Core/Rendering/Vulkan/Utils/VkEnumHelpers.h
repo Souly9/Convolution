@@ -7,6 +7,7 @@
 #include <vk_mem_alloc.h>
 
 #include "TextureEnums.h"
+#include "Core/Rendering/Core/AccelerationStructure.h"
 #include "Core/Rendering/Core/RenderDefinitions.h"
 
 inline u32 GetFormatSize(const TexFormat& m)
@@ -840,4 +841,96 @@ static inline VkSamplerAddressMode Conv(TextureWrapMode mode)
             DEBUG_ASSERT(false);
             return VK_SAMPLER_ADDRESS_MODE_REPEAT;
     }
+}
+
+static inline VkBuildAccelerationStructureFlagsKHR Conv(AccelerationStructureBuildFlags flags)
+{
+    VkBuildAccelerationStructureFlagsKHR vkFlags = 0;
+    if ((flags & AccelerationStructureBuildFlags::PreferFastTrace) != AccelerationStructureBuildFlags::None)
+        vkFlags |= VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+    return vkFlags;
+}
+
+static inline VkGeometryFlagsKHR Conv(AccelerationStructureGeometryFlags flags)
+{
+    VkGeometryFlagsKHR vkFlags = 0;
+    if ((flags & AccelerationStructureGeometryFlags::Opaque) != AccelerationStructureGeometryFlags::None)
+        vkFlags |= VK_GEOMETRY_OPAQUE_BIT_KHR;
+    return vkFlags;
+}
+
+static inline VkAccelerationStructureTypeKHR Conv(AccelerationStructureType type)
+{
+    switch (type)
+    {
+        case AccelerationStructureType::TopLevel:
+            return VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+        case AccelerationStructureType::BottomLevel:
+            return VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+        default:
+            DEBUG_ASSERT(false);
+            return VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+    }
+}
+
+static inline VkGeometryTypeKHR Conv(AccelerationStructureGeometryType type)
+{
+    switch (type)
+    {
+        case AccelerationStructureGeometryType::Triangles:
+            return VK_GEOMETRY_TYPE_TRIANGLES_KHR;
+        case AccelerationStructureGeometryType::Instances:
+            return VK_GEOMETRY_TYPE_INSTANCES_KHR;
+        default:
+            DEBUG_ASSERT(false);
+            return VK_GEOMETRY_TYPE_TRIANGLES_KHR;
+    }
+}
+
+static inline VkBuildAccelerationStructureModeKHR Conv(AccelerationStructureBuildMode mode)
+{
+    switch (mode)
+    {
+        case AccelerationStructureBuildMode::Build:
+            return VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+        case AccelerationStructureBuildMode::Update:
+            return VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR;
+        default:
+            DEBUG_ASSERT(false);
+            return VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+    }
+}
+
+static inline VkFormat Conv(RayTracingVertexFormat format)
+{
+    switch (format)
+    {
+        case RayTracingVertexFormat::Float3:
+            return VK_FORMAT_R32G32B32_SFLOAT;
+        default:
+            DEBUG_ASSERT(false);
+            return VK_FORMAT_UNDEFINED;
+    }
+}
+
+static inline VkIndexType Conv(RayTracingIndexType type)
+{
+    switch (type)
+    {
+        case RayTracingIndexType::UInt32:
+            return VK_INDEX_TYPE_UINT32;
+        default:
+            DEBUG_ASSERT(false);
+            return VK_INDEX_TYPE_NONE_KHR;
+    }
+}
+
+static inline VkAccessFlags2 Conv(RayTracingAccess access)
+{
+    VkAccessFlags2 vkAccess = 0;
+    if ((access & RayTracingAccess::AccelerationStructureRead) != RayTracingAccess::None)
+        vkAccess |= VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR;
+    if ((access & RayTracingAccess::AccelerationStructureWrite) != RayTracingAccess::None)
+        vkAccess |= VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
+    return vkAccess;
 }

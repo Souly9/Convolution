@@ -136,10 +136,15 @@ protected:
 
     bool AnyPassWantsToRender() const;
     void PrepareMainPassDataForFrame(MainPassData& mainPassData, FrameRendererContext& ctx, u32 frameIdx);
+    void SetupRenderGraph(const MainPassData& mainPassData, FrameRendererContext& ctx);
+    void CompileAndExecuteRenderGraph(const MainPassData& mainPassData,
+                                      FrameRendererContext& ctx,
+                                      Semaphore& imageAvailableSemaphore);
     void RenderAllPassGroups(const MainPassData& mainPassData,
                              FrameRendererContext& ctx,
                              Semaphore& imageAvailableSemaphore);
     void InitFrameContexts();
+    void UpdateFrameFeatureState(const MainPassData& data);
     void UpdateGBufferUBO(const MainPassData& data);
 
     CommandBuffer* GetGraphicsCommandBuffer(u32 frameIdx, u32 batchIdx);

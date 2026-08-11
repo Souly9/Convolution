@@ -286,13 +286,15 @@ void DLSSPass::RenderWithGraph(const MainPassData& data, const FrameRendererCont
         {
             if (td.native == 0 && td.view == 0)
             {
-                frameData.resources.push_back(sl::Resource(
+                sl::Resource nullRes(
                     sl::ResourceType::eTex2d,
                     nullptr,
                     nullptr,
                     nullptr,
                     td.state
-                ));
+                );
+                nullRes.nativeFormat = static_cast<uint32_t>(VK_FORMAT_R8G8B8A8_UNORM);
+                frameData.resources.push_back(nullRes);
             }
             else
             {

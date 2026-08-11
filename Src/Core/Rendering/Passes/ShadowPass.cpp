@@ -26,17 +26,6 @@ void CSMPass::Init(const SharedResourceManager& resourceManager)
 {
     ScopedZone("ShadowPass::Init");
 
-    const auto csmFormat = DEPTH_BUFFER_FORMAT;
-    DepthBufferAttachmentInfo depthInfo{};
-    depthInfo.format = csmFormat;
-    depthInfo.loadOp = LoadOp::CLEAR;
-    depthInfo.storeOp = StoreOp::STORE;
-    depthInfo.initialLayout = ImageLayout::UNDEFINED;
-    depthInfo.finalLayout = ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-    depthInfo.renderingLayout = ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-    const auto cascadeAttachment = DepthAttachment::Create(depthInfo, nullptr);
-    m_mainRenderingData.depthAttachment = cascadeAttachment;
-
     InitBaseData();
     for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
         m_indirectCmdBuffers[i].Init(1000000);
@@ -52,8 +41,7 @@ void CSMPass::BuildPipelines()
 
     PipelineInfo info{};
     info.descriptorSetLayout.sharedDescriptors = m_sharedDescriptors;
-    info.attachmentInfos =
-        CreateAttachmentInfo({m_mainRenderingData.colorAttachments}, m_mainRenderingData.depthAttachment);
+    info.attachmentInfos.depthAttachmentFormat = DEPTH_BUFFER_FORMAT;
     // Compute viewMask from cascade count: (1 << cascades) - 1 gives bitmask for all layers
     info.viewMask = (1 << m_cascadeCount) - 1;
     info.depthCompareOp = kDepthWriteCompareOp;
@@ -103,14 +91,14 @@ void CSMPass::RenderWithGraph(const MainPassData& data, const FrameRendererConte
     UpdateContextForFrame(currentFrame);
     const auto& passCtx = m_perObjectFrameContexts[currentFrame];
 
-    const auto ex = data.directionalLightShadowMap.pTexture->GetInfo().extents;
-    const DirectX::XMINT2 extents(ex.x, ex.y);
-    m_mainRenderingData.depthAttachment.SetTexture(data.directionalLightShadowMap.pTexture);
+    RenderAttachmentInfo depthAttachment = execCtx.GetDepthAttachment(RGResourceID::CSMShadowMap, LoadOp::CLEAR, StoreOp::STORE);
+    if (!depthAttachment.pTexture)
+        depthAttachment.pTexture = data.directionalLightShadowMap.pTexture;
 
-    stltype::vector<ColorAttachment> colorAttachments;
-    BeginRenderingCmd cmdBegin{&m_mainPSO,
-                               ToRenderAttachmentInfos(colorAttachments),
-                               ToRenderAttachmentInfo(m_mainRenderingData.depthAttachment)};
+    const auto ex = depthAttachment.pTexture ? depthAttachment.pTexture->GetInfo().extents : DirectX::XMUINT3{0, 0, 0};
+    const DirectX::XMINT2 extents(ex.x, ex.y);
+
+    BeginRenderingCmd cmdBegin{&m_mainPSO, {}, depthAttachment};
 
     cmdBegin.depthLayerMask = (1 << m_cascadeCount) - 1;
     cmdBegin.extents = extents;

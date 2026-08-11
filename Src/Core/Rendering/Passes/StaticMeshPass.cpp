@@ -34,25 +34,6 @@ void StaticMainMeshPass::Init(const SharedResourceManager& resourceManager)
 void StaticMainMeshPass::RecreateResolutionDependentResources(const SharedResourceManager& resourceManager)
 {
     ScopedZone("StaticMeshPass::RecreateResolutionDependentResources");
-
-    GBufferInfo gbufferInfo{};
-
-    const auto gbufferPosition =
-        CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBufferAlbedo), LoadOp::CLEAR, nullptr);
-    const auto gbufferNormal =
-        CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBufferNormal), LoadOp::CLEAR, nullptr);
-    const auto gbuffer3 = CreateDefaultColorAttachment(
-        gbufferInfo.GetFormat(GBufferTextureType::TexCoordMatData), LoadOp::CLEAR, nullptr);
-    const auto gbufferVelocity = CreateDefaultColorAttachment(
-        gbufferInfo.GetFormat(GBufferTextureType::GBufferVelocity), LoadOp::CLEAR, nullptr);
-    const auto gbufferRoughness = CreateDefaultColorAttachment(
-        gbufferInfo.GetFormat(GBufferTextureType::GBufferRoughness), LoadOp::CLEAR, nullptr);
-
-    m_mainRenderingData.depthAttachment =
-        CreateReadOnlyDepthAttachment(LoadOp::LOAD, nullptr);
-    m_mainRenderingData.colorAttachments = {
-        gbufferPosition, gbufferNormal, gbuffer3, gbufferVelocity, gbufferRoughness};
-
     InitBaseData();
 }
 
@@ -67,8 +48,15 @@ void StaticMainMeshPass::BuildPipelines()
     info.descriptorSetLayout.sharedDescriptors = m_sharedDescriptors;
     info.depthWriteEnable = false;
     info.depthCompareOp = DepthCompareOp::GREATER_OR_EQUAL;
-    info.attachmentInfos =
-        CreateAttachmentInfo({m_mainRenderingData.colorAttachments}, m_mainRenderingData.depthAttachment);
+    info.attachmentInfos.colorAttachments = {
+        TexFormat::R16G16B16A16_FLOAT, // GBufferAlbedo
+        TexFormat::R16G16B16A16_FLOAT, // GBufferNormal
+        TexFormat::R16G16B16A16_FLOAT, // GBufferUVMat
+        TexFormat::R32G32_FLOAT,       // GBufferVelocity
+        TexFormat::R8_UNORM,           // GBufferRoughness
+        TexFormat::R32_UINT            // GBufferEntityID
+    };
+    info.attachmentInfos.depthAttachmentFormat = TexFormat::D32_SFLOAT;
     m_mainPSO = PSO(
         ShaderCollection{&mainVert, &mainFrag}, PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions}, info);
 }
@@ -115,6 +103,7 @@ void StaticMainMeshPass::Setup(::RenderGraphBuilder& builder, const MainPassData
     builder.WriteGBuffer(RGResourceID::GBufferUVMat);
     builder.WriteGBuffer(RGResourceID::GBufferVelocity);
     builder.WriteGBuffer(RGResourceID::GBufferRoughness);
+    builder.WriteGBuffer(RGResourceID::GBufferEntityID);
     builder.ReadDepth(RGResourceID::MainDepth);
     builder.SetHasSideEffects();
 }
@@ -127,26 +116,19 @@ void StaticMainMeshPass::RenderWithGraph(const MainPassData& data, const FrameRe
     UpdateContextForFrame(currentFrame);
     const auto& passCtx = m_perObjectFrameContexts[currentFrame];
 
-    ColorAttachment gbufferPosition = m_mainRenderingData.colorAttachments[0];
-    ColorAttachment gbufferNormal = m_mainRenderingData.colorAttachments[1];
-    ColorAttachment gbuffer3 = m_mainRenderingData.colorAttachments[2];
-    ColorAttachment gbufferVelocity = m_mainRenderingData.colorAttachments[3];
-    ColorAttachment gbufferRoughness = m_mainRenderingData.colorAttachments[4];
-    gbufferPosition.SetTexture(execCtx.GetTexture(RGResourceID::GBufferAlbedo));
-    gbufferNormal.SetTexture(execCtx.GetTexture(RGResourceID::GBufferNormal));
-    gbuffer3.SetTexture(execCtx.GetTexture(RGResourceID::GBufferUVMat));
-    gbufferVelocity.SetTexture(execCtx.GetTexture(RGResourceID::GBufferVelocity));
-    gbufferRoughness.SetTexture(execCtx.GetTexture(RGResourceID::GBufferRoughness));
-
-    stltype::vector<ColorAttachment> colorAttachments = {
-        gbufferPosition, gbufferNormal, gbuffer3, gbufferVelocity, gbufferRoughness};
+    stltype::vector<RenderAttachmentInfo> colorAttachments = {
+        execCtx.GetColorAttachment(RGResourceID::GBufferAlbedo),
+        execCtx.GetColorAttachment(RGResourceID::GBufferNormal),
+        execCtx.GetColorAttachment(RGResourceID::GBufferUVMat),
+        execCtx.GetColorAttachment(RGResourceID::GBufferVelocity),
+        execCtx.GetColorAttachment(RGResourceID::GBufferRoughness),
+        execCtx.GetColorAttachment(RGResourceID::GBufferEntityID)
+    };
+    RenderAttachmentInfo depthAttachment = execCtx.GetReadOnlyDepthAttachment(RGResourceID::MainDepth);
 
     const DirectX::XMINT2 extents(execCtx.GetRenderResolution().x, execCtx.GetRenderResolution().y);
 
-    m_mainRenderingData.depthAttachment.SetTexture(execCtx.GetTexture(RGResourceID::MainDepth));
-    BeginRenderingCmd cmdBegin{&m_mainPSO,
-                               ToRenderAttachmentInfos(colorAttachments),
-                               ToRenderAttachmentInfo(m_mainRenderingData.depthAttachment)};
+    BeginRenderingCmd cmdBegin{&m_mainPSO, colorAttachments, depthAttachment};
     cmdBegin.extents = extents;
     cmdBegin.viewport = data.mainView.viewport;
 

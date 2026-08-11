@@ -96,11 +96,15 @@ void RTAOPass::RenderWithGraph(const MainPassData& data, const FrameRendererCont
     CommandBuffer* pCmdBuffer = execCtx.pCmdBuffer;
     StartRenderPassProfilingScope(pCmdBuffer);
 
-    const bool hasReadyTLAS = execCtx.HasReadyTLAS();
+    if (!execCtx.HasReadyTLAS())
+    {
+        EndRenderPassProfilingScope(pCmdBuffer);
+        return;
+    }
 
     const auto& rtState = g_pApplicationState->GetCurrentApplicationState().renderState.rt;
     m_pushConstants.rtaoTexIdx = execCtx.GetBindless(RGResourceID::RTAOOutput);
-    m_pushConstants.hasReadyTLAS = hasReadyTLAS ? 1u : 0u;
+    m_pushConstants.hasReadyTLAS = 1u;
     m_pushConstants.frameIndex = execCtx.GetFrameIndex();
     m_pushConstants.raysPerPixel = rtState.aoRaysPerPixel;
     m_pushConstants.aoRadius = rtState.aoRadius;

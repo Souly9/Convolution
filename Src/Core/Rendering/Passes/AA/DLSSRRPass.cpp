@@ -308,7 +308,7 @@ void DLSSRRPass::RenderWithGraph(const MainPassData& data, const FrameRendererCo
                     nullptr,
                     td.state
                 );
-                res.nativeFormat = td.nativeFormat;
+                res.nativeFormat = td.nativeFormat != 0 ? td.nativeFormat : static_cast<uint32_t>(VK_FORMAT_R8G8B8A8_UNORM);
                 frameData.resources.push_back(res);
             }
             else

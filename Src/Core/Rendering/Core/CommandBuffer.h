@@ -20,6 +20,16 @@ struct RenderAttachmentInfo
     LoadOp loadOp{LoadOp::CLEAR};
     StoreOp storeOp{StoreOp::STORE};
     ClearValue clearValue{};
+
+    RenderAttachmentInfo() = default;
+    RenderAttachmentInfo(Texture* pTex, ImageLayout layout, LoadOp load = LoadOp::CLEAR, StoreOp store = StoreOp::STORE)
+        : pTexture(pTex), renderingLayout(layout), loadOp(load), storeOp(store)
+    {
+    }
+    RenderAttachmentInfo(Texture* pTex, LoadOp load, StoreOp store = StoreOp::STORE, ImageLayout layout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+        : pTexture(pTex), renderingLayout(layout), loadOp(load), storeOp(store)
+    {
+    }
 };
 
 struct CommandBase
@@ -43,11 +53,26 @@ struct BeginRenderingBaseCmd : public CommandBase
     BeginRenderingBaseCmd(const stltype::vector<RenderAttachmentInfo>& cs, const RenderAttachmentInfo& depth, bool hasDepth)
         : colorAttachments(cs), depthAttachment(depth), hasDepthAttachment(hasDepth)
     {
+        if (hasDepth && depth.pTexture && depth.pTexture->GetInfo().extents.x > 0)
+        {
+            const auto& ex = depth.pTexture->GetInfo().extents;
+            extents = {static_cast<int32_t>(ex.x), static_cast<int32_t>(ex.y)};
+        }
+        if ((extents.x <= 0 || extents.y <= 0) && !cs.empty() && cs[0].pTexture)
+        {
+            const auto& ex = cs[0].pTexture->GetInfo().extents;
+            extents = {static_cast<int32_t>(ex.x), static_cast<int32_t>(ex.y)};
+        }
     }
     
     BeginRenderingBaseCmd(const stltype::vector<RenderAttachmentInfo>& cs)
         : colorAttachments(cs), hasDepthAttachment(false)
     {
+        if (!cs.empty() && cs[0].pTexture)
+        {
+            const auto& ex = cs[0].pTexture->GetInfo().extents;
+            extents = {static_cast<int32_t>(ex.x), static_cast<int32_t>(ex.y)};
+        }
     }
 };
 

@@ -69,8 +69,7 @@ void LightTransformComputePass::Setup(::RenderGraphBuilder& builder, const MainP
         PassCtx::ClusterGrid,
         PassCtx::ViewSpaceLights>();
 
-    auto viewSpaceLights = builder.DeclareStorageBuffer(RGResourceID::Custom, UBO::ViewSpaceLightsSSBOSize);
-    builder.SetCustomResourceName(viewSpaceLights, "ViewSpaceLightsSSBO");
+    auto viewSpaceLights = builder.DeclareStorageBuffer(RGResourceID::Custom, UBO::ViewSpaceLightsSSBOSize, "ViewSpaceLightsSSBO");
     builder.WriteStorageBuffer(viewSpaceLights, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_WRITE);
     builder.SetHasSideEffects();
 }

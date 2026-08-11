@@ -34,6 +34,11 @@ public:
         return QueueType::Compute;
     }
 
+    PassStage GetPassStage() const override
+    {
+        return PassStage::EarlyCompute;
+    }
+
 protected:
     ComputePipeline m_lightCullingComputePipeline;
     ClusterPushConstants m_pushConstants;

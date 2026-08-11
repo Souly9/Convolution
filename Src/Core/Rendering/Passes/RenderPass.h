@@ -68,6 +68,11 @@ public:
         return QueueType::Graphics;
     }
 
+    virtual PassStage GetPassStage() const
+    {
+        return PassStage::MainGeometry;
+    }
+
     void InitBaseData();
 
     const stltype::string& GetName() const

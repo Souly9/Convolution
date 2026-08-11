@@ -330,6 +330,7 @@ void SharedResourceManager::UpdateInstanceDataSSBO(stltype::vector<RenderPasses:
         data.aabbExtentsMatIdx = mathstl::Vector4(meshData.meshData.aabb.extents);
         data.SetMaterialIdx(g_pMaterialManager->GetMaterialIdx(meshData.meshData.pMaterial));
         data.SetTransformIdx(meshData.transformIdx);
+        data.SetEntityID(static_cast<u32>(meshData.meshData.entityID));
 
         meshData.meshData.meshResourceHandle = data.drawData;
         meshData.meshData.instanceDataIdx = (u32)instanceData.size() - 1;
@@ -337,7 +338,9 @@ void SharedResourceManager::UpdateInstanceDataSSBO(stltype::vector<RenderPasses:
         // Visibility set from residency
         {
             SimpleScopedGuard lock(m_residencyStateMutex);
-            data.SetVisible(m_residentMeshes.count(meshData.meshData.pMesh) > 0);
+            const bool isResident = m_residentMeshes.count(meshData.meshData.pMesh) > 0;
+            const bool isMeshUploaded = meshData.meshData.pMesh != nullptr;
+            data.SetVisible(isResident || isMeshUploaded);
             m_meshToInstanceIdx[meshData.meshData.pMesh].push_back(meshData.meshData.instanceDataIdx);
         }
     }
@@ -502,6 +505,7 @@ stltype::vector<u32> SharedResourceManager::PopPendingVisibleInstanceIndices()
     stltype::vector<u32> indices;
     stltype::hash_set<u32> seenInstanceIndices;
     SimpleScopedGuard lock(m_residencyStateMutex);
+    stltype::vector<const Mesh*> remainingUnmapped;
     for (const auto* pMesh : m_pendingVisibleMeshes)
     {
         auto it = m_meshToInstanceIdx.find(pMesh);
@@ -515,8 +519,12 @@ stltype::vector<u32> SharedResourceManager::PopPendingVisibleInstanceIndices()
                 }
             }
         }
+        else
+        {
+            remainingUnmapped.push_back(pMesh);
+        }
     }
-    m_pendingVisibleMeshes.clear();
+    m_pendingVisibleMeshes = stltype::move(remainingUnmapped);
     return indices;
 }
 

@@ -14,98 +14,6 @@
 
 namespace CommandHelpers
 {
-static VkBuildAccelerationStructureFlagsKHR Conv(AccelerationStructureBuildFlags flags)
-{
-    VkBuildAccelerationStructureFlagsKHR vkFlags = 0;
-    if ((flags & AccelerationStructureBuildFlags::PreferFastTrace) != AccelerationStructureBuildFlags::None)
-        vkFlags |= VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
-    return vkFlags;
-}
-
-static VkGeometryFlagsKHR Conv(AccelerationStructureGeometryFlags flags)
-{
-    VkGeometryFlagsKHR vkFlags = 0;
-    if ((flags & AccelerationStructureGeometryFlags::Opaque) != AccelerationStructureGeometryFlags::None)
-        vkFlags |= VK_GEOMETRY_OPAQUE_BIT_KHR;
-    return vkFlags;
-}
-
-static VkAccelerationStructureTypeKHR Conv(AccelerationStructureType type)
-{
-    switch (type)
-    {
-        case AccelerationStructureType::TopLevel:
-            return VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
-        case AccelerationStructureType::BottomLevel:
-            return VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
-        default:
-            DEBUG_ASSERT(false);
-            return VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
-    }
-}
-
-static VkGeometryTypeKHR Conv(AccelerationStructureGeometryType type)
-{
-    switch (type)
-    {
-        case AccelerationStructureGeometryType::Triangles:
-            return VK_GEOMETRY_TYPE_TRIANGLES_KHR;
-        case AccelerationStructureGeometryType::Instances:
-            return VK_GEOMETRY_TYPE_INSTANCES_KHR;
-        default:
-            DEBUG_ASSERT(false);
-            return VK_GEOMETRY_TYPE_TRIANGLES_KHR;
-    }
-}
-
-static VkBuildAccelerationStructureModeKHR Conv(AccelerationStructureBuildMode mode)
-{
-    switch (mode)
-    {
-        case AccelerationStructureBuildMode::Build:
-            return VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
-        case AccelerationStructureBuildMode::Update:
-            return VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR;
-        default:
-            DEBUG_ASSERT(false);
-            return VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
-    }
-}
-
-static VkFormat Conv(RayTracingVertexFormat format)
-{
-    switch (format)
-    {
-        case RayTracingVertexFormat::Float3:
-            return VK_FORMAT_R32G32B32_SFLOAT;
-        default:
-            DEBUG_ASSERT(false);
-            return VK_FORMAT_UNDEFINED;
-    }
-}
-
-static VkIndexType Conv(RayTracingIndexType type)
-{
-    switch (type)
-    {
-        case RayTracingIndexType::UInt32:
-            return VK_INDEX_TYPE_UINT32;
-        default:
-            DEBUG_ASSERT(false);
-            return VK_INDEX_TYPE_NONE_KHR;
-    }
-}
-
-static VkAccessFlags2 Conv(RayTracingAccess access)
-{
-    VkAccessFlags2 vkAccess = 0;
-    if ((access & RayTracingAccess::AccelerationStructureRead) != RayTracingAccess::None)
-        vkAccess |= VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR;
-    if ((access & RayTracingAccess::AccelerationStructureWrite) != RayTracingAccess::None)
-        vkAccess |= VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
-    return vkAccess;
-}
-
 template <typename T>
 static void RecordCommand(T& cmd, CBufferVulkan& buffer)
 {
@@ -400,8 +308,14 @@ static void RecordCommand(ClearColorImageCmd& cmd, CBufferVulkan& buffer)
     range.baseArrayLayer = cmd.baseArrayLayer;
     range.layerCount = cmd.layerCount;
 
+    VkImageLayout imageLayout = Conv(cmd.image->GetInfo().layout);
+    if (imageLayout != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && imageLayout != VK_IMAGE_LAYOUT_GENERAL)
+    {
+        imageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    }
+
     vkCmdClearColorImage(
-        buffer.GetRef(), cmd.image->GetImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clearValue, 1, &range);
+        buffer.GetRef(), cmd.image->GetImage(), imageLayout, &clearValue, 1, &range);
 }
 
 static inline VkPipelineStageFlags2 ConvStageForQueue(SyncStages stage, QueueType queueType, bool isDst)
@@ -453,6 +367,18 @@ static void RecordCommand(ImageLayoutTransitionCmd& cmd, CBufferVulkan& buffer)
         memoryBarrier.srcAccessMask = (memoryBarrier.srcStageMask == VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT) ? 0 : Conv(cmd.srcAccessMask);
         memoryBarrier.dstAccessMask = (memoryBarrier.dstStageMask == VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT) ? 0 : Conv(cmd.dstAccessMask);
 
+        if ((memoryBarrier.dstAccessMask & VK_ACCESS_2_SHADER_READ_BIT) != 0)
+        {
+            constexpr VkPipelineStageFlags2 SHADER_STAGES =
+                VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT | VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT |
+                VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT |
+                VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR;
+            if ((memoryBarrier.dstStageMask & SHADER_STAGES) == 0)
+            {
+                memoryBarrier.dstStageMask |= VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+            }
+        }
+
         const TexFormat format = image->GetInfo().format;
         const bool isDepthFormat = (format == TexFormat::D16_UNORM || format == TexFormat::X8_D24_UNORM_PACK32 ||
                                     format == TexFormat::D32_SFLOAT || format == TexFormat::D16_UNORM_S8_UINT ||
@@ -493,6 +419,12 @@ static void RecordCommand(ImageLayoutTransitionCmd& cmd, CBufferVulkan& buffer)
 
     // Call the new pipeline barrier command.
     vkCmdPipelineBarrier2(buffer.GetRef(), &dependencyInfo);
+
+    for (const auto& image : cmd.images)
+    {
+        if (image)
+            image->GetInfo().layout = cmd.newLayout;
+    }
 }
 
 static void RecordCommand(ImGuiDrawCmd& cmd, CBufferVulkan& buffer)
@@ -703,15 +635,19 @@ void CBufferVulkan::Bake()
     }
 
     u32 queryIdx = ~0u;
-    VkQueryPool queryPool = VkGlobals::GetProfiler()->GetPool()->GetRef();
+    VkQueryPool queryPool = VK_NULL_HANDLE;
 
-    if (bSupportsProfiling)
+    if (bSupportsProfiling && VkGlobals::GetProfiler() && VkGlobals::GetProfiler()->GetPool())
     {
-        queryIdx = VkGlobals::GetProfiler()->AllocateQuery();
-        if (queryIdx != ~0u)
+        queryPool = VkGlobals::GetProfiler()->GetPool()->GetRef();
+        if (queryPool != VK_NULL_HANDLE)
         {
-            vkCmdResetQueryPool(GetRef(), queryPool, queryIdx, 1);
-            vkCmdBeginQuery(GetRef(), queryPool, queryIdx, 0);
+            queryIdx = VkGlobals::GetProfiler()->AllocateQuery();
+            if (queryIdx != ~0u)
+            {
+                vkCmdResetQueryPool(GetRef(), queryPool, queryIdx, 1);
+                vkCmdBeginQuery(GetRef(), queryPool, queryIdx, 0);
+            }
         }
     }
 
@@ -818,8 +754,22 @@ void CBufferVulkan::BeginBufferForSingleSubmit()
 
 void CBufferVulkan::BeginRendering(BeginRenderingCmd& cmd)
 {
-    const auto renderExtent = VkExtent2D(cmd.extents.x, cmd.extents.y);
     BeginRendering(static_cast<BeginRenderingBaseCmd&>(cmd));
+    const auto renderExtent = VkExtent2D(cmd.extents.x, cmd.extents.y);
+
+    if (cmd.pso != nullptr)
+    {
+        const u32 psoViewMask = cmd.pso->GetInfo().viewMask;
+        if (cmd.depthLayerMask > 1 || psoViewMask > 1)
+        {
+            DEBUG_ASSERT(cmd.depthLayerMask == psoViewMask);
+            if (cmd.depthLayerMask != psoViewMask)
+            {
+                DEBUG_LOG_ERRF("MULTIVIEW DECLARATION MISMATCH! BeginRendering depthLayerMask: 0x{:X}, PSO viewMask: 0x{:X} for PSO: {}",
+                               cmd.depthLayerMask, psoViewMask, cmd.pso->GetName().c_str());
+            }
+        }
+    }
 
     vkCmdBindPipeline(GetRef(), VK_PIPELINE_BIND_POINT_GRAPHICS, cmd.pso->GetRef());
     TrackBoundPipeline(VK_PIPELINE_BIND_POINT_GRAPHICS, cmd.pso->GetRef(), cmd.pso->GetLayout());
@@ -845,12 +795,40 @@ void CBufferVulkan::BeginRendering(BeginRenderingCmd& cmd)
 
 void CBufferVulkan::BeginRendering(BeginRenderingBaseCmd& cmd)
 {
+    if (cmd.extents.x <= 0 || cmd.extents.y <= 0)
+    {
+        if (cmd.hasDepthAttachment && cmd.depthAttachment.pTexture && cmd.depthAttachment.pTexture->GetInfo().extents.x > 0)
+        {
+            cmd.extents.x = static_cast<int32_t>(cmd.depthAttachment.pTexture->GetInfo().extents.x);
+            cmd.extents.y = static_cast<int32_t>(cmd.depthAttachment.pTexture->GetInfo().extents.y);
+        }
+        if (cmd.extents.x <= 0 || cmd.extents.y <= 0)
+        {
+            for (const auto& att : cmd.colorAttachments)
+            {
+                if (att.pTexture && att.pTexture->GetInfo().extents.x > 0)
+                {
+                    cmd.extents.x = static_cast<int32_t>(att.pTexture->GetInfo().extents.x);
+                    cmd.extents.y = static_cast<int32_t>(att.pTexture->GetInfo().extents.y);
+                    break;
+                }
+            }
+        }
+    }
+
+    if (cmd.extents.x <= 0 || cmd.extents.y <= 0)
+    {
+        DEBUG_LOG_ERRF("CBufferVulkan::BeginRendering(BaseCmd) - ZERO EXTENT DETECTED! extents: ({}, {}), colorAttachments count: {}, hasDepth: {}",
+                       cmd.extents.x, cmd.extents.y, cmd.colorAttachments.size(), cmd.hasDepthAttachment ? 1 : 0);
+    }
     const auto renderExtent = VkExtent2D(cmd.extents.x, cmd.extents.y);
 
     stltype::vector<VkRenderingAttachmentInfo> colorAttachments{};
     for (const RenderAttachmentInfo& attachment : cmd.colorAttachments)
     {
         DEBUG_ASSERT(attachment.pTexture != nullptr);
+        if (attachment.pTexture == nullptr)
+            continue;
         VkRenderingAttachmentInfo& colorAttachment = colorAttachments.emplace_back();
         colorAttachment = {};
         colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;

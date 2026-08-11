@@ -1,5 +1,6 @@
 #include "RGResourceRegistry.h"
 #include "Core/Global/GlobalVariables.h"
+#include "Core/Global/Profiling.h"
 #include "Core/Rendering/Core/TextureManager.h"
 #include "Core/Rendering/Core/Utils/DeleteQueue.h"
 #include "Core/Rendering/Vulkan/VkGlobals.h"
@@ -24,12 +25,14 @@ static TexFormat GetDefaultFormatForRGResourceID(RGResourceID id)
         case RGResourceID::TemporalResolve: return TexFormat::R16G16B16A16_FLOAT;
         case RGResourceID::GBufferPostAAColor: return TexFormat::R16G16B16A16_FLOAT;
         case RGResourceID::GBufferRoughness: return TexFormat::R8_UNORM;
+        case RGResourceID::GBufferEntityID: return TexFormat::R32_UINT;
         case RGResourceID::RTReflections: return TexFormat::R16G16B16A16_FLOAT;
         case RGResourceID::RTAOOutput: return TexFormat::R8_UNORM;
         case RGResourceID::ScreenSpaceShadows: return TexFormat::R8_UNORM;
         case RGResourceID::SMAAEdges: return TexFormat::R8G8_UNORM;
         case RGResourceID::SMAABlend: return TexFormat::R8G8B8A8_UNORM;
-        case RGResourceID::DLSSExposure: return TexFormat::R32_FLOAT;
+        case RGResourceID::Swapchain: return SWAPCHAIN_FORMAT;
+        case RGResourceID::CSMShadowMap: return DEPTH_BUFFER_FORMAT;
         case RGResourceID::BloomMip0:
         case RGResourceID::BloomMip1:
         case RGResourceID::BloomMip2:
@@ -37,6 +40,33 @@ static TexFormat GetDefaultFormatForRGResourceID(RGResourceID id)
         case RGResourceID::BloomMip4: return TexFormat::R16G16B16A16_FLOAT;
         default: return TexFormat::UNDEFINED;
     }
+}
+
+TexFormat RGResourceRegistry::GetResourceFormat(RGResourceHandle handle) const
+{
+    if (handle >= m_resources.size())
+        return TexFormat::UNDEFINED;
+
+    TexFormat fmt = m_resources[handle].spec.format;
+    if (fmt == TexFormat::UNDEFINED && m_resources[handle].spec.id != RGResourceID::Custom)
+    {
+        fmt = GetDefaultFormatForRGResourceID(m_resources[handle].spec.id);
+    }
+    if (fmt == TexFormat::UNDEFINED && m_resources[handle].pTexture)
+    {
+        fmt = static_cast<TexFormat>(m_resources[handle].pTexture->GetInfo().format);
+    }
+    return fmt;
+}
+
+TexFormat RGResourceRegistry::GetResourceFormatByID(RGResourceID id) const
+{
+    RGResourceHandle handle = FindByID(id);
+    if (handle != kInvalidRGHandle)
+    {
+        return GetResourceFormat(handle);
+    }
+    return GetDefaultFormatForRGResourceID(id);
 }
 
 RGResourceHandle RGResourceRegistry::DeclareResource(const RGResourceSpec& spec)
@@ -137,6 +167,7 @@ RGResourceHandle RGResourceRegistry::ImportTexture(RGResourceID id, Texture* pTe
             if (pTexture)
             {
                 m_resources[i].spec.format = pTexture->GetInfo().format;
+                m_resources[i].allocatedExtents = mathstl::Vector2(static_cast<f32>(pTexture->GetInfo().extents.x), static_cast<f32>(pTexture->GetInfo().extents.y));
             }
             return i;
         }
@@ -151,12 +182,17 @@ RGResourceHandle RGResourceRegistry::ImportTexture(RGResourceID id, Texture* pTe
     res.SetReferencedThisFrame(true);
     res.framesUnreferenced = 0;
     res.currentLayout = currentLayout;
+    if (pTexture)
+    {
+        res.allocatedExtents = mathstl::Vector2(static_cast<f32>(pTexture->GetInfo().extents.x), static_cast<f32>(pTexture->GetInfo().extents.y));
+    }
     m_resources.push_back(res);
     return static_cast<RGResourceHandle>(m_resources.size() - 1);
 }
 
 void RGResourceRegistry::OnResize(const mathstl::Vector2& renderRes, const mathstl::Vector2& outputRes)
 {
+    ScopedZone("RGResourceRegistry::OnResize");
     m_currentRenderRes = renderRes;
     m_currentOutputRes = outputRes;
 
@@ -183,6 +219,7 @@ void RGResourceRegistry::OnResize(const mathstl::Vector2& renderRes, const maths
 
 void RGResourceRegistry::AllocatePending()
 {
+    ScopedZone("RGResourceRegistry::AllocatePending");
     stltype::vector<TextureHandle> oldHandles;
 
     for (auto& res : m_resources)
@@ -249,6 +286,7 @@ void RGResourceRegistry::AllocatePending()
 
 void RGResourceRegistry::TickUnreferenced()
 {
+    ScopedZone("RGResourceRegistry::TickUnreferenced");
     for (auto& res : m_resources)
     {
         if (res.IsImported() || res.IsPersistent()) continue;
@@ -274,6 +312,7 @@ void RGResourceRegistry::TickUnreferenced()
 
 void RGResourceRegistry::RotateHistory(u32 frameSlot)
 {
+    ScopedZone("RGResourceRegistry::RotateHistory");
     m_currentFrameSlot = frameSlot % SWAPCHAIN_IMAGES;
 
     for (auto& res : m_resources)
@@ -283,6 +322,12 @@ void RGResourceRegistry::RotateHistory(u32 frameSlot)
             stltype::swap(res.pTexture, res.pHistoryTexture);
             stltype::swap(res.textureHandle, res.historyTextureHandle);
             stltype::swap(res.bindlessHandle, res.historyBindlessHandle);
+
+            if (res.pHistoryTexture)
+            {
+                const bool isDepth = (res.spec.id == RGResourceID::MainDepth || res.spec.id == RGResourceID::GBufferLastFrameDepth);
+                res.pHistoryTexture->GetInfo().layout = isDepth ? ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL : ImageLayout::SHADER_READ_ONLY_OPTIMAL;
+            }
         }
     }
 }
@@ -444,6 +489,53 @@ TextureHandle RGResourceRegistry::ResolveHistoryTextureHandleByID(RGResourceID i
     return ResolveHistoryTextureHandle(FindByID(id));
 }
 
+RenderAttachmentInfo RGResourceRegistry::GetColorAttachment(RGResourceID id, LoadOp loadOp, StoreOp storeOp, ImageLayout renderingLayout)
+{
+    Texture* pTex = (id == RGResourceID::CSMShadowMap && m_shadowMap.pTexture) ? m_shadowMap.pTexture : ResolveByID(id);
+    RenderAttachmentInfo info{};
+    info.pTexture = pTex;
+    info.renderingLayout = renderingLayout;
+    info.loadOp = loadOp;
+    info.storeOp = storeOp;
+    return info;
+}
+
+RenderAttachmentInfo RGResourceRegistry::GetColorAttachment(RGResourceHandle handle, LoadOp loadOp, StoreOp storeOp, ImageLayout renderingLayout)
+{
+    RenderAttachmentInfo info{};
+    info.pTexture = Resolve(handle);
+    info.renderingLayout = renderingLayout;
+    info.loadOp = loadOp;
+    info.storeOp = storeOp;
+    return info;
+}
+
+RenderAttachmentInfo RGResourceRegistry::GetDepthAttachment(RGResourceID id, LoadOp loadOp, StoreOp storeOp, ImageLayout renderingLayout)
+{
+    Texture* pTex = (id == RGResourceID::CSMShadowMap && m_shadowMap.pTexture) ? m_shadowMap.pTexture : ResolveByID(id);
+    RenderAttachmentInfo info{};
+    info.pTexture = pTex;
+    info.renderingLayout = renderingLayout;
+    info.loadOp = loadOp;
+    info.storeOp = storeOp;
+    return info;
+}
+
+RenderAttachmentInfo RGResourceRegistry::GetDepthAttachment(RGResourceHandle handle, LoadOp loadOp, StoreOp storeOp, ImageLayout renderingLayout)
+{
+    RenderAttachmentInfo info{};
+    info.pTexture = Resolve(handle);
+    info.renderingLayout = renderingLayout;
+    info.loadOp = loadOp;
+    info.storeOp = storeOp;
+    return info;
+}
+
+RenderAttachmentInfo RGResourceRegistry::GetReadOnlyDepthAttachment(RGResourceID id, LoadOp loadOp)
+{
+    return GetDepthAttachment(id, loadOp, StoreOp::NONE, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+}
+
 #include "Core/Rendering/Core/Defines/DescriptorLayoutDefines.h"
 #include "Core/Rendering/Core/Defines/GlobalBuffers.h"
 #include "Core/Rendering/Core/FrameResourceManager.h"
@@ -476,6 +568,7 @@ void RGResourceRegistry::DeclareEngineResources()
     Declare(RGResourceID::GBufferUVMat, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
     Declare(RGResourceID::GBufferVelocity, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage | Usage::TransferDst, true);
     Declare(RGResourceID::GBufferRoughness, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
+    Declare(RGResourceID::GBufferEntityID, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::TransferSrc);
     Declare(RGResourceID::GBufferDebug, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
     Declare(RGResourceID::GBufferThisFrameColor, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
     Declare(RGResourceID::TemporalResolve, RGSizeClass::OutputResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage | Usage::TransferDst, true);

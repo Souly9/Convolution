@@ -29,11 +29,6 @@ void CompositPass::Init(const SharedResourceManager& resourceManager)
 void CompositPass::RecreateResolutionDependentResources(const SharedResourceManager& resourceManager)
 {
     ScopedZone("CompositPass::RecreateResolutionDependentResources");
-
-    const auto swapChainAttachment =
-        CreateDefaultColorAttachment(SWAPCHAIN_FORMAT, LoadOp::CLEAR, nullptr);
-    m_mainRenderingData.colorAttachments = {swapChainAttachment};
-
     InitBaseData();
 }
 
@@ -45,7 +40,7 @@ void CompositPass::BuildPipelines()
 
     PipelineInfo info{};
     info.descriptorSetLayout.sharedDescriptors = m_sharedDescriptors;
-    info.attachmentInfos = CreateAttachmentInfo({m_mainRenderingData.colorAttachments});
+    info.attachmentInfos.colorAttachments = { SWAPCHAIN_FORMAT };
     info.hasDepth = false;
     m_mainPSO = PSO(
         ShaderCollection{&mainVert, &mainFrag}, PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions}, info);
@@ -71,27 +66,19 @@ void CompositPass::RenderWithGraph(const MainPassData& data, const FrameRenderer
     ScopedZone("CompositPass::Render");
 
     CommandBuffer* pCmdBuffer = execCtx.pCmdBuffer;
-    ColorAttachment swapchainAttachment = m_mainRenderingData.colorAttachments[0];
 
     const auto& appRenderState = g_pApplicationState->GetCurrentApplicationState().renderState;
     const bool smaaActive = (appRenderState.aaType == AntialiasingType::SMAA || appRenderState.aaType == AntialiasingType::TAA_SMAA);
-    if (smaaActive)
-    {
-        Texture* pTarget = execCtx.GetTexture(RGResourceID::GBufferPostAAColor);
-        swapchainAttachment.SetTexture(pTarget);
-    }
-    else
-    {
-        Texture* pTarget = execCtx.GetTexture(RGResourceID::Swapchain);
-        swapchainAttachment.SetTexture(pTarget != nullptr ? pTarget : ctx.pCurrentSwapchainTexture);
-    }
+    RGResourceID targetID = smaaActive ? RGResourceID::GBufferPostAAColor : RGResourceID::Swapchain;
 
-    stltype::vector<ColorAttachment> colorAttachments = {swapchainAttachment};
+    RenderAttachmentInfo swapchainAttachment = execCtx.GetColorAttachment(targetID, LoadOp::CLEAR, StoreOp::STORE);
+    if (!swapchainAttachment.pTexture)
+        swapchainAttachment.pTexture = ctx.pCurrentSwapchainTexture;
 
-    const auto ex = swapchainAttachment.GetTexture() ? swapchainAttachment.GetTexture()->GetInfo().extents : ctx.pCurrentSwapchainTexture->GetInfo().extents;
+    const auto ex = swapchainAttachment.pTexture ? swapchainAttachment.pTexture->GetInfo().extents : ctx.pCurrentSwapchainTexture->GetInfo().extents;
     const DirectX::XMINT2 extents(ex.x, ex.y);
 
-    BeginRenderingCmd cmdBegin{&m_mainPSO, ToRenderAttachmentInfos(colorAttachments)};
+    BeginRenderingCmd cmdBegin{&m_mainPSO, {swapchainAttachment}};
     cmdBegin.extents = extents;
     cmdBegin.viewport = RenderViewUtils::CreateViewportFromData(data.renderState.swapchainResolution, ctx.zNear, ctx.zFar);
 

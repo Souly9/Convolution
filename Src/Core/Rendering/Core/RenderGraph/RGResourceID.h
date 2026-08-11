@@ -15,6 +15,7 @@ enum class RGResourceID : u32
     TemporalResolve,
     GBufferPostAAColor,
     GBufferRoughness,
+    GBufferEntityID,
     RTReflections,
     RTAOOutput,
     ScreenSpaceShadows,
@@ -47,6 +48,7 @@ inline const char* ToString(RGResourceID id)
         case RGResourceID::TemporalResolve: return "TemporalResolve";
         case RGResourceID::GBufferPostAAColor: return "GBufferPostAAColor";
         case RGResourceID::GBufferRoughness: return "GBufferRoughness";
+        case RGResourceID::GBufferEntityID: return "GBufferEntityID";
         case RGResourceID::RTReflections: return "RTReflections";
         case RGResourceID::RTAOOutput: return "RTAOOutput";
         case RGResourceID::ScreenSpaceShadows: return "ScreenSpaceShadows";

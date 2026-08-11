@@ -1,6 +1,4 @@
 #include "PassManager.h"
-#include "Core/Rendering/Core/RenderGraph/RenderGraph.h"
-#include "Core/Rendering/Core/RenderGraph/RenderGraphBuilder.h"
 #include "AA/DLSSPass.h"
 #include "AA/DLSSRRPass.h"
 #include "AA/SMAAPass.h"
@@ -13,7 +11,6 @@
 #include "ClusteredShading/TileAssignmentComputePass.h"
 #include "Compositing/CompositPass.h"
 #include "Compositing/LightingPass.h"
-#include "PostProcess/BloomPass.h"
 #include "Core/Global/FrameGlobals.h"
 #include "Core/Global/State/ApplicationState.h"
 #include "Core/Global/State/States.h"
@@ -23,17 +20,20 @@
 #include "Core/Rendering/Core/GPUTimingQuery.h"
 #include "Core/Rendering/Core/Nvidia/StreamlineManager.h"
 #include "Core/Rendering/Core/ProfilingUtils.h"
+#include "Core/Rendering/Core/RenderGraph/RenderGraph.h"
+#include "Core/Rendering/Core/RenderGraph/RenderGraphBuilder.h"
 #include "Core/Rendering/Core/ShaderManager.h"
 #include "Core/Rendering/Core/Synchronization.h"
+#include "Core/Rendering/Core/TracyManager.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
 #include "Core/Rendering/Vulkan/Utils/VkEnumHelpers.h"
 #include "Core/Rendering/Vulkan/VkGlobals.h"
-#include "Core/Rendering/Core/TracyManager.h"
 #include "Core/Rendering/Vulkan/VkTracyManager.h"
 #include "Core/Rendering/Vulkan/XeSS/XeSSManager.h"
 #include "Core/SceneGraph/Scene.h"
 #include "DebugShapePass.h"
 #include "ImGuiPass.h"
+#include "PostProcess/BloomPass.h"
 #include "PreProcess/DepthPrePass.h"
 #include "RT/RTAOPass.h"
 #include "RT/RTCompositePass.h"
@@ -83,11 +83,11 @@ void PassManager::InitResourceManagerAndCallbacks()
     AddPass(stltype::make_unique<RenderPasses::TileAssignmentComputePass>());
     AddPass(stltype::make_unique<RenderPasses::ClusterGeneratorComputePass>());
     AddPass(stltype::make_unique<RenderPasses::LightGridComputePass>());
+    AddPass(stltype::make_unique<RenderPasses::CSMPass>());
     AddPass(stltype::make_unique<RenderPasses::DepthPrePass>());
-    AddPass(stltype::make_unique<RenderPasses::ScreenSpaceShadowPass>());
     AddPass(stltype::make_unique<RenderPasses::StaticMainMeshPass>());
     AddPass(stltype::make_unique<RenderPasses::DebugShapePass>());
-    AddPass(stltype::make_unique<RenderPasses::CSMPass>());
+    AddPass(stltype::make_unique<RenderPasses::ScreenSpaceShadowPass>());
     AddPass(stltype::make_unique<RenderPasses::ClusterDebugPass>());
     AddPass(stltype::make_unique<RenderPasses::LightingPass>());
     AddPass(stltype::make_unique<RenderPasses::RTReflectionsPass>());
@@ -175,17 +175,13 @@ void PassManager::RecreateResizeDependentResources(const mathstl::Vector2& swapc
     {
         CommandBuffer* pInitCmdBuffer = m_graphicsFrameCtx.cmdPool.CreateCommandBuffer(CommandBufferCreateInfo{});
         pInitCmdBuffer->SetName("One-time Resize Layout Setup Command Buffer");
-        pInitCmdBuffer->ResetBuffer();
 
-        m_transitionRecorder.RecordTemporalResourceInitialLayouts(pInitCmdBuffer,
-                                                                  m_renderGraph.GetRegistry(),
-                                                                  m_frameResourceManager.GetDLSSExposureStagingBuffer());
+        m_transitionRecorder.RecordTemporalResourceInitialLayouts(
+            pInitCmdBuffer, m_renderGraph.GetRegistry(), m_frameResourceManager.GetDLSSExposureStagingBuffer());
 
         pInitCmdBuffer->Bake();
         g_pQueueHandler->SubmitCommandBufferThisFrame({pInitCmdBuffer, QueueType::Graphics, 0});
         g_pQueueHandler->DispatchAllRequests();
-        vkDeviceWaitIdle(VkGlobals::GetLogicalDevice());
-        pInitCmdBuffer->Destroy();
     }
 
     // Update Main Pass Data with new handles
@@ -209,14 +205,13 @@ void PassManager::RecreateResizeDependentResources(const mathstl::Vector2& swapc
         ++idx;
     }
 
+    UpdateFrameFeatureState(m_mainPassData[0]);
     UpdateGBufferUBO(m_mainPassData[0]);
     for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
     {
         m_frameResourceManager.GetFrameRendererContext(i).gbufferPostProcessDescriptor->WriteBufferUpdate(
             m_frameResourceManager.GetGBufferPostProcessUBO(), s_globalGbufferPostProcessUBOSlot);
     }
-
-    g_pTexManager->PostRender();
 
     for (auto& pPass : m_passes)
     {
@@ -249,6 +244,7 @@ bool PassManager::AnyPassWantsToRender() const
 
 void PassManager::PrepareMainPassDataForFrame(MainPassData& mainPassData, FrameRendererContext& ctx, u32 frameIdx)
 {
+    ScopedZone("PassManager::PrepareMainPassDataForFrame");
     mainPassData.pResourceManager = &m_resourceManager;
     mainPassData.mainView.descriptorSet = ctx.sharedDataUBODescriptor;
     mainPassData.mainView.viewport.x = 0.0f;
@@ -272,6 +268,7 @@ void PassManager::PrepareMainPassDataForFrame(MainPassData& mainPassData, FrameR
     ctx.pDLSSExposureTexture = m_renderGraph.GetRegistry().ResolveByID(RGResourceID::DLSSExposure);
 
     m_imguiRegistry.RegisterMaterialTextures();
+    m_imguiRegistry.PublishGBufferTextureState(m_renderGraph.GetRegistry());
 }
 
 void PassManager::InitFrameContexts()
@@ -306,13 +303,11 @@ void PassManager::InitFrameContexts()
     }
 }
 
-void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
-                                      FrameRendererContext& ctx,
-                                      Semaphore& imageAvailableSemaphore)
+void PassManager::SetupRenderGraph(const MainPassData& mainPassData, FrameRendererContext& ctx)
 {
-    ScopedZone("PassManager::RenderAllPassGroups");
+    ScopedZone("PassManager::SetupRenderGraph");
 
-    UpdateGBufferUBO(mainPassData);
+    UpdateFrameFeatureState(mainPassData);
 
     CommandBuffer* pMainGraphicsWorkBuffer = m_graphicsFrameCtx.cmdBuffers[ctx.currentFrame];
     CommandBuffer* pComputeCmdBuffer = m_computeFrameCtx.cmdBuffers[ctx.currentFrame];
@@ -323,18 +318,20 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
     pMainGraphicsWorkBuffer->SetFrameIdx(ctx.currentFrame);
     pComputeCmdBuffer->SetFrameIdx(ctx.currentFrame);
 
-
-    m_renderGraph.BeginFrame(ctx.currentFrame, mainPassData.renderState.renderResolution, mainPassData.renderState.swapchainResolution);
-    m_renderGraph.SetRTSceneAvailable(mainPassData.pRTSceneManager != nullptr && mainPassData.pRTSceneManager->HasReadyTLAS(m_currentSwapChainIdx));
+    m_renderGraph.BeginFrame(
+        ctx.currentFrame, mainPassData.renderState.renderResolution, mainPassData.renderState.swapchainResolution);
+    m_renderGraph.SetRTSceneAvailable(mainPassData.pRTSceneManager != nullptr &&
+                                      mainPassData.pRTSceneManager->HasReadyTLAS(m_currentSwapChainIdx));
 
     if (ctx.pCurrentSwapchainTexture)
-        m_renderGraph.GetRegistry().ImportTexture(RGResourceID::Swapchain, ctx.pCurrentSwapchainTexture, ImageLayout::UNDEFINED);
+        m_renderGraph.GetRegistry().ImportTexture(
+            RGResourceID::Swapchain, ctx.pCurrentSwapchainTexture, ImageLayout::UNDEFINED);
 
     if (m_renderGraph.GetRegistry().GetShadowMap().pTexture)
     {
         m_renderGraph.GetRegistry().ImportTexture(RGResourceID::CSMShadowMap,
-            m_renderGraph.GetRegistry().GetShadowMap().pTexture,
-            ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+                                                  m_renderGraph.GetRegistry().GetShadowMap().pTexture,
+                                                  ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
     }
 
     for (auto& pPass : m_passes)
@@ -342,14 +339,22 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
         if (pPass && pPass->WantsToRender())
         {
             QueueType qType = pPass->GetQueueType();
-            auto builder = m_renderGraph.AddNode(pPass->GetName(), qType);
+            PassStage stage = pPass->GetPassStage();
+            auto builder = m_renderGraph.AddNode(pPass->GetName(), qType, stage);
             pPass->Setup(builder, mainPassData);
             ConvolutionRenderPass* pRawPass = pPass.get();
-            builder.SetExecuteCallback([pRawPass](const MainPassData& d, const FrameRendererContext& c, const RGExecutionContext& execCtx) {
-                pRawPass->RenderWithGraph(d, c, execCtx);
-            });
+            builder.SetExecuteCallback(
+                [pRawPass](const MainPassData& d, const FrameRendererContext& c, const RGExecutionContext& execCtx)
+                { pRawPass->RenderWithGraph(d, c, execCtx); });
         }
     }
+}
+
+void PassManager::CompileAndExecuteRenderGraph(const MainPassData& mainPassData,
+                                              FrameRendererContext& ctx,
+                                              Semaphore& imageAvailableSemaphore)
+{
+    ScopedZone("PassManager::CompileAndExecuteRenderGraph");
 
     m_renderGraph.Compile();
     UpdateGBufferUBO(mainPassData);
@@ -359,8 +364,10 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
     u32 computeBatchCount = 0;
     for (const auto& b : m_renderGraph.GetExecutionBatches())
     {
-        if (b.queueType == QueueType::Graphics) graphicsBatchCount++;
-        else if (b.queueType == QueueType::Compute) computeBatchCount++;
+        if (b.queueType == QueueType::Graphics)
+            graphicsBatchCount++;
+        else if (b.queueType == QueueType::Compute)
+            computeBatchCount++;
     }
 
     stltype::vector<CommandBuffer*> graphicsCmds;
@@ -377,8 +384,17 @@ void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
         computeCmds.push_back(GetComputeCommandBuffer(ctx.currentFrame, i));
     }
 
+    m_gpuTimingQuery.ClearRunFlags(ctx.currentFrame);
     m_renderGraph.Execute(mainPassData, ctx, &imageAvailableSemaphore, graphicsCmds, computeCmds, &m_gpuTimingQuery);
     g_pQueueHandler->FlushGraphicsComputeBuffers();
+}
+
+void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
+                                      FrameRendererContext& ctx,
+                                      Semaphore& imageAvailableSemaphore)
+{
+    SetupRenderGraph(mainPassData, ctx);
+    CompileAndExecuteRenderGraph(mainPassData, ctx, imageAvailableSemaphore);
 }
 
 CommandBuffer* PassManager::GetGraphicsCommandBuffer(u32 frameIdx, u32 batchIdx)
@@ -415,6 +431,22 @@ CommandBuffer* PassManager::GetComputeCommandBuffer(u32 frameIdx, u32 batchIdx)
     return pBuf;
 }
 
+void PassManager::UpdateFrameFeatureState(const MainPassData& data)
+{
+    const auto& appRenderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+    const bool rtReflectionsRequested =
+        mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
+        mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTReflectionsEnabled);
+
+    const bool useRTReflections = rtReflectionsRequested && data.pRTSceneManager != nullptr &&
+                                  data.pRTSceneManager->HasReadyTLAS(m_currentSwapChainIdx);
+
+    const bool useRayReconstruction = Nvidia::StreamlineManager::IsDLSSRRSupported() &&
+                                      appRenderState.rt.reflectionsUseRayReconstruction && useRTReflections;
+
+    Nvidia::StreamlineManager::SetUseRayReconstructionThisFrame(useRayReconstruction);
+}
+
 void PassManager::UpdateGBufferUBO(const MainPassData& data)
 {
     const auto& reg = m_renderGraph.GetRegistry();
@@ -445,27 +477,18 @@ void PassManager::UpdateGBufferUBO(const MainPassData& data)
     const bool rtReflectionsRequested =
         mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
         mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTReflectionsEnabled);
-    const bool rtaoRequested = mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
-                               mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTAOEnabled);
 
-    const bool useRTReflections = rtReflectionsRequested && data.pRTSceneManager != nullptr &&
-                                  data.pRTSceneManager->HasReadyTLAS(m_currentSwapChainIdx);
-    const bool useRTAO =
-        rtaoRequested && data.pRTSceneManager != nullptr && data.pRTSceneManager->HasReadyTLAS(m_currentSwapChainIdx);
-    const bool useRayReconstruction = Nvidia::StreamlineManager::IsDLSSRRSupported() &&
-                                      appRenderState.rt.reflectionsUseRayReconstruction && useRTReflections;
+    const bool useRayReconstruction = Nvidia::StreamlineManager::GetUseRayReconstructionThisFrame();
 
     gbufferUBO.thisFrameColorBufferIdx = reg.ResolveBindlessByID(RGResourceID::GBufferThisFrameColor);
-
-    Nvidia::StreamlineManager::SetUseRayReconstructionThisFrame(useRayReconstruction);
 
     const auto postAAHandle = reg.ResolveBindlessByID(RGResourceID::GBufferPostAAColor);
     const auto resolveHandle = reg.ResolveBindlessByID(RGResourceID::TemporalResolve);
 
-    gbufferUBO.finalTemporalColorBufferIdx = (((taaModeActive && !taaDebugOrSeed) || smaaModeActive) &&
-                                              postAAHandle != 0 && !useRayReconstruction)
-                                                 ? postAAHandle
-                                                 : resolveHandle;
+    gbufferUBO.finalTemporalColorBufferIdx =
+        (((taaModeActive && !taaDebugOrSeed) || smaaModeActive) && postAAHandle != 0 && !useRayReconstruction)
+            ? postAAHandle
+            : resolveHandle;
 
     if (useRayReconstruction)
     {
@@ -493,11 +516,10 @@ void PassManager::Init()
 
     if (VkGlobals::GetTracyManager() && !VkGlobals::GetTracyManager()->IsEnabled())
     {
-        VkGlobals::GetTracyManager()->Init(
-            VkGlobals::GetPhysicalDevice(),
-            VkGlobals::GetLogicalDevice(),
-            VkGlobals::GetGraphicsQueue(),
-            m_graphicsFrameCtx.cmdBuffers[0]->GetRef());
+        VkGlobals::GetTracyManager()->Init(VkGlobals::GetPhysicalDevice(),
+                                           VkGlobals::GetLogicalDevice(),
+                                           VkGlobals::GetGraphicsQueue(),
+                                           m_graphicsFrameCtx.cmdBuffers[0]->GetRef());
     }
 }
 
@@ -518,7 +540,8 @@ void PassManager::ExecutePasses(u32 frameIdx)
     m_rtSceneManager.Update(frameIdx, m_currentSwapChainIdx, m_frameResourceManager);
     g_pQueueHandler->DispatchAllRequests();
     PrepareMainPassDataForFrame(mainPassData, ctx, frameIdx);
-    RenderAllPassGroups(mainPassData, ctx, imageAvailableSemaphore);
+    SetupRenderGraph(mainPassData, ctx);
+    CompileAndExecuteRenderGraph(mainPassData, ctx, imageAvailableSemaphore);
 
     AsyncQueueHandler::PresentRequest presentRequest{.pWaitSemaphore = ctx.renderingFinishedSemaphore,
                                                      .swapChainImageIdx = m_currentSwapChainIdx};
@@ -605,6 +628,7 @@ void PassManager::SetSharedData(RenderView&& mainView, u32 frameIdx)
 }
 void PassManager::PreProcessDataForCurrentFrame(u32 frameIdx, u64 jitterFrameNumber)
 {
+    ScopedZone("PassManager::PreProcessDataForCurrentFrame");
     // Calculate average lights per cluster by reading final counts from the GPU buffer of the completed frame
     {
         const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
@@ -648,11 +672,12 @@ void PassManager::ResetSceneState()
     m_resourceManager.ClearGeometryCaches();
     m_rtSceneManager.Reset();
 
-    g_pApplicationState->RegisterUpdateFunction([](ApplicationState& state)
-    {
-        state.renderState.taaSeedHistoryFromCurrentColor = true;
-        state.renderState.renderTargetsRecreatedThisFrame = true;
-    });
+    g_pApplicationState->RegisterUpdateFunction(
+        [](ApplicationState& state)
+        {
+            state.renderState.taaSeedHistoryFromCurrentColor = true;
+            state.renderState.renderTargetsRecreatedThisFrame = true;
+        });
 }
 
 bool PassManager::BlockUntilPassesFinished(u32 frameIdx)
@@ -710,7 +735,7 @@ void PassManager::RecreateShadowMaps(u32 cascades, const mathstl::Vector2& exten
 {
     m_renderState.recreatedThisFrame = true;
     g_pApplicationState->RegisterUpdateFunction([](ApplicationState& state)
-                                                 { state.renderState.renderTargetsRecreatedThisFrame = true; });
+                                                { state.renderState.renderTargetsRecreatedThisFrame = true; });
     m_imguiRegistry.ReleaseShadowMapIdsForNextFrame();
     m_renderGraph.GetRegistry().RecreateShadowMap(cascades, extents, m_frameResourceManager);
 

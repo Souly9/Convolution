@@ -10,6 +10,16 @@ enum class QueueType
     Graphics
 };
 
+enum class PassStage : u32
+{
+    EarlyCompute = 0,
+    PreProcess,
+    MainGeometry,
+    Lighting,
+    PostProcess,
+    UI
+};
+
 enum class TextureWrapMode
 {
     REPEAT,

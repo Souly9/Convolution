@@ -32,16 +32,6 @@ void DebugShapePass::Init(const SharedResourceManager& resourceManager)
 void DebugShapePass::RecreateResolutionDependentResources(const SharedResourceManager& resourceManager)
 {
     ScopedZone("DebugShapePass::RecreateResolutionDependentResources");
-
-    GBufferInfo gbufferInfo{};
-
-    const auto debugAttachment =
-        CreateDefaultColorAttachment(gbufferInfo.GetFormat(GBufferTextureType::GBufferDebug), LoadOp::CLEAR, nullptr);
-
-    m_mainRenderingData.depthAttachment =
-        CreateReadOnlyDepthAttachment(LoadOp::LOAD, nullptr);
-    m_mainRenderingData.colorAttachments = {debugAttachment};
-
     InitBaseData();
 }
 
@@ -52,11 +42,10 @@ void DebugShapePass::BuildPipelines()
     auto mainVert = Shader("Shaders/Debug.vert.spv", "main");
     auto mainFrag = Shader("Shaders/Debug.frag.spv", "main");
     PipelineInfo info{};
-    // info.descriptorSetLayout.pipelineSpecificDescriptors.emplace_back();
     info.descriptorSetLayout.sharedDescriptors = m_sharedDescriptors;
     info.depthWriteEnable = false;
-    info.attachmentInfos =
-        CreateAttachmentInfo(m_mainRenderingData.colorAttachments, m_mainRenderingData.depthAttachment);
+    info.attachmentInfos.colorAttachments = { TexFormat::R16G16B16A16_FLOAT };
+    info.attachmentInfos.depthAttachmentFormat = TexFormat::D32_SFLOAT;
     m_solidDebugObjectsPSO = PSO(
         ShaderCollection{&mainVert, &mainFrag}, PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions}, info);
 
@@ -87,7 +76,6 @@ void DebugShapePass::RebuildInternalData(const stltype::vector<PassMeshData>& me
     }
     if (areAnyDebug == false)
     {
-        // m_mainRenderingData.ClearBuffers();
         return;
     }
 
@@ -98,25 +86,25 @@ void DebugShapePass::RebuildInternalData(const stltype::vector<PassMeshData>& me
     instanceDataIndices.reserve(meshes.size());
     for (const auto& mesh : meshes)
     {
-        if (mesh.meshData.IsDebugMesh() == false)
+        if (!mesh.meshData.IsDebugMesh())
             continue;
         const auto& meshHandle = mesh.meshData.meshResourceHandle;
 
         if (mesh.meshData.IsDebugWireframeMesh())
         {
             m_indirectCmdBuffersWireframe[m_currentFrameIdx].AddIndexedDrawCmd(meshHandle.indexCount,
-                                                                               1, // TODO: instanced rendering
-                                                                               meshHandle.indexBufferOffset,
-                                                                               meshHandle.vertBufferOffset,
-                                                                               instanceOffset);
+                                                                              1, // TODO: instanced rendering
+                                                                              meshHandle.indexBufferOffset,
+                                                                              meshHandle.vertBufferOffset,
+                                                                              instanceOffset);
         }
         else
         {
             m_indirectCmdBuffers[m_currentFrameIdx].AddIndexedDrawCmd(meshHandle.indexCount,
-                                                                      1, // TODO: instanced rendering
-                                                                      meshHandle.indexBufferOffset,
-                                                                      meshHandle.vertBufferOffset,
-                                                                      instanceOffset);
+                                                                     1, // TODO: instanced rendering
+                                                                     meshHandle.indexBufferOffset,
+                                                                     meshHandle.vertBufferOffset,
+                                                                     instanceOffset);
         }
         instanceDataIndices.emplace_back(mesh.meshData.instanceDataIdx);
         ++instanceOffset;
@@ -157,10 +145,9 @@ void DebugShapePass::RenderWithGraph(const MainPassData& data,
     UpdateContextForFrame(currentFrame);
     const auto& passCtx = m_perObjectFrameContexts[currentFrame];
 
-    ColorAttachment debugAttachment = m_mainRenderingData.colorAttachments[0];
-    debugAttachment.SetTexture(execCtx.GetTexture(RGResourceID::GBufferDebug));
+    RenderAttachmentInfo colorAttachment = execCtx.GetColorAttachment(RGResourceID::GBufferDebug, LoadOp::LOAD);
+    RenderAttachmentInfo depthAttachment = execCtx.GetReadOnlyDepthAttachment(RGResourceID::MainDepth);
 
-    stltype::vector<ColorAttachment> colorAttachments = {debugAttachment};
     const DirectX::XMINT2 extents(execCtx.GetRenderResolution().x, execCtx.GetRenderResolution().y);
 
     auto& sceneGeometryBuffers = data.pResourceManager->GetDebugGeometryBuffers();
@@ -184,10 +171,9 @@ void DebugShapePass::RenderWithGraph(const MainPassData& data,
         cmd.descriptorSets = descriptorSets;
         cmd.drawCount = opaqueBuffer.GetDrawCmdNum();
 
-        m_mainRenderingData.depthAttachment.SetTexture(execCtx.GetTexture(RGResourceID::MainDepth));
         BeginRenderingCmd cmdBegin{&m_solidDebugObjectsPSO,
-                                   ToRenderAttachmentInfos(colorAttachments),
-                                   ToRenderAttachmentInfo(m_mainRenderingData.depthAttachment)};
+                                   {colorAttachment},
+                                   depthAttachment};
         cmdBegin.extents = extents;
         cmdBegin.viewport = data.mainView.viewport;
         execCtx.pCmdBuffer->RecordCommand(cmdBegin);
@@ -201,10 +187,9 @@ void DebugShapePass::RenderWithGraph(const MainPassData& data,
         cmd.descriptorSets = descriptorSets;
         cmd.drawCount = wireframeBuffer.GetDrawCmdNum();
 
-        m_mainRenderingData.depthAttachment.SetTexture(execCtx.GetTexture(RGResourceID::MainDepth));
         BeginRenderingCmd cmdBegin{&m_wireframeDebugObjectsPSO,
-                                   ToRenderAttachmentInfos(colorAttachments),
-                                   ToRenderAttachmentInfo(m_mainRenderingData.depthAttachment)};
+                                   {colorAttachment},
+                                   depthAttachment};
         cmdBegin.extents = extents;
         cmdBegin.viewport = data.mainView.viewport;
 

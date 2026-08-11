@@ -1,5 +1,6 @@
 #pragma once
 #include "Core/Global/Typedefs.h"
+#include "Core/Rendering/Core/Attachment.h"
 #include "Core/Rendering/Core/FrameResourceManager.h"
 #include "Core/Rendering/Core/RenderDefinitions.h"
 #include "PassContext.h"
@@ -21,7 +22,7 @@ public:
                                            TexFormat format,
                                            RGSizeClass sizeClass,
                                            Usage extraUsage = Usage::None);
-    RGResourceHandle DeclareStorageBuffer(RGResourceID id, u64 sizeBytes);
+    RGResourceHandle DeclareStorageBuffer(RGResourceID id, u64 sizeBytes, const stltype::string& customName = "");
 
     RGResourceHandle ReadTexture(RGResourceHandle handle,
                                  SyncStages stage,
@@ -32,21 +33,21 @@ public:
                                  AccessFlags access,
                                  ImageLayout layout = ImageLayout::SHADER_READ_ONLY_OPTIMAL);
     RGResourceHandle WriteColorAttachment(RGResourceHandle handle,
-                                          LoadOp loadOp = LoadOp::CLEAR,
-                                          StoreOp storeOp = StoreOp::STORE);
+                                           LoadOp loadOp = LoadOp::CLEAR,
+                                           StoreOp storeOp = StoreOp::STORE);
     RGResourceHandle WriteDepthAttachment(RGResourceHandle handle,
-                                          LoadOp loadOp = LoadOp::CLEAR,
-                                          StoreOp storeOp = StoreOp::STORE);
+                                           LoadOp loadOp = LoadOp::CLEAR,
+                                           StoreOp storeOp = StoreOp::STORE);
     RGResourceHandle WriteStorageImage(RGResourceHandle handle, SyncStages stage, AccessFlags access);
     RGResourceHandle WriteStorageBuffer(RGResourceHandle handle, SyncStages stage, AccessFlags access);
     RGResourceHandle ReadStorageBuffer(RGResourceHandle handle, SyncStages stage, AccessFlags access);
 
     RGResourceHandle WriteDepthAttachment(RGResourceID id,
-                                          LoadOp loadOp = LoadOp::CLEAR,
-                                          StoreOp storeOp = StoreOp::STORE);
+                                           LoadOp loadOp = LoadOp::CLEAR,
+                                           StoreOp storeOp = StoreOp::STORE);
     RGResourceHandle WriteColorAttachment(RGResourceID id,
-                                          LoadOp loadOp = LoadOp::CLEAR,
-                                          StoreOp storeOp = StoreOp::STORE);
+                                           LoadOp loadOp = LoadOp::CLEAR,
+                                           StoreOp storeOp = StoreOp::STORE);
     RGResourceHandle WriteStorageBuffer(RGResourceID id, SyncStages stage, AccessFlags access);
     RGResourceHandle ReadStorageBuffer(RGResourceID id, SyncStages stage, AccessFlags access);
 
@@ -65,6 +66,10 @@ public:
     void SetExclusionGroup(ExclusionGroup group)
     {
         m_node.exclusionGroup = group;
+    }
+    void SetViewMask(u32 mask)
+    {
+        m_node.viewMask = mask > 0 ? mask : 1;
     }
     void SetRequiresRT(bool requiresRT)
     {

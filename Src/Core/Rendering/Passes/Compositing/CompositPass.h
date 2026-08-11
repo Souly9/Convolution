@@ -25,6 +25,7 @@ public:
     virtual void CreateSharedDescriptorLayout() override;
     // Always want to composite
     virtual bool WantsToRender() const override;
+    virtual PassStage GetPassStage() const override { return PassStage::PostProcess; }
 
 protected:
     PSO m_mainPSO;

@@ -32,14 +32,50 @@ public:
 
     void SetCurrentFrameIdx(u32 frameIdx)
     {
-        m_currentFrameIdx = frameIdx % SWAPCHAIN_IMAGES;
+        u32 newIdx = frameIdx % SWAPCHAIN_IMAGES;
+        if (m_currentFrameIdx != newIdx)
+        {
+            m_currentFrameIdx = newIdx;
+            ClearRunFlags(m_currentFrameIdx);
+        }
     }
 
-    u32 RegisterPass(const stltype::string& name)
+    u32 GetQueryOffset(u32 passIndex) const
     {
+        if (passIndex < m_passQueryOffset.size())
+            return m_passQueryOffset[passIndex];
+        return passIndex * 2;
+    }
+
+    u32 GetViewCount(u32 passIndex) const
+    {
+        if (passIndex < m_passViewCount.size())
+            return m_passViewCount[passIndex];
+        return 1;
+    }
+
+    u32 RegisterPass(const stltype::string& name, u32 viewMask = 1)
+    {
+        u32 count = 1;
+        if (viewMask > 0)
+        {
+            u32 c = 0;
+            u32 m = viewMask;
+            while (m > 0) { c += (m & 1u); m >>= 1u; }
+            count = c > 0 ? c : 1;
+        }
+
         auto it = m_passNameToIndex.find(name);
         if (it != m_passNameToIndex.end())
-            return it->second;
+        {
+            u32 idx = it->second;
+            if (idx < m_passViewCount.size() && m_passViewCount[idx] != count)
+            {
+                m_passViewCount[idx] = count;
+                RecomputeQueryOffsets();
+            }
+            return idx;
+        }
 
         u32 index = m_nextPassIndex++;
         m_passNameToIndex[name] = index;
@@ -47,12 +83,33 @@ public:
             m_results.resize(index + 1);
         m_results[index].passName = name;
 
+        if (index >= m_passViewCount.size())
+        {
+            m_passViewCount.resize(index + 1, 1);
+            m_passQueryOffset.resize(index + 1, 0);
+        }
+        m_passViewCount[index] = count;
+        RecomputeQueryOffsets();
+
         if (m_passRanThisFrame.size() < SWAPCHAIN_IMAGES)
             m_passRanThisFrame.resize(SWAPCHAIN_IMAGES);
 
         for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
             m_passRanThisFrame[i].resize(m_nextPassIndex, false);
         return index;
+    }
+
+    void RecomputeQueryOffsets()
+    {
+        u32 currentOffset = 0;
+        m_passQueryOffset.resize(m_nextPassIndex);
+        for (u32 i = 0; i < m_nextPassIndex; ++i)
+        {
+            m_passQueryOffset[i] = currentOffset;
+            u32 viewCount = (i < m_passViewCount.size()) ? m_passViewCount[i] : 1;
+            currentOffset += (2 * viewCount);
+        }
+        m_totalQuerySlotsUsed = currentOffset;
     }
 
     void WriteStartTimestamp(CommandBuffer* pCmdBuffer, u32 passIndex)
@@ -117,6 +174,9 @@ protected:
     virtual void WriteTimestampImpl(CommandBuffer* pCmdBuffer, u32 passIndex, bool isStart) = 0;
 
     stltype::vector<PassTimingResult> m_results;
+    stltype::vector<u32> m_passViewCount;
+    stltype::vector<u32> m_passQueryOffset;
+    u32 m_totalQuerySlotsUsed{0};
     stltype::fixed_vector<stltype::vector<bool>, SWAPCHAIN_IMAGES> m_passRanThisFrame;
     stltype::hash_map<stltype::string, u32> m_passNameToIndex;
     u32 m_nextPassIndex{0};

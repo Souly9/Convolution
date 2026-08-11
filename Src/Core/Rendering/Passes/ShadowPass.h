@@ -22,6 +22,7 @@ public:
     virtual void CreateSharedDescriptorLayout() override;
     virtual void Setup(::RenderGraphBuilder& builder, const MainPassData& data) override;
     virtual bool WantsToRender() const override;
+    virtual PassStage GetPassStage() const override { return PassStage::PreProcess; }
 
     // Sets cascade count and rebuilds pipeline if changed
     void SetCascadeCount(u32 cascades);

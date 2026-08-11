@@ -84,8 +84,9 @@ stltype::vector<DescriptorSetVulkan*> DescriptorPoolVulkan::CreateDescriptorSets
     rslt.reserve(layouts.size());
     for (u32 i = 0; i < descriptorSets.size(); ++i)
     {
-        m_createdDescriptorSets.push_back(DescriptorSetVulkan(descriptorSets[i]));
-        rslt.push_back(&m_createdDescriptorSets.back());
+        auto pSet = stltype::make_unique<DescriptorSetVulkan>(descriptorSets[i]);
+        rslt.push_back(pSet.get());
+        m_createdDescriptorSets.push_back(stltype::move(pSet));
     }
     m_descriptorSetCount += static_cast<u32>(layouts.size());
 
@@ -115,11 +116,13 @@ DescriptorSetVulkan* DescriptorPoolVulkan::CreateDescriptorSet(const VkDescripto
         return nullptr;
     }
 
-    auto& set = m_createdDescriptorSets.emplace_back(descriptorSet);
+    auto pSet = stltype::make_unique<DescriptorSetVulkan>(descriptorSet);
+    auto* pRet = pSet.get();
+    m_createdDescriptorSets.push_back(stltype::move(pSet));
 
     ++m_descriptorSetCount;
 
-    return &set;
+    return pRet;
 }
 
 DescriptorSetVulkan* DescriptorPoolVulkan::CreateDescriptorSet(const DescriptorSetLayout& layout)

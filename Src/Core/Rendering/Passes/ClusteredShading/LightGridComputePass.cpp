@@ -72,8 +72,7 @@ void LightGridComputePass::Setup(::RenderGraphBuilder& builder, const MainPassDa
         PassCtx::ClusterGrid,
         PassCtx::ViewSpaceLights>();
 
-    auto viewSpaceLights = builder.DeclareStorageBuffer(RGResourceID::Custom, UBO::ViewSpaceLightsSSBOSize);
-    builder.SetCustomResourceName(viewSpaceLights, "ViewSpaceLightsSSBO");
+    auto viewSpaceLights = builder.DeclareStorageBuffer(RGResourceID::Custom, UBO::ViewSpaceLightsSSBOSize, "ViewSpaceLightsSSBO");
     builder.ReadStorageBuffer(viewSpaceLights, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ);
 
     auto tileBuffer = builder.DeclareStorageBuffer(RGResourceID::TileAssignmentBuffer, UBO::LightClusterSSBOSize);

@@ -28,6 +28,7 @@ public:
 
     bool WantsToRender() const override;
     QueueType GetQueueType() const override { return QueueType::Compute; }
+    PassStage GetPassStage() const override { return PassStage::PostProcess; }
 
 private:
     ComputePipeline m_downsamplePipeline;

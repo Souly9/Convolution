@@ -7,6 +7,10 @@
 #include "RGNode.h"
 #include "RenderGraphBuilder.h"
 
+#ifndef CONVOLUTION_DUMP_RENDERGRAPH
+#define CONVOLUTION_DUMP_RENDERGRAPH 0
+#endif
+
 class GPUTimingQueryBase;
 
 class RenderGraph
@@ -16,10 +20,11 @@ public:
     ~RenderGraph() = default;
 
     void BeginFrame(u32 frameSlot, const mathstl::Vector2& renderRes, const mathstl::Vector2& outputRes);
-    RenderGraphBuilder AddNode(const stltype::string& name, QueueType queueType = QueueType::Graphics);
+    RenderGraphBuilder AddNode(const stltype::string& name, QueueType queueType = QueueType::Graphics, PassStage stage = PassStage::MainGeometry);
 
     void Compile();
     void PublishDebugState() const;
+    void DumpGraphToFile(u32 frameIdx) const;
 
     struct RGSemaphoreWait
     {
@@ -57,17 +62,6 @@ public:
 
     void Reset();
 
-private:
-    void BuildAdjacencyGraph();
-    bool ValidateSinglePass() const;
-    void CullUnreferencedNodes();
-    void TopologicalSort();
-    void InsertBarriers();
-
-    void ExecuteNode(u32 nodeIdx, CommandBuffer* pCmdBuffer, const RenderPasses::MainPassData& data, const RenderPasses::FrameRendererContext& ctx);
-    void EmitSwapchainInit(CommandBuffer* pCmdBuffer, Texture* pSwapchainTexture, Semaphore* pImageAvailableSemaphore);
-    void EmitSwapchainPresent(CommandBuffer* pCmdBuffer, Texture* pSwapchainTexture, Semaphore* pPresentSignalSemaphore);
-
     struct BarrierCmdDesc
     {
         u32 nodeIndex{0};
@@ -79,6 +73,19 @@ private:
         AccessFlags srcAccess{AccessFlags::NONE};
         AccessFlags dstAccess{AccessFlags::NONE};
     };
+
+    const stltype::vector<stltype::fixed_vector<BarrierCmdDesc, 8>>& GetBarriersByNode() const { return m_barriersByNode; }
+
+private:
+    void BuildAdjacencyGraph();
+    bool ValidateSinglePass() const;
+    void CullUnreferencedNodes();
+    void TopologicalSort();
+    void InsertBarriers();
+
+    void ExecuteNode(u32 nodeIdx, CommandBuffer* pCmdBuffer, const RenderPasses::MainPassData& data, const RenderPasses::FrameRendererContext& ctx);
+    void EmitSwapchainInit(CommandBuffer* pCmdBuffer, Texture* pSwapchainTexture, Semaphore* pImageAvailableSemaphore);
+    void EmitSwapchainPresent(CommandBuffer* pCmdBuffer, Texture* pSwapchainTexture, Semaphore* pPresentSignalSemaphore);
 
     struct ResourceTrackingState
     {

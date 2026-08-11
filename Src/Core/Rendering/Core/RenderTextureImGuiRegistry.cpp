@@ -157,6 +157,26 @@ void RenderTextureImGuiRegistry::RegisterGBufferTextures(RGResourceRegistry& reg
     m_gbufferImGuiIDs.push_back(albedoID);
     m_textureViewerItems.push_back(MakeItem("GBuffer Albedo", "GBuffer", albedoID, pAlbedoTex));
 
+    Texture* pUVMatTex = registry.ResolveByID(RGResourceID::GBufferUVMat);
+    u64 uvMatID = addTexByID(RGResourceID::GBufferUVMat);
+    m_textureViewerItems.push_back(MakeItem("GBuffer UV & Material Data", "GBuffer", uvMatID, pUVMatTex));
+
+    Texture* pRoughnessTex = registry.ResolveByID(RGResourceID::GBufferRoughness);
+    u64 roughnessID = addTexByID(RGResourceID::GBufferRoughness);
+    m_textureViewerItems.push_back(MakeItem("GBuffer Roughness", "GBuffer", roughnessID, pRoughnessTex));
+
+    Texture* pEntityIDTex = registry.ResolveByID(RGResourceID::GBufferEntityID);
+    u64 entityIDTexID = addTexByID(RGResourceID::GBufferEntityID);
+    m_textureViewerItems.push_back(MakeItem("GBuffer Entity ID", "GBuffer", entityIDTexID, pEntityIDTex));
+
+    Texture* pDebugTex = registry.ResolveByID(RGResourceID::GBufferDebug);
+    u64 debugID = addTexByID(RGResourceID::GBufferDebug);
+    m_textureViewerItems.push_back(MakeItem("GBuffer Debug", "GBuffer", debugID, pDebugTex));
+
+    Texture* pMainDepthTex = registry.ResolveByID(RGResourceID::MainDepth);
+    u64 mainDepthID = addTexByID(RGResourceID::MainDepth);
+    m_textureViewerItems.push_back(MakeItem("Main Depth", "Render Targets", mainDepthID, pMainDepthTex));
+
     Texture* pScreenSpaceShadowTexture = registry.ResolveByID(RGResourceID::ScreenSpaceShadows);
     u64 sssID = AddImGuiTex(pScreenSpaceShadowTexture);
     m_gbufferImGuiIDs.push_back(sssID);
@@ -292,22 +312,22 @@ void RenderTextureImGuiRegistry::RegisterMaterialTextures()
 
 void RenderTextureImGuiRegistry::PublishGBufferTextureState(RGResourceRegistry& registry)
 {
-    RGResourceRegistry* pRegistry = &registry;
+    auto gbufferIDs = m_gbufferImGuiIDs;
+    if (gbufferIDs.size() >= 7)
+    {
+        const bool velocitySwapped = registry.ResolveByID(RGResourceID::GBufferVelocity) != m_pVelocityA;
+        gbufferIDs[3] = velocitySwapped ? m_velocityIdB : m_velocityIdA;
+
+        const bool colorSwapped = registry.ResolveHistoryByID(RGResourceID::TemporalResolve) != m_pHistoryColorA;
+        gbufferIDs[5] = colorSwapped ? m_historyColorIdB : m_historyColorIdA;
+    }
+
     g_pApplicationState->RegisterUpdateFunction(
-        [this, pRegistry](ApplicationState& state)
+        [csmIDs = m_csmCascadeImGuiIDs, gbufferIDs = stltype::move(gbufferIDs), items = m_textureViewerItems](ApplicationState& state) mutable
         {
-            state.renderState.csmCascadeImGuiIDs = m_csmCascadeImGuiIDs;
-            state.renderState.gbufferImGuiIDs = m_gbufferImGuiIDs;
-            state.renderState.textureViewerState.items = m_textureViewerItems;
-
-            if (state.renderState.gbufferImGuiIDs.size() < 7)
-                return;
-
-            const bool velocitySwapped = pRegistry->ResolveByID(RGResourceID::GBufferVelocity) != m_pVelocityA;
-            state.renderState.gbufferImGuiIDs[3] = velocitySwapped ? m_velocityIdB : m_velocityIdA;
-
-            const bool colorSwapped = pRegistry->ResolveHistoryByID(RGResourceID::TemporalResolve) != m_pHistoryColorA;
-            state.renderState.gbufferImGuiIDs[5] = colorSwapped ? m_historyColorIdB : m_historyColorIdA;
+            state.renderState.csmCascadeImGuiIDs = stltype::move(csmIDs);
+            state.renderState.gbufferImGuiIDs = stltype::move(gbufferIDs);
+            state.renderState.textureViewerState.items = stltype::move(items);
         });
 }
 

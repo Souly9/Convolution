@@ -16,6 +16,8 @@
 #include <imgui/imstb_truetype.h>
 
 
+#include "Core/Rendering/Vulkan/Utils/VkEnumHelpers.h"
+
 using namespace RenderPasses;
 
 ImGuiPass::ImGuiPass() : ConvolutionRenderPass("ImGuiPass")
@@ -60,7 +62,8 @@ void ImGuiPass::Init(const SharedResourceManager& resourceManager)
     VkPipelineRenderingCreateInfo imguiRenderingInfo{};
     imguiRenderingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
     imguiRenderingInfo.colorAttachmentCount = 1;
-    imguiRenderingInfo.pColorAttachmentFormats = &m_mainRenderingData.colorAttachments[0].GetDesc().format;
+    VkFormat swapchainVkFormat = Conv(SWAPCHAIN_FORMAT);
+    imguiRenderingInfo.pColorAttachmentFormats = &swapchainVkFormat;
     imguiRenderingInfo.depthAttachmentFormat = VK_FORMAT_UNDEFINED;
     info.UseDynamicRendering = true;
     info.PipelineRenderingCreateInfo = imguiRenderingInfo;
@@ -71,10 +74,6 @@ void ImGuiPass::Init(const SharedResourceManager& resourceManager)
 void ImGuiPass::RecreateResolutionDependentResources(const SharedResourceManager& resourceManager)
 {
     ScopedZone("ImGuiPass::RecreateResolutionDependentResources");
-
-    const auto swapchainAttachment = CreateDefaultColorAttachment(SWAPCHAIN_FORMAT, LoadOp::LOAD, nullptr);
-    m_mainRenderingData.colorAttachments = {swapchainAttachment};
-
     InitBaseData();
 }
 
@@ -83,20 +82,15 @@ void ImGuiPass::RenderWithGraph(const MainPassData& data, const FrameRendererCon
     ScopedZone("ImGuiPass::Render");
 
     CommandBuffer* pCmdBuffer = execCtx.pCmdBuffer;
-    Texture* pSwapchainTex = execCtx.GetTexture(RGResourceID::Swapchain);
-    if (!pSwapchainTex)
-        pSwapchainTex = ctx.pCurrentSwapchainTexture;
+    RenderAttachmentInfo swapchainAtt = execCtx.GetColorAttachment(RGResourceID::Swapchain, LoadOp::LOAD, StoreOp::STORE);
+    if (!swapchainAtt.pTexture)
+        swapchainAtt.pTexture = ctx.pCurrentSwapchainTexture;
 
     ImGui::Render();
-    ColorAttachment swapChainColorAttachment = m_mainRenderingData.colorAttachments[0];
-    swapChainColorAttachment.SetTexture(pSwapchainTex);
-
-    stltype::vector<ColorAttachment> colorAttachments;
-    colorAttachments.push_back(swapChainColorAttachment);
-    const auto ex = pSwapchainTex->GetInfo().extents;
+    const auto ex = swapchainAtt.pTexture ? swapchainAtt.pTexture->GetInfo().extents : ctx.pCurrentSwapchainTexture->GetInfo().extents;
     const DirectX::XMINT2 extents(ex.x, ex.y);
 
-    BeginRenderingBaseCmd cmdBegin(ToRenderAttachmentInfos(colorAttachments));
+    BeginRenderingBaseCmd cmdBegin({swapchainAtt});
     cmdBegin.viewport =
         RenderViewUtils::CreateViewportFromData(data.renderState.swapchainResolution, ctx.zNear, ctx.zFar);
     cmdBegin.extents = extents;

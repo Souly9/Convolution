@@ -27,6 +27,7 @@ layout(location = 0) in VertexOut
     vec3 worldNormal;
     vec2 fragTexCoord;
     flat uint matIdx;
+    flat uint entityID;
 }
 IN;
 
@@ -44,6 +45,7 @@ void main()
     StoreNormalAndMaterialInGBuffer(N, IN.matIdx);
     StoreTexCoordInGBuffer(IN.fragTexCoord);
     StoreVelocityInGBuffer(velocity);
+    StoreEntityIDInGBuffer(IN.entityID);
 
     vec3 materialAlbedo = mat.baseColor.rgb * fragTexSample.rgb;
     SurfaceParameters surface = BuildMaterialSurface(mat, IN.fragTexCoord, materialAlbedo);
