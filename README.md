@@ -1,106 +1,98 @@
-# Convolution Engine
+<div align="center">
 
-C++20 real-time Vulkan renderer and engine utilizing a dual-threaded frame execution model, clustered shading, ray tracing, and more
+  <img src="docs/imgs/Convolution.PNG" alt="Convolution Engine Header" width="100%" />
+
+  # Convolution Engine
+
+  C++20 real-time Vulkan 1.4 renderer featuring a compiled RenderGraph, dual-threaded execution, clustered shading, hardware ray tracing, and NVIDIA Streamline (DLSS / DLSS-RR) integration.
+
+  [![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.cppreference.com/w/cpp/20)
+  [![Vulkan 1.4](https://img.shields.io/badge/Vulkan-1.4-red.svg)](https://www.vulkan.org/)
+  [![CMake](https://img.shields.io/badge/Build-CMake-green.svg)](https://cmake.org/)
+  [![License](https://img.shields.io/badge/License-MIT-brightgreen.svg)](LICENSE)
+
+</div>
 
 ---
 
-## Architecture & Threading Model
+## Threading Model
 
-Convolution uses a **dual-threaded frame model** to parallelize CPU logic and GPU command recording:
+Convolution uses a **dual-threaded model** separating main thread CPU logic from render thread GPU command recording:
 
-*   **Main Thread:** Processes window input, game logic (ECS updates), and updates ImGui.
-    *   *Entry point:* [Boot.cpp](Src/Boot.cpp)
-    *   *Application lifecycle:* [Application.cpp](Src/Core/Application.cpp)
-*   **Render Thread:** Handles sync with the ECS state, frame preprocessing, render pass submission, swapchain management, and GPU timing publication.
-    *   *Render thread loop:* [RenderThread.cpp](Src/Core/RenderThread.cpp)
-    *   *Front-end render layer:* [RenderLayer.cpp](Src/Core/Rendering/RenderLayer.cpp)
-*   **Thread Safety:** Threads communicate using buffered state via [ApplicationState](Src/Core/Global/State/ApplicationState.h). Main-thread mutations are safely queued using `RegisterUpdateFunction`. Game and Render Thread state are synchronized once per frame, outside of that the render thread can not read game state and vice versa.
+* **Main Thread:** Handles window input, ECS updates, game logic, and ImGui UI.
+  * Entry: [`Boot.cpp`](Src/Boot.cpp) | Lifecycle: [`Application.cpp`](Src/Core/Application.cpp)
+* **Render Thread:** Synchronizes ECS state, compiles the RenderGraph, records command buffers, manages swapchains, and publishes GPU timing.
+  * Loop: [`RenderThread.cpp`](Src/Core/RenderThread.cpp) | Layer: [`RenderLayer.cpp`](Src/Core/Rendering/RenderLayer.cpp)
+* **Thread Safety:** State is double-buffered via [`ApplicationState`](Src/Core/Global/State/ApplicationState.h). Main-thread writes queue via `RegisterUpdateFunction` and sync once per frame boundary.
+
+---
+
+## RenderGraph System
+
+The pipeline is driven by a compiled, declarative **RenderGraph**:
+
+* **[`RenderGraph`](Src/Core/Rendering/Core/RenderGraph/RenderGraph.h):** Tracks pass nodes, handles topological sorting, dependency compilation, side-effect culling, and batch generation.
+* **[`RenderGraphBuilder`](Src/Core/Rendering/Core/RenderGraph/RenderGraphBuilder.h):** Used during `Pass::Setup()` to declare resource reads, writes, attachment formats, and view masks.
+* **[`RGResourceRegistry`](Src/Core/Rendering/Core/RenderGraph/RGResourceRegistry.h):** Allocates render targets, manages resolution scaling, ping-pong history rotation, and bindless descriptors.
+* **[`FrameTransitionRecorder`](Src/Core/Rendering/Core/FrameTransitionRecorder.h):** Records Vulkan image layout transitions and synchronization barriers between pass stages.
+
+---
+
+## Features
+
+### Geometry & Lighting
+* **G-Buffer Rasterization:** Reversed-Z depth pre-pass and main G-Buffer geometry pass ([`DepthPrePass`](Src/Core/Rendering/Passes/PreProcess/DepthPrePass.h), [`StaticMainMeshPass`](Src/Core/Rendering/Passes/StaticMeshPass.h)).
+* **Clustered Shading:** Async compute frustum cluster generation and light grid culling ([`ClusterGeneratorComputePass`](Src/Core/Rendering/Passes/ClusteredShading/ClusterGeneratorComputePass.h), [`LightGridComputePass`](Src/Core/Rendering/Passes/ClusteredShading/LightGridComputePass.h)).
+* **Shadows:** Single-pass **Vulkan Multiview** Cascaded Shadow Maps ([`CSMPass`](Src/Core/Rendering/Passes/ShadowPass.h)) and Bend Studio Screen-Space Shadows ([`ScreenSpaceShadowPass`](Src/Core/Rendering/Passes/ScreenSpaceShadowPass.h)).
+
+### Hardware Ray Tracing (Vulkan KHR)
+* **Acceleration Structures:** [`RTSceneManager`](Src/Core/Rendering/Core/RT/RTSceneManager.h) manages BLAS/TLAS lifecycles.
+* **Ray Query / Passes:** Ray-traced reflections ([`RTReflectionsPass`](Src/Core/Rendering/Passes/RT/RTReflectionsPass.h)), ambient occlusion ([`RTAOPass`](Src/Core/Rendering/Passes/RT/RTAOPass.h)), and composite accumulation.
+
+### Anti-Aliasing & Upscaling
+* **Native AA:** TAA with camera sub-pixel jitter ([`TAAPass`](Src/Core/Rendering/Passes/AA/TAAPass.h)) and SMAA ([`SMAAPass`](Src/Core/Rendering/Passes/AA/SMAAPass.h)).
+* **Upscalers:** NVIDIA DLSS Super Resolution & Ray Reconstruction via Streamline ([`DLSSPass`](Src/Core/Rendering/Passes/AA/DLSSPass.h)), Intel XeSS ([`XeSSPass`](Src/Core/Rendering/Passes/AA/XeSSPass.h)).
+
+### Post-Processing & Compositing
+* **Bloom & Tonemapping:** 13-tap downsample / 9-tap tent upsample bloom chain ([`BloomPass`](Src/Core/Rendering/Passes/PostProcess/BloomPass.h)), ACES / Uncharted 2 / GT7 tonemapping ([`CompositPass`](Src/Core/Rendering/Passes/Compositing/CompositPass.h)).
+* **Editor UI:** ImGui interface with real-time G-Buffer inspectors, profiling stats, and scene manipulators ([`ImGuiPass`](Src/Core/Rendering/Passes/ImGuiPass.h)).
 
 ---
 
 ## ECS & Async Asset Pipeline
 
-*   **Entity Component System (ECS):** Owned by the [EntityManager](Src/Core/ECS/EntityManager.h). Entities compose of modular components (`Transform`, `RenderComponent`, `Light`) and are updated on the main thread via decoupled systems (such as `STransform` or `SLight`).
-*   **Mesh Loading Pipeline:** File formats are parsed via `MeshConverter` ([MeshConverter.h](Src/Core/IO/MeshConverter.h)), which maps data onto ECS entities and queues mesh uploads through the [SharedResourceManager](Src/Core/Rendering/Core/SharedResourceManager.h).
-*   **Asynchronous I/O & GPU Transfers:**
-    *   **File I/O:** The [FileReader](Src/Core/IO/FileReader.h) manages a dedicated I/O background thread and `ThreadPool` to process generic bytes, image/texture data (supporting DDS format parsing), and mesh data asynchronously, with callbacks on completion.
-    *   **Texture Streaming:** The [VkTextureManager](Src/Core/Rendering/Vulkan/VkTextureManager.h) runs on a dedicated worker thread. It streams textures loaded by the file reader directly into GPU bindless arrays, using placeholder textures to keep rendering unblocked during loads.
-    *   **Async Transfers:** The [TransferQueueHandler](Src/Core/Rendering/Core/TransferUtils/TransferQueueHandler.h) delegates GPU buffer copying and queue submissions to an internal thread pool.
+* **Entity Component System (ECS):** Managed by [`EntityManager`](Src/Core/ECS/EntityManager.h). Entities compose modular components (`Transform`, `RenderComponent`, `Light`) and update on the main thread via decoupled systems (`STransform`, `SLight`, `SView`, `SDebugDisplay`).
+* **Mesh Pipeline:** File formats are parsed via [`MeshConverter`](Src/Core/IO/MeshConverter.h), mapped onto ECS entities, and staged for GPU upload through [`SharedResourceManager`](Src/Core/Rendering/Core/SharedResourceManager.h).
+* **Asynchronous I/O & File Loading:** [`FileReader`](Src/Core/IO/FileReader.h) manages a dedicated I/O thread and thread pool to load raw bytes, DDS/image textures, and mesh data asynchronously with completion callbacks.
+* **Bindless Texture Streaming:** [`VkTextureManager`](Src/Core/Rendering/Vulkan/VkTextureManager.h) streams textures on a dedicated worker thread directly into GPU bindless arrays, using placeholder textures to keep rendering unblocked during loads.
+* **Async Transfers:** [`TransferQueueHandler`](Src/Core/Rendering/Core/TransferUtils/TransferQueueHandler.h) delegates GPU buffer copying and staging submissions to a background thread pool.
 
 ---
 
-## Core Features & Modules
+## Profiling & Instrumentation
 
-### 1. Render Architecture
-
-There is no framegraph yet so we drive the whole pipeline through a few huge central classe for now, expect to refactor this in the future.
-
-#### PassManager
-The [PassManager](Src/Core/Rendering/Passes/PassManager.h) is responsible for:
-*   **Scheduling Execution Stages:** Rendering operations are grouped into stages defined by `PASS_SCHEDULE`. Passes within the same stage can run in parallel on graphics/compute queues, while stage boundaries are enforced sequentially.
-*   **GPU-Side Synchronization:** Stages are synchronized using Vulkan timeline semaphores and fences but are grouped into as few commandbuffers as possible.
-*   **State & Resource Propagation:** Prepares frame constants and handles resizing events by coordinating all resolution-dependent target updates to relevant subclasses.
-
-#### RenderPass Lifecycle
-Each pass inherits from [ConvolutionRenderPass](Src/Core/Rendering/Passes/RenderPass.h), implementing a strict lifecycle:
-*   `Init(...)`: Called once at startup to setup pipeline layouts, compile initial shaders, allocate descriptor sets, and build static buffers.
-*   `RecreateResolutionDependentResources(...)`: Invoked on viewport resize or upscaling state change to recreate render targets and re-write resolution-bound descriptors.
-*   `RebuildInternalData(...)`: Rebuild pass-local data when mesh updates hit the render thread during the sync stage.
-*   `Render(...)`: Appends graphics or compute commands into a provided command buffer.
-*   `WantsToRender()`: Returns a boolean indicating if the pass should run this frame (e.g. skips RT passes if ray tracing is disabled or TLAS isn't ready).
-
-### 2. Clustered Shading & Light Culling
-To support thousands of dynamic lights, the view frustum is split into clusters. Computes culling and light grid assignment asynchronously.
-*   [LightTransformComputePass](Src/Core/Rendering/Passes/ClusteredShading/LightTransformComputePass.h) - Updates light transforms.
-*   [ClusterGeneratorComputePass](Src/Core/Rendering/Passes/ClusteredShading/ClusterGeneratorComputePass.h) - Computes coarse view/depth cluster grids.
-*   [TileAssignmentComputePass](Src/Core/Rendering/Passes/ClusteredShading/TileAssignmentComputePass.h) - Performs culling and grids assignment.
-*   [LightGridComputePass](Src/Core/Rendering/Passes/ClusteredShading/LightGridComputePass.h) - Builds final cluster-light grid indices.
-
-### 3. Geometry & G-Buffer Pipeline
-*   [DepthPrePass](Src/Core/Rendering/Passes/PreProcess/DepthPrePass.h) - Reversed Z depth pre-pass.
-*   [StaticMainMeshPass](Src/Core/Rendering/Passes/StaticMeshPass.h) - Main mesh rendering pass.
-*   [RenderTargetManager](Src/Core/Rendering/Core/RenderTargetManager.h) - Manages lifetime, history rotation, and scaling of color/depth/velocity textures.
-*   [FrameTransitionRecorder](Src/Core/Rendering/Core/FrameTransitionRecorder.h) - Records Vulkan image layout transitions and synchronization barriers.
-
-### 4. Shadows & Lighting
-*   [LightingPass](Src/Core/Rendering/Passes/Compositing/LightingPass.h) - Executes the clustered lighting.
-*   [CSMPass](Src/Core/Rendering/Passes/ShadowPass.h) - Records Cascaded Shadow Maps (CSM) for directional light, only one for now but will be extended to a more generic architectyre when implementing point light shadows.
-*   [ScreenSpaceShadowPass](Src/Core/Rendering/Passes/ScreenSpaceShadowPass.h) - SSS pass using the Bend studio implementation.
-
-### 5. Hardware-Accelerated Ray Tracing (Vulkan RT)
-*   [RTSceneManager](Src/Core/Rendering/Core/RT/RTSceneManager.h) - Rebuilds Bottom-Level (BLAS) and Top-Level (TLAS) Acceleration Structures.
-*   [RTReflectionsPass](Src/Core/Rendering/Passes/RT/RTReflectionsPass.h) - Ray-traced specular reflections, very noisy at the moment and will need some significant improvements to be actually usable.
-*   [RTAOPass](Src/Core/Rendering/Passes/RT/RTAOPass.h) - Ray-traced ambient occlusion, same here.
-*   [RTCompositePass](Src/Core/Rendering/Passes/RT/RTCompositePass.h) - Combines rasterized lighting with ray-traced shadows, AO, and reflections and does some simple accumulation.
-
-### 6. Anti-Aliasing & Temporal Upscaling, heavy WIP
-The engine supports multiple post-process anti-aliasing techniques and industry-standard upscalers, the temporal pass logic and math and so on is still not great:
-*   [TAAPass](Src/Core/Rendering/Passes/AA/TAAPass.h) - Native Temporal Anti-Aliasing utilizing camera sub-pixel jitter and G-Buffer motion vectors.
-*   [SMAAPass](Src/Core/Rendering/Passes/AA/SMAAPass.h) - Subpixel Morphological Anti-Aliasing.
-*   [DLSSPass](Src/Core/Rendering/Passes/AA/DLSSPass.h) - NVIDIA DLSS Super Resolution integrated via Streamline.
-
-### 7. Compositing & UI
-*   [CompositPass](Src/Core/Rendering/Passes/Compositing/CompositPass.h) - Performs post-processing, tonemapping, and copy to final swapchain.
-*   [ImGuiPass](Src/Core/Rendering/Passes/ImGuiPass.h) - Renders the editor interface, settings, and profiling/timing UI overlay onto the final swapchain image.
+* **Tracy GPU Integration:** Integrated GPU & CPU zone profiling via [`VkTracyGPUManager`](Src/Core/Rendering/Vulkan/VkTracyManager.h) and Tracy VkContext scopes.
+* **Vulkan Timing Queries:** Native Vulkan timestamp query pool management via [`GPUTimingQuery`](Src/Core/Rendering/Core/GPUTimingQuery.h) providing per-pass GPU execution times and real-time ImGui timing overlays.
 
 ---
 
-## Prerequisites & Building
+## Building
 
-### Prerequisites
-1.  **Vulkan SDK 1.4** (with shader-device-address and RT features enabled)
-2.  **Visual Studio 2022** (C++ Desktop development workload)
-3.  **CMake** & **Git**
+### Requirements
+1. **Vulkan SDK 1.3 / 1.4** (with acceleration structure, ray query, and buffer device address support)
+2. **Visual Studio 2022** 
+3. **CMake 3.22+** & **Git**
 
-### Build Instructions
-1.  Generate the project files:
-    ```bash
-    cmake -S . -B build
-    ```
-2.  Compile the configuration:
-    ```bash
-    cmake --build build --config Debug
-    ```
-3. Download the Resources folder from [MEGA](https://mega.nz/file/WAlCRD7T#ffCl3fJWD4FZmf_ta6iiJrSlBGHYgA2KpjFgsajCg84) and just place it in the root folder of the project (where this README.md file is).
+### Instructions
+1. Clone repository
+2. Generate project:
+   ```bash
+   cmake -S . -B build
+   ```
+3. Build:
+   ```bash
+   cmake --build build --config RelWithDebInfo
+   ```
+4. Download the `Resources` folder from [MEGA Resource Package](https://mega.nz/file/WAlCRD7T#ffCl3fJWD4FZmf_ta6iiJrSlBGHYgA2KpjFgsajCg84) and place it in the project root directory.
 
-*Note: All external libraries (GLFW, ImGui, EASTL) are downloaded/configured automatically via CMake.*
+> Dependencies (GLFW, ImGui, EASTL, EAThread, Assimp, Tracy) are configured automatically via CMake.
