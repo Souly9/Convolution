@@ -13,6 +13,7 @@ public:
 
     void ResetQueries(u32 frameIdx, CommandBuffer* pGraphicsCmdBuffer = nullptr, CommandBuffer* pComputeCmdBuffer = nullptr) override;
     void ResetQueriesForQueue(u32 frameIdx, CommandBuffer* pCmdBuffer, QueueType queueType) override;
+    void ResetQueriesHost(u32 frameIdx) override;
     void ReadResults(u32 frameIdx) override;
     void ClearRunFlags(u32 frameIdx) override;
 

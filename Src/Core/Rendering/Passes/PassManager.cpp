@@ -480,15 +480,30 @@ void PassManager::UpdateGBufferUBO(const MainPassData& data)
 
     const bool useRayReconstruction = Nvidia::StreamlineManager::GetUseRayReconstructionThisFrame();
 
-    gbufferUBO.thisFrameColorBufferIdx = reg.ResolveBindlessByID(RGResourceID::GBufferThisFrameColor);
+    gbufferUBO.aaType = static_cast<uint32_t>(appRenderState.aaType);
 
+    const auto rawColorHandle = reg.ResolveBindlessByID(RGResourceID::GBufferThisFrameColor);
     const auto postAAHandle = reg.ResolveBindlessByID(RGResourceID::GBufferPostAAColor);
     const auto resolveHandle = reg.ResolveBindlessByID(RGResourceID::TemporalResolve);
 
-    gbufferUBO.finalTemporalColorBufferIdx =
-        (((taaModeActive && !taaDebugOrSeed) || smaaModeActive) && postAAHandle != 0 && !useRayReconstruction)
-            ? postAAHandle
-            : resolveHandle;
+    gbufferUBO.thisFrameColorBufferIdx = rawColorHandle;
+
+    if (appRenderState.aaType == AntialiasingType::SMAA && postAAHandle != 0)
+    {
+        gbufferUBO.finalTemporalColorBufferIdx = postAAHandle;
+    }
+    else if (appRenderState.aaType == AntialiasingType::TAA_SMAA)
+    {
+        gbufferUBO.finalTemporalColorBufferIdx = (postAAHandle != 0 && !taaDebugOrSeed) ? postAAHandle : resolveHandle;
+    }
+    else if (appRenderState.aaType == AntialiasingType::DLSS || appRenderState.aaType == AntialiasingType::XeSS)
+    {
+        gbufferUBO.finalTemporalColorBufferIdx = resolveHandle;
+    }
+    else
+    {
+        gbufferUBO.finalTemporalColorBufferIdx = rawColorHandle;
+    }
 
     if (useRayReconstruction)
     {

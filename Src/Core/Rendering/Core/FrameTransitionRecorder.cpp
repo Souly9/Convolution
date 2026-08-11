@@ -21,6 +21,19 @@ void FrameTransitionRecorder::RecordTemporalResourceInitialLayouts(
         pCmd->RecordCommand(cmd);
     };
 
+    auto transitionInitialDepthTexture = [](CommandBuffer* pCmd, Texture* pTex)
+    {
+        if (!pTex) return;
+        ImageLayoutTransitionCmd cmd(pTex);
+        cmd.oldLayout = ImageLayout::UNDEFINED;
+        cmd.newLayout = ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+        VkTextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::UNDEFINED, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+        pCmd->RecordCommand(cmd);
+    };
+
+    Texture* pCSM = registry.GetShadowMap().pTexture;
+    transitionInitialDepthTexture(pCmdBuffer, pCSM);
+
     Texture* pResolve = registry.ResolveByID(RGResourceID::TemporalResolve);
     Texture* pResolveHistory = registry.ResolveHistoryByID(RGResourceID::TemporalResolve);
     transitionInitialTexture(pCmdBuffer, pResolve);

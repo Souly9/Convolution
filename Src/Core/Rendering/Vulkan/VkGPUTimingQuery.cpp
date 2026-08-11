@@ -122,6 +122,24 @@ void GPUTimingQueryVulkan::ResetQueriesForQueue(u32 frameIdx, CommandBuffer* pCm
 }
 
 
+void GPUTimingQueryVulkan::ResetQueriesHost(u32 frameIdx)
+{
+    SetCurrentFrameIdx(frameIdx);
+    u32 frameSlot = frameIdx % SWAPCHAIN_IMAGES;
+    m_poolInitialized[frameSlot] = true;
+    ClearRunFlags(frameIdx);
+
+    for (u32 poolIdx = 0; poolIdx < 2; ++poolIdx)
+    {
+        auto poolHandle = m_queryPools[frameSlot][poolIdx].GetRef();
+        if (poolHandle != VK_NULL_HANDLE)
+        {
+            vkResetQueryPool(VkGlobals::GetLogicalDevice(), poolHandle, 0, m_queryCount);
+            m_poolResetThisFrame[frameSlot][poolIdx] = true;
+        }
+    }
+}
+
 void GPUTimingQueryVulkan::ReadResults(u32 frameIdx)
 {
     u32 readFrameIdx = frameIdx % SWAPCHAIN_IMAGES;

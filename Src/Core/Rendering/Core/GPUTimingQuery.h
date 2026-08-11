@@ -28,6 +28,7 @@ public:
 
     virtual void ResetQueries(u32 frameIdx, CommandBuffer* pGraphicsCmdBuffer = nullptr, CommandBuffer* pComputeCmdBuffer = nullptr) = 0;
     virtual void ResetQueriesForQueue(u32 frameIdx, CommandBuffer* pCmdBuffer, QueueType queueType) = 0;
+    virtual void ResetQueriesHost(u32 frameIdx) = 0;
     virtual void ReadResults(u32 frameIdx) = 0;
 
     void SetCurrentFrameIdx(u32 frameIdx)

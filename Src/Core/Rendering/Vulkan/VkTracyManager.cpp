@@ -43,6 +43,9 @@ void VkTracyGPUManager::StartZone(CommandBuffer* pCmdBuffer, const char* name, c
     if (!m_initialized || !m_pTracyVkCtx || !pCmdBuffer || !name)
         return;
 
+    if (!tracy::GetProfiler().IsConnected())
+        return;
+
     VkCommandBuffer vkCmd = CommandBuffer::Cast(pCmdBuffer)->GetRef();
     if (vkCmd != VK_NULL_HANDLE)
     {
@@ -58,6 +61,9 @@ void VkTracyGPUManager::EndZone(CommandBuffer* pCmdBuffer)
 {
 #if PROFILING_ENABLED
     if (!m_initialized || !m_pTracyVkCtx || !pCmdBuffer)
+        return;
+
+    if (!tracy::GetProfiler().IsConnected())
         return;
 
     auto it = m_activeScopes.find(pCmdBuffer);
@@ -78,21 +84,14 @@ void VkTracyGPUManager::Collect(CommandBuffer* pCmdBuffer)
     if (!m_initialized || !m_pTracyVkCtx || !pCmdBuffer)
         return;
 
+    if (!tracy::GetProfiler().IsConnected())
+        return;
+
     ExecuteNativeCmd collectCmd{};
     collectCmd.callback = [this](void* pNativeCmdBuf) {
         VkCommandBuffer vkCmd = reinterpret_cast<VkCommandBuffer>(pNativeCmdBuf);
         if (vkCmd != VK_NULL_HANDLE)
         {
-            if (!tracy::GetProfiler().IsConnected())
-            {
-                VkQueryPool pool = m_pTracyVkCtx->GetQueryPool();
-                if (pool != VK_NULL_HANDLE)
-                {
-                    vkCmdResetQueryPool(vkCmd, pool, 0, 65536);
-                }
-                return;
-            }
-
             TracyVkCollect(m_pTracyVkCtx, vkCmd);
         }
     };

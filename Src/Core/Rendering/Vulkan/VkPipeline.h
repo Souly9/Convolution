@@ -55,6 +55,12 @@ protected:
     VkPipelineColorBlendStateCreateInfo CreateColorBlendInfo(
         const ColorBlendInfo& info, const stltype::vector<VkPipelineColorBlendAttachmentState>& colorBlendAttachments);
 
+public:
+    const PipelineInfo& GetInfo() const
+    {
+        return m_info;
+    }
+
 protected:
     VkPipelineLayout m_pipelineLayout{VK_NULL_HANDLE};
 

@@ -683,6 +683,11 @@ void RenderGraph::Execute(const RenderPasses::MainPassData& data,
     }
     u32 currentGraphicsBatchNum = 0;
 
+    if (pTimingQuery && pTimingQuery->IsEnabled())
+    {
+        pTimingQuery->ResetQueriesHost(ctx.currentFrame);
+    }
+
     for (auto& batch : m_batches)
     {
         CommandBuffer* pCmdBuffer = nullptr;

@@ -32,12 +32,16 @@ void main()
     }
     else
     {
-        uint aaType = GET_AA_TYPE(ubo.debugFlags);
-        if (aaType == AA_TYPE_TAA_SMAA || aaType == AA_TYPE_DLSS || aaType == AA_TYPE_XESS || aaType == AA_TYPE_SMAA)
+        uint aaType = gbufferUBO.aaType;
+        if (aaType == AA_TYPE_TAA_SMAA)
+        {
+            vec3 tonemappedColor = texture(GlobalBindlessTextures[gbufferUBO.finalTemporalColorBufferIdx], texCoords).xyz;
+            tonemappedColor = clamp(tonemappedColor, vec3(0.0), vec3(0.999));
+            finalHDRColor = tonemappedColor / (vec3(1.0) - tonemappedColor);
+        }
+        else if (aaType == AA_TYPE_SMAA || aaType == AA_TYPE_DLSS || aaType == AA_TYPE_XESS)
         {
             finalHDRColor = texture(GlobalBindlessTextures[gbufferUBO.finalTemporalColorBufferIdx], texCoords).xyz;
-            finalHDRColor = clamp(finalHDRColor, vec3(0.0), vec3(0.999));
-            finalHDRColor = finalHDRColor / (vec3(1.0) - finalHDRColor);
         }
         else
         {
@@ -48,7 +52,7 @@ void main()
     if (gbufferUBO.bloomResultIdx != 0u)
     {
         vec3 bloomColor = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.bloomResultIdx)], texCoords).rgb;
-        finalHDRColor += bloomColor;
+        finalHDRColor += bloomColor * 0.1;
     }
 
     finalHDRColor *= ubo.exposure;

@@ -10,28 +10,29 @@
 #endif
 
 STRUCTDECL(GBufferPostProcessUBO)
-    STRUCTFIELD(BindlessTextureHandle, gbufferAlbedoIdx)
-    STRUCTFIELD(BindlessTextureHandle, gbufferNormalIdx)
-    STRUCTFIELD(BindlessTextureHandle, gbufferTexCoordMatIdx)
-    STRUCTFIELD(BindlessTextureHandle, gbufferDebugIdx)
-    STRUCTFIELD(BindlessTextureHandle, gbufferVelocityIdx)
-    STRUCTFIELD(BindlessTextureHandle, lastFrameVelocityIdx)
-    STRUCTFIELD(BindlessTextureHandle, depthBufferIdx)
-    STRUCTFIELD(BindlessTextureHandle, lastFrameColorBufferIdx)
-    STRUCTFIELD(BindlessTextureHandle, thisFrameColorBufferIdx)
-    STRUCTFIELD(BindlessTextureHandle, lastFrameDepthIdx)
-    STRUCTFIELD(BindlessTextureHandle, gbufferResolveIdx)
-    STRUCTFIELD(BindlessTextureHandle, rtDebugViewIdx)
-    STRUCTFIELD(BindlessTextureHandle, rtReflectionsIdx)
-    STRUCTFIELD(BindlessTextureHandle, rtReflectedSceneColorIdx)
-    STRUCTFIELD(BindlessTextureHandle, finalTemporalColorBufferIdx)
-    STRUCTFIELD(BindlessTextureHandle, rtaoIdx)
-    STRUCTFIELD(BindlessTextureHandle, deferredLightingColorIdx)
-    STRUCTFIELD(BindlessTextureHandle, bloomResultIdx)
+STRUCTFIELD(BindlessTextureHandle, gbufferAlbedoIdx)
+STRUCTFIELD(BindlessTextureHandle, gbufferNormalIdx)
+STRUCTFIELD(BindlessTextureHandle, gbufferTexCoordMatIdx)
+STRUCTFIELD(BindlessTextureHandle, gbufferDebugIdx)
+STRUCTFIELD(BindlessTextureHandle, gbufferVelocityIdx)
+STRUCTFIELD(BindlessTextureHandle, lastFrameVelocityIdx)
+STRUCTFIELD(BindlessTextureHandle, depthBufferIdx)
+STRUCTFIELD(BindlessTextureHandle, lastFrameColorBufferIdx)
+STRUCTFIELD(BindlessTextureHandle, thisFrameColorBufferIdx)
+STRUCTFIELD(BindlessTextureHandle, lastFrameDepthIdx)
+STRUCTFIELD(BindlessTextureHandle, gbufferResolveIdx)
+STRUCTFIELD(BindlessTextureHandle, rtDebugViewIdx)
+STRUCTFIELD(BindlessTextureHandle, rtReflectionsIdx)
+STRUCTFIELD(BindlessTextureHandle, rtReflectedSceneColorIdx)
+STRUCTFIELD(BindlessTextureHandle, finalTemporalColorBufferIdx)
+STRUCTFIELD(BindlessTextureHandle, rtaoIdx)
+STRUCTFIELD(BindlessTextureHandle, deferredLightingColorIdx)
+STRUCTFIELD(BindlessTextureHandle, bloomResultIdx)
+STRUCTFIELD(uint, aaType)
 STRUCTEND()
 
 STRUCTDECL(ShadowMapUBO)
-    STRUCTFIELD(BindlessTextureHandle, directionalShadowMapIdx)
+STRUCTFIELD(BindlessTextureHandle, directionalShadowMapIdx)
 STRUCTEND()
 
 #ifndef __cplusplus
@@ -47,4 +48,3 @@ layout(set = GBufferUBOSet, binding = GlobalShadowMapUBOSlot) uniform ShadowMapU
 #endif
 
 #endif // SHADERS_GBUFFER_SAMPLING_H
- 
