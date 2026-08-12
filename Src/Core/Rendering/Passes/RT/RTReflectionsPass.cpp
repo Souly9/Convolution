@@ -1,5 +1,6 @@
 #include "RTReflectionsPass.h"
 #include "Core/Global/GlobalVariables.h"
+#include "Core/Global/LogDefines.h"
 #include "Core/Global/State/ApplicationState.h"
 #include "Core/Global/Utils/MathFunctions.h"
 #include "Core/Rendering/Core/Defines/BindingSlots.h"
@@ -99,7 +100,18 @@ void RTReflectionsPass::RenderWithGraph(const MainPassData& data, const FrameRen
     CommandBuffer* pCmdBuffer = execCtx.pCmdBuffer;
     StartRenderPassProfilingScope(pCmdBuffer);
 
-    if (!execCtx.HasReadyTLAS())
+    const bool tlasReady = execCtx.HasReadyTLAS();
+    const mathstl::Vector2 renderRes = execCtx.GetRenderResolution();
+
+    static u32 s_logCounter = 0;
+    if (s_logCounter++ % 120 == 0)
+    {
+        DEBUG_LOG_WARNF("[RTReflectionsPass] tlasReady: {}, renderRes: {:.0f}x{:.0f}, reflTexIdx: {}",
+                        tlasReady ? 1 : 0, renderRes.x, renderRes.y,
+                        execCtx.GetBindless(RGResourceID::RTReflections));
+    }
+
+    if (!tlasReady)
     {
         EndRenderPassProfilingScope(pCmdBuffer);
         return;
@@ -114,8 +126,8 @@ void RTReflectionsPass::RenderWithGraph(const MainPassData& data, const FrameRen
     m_pushConstants.frameIndex = execCtx.GetFrameIndex();
     m_pushConstants.raysPerPixel = rtState.reflectionsRaysPerPixel;
 
-    const u32 groupCountX = (static_cast<u32>(execCtx.GetRenderResolution().x) + 7) / 8;
-    const u32 groupCountY = (static_cast<u32>(execCtx.GetRenderResolution().y) + 7) / 8;
+    const u32 groupCountX = (static_cast<u32>(renderRes.x) + 7) / 8;
+    const u32 groupCountY = (static_cast<u32>(renderRes.y) + 7) / 8;
 
     GenericComputeDispatchCmd dispatchCmd(&m_computePipeline, groupCountX, groupCountY, 1);
     dispatchCmd.descriptorSets = execCtx.GetDescriptors();

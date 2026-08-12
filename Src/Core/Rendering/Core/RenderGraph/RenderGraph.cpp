@@ -510,6 +510,7 @@ void RenderGraph::ExecuteNode(u32 nodeIdx, CommandBuffer* pCmdBuffer, const Rend
     RGExecutionContext execCtx{};
     execCtx.pCmdBuffer = pCmdBuffer;
     execCtx.pFrameCtx = &ctx;
+    execCtx.pMainPassData = &data;
     execCtx.pResolvedDescriptors = &resolvedDescriptors;
     execCtx.pRegistry = &m_registry;
 

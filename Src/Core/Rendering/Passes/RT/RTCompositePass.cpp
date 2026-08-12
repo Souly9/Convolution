@@ -1,5 +1,6 @@
 #include "RTCompositePass.h"
 #include "Core/Global/GlobalVariables.h"
+#include "Core/Global/LogDefines.h"
 #include "Core/Global/Profiling.h"
 #include "Core/Global/Utils/MathFunctions.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
@@ -52,10 +53,27 @@ void RTCompositePass::Setup(::RenderGraphBuilder& builder, const MainPassData& d
 
     builder.ReadTexture(RGResourceID::MainDepth, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
     builder.ReadTexture(RGResourceID::GBufferVelocity, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-    builder.ReadTexture(RGResourceID::RTAOOutput, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-    builder.ReadTexture(RGResourceID::RTReflections, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+
+    const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+    const bool rtaoEnabled = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
+                             mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTAOEnabled);
+    if (rtaoEnabled)
+    {
+        builder.ReadTexture(RGResourceID::RTAOOutput, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    }
+
+    const bool reflectionsEnabled = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
+                                    mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTReflectionsEnabled);
+    if (reflectionsEnabled)
+    {
+        builder.ReadTexture(RGResourceID::RTReflections, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    }
+
+    auto accum = builder.DeclareStorageTexture(RGResourceID::RTAccumulation, TexFormat::R16G16B16A16_FLOAT, RGSizeClass::RenderResolution);
+    builder.WriteStorageImage(accum, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ | AccessFlags::SHADER_WRITE);
 
     auto sceneColor = builder.DeclareStorageTexture(RGResourceID::GBufferThisFrameColor, TexFormat::R16G16B16A16_FLOAT, RGSizeClass::RenderResolution);
+    builder.ReadTexture(sceneColor, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::GENERAL);
     builder.WriteStorageImage(sceneColor, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ | AccessFlags::SHADER_WRITE);
     builder.SetHasSideEffects();
 }
@@ -77,20 +95,33 @@ void RTCompositePass::RenderWithGraph(const MainPassData& data, const FrameRende
         m_accumFrameCount = eastl::min(m_accumFrameCount + 1u, 8u);
 
     const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
-    const bool rtaoEnabled = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
+    const bool tlasReady = execCtx.HasReadyTLAS();
+    const bool rtaoEnabled = tlasReady && mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
                              mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTAOEnabled);
-    const bool reflectionsEnabled = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
+    const bool reflectionsEnabled = tlasReady && mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
                                     mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTReflectionsEnabled);
 
     m_pushConstants.resetHistory = shouldReset ? 1u : 0u;
     m_pushConstants.accumRate = 1.0f / static_cast<float>(m_accumFrameCount + 1);
     m_pushConstants.accumTexIdx = execCtx.GetBindless(RGResourceID::RTAccumulation);
+    m_pushConstants.historyAccumTexIdx = execCtx.GetHistoryBindless(RGResourceID::RTAccumulation);
     m_pushConstants.rtaoTexIdx = rtaoEnabled ? execCtx.GetBindless(RGResourceID::RTAOOutput) : 0u;
     m_pushConstants.rtReflectionsTexIdx = reflectionsEnabled ? execCtx.GetBindless(RGResourceID::RTReflections) : 0u;
 
-    const u32 groupCountX = (static_cast<u32>(execCtx.GetRenderResolution().x) + 7) / 8;
-    const u32 groupCountY = (static_cast<u32>(execCtx.GetRenderResolution().y) + 7) / 8;
+    const mathstl::Vector2 renderRes = execCtx.GetRenderResolution();
+    const u32 groupCountX = (static_cast<u32>(renderRes.x) + 7) / 8;
+    const u32 groupCountY = (static_cast<u32>(renderRes.y) + 7) / 8;
     const u32 groupCountZ = 1;
+
+    static u32 s_logCounter = 0;
+    if (s_logCounter++ % 120 == 0)
+    {
+        DEBUG_LOG_WARNF("[RTCompositePass] tlasReady: {}, renderRes: {:.0f}x{:.0f}, accumIdx: {}, histAccumIdx: {}, rtaoIdx: {}, reflIdx: {}, groups: {}x{}",
+                        tlasReady ? 1 : 0, renderRes.x, renderRes.y,
+                        m_pushConstants.accumTexIdx, m_pushConstants.historyAccumTexIdx,
+                        m_pushConstants.rtaoTexIdx, m_pushConstants.rtReflectionsTexIdx,
+                        groupCountX, groupCountY);
+    }
 
     GenericComputeDispatchCmd cmd(&m_pipeline, groupCountX, groupCountY, groupCountZ);
     cmd.descriptorSets = execCtx.GetDescriptors();

@@ -44,8 +44,8 @@ void main()
                          (E + F + G + H) * (2.0 / 16.0) +
                          I * (4.0 / 16.0);
 
-    // Read current higher-resolution mip level color to additively blend
-    vec3 currentMipColor = texture(GlobalBindlessTextures[nonuniformEXT(push.inputTargetTexIdx)], uv).rgb;
+    // Read current higher-resolution mip level color to additively blend using imageLoad to avoid write hazard
+    vec3 currentMipColor = imageLoad(GlobalBindlessImages[nonuniformEXT(push.inputTargetTexIdx)], outputCoords).rgb;
     vec3 accumulated = currentMipColor + upsampledColor;
 
     if (push.useLensTexture != 0u)

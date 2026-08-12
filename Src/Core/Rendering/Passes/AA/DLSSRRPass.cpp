@@ -3,6 +3,7 @@
 #include "Core/Global/LogDefines.h"
 #include "Core/Global/Utils/MathFunctions.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
+#include "Core/Rendering/Core/FrameTransitionRecorder.h"
 #include "Core/Rendering/Core/SharedResourceManager.h"
 #include "Core/Rendering/Passes/PassManager.h"
 #include "Core/Rendering/Core/Nvidia/StreamlineManager.h"
@@ -117,19 +118,23 @@ void DLSSRRPass::RenderWithGraph(const MainPassData& data, const FrameRendererCo
 {
     ScopedZone("DLSSRRPass::Render");
     u32 frameIdx = ctx.currentFrame;
-    
-    sl::FrameToken* pFrameToken = nullptr;
-    if (!Nvidia::StreamlineManager::GetFrameToken(frameIdx, pFrameToken))
-        return;
-    
+
     Texture* pColorIn = execCtx.GetTexture(RGResourceID::GBufferThisFrameColor);
     Texture* pColorOut = execCtx.GetTexture(RGResourceID::TemporalResolve);
     Texture* pDepth = execCtx.GetTexture(RGResourceID::MainDepth);
     Texture* pMotion = execCtx.GetTexture(RGResourceID::GBufferVelocity);
     Texture* pExposure = execCtx.GetTexture(RGResourceID::DLSSExposure);
 
-    if (!pColorIn || !pColorOut || !pDepth || !pMotion || !pExposure)
+    if (!pColorIn || !pColorOut)
         return;
+
+    sl::FrameToken* pFrameToken = nullptr;
+    if (!Nvidia::StreamlineManager::GetFrameToken(frameIdx, pFrameToken) || !pDepth || !pMotion || !pExposure)
+    {
+        FrameTransitionRecorder recorder{};
+        recorder.RecordCopyTextureToResolve(execCtx.pCmdBuffer, pColorOut, pColorIn);
+        return;
+    }
 
     const auto outputExtents = pColorOut->GetInfo().extents;
     const auto inputExtents = pColorIn->GetInfo().extents;
@@ -137,10 +142,13 @@ void DLSSRRPass::RenderWithGraph(const MainPassData& data, const FrameRendererCo
     const sl::DLSSMode dlssMode =
         ResolveDLSSModeForRenderScale(data.renderState.renderResolution, data.renderState.swapchainResolution);
 
-    if (!Nvidia::StreamlineManager::EnsureDLSSDConfigured(outputExtents.x, outputExtents.y, dlssMode, data.mainCamViewMatrix, data.mainCamViewMatrix.Invert()))
+    if (!Nvidia::StreamlineManager::EnsureDLSSDConfigured(outputExtents.x, outputExtents.y, dlssMode, data.mainCamViewMatrix, data.mainCamViewMatrix.Invert()) ||
+        Nvidia::StreamlineManager::IsDLSSDEvaluateBlocked())
+    {
+        FrameTransitionRecorder recorder{};
+        recorder.RecordCopyTextureToResolve(execCtx.pCmdBuffer, pColorOut, pColorIn);
         return;
-    if (Nvidia::StreamlineManager::IsDLSSDEvaluateBlocked())
-        return;
+    }
 
     sl::ViewportHandle viewport(0);
 
@@ -194,11 +202,13 @@ void DLSSRRPass::RenderWithGraph(const MainPassData& data, const FrameRendererCo
         pushTagDesc(pNormal, sl::kBufferTypeNormals, VK_FORMAT_R16G16B16A16_SFLOAT);
         pushTagDesc(pRoughness, sl::kBufferTypeRoughness, VK_FORMAT_R8_UNORM);
         pushTagDesc(pNoisyReflections, sl::kBufferTypeSpecularHitNoisy, VK_FORMAT_R16G16B16A16_SFLOAT);
-        pushTagDesc(nullptr, sl::kBufferTypeDiffuseHitNoisy, VK_FORMAT_R16G16B16A16_SFLOAT);
+        pushTagDesc(pNoisyReflections, sl::kBufferTypeDiffuseHitNoisy, VK_FORMAT_R16G16B16A16_SFLOAT);
     }
 
     if (!tagsOk)
     {
+        FrameTransitionRecorder recorder{};
+        recorder.RecordCopyTextureToResolve(execCtx.pCmdBuffer, pColorOut, pColorIn);
         return;
     }
 
@@ -364,6 +374,8 @@ void DLSSRRPass::RenderWithGraph(const MainPassData& data, const FrameRendererCo
     if (constRes != sl::Result::eOk)
     {
         DEBUG_LOG_WARNF("[DLSSRRPass] slSetConstants failed with result: 0x{:X}", static_cast<u32>(constRes));
+        FrameTransitionRecorder recorder{};
+        recorder.RecordCopyTextureToResolve(execCtx.pCmdBuffer, pColorOut, pColorIn);
         EndRenderPassProfilingScope(execCtx.pCmdBuffer);
         return;
     }

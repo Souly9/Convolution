@@ -26,8 +26,8 @@ void main()
 
     vec2 uv = (vec2(pixelCoord) + 0.5) / vec2(renderResolution);
 
-    // 1. Sample deferred lighting color
-    vec3 sceneColor = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.deferredLightingColorIdx)], uv).rgb;
+    // 1. Sample deferred lighting color using imageLoad to avoid write-hazard on the same storage image
+    vec3 sceneColor = imageLoad(GlobalBindlessImages[nonuniformEXT(gbufferUBO.deferredLightingColorIdx)], pixelCoord).rgb;
 
     // 2. Sample RT outputs via push-constant indices
     float currentAO = 1.0;
@@ -50,7 +50,9 @@ void main()
     vec4 history = vec4(currentReflections, currentAO);
     if (uv_prev_valid)
     {
-        history = texture(GlobalBindlessTextures[nonuniformEXT(pc.accumTexIdx)], uv_prev);
+        ivec2 prevCoord = clamp(ivec2(uv_prev * vec2(renderResolution)), ivec2(0), renderResolution - 1);
+        uint historyTexIdx = pc.historyAccumTexIdx != 0u ? pc.historyAccumTexIdx : pc.accumTexIdx;
+        history = imageLoad(GlobalBindlessImages[nonuniformEXT(historyTexIdx)], prevCoord);
 
         // Depth rejection to prevent ghosting on dynamic objects/camera motion
         float centerDepth = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.depthBufferIdx)], uv).r;

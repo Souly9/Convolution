@@ -63,6 +63,7 @@ public:
     TexFormat GetResourceFormatByID(RGResourceID id) const;
     ImageLayout GetInitialLayout(RGResourceHandle handle) const;
     void SetResourceLayout(RGResourceHandle handle, ImageLayout layout);
+    void SetHistoryResourceLayout(RGResourceHandle handle, ImageLayout layout);
     void SetCustomResourceName(RGResourceHandle handle, const stltype::string& name);
     void MarkReferenced(RGResourceHandle handle);
 
@@ -94,6 +95,7 @@ public:
         mathstl::Vector2 allocatedExtents{0.0f, 0.0f};
         u32 framesUnreferenced{0};
         ImageLayout currentLayout{ImageLayout::UNDEFINED};
+        ImageLayout historyLayout{ImageLayout::UNDEFINED};
 
         u32 flags{0};
 

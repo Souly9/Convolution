@@ -10,6 +10,7 @@
 #include "Core/Rendering/Vulkan/VkTextureManager.h"
 #include "Core/Rendering/Passes/PassManager.h"
 #include "Core/Global/Profiling.h"
+#include "Core/Rendering/Core/Nvidia/StreamlineManager.h"
 
 using namespace RenderPasses;
 
@@ -54,6 +55,12 @@ void TAAPass::BuildBuffers()
 bool TAAPass::WantsToRender() const
 {
     const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+    const bool useRayReconstruction = Nvidia::StreamlineManager::IsDLSSRRSupported() &&
+                                      Nvidia::StreamlineManager::GetUseRayReconstructionThisFrame();
+    if (useRayReconstruction)
+    {
+        return false;
+    }
     return renderState.aaType == AntialiasingType::TAA_SMAA;
 }
 

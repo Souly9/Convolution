@@ -31,8 +31,20 @@ void FrameTransitionRecorder::RecordTemporalResourceInitialLayouts(
         pCmd->RecordCommand(cmd);
     };
 
+    auto setRegistryInitialLayout = [&registry](RGResourceID id, ImageLayout layout)
+    {
+        RGResourceHandle h = registry.FindByID(id);
+        if (h != kInvalidRGHandle)
+        {
+            registry.SetResourceLayout(h, layout);
+            registry.SetHistoryResourceLayout(h, layout);
+        }
+    };
+
     Texture* pCSM = registry.GetShadowMap().pTexture;
     transitionInitialDepthTexture(pCmdBuffer, pCSM);
+    setRegistryInitialLayout(RGResourceID::MainDepth, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+    setRegistryInitialLayout(RGResourceID::GBufferVelocity, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
     Texture* pResolve = registry.ResolveByID(RGResourceID::TemporalResolve);
     Texture* pResolveHistory = registry.ResolveHistoryByID(RGResourceID::TemporalResolve);
@@ -41,12 +53,15 @@ void FrameTransitionRecorder::RecordTemporalResourceInitialLayouts(
     {
         transitionInitialTexture(pCmdBuffer, pResolveHistory);
     }
+    setRegistryInitialLayout(RGResourceID::TemporalResolve, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
     Texture* pPostAA = registry.ResolveByID(RGResourceID::GBufferPostAAColor);
     transitionInitialTexture(pCmdBuffer, pPostAA);
+    setRegistryInitialLayout(RGResourceID::GBufferPostAAColor, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
     Texture* pSSS = registry.ResolveByID(RGResourceID::ScreenSpaceShadows);
     transitionInitialTexture(pCmdBuffer, pSSS);
+    setRegistryInitialLayout(RGResourceID::ScreenSpaceShadows, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
     static const RGResourceID bloomResIDs[5] = {
         RGResourceID::BloomMip0,
@@ -58,7 +73,26 @@ void FrameTransitionRecorder::RecordTemporalResourceInitialLayouts(
     for (u32 i = 0; i < 5; ++i)
     {
         transitionInitialTexture(pCmdBuffer, registry.ResolveByID(bloomResIDs[i]));
+        setRegistryInitialLayout(bloomResIDs[i], ImageLayout::SHADER_READ_ONLY_OPTIMAL);
     }
+
+    transitionInitialTexture(pCmdBuffer, registry.ResolveByID(RGResourceID::RTReflections));
+    setRegistryInitialLayout(RGResourceID::RTReflections, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+
+    transitionInitialTexture(pCmdBuffer, registry.ResolveByID(RGResourceID::RTAOOutput));
+    setRegistryInitialLayout(RGResourceID::RTAOOutput, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+
+    Texture* pAccum = registry.ResolveByID(RGResourceID::RTAccumulation);
+    Texture* pAccumHistory = registry.ResolveHistoryByID(RGResourceID::RTAccumulation);
+    transitionInitialTexture(pCmdBuffer, pAccum);
+    if (pAccumHistory && pAccumHistory != pAccum)
+    {
+        transitionInitialTexture(pCmdBuffer, pAccumHistory);
+    }
+    setRegistryInitialLayout(RGResourceID::RTAccumulation, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+
+    transitionInitialTexture(pCmdBuffer, registry.ResolveByID(RGResourceID::GBufferDebug));
+    setRegistryInitialLayout(RGResourceID::GBufferDebug, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
     Texture* pDLSSExposureTexture = registry.ResolveByID(RGResourceID::DLSSExposure);
     if (pDLSSExposureTexture)

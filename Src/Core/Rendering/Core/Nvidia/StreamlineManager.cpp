@@ -594,6 +594,9 @@ bool StreamlineManager::EnsureDLSSDConfigured(u32 width, u32 height, sl::DLSSMod
     if (!s_initialized || width == 0 || height == 0)
         return false;
 
+    // Base DLSS SR options must be configured alongside DLSS-D options for Streamline pipeline compatibility
+    SetDLSSOptions(width, height, mode);
+
     const bool configChanged =
         !g_dlssDConfigured || g_dlssDWidth != width || g_dlssDHeight != height || g_dlssDMode != mode;
     const bool sameAsLastFailedConfig = g_dlssDLastConfigureFailed && g_dlssDFailedWidth == width &&

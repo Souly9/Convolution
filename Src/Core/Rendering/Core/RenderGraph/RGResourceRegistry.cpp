@@ -1,5 +1,6 @@
 #include "RGResourceRegistry.h"
 #include "Core/Global/GlobalVariables.h"
+#include "Core/Global/LogDefines.h"
 #include "Core/Global/Profiling.h"
 #include "Core/Rendering/Core/TextureManager.h"
 #include "Core/Rendering/Core/Utils/DeleteQueue.h"
@@ -14,31 +15,54 @@ static TexFormat GetDefaultFormatForRGResourceID(RGResourceID id)
 {
     switch (id)
     {
-        case RGResourceID::MainDepth: return TexFormat::D32_SFLOAT;
-        case RGResourceID::GBufferAlbedo: return TexFormat::R16G16B16A16_FLOAT;
-        case RGResourceID::GBufferNormal: return TexFormat::R16G16B16A16_FLOAT;
-        case RGResourceID::GBufferUVMat: return TexFormat::R16G16B16A16_FLOAT;
-        case RGResourceID::GBufferDebug: return TexFormat::R16G16B16A16_FLOAT;
-        case RGResourceID::GBufferVelocity: return TexFormat::R32G32_FLOAT;
-        case RGResourceID::GBufferThisFrameColor: return TexFormat::R16G16B16A16_FLOAT;
-        case RGResourceID::GBufferLastFrameDepth: return TexFormat::D32_SFLOAT;
-        case RGResourceID::TemporalResolve: return TexFormat::R16G16B16A16_FLOAT;
-        case RGResourceID::GBufferPostAAColor: return TexFormat::R16G16B16A16_FLOAT;
-        case RGResourceID::GBufferRoughness: return TexFormat::R8_UNORM;
-        case RGResourceID::GBufferEntityID: return TexFormat::R32_UINT;
-        case RGResourceID::RTReflections: return TexFormat::R16G16B16A16_FLOAT;
-        case RGResourceID::RTAOOutput: return TexFormat::R8_UNORM;
-        case RGResourceID::ScreenSpaceShadows: return TexFormat::R8_UNORM;
-        case RGResourceID::SMAAEdges: return TexFormat::R8G8_UNORM;
-        case RGResourceID::SMAABlend: return TexFormat::R8G8B8A8_UNORM;
-        case RGResourceID::Swapchain: return SWAPCHAIN_FORMAT;
-        case RGResourceID::CSMShadowMap: return DEPTH_BUFFER_FORMAT;
+        case RGResourceID::MainDepth:
+            return TexFormat::D32_SFLOAT;
+        case RGResourceID::GBufferAlbedo:
+            return TexFormat::R16G16B16A16_FLOAT;
+        case RGResourceID::GBufferNormal:
+            return TexFormat::R16G16B16A16_FLOAT;
+        case RGResourceID::GBufferUVMat:
+            return TexFormat::R16G16B16A16_FLOAT;
+        case RGResourceID::GBufferDebug:
+            return TexFormat::R16G16B16A16_FLOAT;
+        case RGResourceID::GBufferVelocity:
+            return TexFormat::R32G32_FLOAT;
+        case RGResourceID::GBufferThisFrameColor:
+            return TexFormat::R16G16B16A16_FLOAT;
+        case RGResourceID::GBufferLastFrameDepth:
+            return TexFormat::D32_SFLOAT;
+        case RGResourceID::TemporalResolve:
+            return TexFormat::R16G16B16A16_FLOAT;
+        case RGResourceID::GBufferPostAAColor:
+            return TexFormat::R16G16B16A16_FLOAT;
+        case RGResourceID::GBufferRoughness:
+            return TexFormat::R8_UNORM;
+        case RGResourceID::GBufferEntityID:
+            return TexFormat::R32_UINT;
+        case RGResourceID::RTReflections:
+            return TexFormat::R16G16B16A16_FLOAT;
+        case RGResourceID::RTAOOutput:
+            return TexFormat::R8_UNORM;
+        case RGResourceID::RTAccumulation:
+            return TexFormat::R16G16B16A16_FLOAT;
+        case RGResourceID::ScreenSpaceShadows:
+            return TexFormat::R8_UNORM;
+        case RGResourceID::SMAAEdges:
+            return TexFormat::R8G8_UNORM;
+        case RGResourceID::SMAABlend:
+            return TexFormat::R8G8B8A8_UNORM;
+        case RGResourceID::Swapchain:
+            return SWAPCHAIN_FORMAT;
+        case RGResourceID::CSMShadowMap:
+            return DEPTH_BUFFER_FORMAT;
         case RGResourceID::BloomMip0:
         case RGResourceID::BloomMip1:
         case RGResourceID::BloomMip2:
         case RGResourceID::BloomMip3:
-        case RGResourceID::BloomMip4: return TexFormat::R16G16B16A16_FLOAT;
-        default: return TexFormat::UNDEFINED;
+        case RGResourceID::BloomMip4:
+            return TexFormat::R16G16B16A16_FLOAT;
+        default:
+            return TexFormat::UNDEFINED;
     }
 }
 
@@ -167,7 +191,8 @@ RGResourceHandle RGResourceRegistry::ImportTexture(RGResourceID id, Texture* pTe
             if (pTexture)
             {
                 m_resources[i].spec.format = pTexture->GetInfo().format;
-                m_resources[i].allocatedExtents = mathstl::Vector2(static_cast<f32>(pTexture->GetInfo().extents.x), static_cast<f32>(pTexture->GetInfo().extents.y));
+                m_resources[i].allocatedExtents = mathstl::Vector2(static_cast<f32>(pTexture->GetInfo().extents.x),
+                                                                   static_cast<f32>(pTexture->GetInfo().extents.y));
             }
             return i;
         }
@@ -184,7 +209,8 @@ RGResourceHandle RGResourceRegistry::ImportTexture(RGResourceID id, Texture* pTe
     res.currentLayout = currentLayout;
     if (pTexture)
     {
-        res.allocatedExtents = mathstl::Vector2(static_cast<f32>(pTexture->GetInfo().extents.x), static_cast<f32>(pTexture->GetInfo().extents.y));
+        res.allocatedExtents = mathstl::Vector2(static_cast<f32>(pTexture->GetInfo().extents.x),
+                                                static_cast<f32>(pTexture->GetInfo().extents.y));
     }
     m_resources.push_back(res);
     return static_cast<RGResourceHandle>(m_resources.size() - 1);
@@ -198,7 +224,8 @@ void RGResourceRegistry::OnResize(const mathstl::Vector2& renderRes, const maths
 
     for (auto& res : m_resources)
     {
-        if (res.IsImported() || res.spec.IsBuffer()) continue;
+        if (res.IsImported() || res.spec.IsBuffer())
+            continue;
 
         mathstl::Vector2 targetExtents = m_currentRenderRes;
         if (res.spec.sizeClass == RGSizeClass::OutputResolution)
@@ -209,7 +236,8 @@ void RGResourceRegistry::OnResize(const mathstl::Vector2& renderRes, const maths
         targetExtents.x = stltype::max(1.0f, targetExtents.x * res.spec.scale.x);
         targetExtents.y = stltype::max(1.0f, targetExtents.y * res.spec.scale.y);
 
-        if (res.IsAllocated() && (res.allocatedExtents.x != targetExtents.x || res.allocatedExtents.y != targetExtents.y))
+        if (res.IsAllocated() &&
+            (res.allocatedExtents.x != targetExtents.x || res.allocatedExtents.y != targetExtents.y))
         {
             // Mark for reallocation
             res.SetAllocated(false);
@@ -224,7 +252,8 @@ void RGResourceRegistry::AllocatePending()
 
     for (auto& res : m_resources)
     {
-        if (res.IsImported() || res.IsAllocated() || (!res.IsPersistent() && !res.IsReferencedThisFrame()) || res.spec.IsBuffer() || res.spec.format == TexFormat::UNDEFINED)
+        if (res.IsImported() || res.IsAllocated() || (!res.IsPersistent() && !res.IsReferencedThisFrame()) ||
+            res.spec.IsBuffer() || res.spec.format == TexFormat::UNDEFINED)
             continue;
 
         mathstl::Vector2 extents = m_currentRenderRes;
@@ -239,8 +268,10 @@ void RGResourceRegistry::AllocatePending()
         if (extents.x <= 0.0f || extents.y <= 0.0f)
             continue;
 
-        if (res.textureHandle != 0) oldHandles.push_back(res.textureHandle);
-        if (res.historyTextureHandle != 0) oldHandles.push_back(res.historyTextureHandle);
+        if (res.textureHandle != 0)
+            oldHandles.push_back(res.textureHandle);
+        if (res.historyTextureHandle != 0)
+            oldHandles.push_back(res.historyTextureHandle);
 
         DynamicTextureRequest req{};
         req.extents = DirectX::XMUINT3(static_cast<u32>(extents.x), static_cast<u32>(extents.y), 1);
@@ -271,16 +302,27 @@ void RGResourceRegistry::AllocatePending()
 
         res.allocatedExtents = extents;
         res.SetAllocated(true);
+
+        DEBUG_LOGF("[RGResourceRegistry] Allocated '{}' (extents: {:.0f}x{:.0f}, handle: {}, bindless: {}, pingPong: {})",
+                   res.spec.GetName(),
+                   extents.x,
+                   extents.y,
+                   res.textureHandle,
+                   res.bindlessHandle,
+                   res.spec.IsPingPong() ? 1 : 0);
     }
 
     if (!oldHandles.empty())
     {
-        g_pDeleteQueue->RegisterDeleteForNextFrame([handles = stltype::move(oldHandles)]() mutable {
-            for (auto h : handles)
+        g_pDeleteQueue->RegisterDeleteForNextFrame(
+            [handles = stltype::move(oldHandles)]() mutable
             {
-                if (h != 0) g_pTexManager->FreeTexture(h);
-            }
-        });
+                for (auto h : handles)
+                {
+                    if (h != 0)
+                        g_pTexManager->FreeTexture(h);
+                }
+            });
     }
 }
 
@@ -289,15 +331,18 @@ void RGResourceRegistry::TickUnreferenced()
     ScopedZone("RGResourceRegistry::TickUnreferenced");
     for (auto& res : m_resources)
     {
-        if (res.IsImported() || res.IsPersistent()) continue;
+        if (res.IsImported() || res.IsPersistent())
+            continue;
 
         if (!res.IsReferencedThisFrame())
         {
             res.framesUnreferenced++;
             if (res.framesUnreferenced > kFreeAfterFrames && res.IsAllocated())
             {
-                if (res.textureHandle != 0) g_pTexManager->FreeTexture(res.textureHandle);
-                if (res.historyTextureHandle != 0) g_pTexManager->FreeTexture(res.historyTextureHandle);
+                if (res.textureHandle != 0)
+                    g_pTexManager->FreeTexture(res.textureHandle);
+                if (res.historyTextureHandle != 0)
+                    g_pTexManager->FreeTexture(res.historyTextureHandle);
                 res.pTexture = nullptr;
                 res.pHistoryTexture = nullptr;
                 res.textureHandle = 0;
@@ -322,11 +367,14 @@ void RGResourceRegistry::RotateHistory(u32 frameSlot)
             stltype::swap(res.pTexture, res.pHistoryTexture);
             stltype::swap(res.textureHandle, res.historyTextureHandle);
             stltype::swap(res.bindlessHandle, res.historyBindlessHandle);
+            stltype::swap(res.currentLayout, res.historyLayout);
 
             if (res.pHistoryTexture)
             {
-                const bool isDepth = (res.spec.id == RGResourceID::MainDepth || res.spec.id == RGResourceID::GBufferLastFrameDepth);
-                res.pHistoryTexture->GetInfo().layout = isDepth ? ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL : ImageLayout::SHADER_READ_ONLY_OPTIMAL;
+                const bool isDepth =
+                    (res.spec.id == RGResourceID::MainDepth || res.spec.id == RGResourceID::GBufferLastFrameDepth);
+                res.pHistoryTexture->GetInfo().layout =
+                    isDepth ? ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL : ImageLayout::SHADER_READ_ONLY_OPTIMAL;
             }
         }
     }
@@ -334,39 +382,45 @@ void RGResourceRegistry::RotateHistory(u32 frameSlot)
 
 Texture* RGResourceRegistry::Resolve(RGResourceHandle handle) const
 {
-    if (handle >= m_resources.size()) return nullptr;
+    if (handle >= m_resources.size())
+        return nullptr;
     return m_resources[handle].pTexture;
 }
 
 Texture* RGResourceRegistry::ResolveHistory(RGResourceHandle handle) const
 {
-    if (handle >= m_resources.size()) return nullptr;
+    if (handle >= m_resources.size())
+        return nullptr;
     const auto& res = m_resources[handle];
     return res.spec.IsPingPong() ? res.pHistoryTexture : res.pTexture;
 }
 
 BindlessTextureHandle RGResourceRegistry::ResolveBindless(RGResourceHandle handle) const
 {
-    if (handle >= m_resources.size()) return 0;
+    if (handle >= m_resources.size())
+        return 0;
     return m_resources[handle].bindlessHandle;
 }
 
 BindlessTextureHandle RGResourceRegistry::ResolveHistoryBindless(RGResourceHandle handle) const
 {
-    if (handle >= m_resources.size()) return 0;
+    if (handle >= m_resources.size())
+        return 0;
     const auto& res = m_resources[handle];
     return res.spec.IsPingPong() ? res.historyBindlessHandle : res.bindlessHandle;
 }
 
 TextureHandle RGResourceRegistry::ResolveTextureHandle(RGResourceHandle handle) const
 {
-    if (handle >= m_resources.size()) return 0;
+    if (handle >= m_resources.size())
+        return 0;
     return m_resources[handle].textureHandle;
 }
 
 TextureHandle RGResourceRegistry::ResolveHistoryTextureHandle(RGResourceHandle handle) const
 {
-    if (handle >= m_resources.size()) return 0;
+    if (handle >= m_resources.size())
+        return 0;
     const auto& res = m_resources[handle];
     return res.spec.IsPingPong() ? res.historyTextureHandle : res.textureHandle;
 }
@@ -378,13 +432,15 @@ RGResourceHandle RGResourceRegistry::GetHistoryHandle(RGResourceHandle handle) c
 
 const RGResourceSpec* RGResourceRegistry::GetSpec(RGResourceHandle handle) const
 {
-    if (handle >= m_resources.size()) return nullptr;
+    if (handle >= m_resources.size())
+        return nullptr;
     return &m_resources[handle].spec;
 }
 
 ImageLayout RGResourceRegistry::GetInitialLayout(RGResourceHandle handle) const
 {
-    if (handle >= m_resources.size()) return ImageLayout::UNDEFINED;
+    if (handle >= m_resources.size())
+        return ImageLayout::UNDEFINED;
     return m_resources[handle].currentLayout;
 }
 
@@ -393,6 +449,14 @@ void RGResourceRegistry::SetResourceLayout(RGResourceHandle handle, ImageLayout 
     if (handle < m_resources.size())
     {
         m_resources[handle].currentLayout = layout;
+    }
+}
+
+void RGResourceRegistry::SetHistoryResourceLayout(RGResourceHandle handle, ImageLayout layout)
+{
+    if (handle < m_resources.size())
+    {
+        m_resources[handle].historyLayout = layout;
     }
 }
 
@@ -427,8 +491,10 @@ void RGResourceRegistry::FreeAll()
     {
         if (!res.IsImported() && res.IsAllocated())
         {
-            if (res.textureHandle != 0) g_pTexManager->FreeTexture(res.textureHandle);
-            if (res.historyTextureHandle != 0) g_pTexManager->FreeTexture(res.historyTextureHandle);
+            if (res.textureHandle != 0)
+                g_pTexManager->FreeTexture(res.textureHandle);
+            if (res.historyTextureHandle != 0)
+                g_pTexManager->FreeTexture(res.historyTextureHandle);
         }
     }
     m_resources.clear();
@@ -450,7 +516,8 @@ void RGResourceRegistry::FreeAll()
 
 RGResourceHandle RGResourceRegistry::FindByID(RGResourceID id) const
 {
-    if (id == RGResourceID::Custom) return kInvalidRGHandle;
+    if (id == RGResourceID::Custom)
+        return kInvalidRGHandle;
     for (u32 i = 0; i < static_cast<u32>(m_resources.size()); ++i)
     {
         if (m_resources[i].spec.id == id)
@@ -489,7 +556,10 @@ TextureHandle RGResourceRegistry::ResolveHistoryTextureHandleByID(RGResourceID i
     return ResolveHistoryTextureHandle(FindByID(id));
 }
 
-RenderAttachmentInfo RGResourceRegistry::GetColorAttachment(RGResourceID id, LoadOp loadOp, StoreOp storeOp, ImageLayout renderingLayout)
+RenderAttachmentInfo RGResourceRegistry::GetColorAttachment(RGResourceID id,
+                                                            LoadOp loadOp,
+                                                            StoreOp storeOp,
+                                                            ImageLayout renderingLayout)
 {
     Texture* pTex = (id == RGResourceID::CSMShadowMap && m_shadowMap.pTexture) ? m_shadowMap.pTexture : ResolveByID(id);
     RenderAttachmentInfo info{};
@@ -500,7 +570,10 @@ RenderAttachmentInfo RGResourceRegistry::GetColorAttachment(RGResourceID id, Loa
     return info;
 }
 
-RenderAttachmentInfo RGResourceRegistry::GetColorAttachment(RGResourceHandle handle, LoadOp loadOp, StoreOp storeOp, ImageLayout renderingLayout)
+RenderAttachmentInfo RGResourceRegistry::GetColorAttachment(RGResourceHandle handle,
+                                                            LoadOp loadOp,
+                                                            StoreOp storeOp,
+                                                            ImageLayout renderingLayout)
 {
     RenderAttachmentInfo info{};
     info.pTexture = Resolve(handle);
@@ -510,7 +583,10 @@ RenderAttachmentInfo RGResourceRegistry::GetColorAttachment(RGResourceHandle han
     return info;
 }
 
-RenderAttachmentInfo RGResourceRegistry::GetDepthAttachment(RGResourceID id, LoadOp loadOp, StoreOp storeOp, ImageLayout renderingLayout)
+RenderAttachmentInfo RGResourceRegistry::GetDepthAttachment(RGResourceID id,
+                                                            LoadOp loadOp,
+                                                            StoreOp storeOp,
+                                                            ImageLayout renderingLayout)
 {
     Texture* pTex = (id == RGResourceID::CSMShadowMap && m_shadowMap.pTexture) ? m_shadowMap.pTexture : ResolveByID(id);
     RenderAttachmentInfo info{};
@@ -521,7 +597,10 @@ RenderAttachmentInfo RGResourceRegistry::GetDepthAttachment(RGResourceID id, Loa
     return info;
 }
 
-RenderAttachmentInfo RGResourceRegistry::GetDepthAttachment(RGResourceHandle handle, LoadOp loadOp, StoreOp storeOp, ImageLayout renderingLayout)
+RenderAttachmentInfo RGResourceRegistry::GetDepthAttachment(RGResourceHandle handle,
+                                                            LoadOp loadOp,
+                                                            StoreOp storeOp,
+                                                            ImageLayout renderingLayout)
 {
     RenderAttachmentInfo info{};
     info.pTexture = Resolve(handle);
@@ -546,7 +625,15 @@ RenderAttachmentInfo RGResourceRegistry::GetReadOnlyDepthAttachment(RGResourceID
 
 void RGResourceRegistry::DeclareEngineResources()
 {
-    auto Declare = [this](RGResourceID id, RGSizeClass sizeClass, Usage usage, bool pingPong = false, mathstl::Vector2 fixedExtents = {0.0f, 0.0f}, mathstl::Vector2 scale = {1.0f, 1.0f}, TextureFilter minFilter = TextureFilter::NEAREST, TextureFilter magFilter = TextureFilter::NEAREST) {
+    auto Declare = [this](RGResourceID id,
+                          RGSizeClass sizeClass,
+                          Usage usage,
+                          bool pingPong = false,
+                          mathstl::Vector2 fixedExtents = {0.0f, 0.0f},
+                          mathstl::Vector2 scale = {1.0f, 1.0f},
+                          TextureFilter minFilter = TextureFilter::NEAREST,
+                          TextureFilter magFilter = TextureFilter::NEAREST)
+    {
         RGResourceSpec spec{};
         spec.id = id;
         spec.format = GetDefaultFormatForRGResourceID(id);
@@ -563,28 +650,86 @@ void RGResourceRegistry::DeclareEngineResources()
     };
 
     Declare(RGResourceID::MainDepth, RGSizeClass::RenderResolution, Usage::DepthAttachment | Usage::Sampled, true);
-    Declare(RGResourceID::GBufferAlbedo, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
-    Declare(RGResourceID::GBufferNormal, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
-    Declare(RGResourceID::GBufferUVMat, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
-    Declare(RGResourceID::GBufferVelocity, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage | Usage::TransferDst, true);
-    Declare(RGResourceID::GBufferRoughness, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
-    Declare(RGResourceID::GBufferEntityID, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::TransferSrc);
-    Declare(RGResourceID::GBufferDebug, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
-    Declare(RGResourceID::GBufferThisFrameColor, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
-    Declare(RGResourceID::TemporalResolve, RGSizeClass::OutputResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage | Usage::TransferDst, true);
-    Declare(RGResourceID::GBufferPostAAColor, RGSizeClass::OutputResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
+    Declare(RGResourceID::GBufferAlbedo,
+            RGSizeClass::RenderResolution,
+            Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
+    Declare(RGResourceID::GBufferNormal,
+            RGSizeClass::RenderResolution,
+            Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
+    Declare(RGResourceID::GBufferUVMat,
+            RGSizeClass::RenderResolution,
+            Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
+    Declare(RGResourceID::GBufferVelocity,
+            RGSizeClass::RenderResolution,
+            Usage::ColorAttachment | Usage::Sampled | Usage::Storage | Usage::TransferDst,
+            true);
+    Declare(RGResourceID::GBufferRoughness,
+            RGSizeClass::RenderResolution,
+            Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
+    Declare(RGResourceID::GBufferEntityID,
+            RGSizeClass::RenderResolution,
+            Usage::ColorAttachment | Usage::Sampled | Usage::TransferSrc);
+    Declare(RGResourceID::GBufferDebug,
+            RGSizeClass::RenderResolution,
+            Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
+    Declare(RGResourceID::GBufferThisFrameColor,
+            RGSizeClass::RenderResolution,
+            Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
+    Declare(RGResourceID::TemporalResolve,
+            RGSizeClass::OutputResolution,
+            Usage::ColorAttachment | Usage::Sampled | Usage::Storage | Usage::TransferDst,
+            true);
+    Declare(RGResourceID::GBufferPostAAColor,
+            RGSizeClass::OutputResolution,
+            Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
 
-    Declare(RGResourceID::BloomMip0, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage, false, {0.0f, 0.0f}, {1.0f, 1.0f}, TextureFilter::LINEAR, TextureFilter::LINEAR);
-    Declare(RGResourceID::BloomMip1, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage, false, {0.0f, 0.0f}, {0.5f, 0.5f}, TextureFilter::LINEAR, TextureFilter::LINEAR);
-    Declare(RGResourceID::BloomMip2, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage, false, {0.0f, 0.0f}, {0.25f, 0.25f}, TextureFilter::LINEAR, TextureFilter::LINEAR);
-    Declare(RGResourceID::BloomMip3, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage, false, {0.0f, 0.0f}, {0.125f, 0.125f}, TextureFilter::LINEAR, TextureFilter::LINEAR);
-    Declare(RGResourceID::BloomMip4, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled | Usage::Storage, false, {0.0f, 0.0f}, {0.0625f, 0.0625f}, TextureFilter::LINEAR, TextureFilter::LINEAR);
+    Declare(RGResourceID::BloomMip0,
+            RGSizeClass::RenderResolution,
+            Usage::ColorAttachment | Usage::Sampled | Usage::Storage,
+            false,
+            {0.0f, 0.0f},
+            {1.0f, 1.0f},
+            TextureFilter::LINEAR,
+            TextureFilter::LINEAR);
+    Declare(RGResourceID::BloomMip1,
+            RGSizeClass::RenderResolution,
+            Usage::ColorAttachment | Usage::Sampled | Usage::Storage,
+            false,
+            {0.0f, 0.0f},
+            {0.5f, 0.5f},
+            TextureFilter::LINEAR,
+            TextureFilter::LINEAR);
+    Declare(RGResourceID::BloomMip2,
+            RGSizeClass::RenderResolution,
+            Usage::ColorAttachment | Usage::Sampled | Usage::Storage,
+            false,
+            {0.0f, 0.0f},
+            {0.25f, 0.25f},
+            TextureFilter::LINEAR,
+            TextureFilter::LINEAR);
+    Declare(RGResourceID::BloomMip3,
+            RGSizeClass::RenderResolution,
+            Usage::ColorAttachment | Usage::Sampled | Usage::Storage,
+            false,
+            {0.0f, 0.0f},
+            {0.125f, 0.125f},
+            TextureFilter::LINEAR,
+            TextureFilter::LINEAR);
+    Declare(RGResourceID::BloomMip4,
+            RGSizeClass::RenderResolution,
+            Usage::ColorAttachment | Usage::Sampled | Usage::Storage,
+            false,
+            {0.0f, 0.0f},
+            {0.0625f, 0.0625f},
+            TextureFilter::LINEAR,
+            TextureFilter::LINEAR);
 
     Declare(RGResourceID::ScreenSpaceShadows, RGSizeClass::RenderResolution, Usage::Storage | Usage::Sampled);
     Declare(RGResourceID::SMAAEdges, RGSizeClass::OutputResolution, Usage::ColorAttachment | Usage::Sampled);
     Declare(RGResourceID::SMAABlend, RGSizeClass::OutputResolution, Usage::ColorAttachment | Usage::Sampled);
     Declare(RGResourceID::RTAOOutput, RGSizeClass::RenderResolution, Usage::Storage | Usage::Sampled);
     Declare(RGResourceID::RTReflections, RGSizeClass::RenderResolution, Usage::Storage | Usage::Sampled);
+    Declare(RGResourceID::RTAccumulation, RGSizeClass::RenderResolution, Usage::Storage | Usage::Sampled, true);
     Declare(RGResourceID::DLSSExposure, RGSizeClass::Fixed, Usage::Sampled | Usage::TransferDst, false, {1.0f, 1.0f});
 }
 

@@ -9,6 +9,7 @@
 #include "Core/Rendering/Passes/PassManager.h"
 #include "Core/Global/Profiling.h"
 #include "Core/Rendering/Core/RenderGraph/RenderGraphBuilder.h"
+#include "Core/Rendering/Core/Nvidia/StreamlineManager.h"
 
 using namespace RenderPasses;
 
@@ -96,6 +97,14 @@ void BloomPass::RenderWithGraph(const MainPassData& data, const FrameRendererCon
         RGResourceID::BloomMip4
     };
 
+    const bool useRayReconstruction = Nvidia::StreamlineManager::IsDLSSRRSupported() &&
+                                      Nvidia::StreamlineManager::GetUseRayReconstructionThisFrame();
+    const bool dlssOrXeSSActive = renderState.aaType == AntialiasingType::DLSS ||
+                                 renderState.aaType == AntialiasingType::XeSS ||
+                                 useRayReconstruction;
+    const RGResourceID bloomInputID = dlssOrXeSSActive ? RGResourceID::TemporalResolve : RGResourceID::GBufferThisFrameColor;
+    const Texture* pInputTex = execCtx.GetTexture(bloomInputID);
+
     struct MipDimension
     {
         u32 width;
@@ -116,13 +125,13 @@ void BloomPass::RenderWithGraph(const MainPassData& data, const FrameRendererCon
     // ------------------------------------------------------------------------
     for (u32 i = 0; i < 5; ++i)
     {
-        const u32 srcW = (i == 0) ? static_cast<u32>(execCtx.GetRenderResolution().x) : mips[i - 1].width;
-        const u32 srcH = (i == 0) ? static_cast<u32>(execCtx.GetRenderResolution().y) : mips[i - 1].height;
+        const u32 srcW = (i == 0) ? static_cast<u32>(pInputTex ? pInputTex->GetInfo().extents.x : execCtx.GetRenderResolution().x) : mips[i - 1].width;
+        const u32 srcH = (i == 0) ? static_cast<u32>(pInputTex ? pInputTex->GetInfo().extents.y : execCtx.GetRenderResolution().y) : mips[i - 1].height;
         const u32 dstW = mips[i].width;
         const u32 dstH = mips[i].height;
 
         BindlessTextureHandle srcTexHandle = (i == 0) 
-            ? execCtx.GetBindless(RGResourceID::GBufferThisFrameColor)
+            ? execCtx.GetBindless(bloomInputID)
             : execCtx.GetBindless(bloomResIDs[i - 1]);
 
         BindlessTextureHandle dstImgHandle = execCtx.GetBindless(bloomResIDs[i]);
@@ -217,7 +226,15 @@ void BloomPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
         PassCtx::View,
         PassCtx::GBufferCtx>();
 
-    builder.ReadTexture(RGResourceID::GBufferThisFrameColor, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    const auto& appRenderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+    const bool useRayReconstruction = Nvidia::StreamlineManager::IsDLSSRRSupported() &&
+                                      Nvidia::StreamlineManager::GetUseRayReconstructionThisFrame();
+    const bool dlssOrXeSSActive = appRenderState.aaType == AntialiasingType::DLSS ||
+                                 appRenderState.aaType == AntialiasingType::XeSS ||
+                                 useRayReconstruction;
+    const RGResourceID bloomInputID = dlssOrXeSSActive ? RGResourceID::TemporalResolve : RGResourceID::GBufferThisFrameColor;
+
+    builder.ReadTexture(bloomInputID, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
     static const RGResourceID bloomResIDs[5] = {
         RGResourceID::BloomMip0,

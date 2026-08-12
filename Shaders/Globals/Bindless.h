@@ -10,7 +10,7 @@ layout(set = 0, binding = GlobalBindlessArrayTextureBufferSlot) uniform sampler2
 #ifndef BindlessImageSet
 #define BindlessImageSet 0
 #endif
-layout(set = BindlessImageSet, binding = GlobalBindlessImageBufferSlot) uniform writeonly image2D GlobalBindlessImages[];
+layout(set = BindlessImageSet, binding = GlobalBindlessImageBufferSlot, rgba16f) uniform image2D GlobalBindlessImages[];
 
 #endif // SHADERS_BINDLESS_H
  
