@@ -99,9 +99,9 @@ void LightGridComputePass::RenderWithGraph(const MainPassData& data, const Frame
     m_pushConstants.nearFar = mathstl::Vector4(execCtx.GetZNear(), execCtx.GetZFar(), 0.0f, 0.0f);
     m_pushConstants.numLights = execCtx.GetNumLights();
 
-    const u32 workgroupsX = (m_pushConstants.clusterCount.x + 7) / 8;
-    const u32 workgroupsY = (m_pushConstants.clusterCount.y + 7) / 8;
-    const u32 workgroupsZ = m_pushConstants.clusterCount.z;
+    const u32 workgroupsX = static_cast<u32>(m_pushConstants.clusterCount.x);
+    const u32 workgroupsY = static_cast<u32>(m_pushConstants.clusterCount.y);
+    const u32 workgroupsZ = 1;
 
     GenericComputeDispatchCmd cmd(&m_lightCullingComputePipeline, workgroupsX, workgroupsY, workgroupsZ);
     cmd.descriptorSets = execCtx.GetDescriptors();

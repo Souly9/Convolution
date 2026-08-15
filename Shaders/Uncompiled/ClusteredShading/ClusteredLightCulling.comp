@@ -12,12 +12,10 @@
 #include "../../Globals/ClusteredShading.h"
 #include "../../Globals/PushConstants.h"
 
-#define X_LOCAL_SIZE 8
-#define Y_LOCAL_SIZE 8
-#define THREAD_COUNT (X_LOCAL_SIZE * Y_LOCAL_SIZE)
-layout(local_size_x = X_LOCAL_SIZE, local_size_y = Y_LOCAL_SIZE, local_size_z = 1) in;
+#define WORKGROUP_SIZE 32
+layout(local_size_x = WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 
-layout(push_constant) uniform PushConstants
+layout(push_constant, scalar) uniform PushConstants
 {
     ClusterPushConstants data;
 }
@@ -25,9 +23,8 @@ pushConstantsBlock;
 
 #define pc pushConstantsBlock.data
 
-shared vec3 sharedLightPos[THREAD_COUNT];
-shared float sharedLightRadius[THREAD_COUNT];
-shared uint sharedLightIndex[THREAD_COUNT];
+shared vec4 sharedLights[WORKGROUP_SIZE];
+shared uint sharedLightIndices[WORKGROUP_SIZE];
 
 bool sphereIntersectsAABB(vec3 center, float radius, vec3 aabbMin, vec3 aabbMax)
 {
@@ -38,74 +35,102 @@ bool sphereIntersectsAABB(vec3 center, float radius, vec3 aabbMin, vec3 aabbMax)
 
 void main()
 {
-    uint clusterX = gl_GlobalInvocationID.x;
-    uint clusterY = gl_GlobalInvocationID.y;
-    uint clusterZ = gl_GlobalInvocationID.z;
-    uint localId = gl_LocalInvocationIndex;
+    uint clusterX = gl_WorkGroupID.x;
+    uint clusterY = gl_WorkGroupID.y;
+    uint clusterZ = gl_LocalInvocationIndex;
 
     bool isValidCluster =
         (clusterX < pc.clusterCount.x && clusterY < pc.clusterCount.y && clusterZ < pc.clusterCount.z);
 
     uint clusterIdx = clusterX + clusterY * pc.clusterCount.x + clusterZ * pc.clusterCount.x * pc.clusterCount.y;
-
-    if (!isValidCluster)
-        return;
-
     uint baseIndex = clusterIdx * MAX_LIGHTS_PER_CLUSTER;
 
-    // Just want to write all lights into one cluster
+    // Debug bypass
     bool disableCulling = (ubo.debugFlags & DEBUG_FLAG_DISABLE_CLUSTER_CULLING) != 0u;
     if (disableCulling)
     {
-        uint totalLights = min(pc.numLights, MAX_SCENE_LIGHTS);
-        uint count = min(totalLights, MAX_LIGHTS_PER_CLUSTER - 1);
-        for (uint i = 0; i < count; ++i)
+        if (isValidCluster)
         {
-            StoreClusterLightIndex(baseIndex, i, i);
+            uint totalLights = min(pc.numLights, MAX_SCENE_LIGHTS);
+            uint count = min(totalLights, MAX_LIGHTS_PER_CLUSTER - 1);
+            for (uint i = 0; i < count; ++i)
+            {
+                StoreClusterLightIndex(baseIndex, i, i);
+            }
+            StoreClusterLightOffsetAndCount(clusterIdx, baseIndex, totalLights);
         }
-        // Save the full totalLights count to propagate to later stages (bypassing MAX_LIGHTS_PER_CLUSTER cap)
-        StoreClusterLightOffsetAndCount(clusterIdx, baseIndex, totalLights);
         return;
     }
 
-    vec3 aabbMin = clusterGrid.clusters[clusterIdx].minBounds.xyz;
-    vec3 aabbMax = clusterGrid.clusters[clusterIdx].maxBounds.xyz;
-    float clusterZMin = min(aabbMin.z, aabbMax.z);
-    float clusterZMax = max(aabbMin.z, aabbMax.z);
+    vec3 aabbMin = vec3(0.0);
+    vec3 aabbMax = vec3(0.0);
+    float clusterZMin = 0.0;
+    float clusterZMax = 0.0;
+
+    if (isValidCluster)
+    {
+        aabbMin = clusterGrid.clusters[clusterIdx].minBounds.xyz;
+        aabbMax = clusterGrid.clusters[clusterIdx].maxBounds.xyz;
+        clusterZMin = min(aabbMin.z, aabbMax.z);
+        clusterZMax = max(aabbMin.z, aabbMax.z);
+    }
 
     uint tileIdx = clusterX + clusterY * uint(pc.clusterCount.x);
     uint tileCount = min(viewSpaceLights.tileCounters[tileIdx], MAX_LIGHTS_PER_TILE);
     uint tileBase = tileIdx * MAX_LIGHTS_PER_TILE;
 
     uint visibleCount = 0;
+    uint localLightIndices[MAX_LIGHTS_PER_CLUSTER];
 
-    // Actual fine culling
-    for (uint i = 0; i < tileCount; ++i)
+    // Cooperatively load tile candidate lights in batches of WORKGROUP_SIZE
+    for (uint batchOffset = 0; batchOffset < tileCount; batchOffset += WORKGROUP_SIZE)
     {
-        if (visibleCount >= MAX_LIGHTS_PER_CLUSTER - 1)
-            break;
-
-        // Access coarse culling result
-        uint globalLightIdx = viewSpaceLights.tileLightIndices[tileBase + i];
-        vec4 vsLight = viewSpaceLights.lights[globalLightIdx];
-
-        float lZMin = vsLight.z - vsLight.w;
-        float lZMax = vsLight.z + vsLight.w;
-
-        // Fast Z reject
-        if (lZMin > clusterZMax || lZMax < clusterZMin)
-            continue;
-
-        // Fine AABB test (expand radius slightly to prevent boundary culling drops)
-        float r = vsLight.w * 1.05;
-        if (sphereIntersectsAABB(vsLight.xyz, r, aabbMin, aabbMax))
+        // Parallel coalesced load from VRAM into on-chip shared memory
+        uint lightIdxInBatch = batchOffset + gl_LocalInvocationIndex;
+        if (lightIdxInBatch < tileCount)
         {
-            // Write directly to global memory
-            StoreClusterLightIndex(baseIndex, visibleCount, globalLightIdx);
-            visibleCount++;
+            uint globalLightIdx = viewSpaceLights.tileLightIndices[tileBase + lightIdxInBatch];
+            sharedLights[gl_LocalInvocationIndex] = viewSpaceLights.lights[globalLightIdx];
+            sharedLightIndices[gl_LocalInvocationIndex] = globalLightIdx;
         }
+        barrier();
+
+        // Evaluate batch in fast shared memory
+        uint batchCount = min(tileCount - batchOffset, WORKGROUP_SIZE);
+        if (isValidCluster)
+        {
+            for (uint i = 0; i < batchCount; ++i)
+            {
+                if (visibleCount >= MAX_LIGHTS_PER_CLUSTER - 1)
+                    break;
+
+                vec4 vsLight = sharedLights[i];
+                float lZMin = vsLight.z - vsLight.w;
+                float lZMax = vsLight.z + vsLight.w;
+
+                // Fast Z reject
+                if (lZMin > clusterZMax || lZMax < clusterZMin)
+                    continue;
+
+                // Fine AABB test
+                float r = vsLight.w * 1.05;
+                if (sphereIntersectsAABB(vsLight.xyz, r, aabbMin, aabbMax))
+                {
+                    localLightIndices[visibleCount] = sharedLightIndices[i];
+                    visibleCount++;
+                }
+            }
+        }
+        barrier();
     }
 
-    // Save the count
-    StoreClusterLightOffsetAndCount(clusterIdx, baseIndex, visibleCount);
+    // Write final output to global memory
+    if (isValidCluster)
+    {
+        for (uint i = 0; i < visibleCount; ++i)
+        {
+            StoreClusterLightIndex(baseIndex, i, localLightIndices[i]);
+        }
+        StoreClusterLightOffsetAndCount(clusterIdx, baseIndex, visibleCount);
+    }
 }
