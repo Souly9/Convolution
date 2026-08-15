@@ -58,8 +58,8 @@ void FrameResourceManager::BuildSharedDataForView(const RenderView& mainView,
     const f32 aspectRatio = (renderResolution.y > 0.0f) ? (renderResolution.x / renderResolution.y) : 1.0f;
 
     viewMat = Matrix::CreateLookAt(viewPos, rotatedFocusPos, upVector);
-    const f32 nearPlane = stltype::max(mainView.zNear, 0.000001f);
-    const f32 farPlane = stltype::max(mainView.zFar, nearPlane + 0.000001f);
+    const f32 nearPlane = (mainView.zNear > 0.0f) ? mainView.zNear : 0.1f;
+    const f32 farPlane = (mainView.zFar > nearPlane) ? mainView.zFar : 1000.0f;
     Matrix projMat = Matrix::CreatePerspectiveFieldOfView(fovRadians, aspectRatio, farPlane, nearPlane);
     // projMat.m[2][2] = 1.0f - projMat.m[2][2];
     // projMat.m[3][2] = -projMat.m[3][2];
@@ -302,6 +302,8 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
         g_pMaterialManager->MarkBufferUploaded();
     }
 
+    mathstl::Matrix frameViewProj{};
+
     if (m_dataToBePreProcessed.mainView.zFar > 0.0f)
     {
         m_cachedMainView = m_dataToBePreProcessed.mainView;
@@ -320,6 +322,7 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
                                viewProj,
                                jitter,
                                ctx.cameraData);
+        frameViewProj = viewProj;
         pPassManager->SetRenderJitter(jitter);
 
         if (m_cachedDirLights.empty() == false)
@@ -676,6 +679,31 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
                                          currentSwapChainIdx);
                 }
             }
+        }
+
+        const bool isCullingEnabled = mathstl::isFlagSet(renderState.debugFlags, static_cast<u32>(DebugFlags::CullFrustum));
+        const bool isCullingFrozen = mathstl::isFlagSet(renderState.debugFlags, static_cast<u32>(DebugFlags::FreezeFrustumCulling));
+        const u32 cascadeCount = (m_currentSharedDataUBO.cascadeCount > 0) ? static_cast<u32>(m_currentSharedDataUBO.cascadeCount) : 0u;
+
+        m_cpuFrustumCulling.Execute(pPassManager->GetResourceManager(),
+                                    frameViewProj,
+                                    0,
+                                    isCullingEnabled,
+                                    isCullingFrozen,
+                                    m_cachedTransformSSBO,
+                                    cascadeCount == 0,
+                                    currentSwapChainIdx);
+
+        for (u32 c = 0; c < cascadeCount; ++c)
+        {
+            m_cpuFrustumCulling.Execute(pPassManager->GetResourceManager(),
+                                        m_currentSharedDataUBO.csmViewMatrices[c],
+                                        1 + c,
+                                        isCullingEnabled,
+                                        isCullingFrozen,
+                                        m_cachedTransformSSBO,
+                                        c == (cascadeCount - 1),
+                                        currentSwapChainIdx);
         }
 
         // Clear

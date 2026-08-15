@@ -43,9 +43,22 @@ STRUCTDECL(InstanceData)
         aabbExtentsMatIdx.w = static_cast<f32>(idx);
     }
 
+    void SetViewVisible(u32 viewIndex, bool visible)
+    {
+        if (visible)
+            flags |= (1u << viewIndex);
+        else
+            flags &= ~(1u << viewIndex);
+    }
+
     void SetVisible(bool visible)
     {
-        flags = visible ? 1u : 0u;
+        SetViewVisible(0u, visible);
+    }
+
+    void ClearAllVisibility()
+    {
+        flags = 0u;
     }
 
     void SetEntityID(u32 id)
@@ -54,6 +67,19 @@ STRUCTDECL(InstanceData)
     }
 #endif
 STRUCTEND()
+
+FUNC_QUALIFIER bool IsInstanceFlagSet(uint flags, uint bit)
+{
+    return (flags & (1u << bit)) != 0u;
+}
+
+FUNC_QUALIFIER void SetInstanceFlag(INOUT(uint) flags, uint bit, bool value)
+{
+    if (value)
+        flags |= (1u << bit);
+    else
+        flags &= ~(1u << bit);
+}
 
 FUNC_QUALIFIER uint GetTransformIdx(InstanceData data)
 {
@@ -65,9 +91,14 @@ FUNC_QUALIFIER uint GetMaterialIdx(InstanceData data)
     return uint(data.aabbExtentsMatIdx.w);
 }
 
+FUNC_QUALIFIER bool IsInstanceViewVisible(InstanceData data, uint viewIndex)
+{
+    return IsInstanceFlagSet(data.flags, viewIndex);
+}
+
 FUNC_QUALIFIER bool IsVisible(InstanceData data)
 {
-    return (data.flags & 1) != 0;
+    return IsInstanceViewVisible(data, 0u);
 }
 
 STRUCTDECL(Light)

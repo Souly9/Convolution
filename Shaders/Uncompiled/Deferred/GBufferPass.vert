@@ -52,5 +52,5 @@ void main()
     OUT.jitteredClipPos = ApplyFrameJitter(OUT.unjitteredClipPos);
     OUT.prevUnjitteredClipPos =
         ubo.prevViewProjection * prevGlobalTransformSSBO.prevModelMatrices[transformIdx] * localPosition;
-    gl_Position = OUT.jitteredClipPos;
+    gl_Position = IsVisible(iData) ? OUT.jitteredClipPos : vec4(0.0 / 0.0);
 }

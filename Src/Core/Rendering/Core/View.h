@@ -8,9 +8,9 @@ struct RenderView
     mathstl::Vector3 rotation;
     mathstl::Viewport viewport;
     DescriptorSet::Ptr descriptorSet;
-    f32 fov;
-    f32 zNear;
-    f32 zFar;
+    f32 fov{60.0f};
+    f32 zNear{0.1f};
+    f32 zFar{1000.0f};
 };
 struct CsmRenderView
 {

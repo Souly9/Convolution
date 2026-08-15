@@ -28,6 +28,7 @@ enum class DebugFlags : u32
     TAAForceHistory = 1 << 6,
     CullFrustum = 1 << 7,
     RTAOEnabled = 1 << 8,
+    FreezeFrustumCulling = 1 << 9,
     DisableClusterCulling = 1 << 16,
 };
 MAKE_FLAG_ENUM(DebugFlags)
@@ -187,6 +188,10 @@ struct RendererState
     f32 avgLightsPerCluster{0.0f};
     u32 numLightsEvaluated{0};
     u32 numLightsInFrustum{0};
+
+    // CPU frustum culling stats
+    u32 totalInstanceCount{0};
+    u32 culledInstanceCount{0};
 
     // GPU timing stats
     stltype::vector<PassTimingStat> passTimings{};

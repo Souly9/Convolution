@@ -8,6 +8,7 @@
 #include "Core/SceneGraph/Mesh.h"
 #include "Core/Rendering/Core/DescriptorSetLayout.h"
 #include "Core/Rendering/Core/DescriptorPool.h"
+#include "Core/Rendering/Core/CpuPreprocess/Frustum.h"
 #include "Core/Rendering/Passes/PassManagerDefines.h"
 
 namespace RenderPasses
@@ -41,6 +42,11 @@ public:
     // itself won't update much Changing a material/scaling a mesh will be way
     // more common hence this separation
     void UpdateInstanceDataSSBO(stltype::vector<RenderPasses::PassMeshData>& meshes, u32 thisFrameNum);
+    void UploadInstanceDataSSBO(u32 frameIdx);
+
+    stltype::vector<UBO::InstanceData>& GetInstanceData() { return m_currentFrameInstanceData; }
+    const stltype::vector<UBO::InstanceData>& GetInstanceData() const { return m_currentFrameInstanceData; }
+    const stltype::vector<u8>& GetMasterInstanceVisibility() const { return m_masterInstanceVisibility; }
 
     MeshHandle UploadMesh(const Mesh& mesh);
     MeshHandle GetMeshHandle(const Mesh* pMesh) const;
@@ -147,6 +153,7 @@ private:
 
     // Duplicating it on cpu side for more efficient processing
     stltype::vector<UBO::InstanceData> m_currentFrameInstanceData;
+    stltype::vector<u8> m_masterInstanceVisibility;
 
     stltype::hash_map<const Mesh*, MeshHandle> m_meshHandles;
     stltype::hash_map<const Mesh*, MeshHandle> m_debugMeshHandles;

@@ -1,7 +1,9 @@
 #include "SRenderComponent.h"
 #include "Core/ECS/EntityManager.h"
-#include "Core/Rendering/Passes/PassManager.h"
+#include "Core/Global/GlobalVariables.h"
 #include "Core/Global/LogDefines.h"
+#include "Core/Rendering/Passes/PassManager.h"
+#include "Core/SceneGraph/Mesh.h"
 
 void ECS::System::SRenderComponent::Init(const SystemInitData& data)
 {
@@ -18,6 +20,7 @@ void ECS::System::SRenderComponent::SyncData(u32 currentFrame)
     ScopedZone("RenderComponent System::SyncData");
     const auto& renderComps = g_pEntityManager->GetComponentVector<Components::RenderComponent>();
     const auto& debugRenderComps = g_pEntityManager->GetComponentVector<Components::DebugRenderComponent>();
+    const auto& meshAABBs = g_pMeshManager->GetMeshAABBs();
 
     RenderPasses::EntityMeshDataMap dataMap;
     dataMap.reserve(renderComps.size());
@@ -26,26 +29,18 @@ void ECS::System::SRenderComponent::SyncData(u32 currentFrame)
     for (const auto& renderComp : renderComps)
     {
         u32 subIdx = subMeshCounters[renderComp.entity.ID]++;
-        RenderPasses::EntityMeshData& data = dataMap[renderComp.entity.ID].emplace_back(
-            renderComp.entity.ID, subIdx, renderComp.component.pMesh, renderComp.component.pMaterial, renderComp.component.boundingBox, false);
-        data.SetIncludeInRayTracing(renderComp.component.includeInRayTracing);
-        if (renderComp.component.isSelected || renderComp.component.isWireframe)
+        AABB localAABB = renderComp.component.boundingBox;
+        if (renderComp.component.pMesh)
         {
-            data.SetDebugWireframeMesh();
+            auto meshIt = meshAABBs.find(renderComp.component.pMesh);
+            if (meshIt != meshAABBs.end())
+            {
+                localAABB = meshIt->second;
+            }
         }
-    }
-    m_pPassManager->SetEntityMeshDataForFrame(std::move(dataMap), currentFrame);
-    return;
-    // TODO: Add debug render components back in
-    for (const auto& renderComp : debugRenderComps)
-    {
-        if (renderComp.component.shouldRender == false)
-            continue;
-
-        u32 subIdx = subMeshCounters[renderComp.entity.ID]++;
         RenderPasses::EntityMeshData& data = dataMap[renderComp.entity.ID].emplace_back(
-            renderComp.entity.ID, subIdx, renderComp.component.pMesh, renderComp.component.pMaterial, renderComp.component.boundingBox, true);
-        data.SetIncludeInRayTracing(false);
+            renderComp.entity.ID, subIdx, renderComp.component.pMesh, renderComp.component.pMaterial, localAABB, false);
+        data.SetIncludeInRayTracing(renderComp.component.includeInRayTracing);
         if (renderComp.component.isSelected || renderComp.component.isWireframe)
         {
             data.SetDebugWireframeMesh();

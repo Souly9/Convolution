@@ -20,5 +20,5 @@ layout(location = 3) in vec4 inTangent;
 void main() {
     mat4 worldMat = FetchWorldMatrix(gl_InstanceIndex);
     mat4 projMat = ubo.csmViewMatrices[gl_ViewIndex];
-    gl_Position = IsInstanceVisible(gl_InstanceIndex) ? (projMat * worldMat * vec4(inPosition, 1.0)) : vec4(0.0 / 0.0);
+    gl_Position = IsInstanceViewVisible(gl_InstanceIndex, 1u + gl_ViewIndex) ? (projMat * worldMat * vec4(inPosition, 1.0)) : vec4(0.0 / 0.0);
 }

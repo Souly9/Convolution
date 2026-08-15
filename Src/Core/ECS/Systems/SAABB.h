@@ -21,7 +21,7 @@ private:
     {
         const Components::Transform* pTransform;
         Components::RenderComponent* pRenderComp;
-        mathstl::Vector4 meshExtents;
+        AABB localAABB;
     };
 
     void RebuildRenderableList();

@@ -35,7 +35,8 @@ void ECS::System::SAABB::RebuildRenderableList()
         RenderableEntry entry;
         entry.pTransform   = &holder.component;
         entry.pRenderComp  = pRenderComp;
-        entry.meshExtents  = meshIt->second.extents;
+        entry.localAABB    = meshIt->second;
+        entry.pRenderComp->boundingBox = meshIt->second;
         m_renderableEntries.push_back(entry);
     }
 }
@@ -65,20 +66,13 @@ void ECS::System::SAABB::Process()
 
     if (allDirty)
     {
-        // Full scene update: iterate pre-filtered list with no hash lookups
         for (const auto& entry : m_renderableEntries)
         {
-            entry.pRenderComp->boundingBox.center = mathstl::Vector4(entry.pTransform->worldPosition.x,
-                                                                     entry.pTransform->worldPosition.y,
-                                                                     entry.pTransform->worldPosition.z,
-                                                                     0.0f);
-            entry.pRenderComp->boundingBox.extents = entry.meshExtents * entry.pTransform->worldScale;
+            entry.pRenderComp->boundingBox = entry.localAABB;
         }
         return;
     }
 
-    // STransform already ran and populated updatedTransforms with every entity whose
-    // world matrix actually changed this frame. Check if any of them are renderable.
     bool anyRenderableUpdated = false;
     for (const Entity& entity : updatedTransforms)
     {
@@ -93,7 +87,6 @@ void ECS::System::SAABB::Process()
     if (!anyRenderableUpdated)
         return;
 
-    // Update only the transforms that actually changed and are renderable
     for (const Entity& entity : updatedTransforms)
     {
         Components::RenderComponent* pRenderComp = nullptr;
@@ -106,17 +99,12 @@ void ECS::System::SAABB::Process()
         else
             continue;
 
-        const auto* pTransform = g_pEntityManager->GetComponentUnsafe<Components::Transform>(entity);
-        const auto& meshAABBs  = g_pMeshManager->GetMeshAABBs();
+        const auto& meshAABBs = g_pMeshManager->GetMeshAABBs();
         auto meshIt = meshAABBs.find(pRenderComp->pMesh);
         if (meshIt == meshAABBs.end())
             continue;
 
-        pRenderComp->boundingBox.center = mathstl::Vector4(pTransform->worldPosition.x,
-                                                           pTransform->worldPosition.y,
-                                                           pTransform->worldPosition.z,
-                                                           0.0f);
-        pRenderComp->boundingBox.extents = meshIt->second.extents * pTransform->worldScale;
+        pRenderComp->boundingBox = meshIt->second;
     }
 }
 

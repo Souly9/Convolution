@@ -1,6 +1,7 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Global/GlobalVariables.h"
+#include "Core/Rendering/Core/CpuPreprocess/CpuFrustumCulling.h"
 #include "Core/Rendering/Core/Defines/GlobalBuffers.h"
 #include "Core/Rendering/Core/Defines/LightDefines.h"
 #include "Core/Global/ThreadBase.h"
@@ -230,6 +231,8 @@ private:
     stltype::vector<AABB> m_cachedSceneAABBs{};
     stltype::vector<u32> m_transformsToPropagateToPrev{};
     stltype::vector<u32> m_transformsPendingPrevCatchup{};
+
+    RenderingCore::CpuFrustumCulling m_cpuFrustumCulling{};
 
     bool m_needsToPropagateMainDataUpdate{false};
     u32 m_frameIdxToPropagate{0};

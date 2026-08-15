@@ -120,8 +120,8 @@ Entity ConvertScene(ThreadPool* pPool, const aiScene* pScene, const aiNode* pNod
         comp.pMesh = pConvMesh;
         const auto& aiAABB = pAiMesh->mAABB;
         comp.boundingBox = g_pMeshManager->CalcAABB(
-            mathstl::Vector3(aiAABB.mMin.x, aiAABB.mMin.y, aiAABB.mMin.z) * pTransform->scale,
-            mathstl::Vector3(aiAABB.mMax.x, aiAABB.mMax.y, aiAABB.mMax.z) * pTransform->scale,
+            mathstl::Vector3(aiAABB.mMin.x, aiAABB.mMin.y, aiAABB.mMin.z),
+            mathstl::Vector3(aiAABB.mMax.x, aiAABB.mMax.y, aiAABB.mMax.z),
             pConvMesh);
 
         pTransform->parent = nodeEntity;

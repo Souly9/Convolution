@@ -3,6 +3,7 @@
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Global/LogDefines.h"
+#include "Core/Global/State/ApplicationState.h"
 #include "Core/Rendering/Core/MaterialManager.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
 #include "Core/Rendering/Passes/PassManager.h"
@@ -265,6 +266,10 @@ void SharedResourceManager::FlushPendingMeshUploads(u32 frameIdx, u32 maxCount)
             {
                 m_currentFrameInstanceData[instanceIdx].SetVisible(true);
             }
+            if (instanceIdx < m_masterInstanceVisibility.size())
+            {
+                m_masterInstanceVisibility[instanceIdx] = 1u;
+            }
         }
 
         AsyncQueueHandler::SSBOTransfer transfer;
@@ -289,6 +294,9 @@ void SharedResourceManager::UpdateInstanceDataSSBO(stltype::vector<RenderPasses:
     auto& instanceData = m_currentFrameInstanceData;
     instanceData.clear();
     instanceData.reserve(meshes.size());
+
+    m_masterInstanceVisibility.clear();
+    m_masterInstanceVisibility.reserve(meshes.size());
 
     {
         SimpleScopedGuard lock(m_residencyStateMutex);
@@ -340,7 +348,9 @@ void SharedResourceManager::UpdateInstanceDataSSBO(stltype::vector<RenderPasses:
             SimpleScopedGuard lock(m_residencyStateMutex);
             const bool isResident = m_residentMeshes.count(meshData.meshData.pMesh) > 0;
             const bool isMeshUploaded = meshData.meshData.pMesh != nullptr;
-            data.SetVisible(isResident || isMeshUploaded);
+            const bool isMasterVisible = isResident || isMeshUploaded;
+            data.SetVisible(isMasterVisible);
+            m_masterInstanceVisibility.push_back(isMasterVisible ? 1u : 0u);
             m_meshToInstanceIdx[meshData.meshData.pMesh].push_back(meshData.meshData.instanceDataIdx);
         }
     }
@@ -548,4 +558,24 @@ stltype::vector<const Mesh*> SharedResourceManager::PopPendingResidentMeshesForR
 
     m_pendingRayTracingMeshes.clear();
     return meshes;
+}
+
+void SharedResourceManager::UploadInstanceDataSSBO(u32 frameIdx)
+{
+    ScopedZone("SharedResourceManager::UploadInstanceDataSSBO");
+
+    if (m_currentFrameInstanceData.empty())
+    {
+        return;
+    }
+
+    AsyncQueueHandler::SSBOTransfer transfer;
+    transfer.pData = m_currentFrameInstanceData.data();
+    transfer.size = static_cast<u32>(m_currentFrameInstanceData.size() * sizeof(m_currentFrameInstanceData[0]));
+    transfer.offset = 0;
+    transfer.pDescriptor = nullptr;
+    transfer.pSSBO = &m_sceneInstanceBuffer;
+    transfer.dstBinding = s_globalInstanceDataSSBOSlot;
+    transfer.frameIdx = frameIdx;
+    g_pQueueHandler->SubmitTransferCommandAsync(transfer);
 }

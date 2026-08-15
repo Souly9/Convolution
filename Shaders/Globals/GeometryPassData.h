@@ -69,5 +69,12 @@ FUNC_QUALIFIER bool IsInstanceVisible(uint glInstanceIdx)
     InstanceData iData = globalInstanceDataSSBO.instances[instanceIdx];
     return IsVisible(iData);
 }
+
+FUNC_QUALIFIER bool IsInstanceViewVisible(uint glInstanceIdx, uint viewIndex)
+{
+    uint instanceIdx = perObjectDataSSBO.transformDataIdx[glInstanceIdx];
+    InstanceData iData = globalInstanceDataSSBO.instances[instanceIdx];
+    return IsInstanceViewVisible(iData, viewIndex);
+}
 #endif
 #endif // SHADERS_GEOMETRY_PASS_DATA_H
