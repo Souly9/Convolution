@@ -57,33 +57,14 @@ public:
                             });
                     }
 
-                    bool debugCulling = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::CullFrustum);
-                    if (ImGui::Checkbox("Debug Frustum Culling", &debugCulling))
+                    bool freezeCulling = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::FreezeFrustumCulling);
+                    if (ImGui::Checkbox("Freeze Frustum Culling", &freezeCulling))
                     {
                         g_pApplicationState->RegisterUpdateFunction(
-                            [debugCulling](ApplicationState& state) {
+                            [freezeCulling](ApplicationState& state) {
                                 mathstl::setFlag(
-                                    state.renderState.debugFlags, (u32)DebugFlags::CullFrustum, debugCulling);
+                                    state.renderState.debugFlags, (u32)DebugFlags::FreezeFrustumCulling, freezeCulling);
                             });
-                    }
-
-                    if (debugCulling)
-                    {
-                        ImGui::Indent();
-                        bool freezeCulling = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::FreezeFrustumCulling);
-                        if (ImGui::Checkbox("Freeze Frustum Culling", &freezeCulling))
-                        {
-                            g_pApplicationState->RegisterUpdateFunction(
-                                [freezeCulling](ApplicationState& state) {
-                                    mathstl::setFlag(
-                                        state.renderState.debugFlags, (u32)DebugFlags::FreezeFrustumCulling, freezeCulling);
-                                });
-                        }
-                        const u32 total = renderState.totalInstanceCount;
-                        const u32 culled = renderState.culledInstanceCount;
-                        const u32 visible = (total > culled) ? (total - culled) : 0;
-                        ImGui::Text("Instances Total: %u | Visible: %u | Culled: %u", total, visible, culled);
-                        ImGui::Unindent();
                     }
 
                     if (ImGui::Button("Hot Reload Shaders", ImVec2(-FLT_MIN, 30.0f)))

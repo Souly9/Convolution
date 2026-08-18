@@ -29,13 +29,10 @@ public:
         if (!m_isOpen)
             return;
 
-        ImGui::SetNextWindowSize(ImVec2(900.0f, 500.0f), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(420.0f, 620.0f), ImGuiCond_FirstUseEver);
         ImGui::Begin("Performance Diagnostics", &m_isOpen);
 
-        // Top Row: Performance Metrics & Hardware Overview
-        ImGui::Columns(2, "PerformanceOverviewColumns", false);
-        ImGui::SetColumnWidth(0, ImGui::GetWindowWidth() * 0.55f);
-
+        // Performance Stats
         ImGui::Text("Performance Stats");
         ImGui::Separator();
         ImGui::Text("Avg FPS: %u", m_frameCount);
@@ -44,20 +41,14 @@ public:
         ImGui::Text("Avg Total GPU Time: %.3f ms", m_avgTotalGPUTime);
         ImGui::Spacing();
 
-        ImGui::Text("Scene Overview");
-        ImGui::Separator();
-        ImGui::Text("Total Entities: %u", m_entityCount);
-        ImGui::Text("Total Lights: %u", m_lightCount);
-        ImGui::Text("Lights Evaluated: %u", m_lastState.numLightsEvaluated);
-        ImGui::Spacing();
-
+        // Hardware Details
         ImGui::Text("Hardware Details");
         ImGui::Separator();
         ImGui::Text("Device: %s", m_lastState.physicalRenderDeviceName.c_str());
         ImGui::Text("Swapchain: %s", SwapchainFormatToString(FrameGlobals::GetSwapChainFormat()));
+        ImGui::Spacing();
 
-        ImGui::NextColumn();
-
+        // VRAM Usage
         ImGui::Text("VRAM Usage");
         ImGui::Separator();
         f32 usedMB = static_cast<f32>(m_lastState.usedVramBytes) / (1024.f * 1024.f);
@@ -70,6 +61,31 @@ public:
         ImGui::ProgressBar(vramPct, ImVec2(-FLT_MIN, 0.0f), vramBuf);
         ImGui::Spacing();
 
+        // Scene Overview
+        if (ImGui::CollapsingHeader("Scene Overview", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            ImGui::Text("Total Entities: %u", m_entityCount);
+            ImGui::Text("Total Lights: %u", m_lightCount);
+            ImGui::Text("Lights Evaluated: %u", m_lastState.numLightsEvaluated);
+            ImGui::Text("Lights in Frustum: %u", m_lastState.numLightsInFrustum);
+        }
+
+        // Frustum Culling
+        if (ImGui::CollapsingHeader("Frustum Culling", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            const bool cullingFrozen = mathstl::isFlagSet(m_lastState.debugFlags, (u32)DebugFlags::FreezeFrustumCulling);
+            const u32 totalInst = m_lastState.totalInstanceCount;
+            const u32 culledInst = m_lastState.culledInstanceCount;
+            const u32 visInst = (totalInst > culledInst) ? (totalInst - culledInst) : 0;
+            const f32 cullPct = (totalInst > 0) ? (static_cast<f32>(culledInst) / static_cast<f32>(totalInst) * 100.0f) : 0.0f;
+
+            ImGui::Text("Status: %s", cullingFrozen ? "Frozen" : "Active");
+            ImGui::Text("Total Instances: %u", totalInst);
+            ImGui::Text("Visible Instances: %u", visInst);
+            ImGui::Text("Culled Instances: %u (%.1f%%)", culledInst, cullPct);
+        }
+
+        // Pipeline Statistics
         if (ImGui::CollapsingHeader("Pipeline Statistics"))
         {
             ImGui::Text("Indirect Draw Calls: %u", m_lastState.stats.numDrawIndirectCalls);
@@ -79,57 +95,45 @@ public:
             ImGui::Text("Pipeline Binds: %u", m_lastState.stats.numPipelineBinds);
             ImGui::Text("Vertices: %llu", m_lastState.stats.numVertices);
             ImGui::Text("Primitives: %llu", m_lastState.stats.numPrimitives);
+            ImGui::Text("Shader Invocations: %llu", m_lastState.stats.numShadersInvocations);
         }
 
+        // Clustered Shading
         if (ImGui::CollapsingHeader("Clustered Shading Statistics"))
         {
             ImGui::Text("Total Clusters: %u", m_lastState.totalClusterCount);
             ImGui::Text("Avg Lights/Cluster: %.2f", m_lastState.avgLightsPerCluster);
         }
 
+        // Ray Tracing
         if (ImGui::CollapsingHeader("Ray Tracing Diagnostics"))
         {
             ImGui::Text("Pending BLAS builds: %u", m_lastState.rt.pendingBlasCount);
             ImGui::Text("Resident RT Instances: %u", m_lastState.rt.residentInstanceCount);
         }
 
-        if (m_lastState.dlssSupported && ImGui::CollapsingHeader("NVIDIA DLSS & Streamline Diagnostics"))
+        // DLSS & Streamline (Condensed)
+        if (m_lastState.dlssSupported && ImGui::CollapsingHeader("DLSS & Streamline"))
         {
             const auto debugState = Nvidia::StreamlineManager::GetDLSSDebugState();
 
-            ImGui::TextWrapped("NVIDIA Streamline ImGui is loaded as the sl.imgui plugin. Use Ctrl+Shift+Home "
-                               "to toggle the Streamline overlay. The engine hides its own ImGui while that "
-                               "overlay is active so it can receive input.");
-            ImGui::Separator();
+            ImGui::Text("Mode: %s | Streamline: %s | UI: Ctrl+Shift+Home",
+                        (m_lastState.aaType == AntialiasingType::DLSS) ? DLSSModeToString(debugState.configuredMode) : "Off",
+                        debugState.streamlineInitialized ? "Ready" : "No");
 
-            ImGui::Text("AA Mode: %s", m_lastState.aaType == AntialiasingType::DLSS ? "DLSS" : "Not DLSS");
-            ImGui::Text("Streamline Initialized: %s", BoolToString(debugState.streamlineInitialized));
-            ImGui::Text("DLSS Feature Supported: %s", BoolToString(debugState.featureSupported));
-            ImGui::Text("Streamline ImGui Plugin: %s", BoolToString(debugState.imguiPluginAvailable));
-            ImGui::Text("Configured: %s", BoolToString(debugState.configured));
-            ImGui::Text("Evaluate Blocked: %s", BoolToString(debugState.evaluateBlocked));
-            ImGui::Text("Last Configure Failed: %s", BoolToString(debugState.lastConfigureFailed));
-            ImGui::Text("Pending Reset Flag: %s", BoolToString(debugState.needsReset));
-            ImGui::Text("Configured Mode: %s", DLSSModeToString(debugState.configuredMode));
-
-            ImGui::Separator();
-            ImGui::Text("DLSS Input: %u x %u", debugState.inputWidth, debugState.inputHeight);
-            ImGui::Text("DLSS Output: %u x %u", debugState.outputWidth, debugState.outputHeight);
-            ImGui::Text("Estimated VRAM Usage: %.2f MB",
+            ImGui::Text("Resolution: %u x %u -> %u x %u | VRAM: %.1f MB",
+                        debugState.inputWidth, debugState.inputHeight,
+                        debugState.outputWidth, debugState.outputHeight,
                         static_cast<f32>(debugState.estimatedVRAMUsageInBytes) / (1024.0f * 1024.0f));
-            ImGui::Text("Evaluate Calls: %llu", debugState.evaluateCallCount);
-            ImGui::Text("slSetConstants: %s (0x%X)",
-                        ResultToString(debugState.lastSetConstantsResult),
-                        static_cast<u32>(debugState.lastSetConstantsResult));
-            ImGui::Text("slSetTagForFrame: %s (0x%X)",
+
+            ImGui::Text("Calls: %llu eval | Tag: %s | Const: %s | Eval: %s",
+                        debugState.evaluateCallCount,
                         ResultToString(debugState.lastTagResult),
-                        static_cast<u32>(debugState.lastTagResult));
-            ImGui::Text("slEvaluateFeature: %s (0x%X)",
-                        ResultToString(debugState.lastEvaluateResult),
-                        static_cast<u32>(debugState.lastEvaluateResult));
+                        ResultToString(debugState.lastSetConstantsResult),
+                        ResultToString(debugState.lastEvaluateResult));
         }
 
-        ImGui::Columns(1);
+        ImGui::Spacing();
         ImGui::Separator();
         ImGui::Spacing();
 
@@ -356,7 +360,7 @@ private:
         }
     }
 
-    static constexpr f32 LABEL_WIDTH = 80.0f;
+    static constexpr f32 LABEL_WIDTH = 65.0f;
     static constexpr f32 ROW_HEIGHT = 24.0f;
     static constexpr f32 RULER_HEIGHT = 20.0f;
     static constexpr f32 ALPHA_TIMING = 0.08f;

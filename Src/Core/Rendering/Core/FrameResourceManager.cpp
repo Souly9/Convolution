@@ -681,7 +681,7 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
             }
         }
 
-        const bool isCullingEnabled = mathstl::isFlagSet(renderState.debugFlags, static_cast<u32>(DebugFlags::CullFrustum));
+        constexpr bool isCullingEnabled = true;
         const bool isCullingFrozen = mathstl::isFlagSet(renderState.debugFlags, static_cast<u32>(DebugFlags::FreezeFrustumCulling));
         const u32 cascadeCount = (m_currentSharedDataUBO.cascadeCount > 0) ? static_cast<u32>(m_currentSharedDataUBO.cascadeCount) : 0u;
 
