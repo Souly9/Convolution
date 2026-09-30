@@ -2,7 +2,7 @@
 #include "Core/Rendering/Core/RenderingData.h"
 #include "Core/Rendering/Passes/RenderPass.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
-#include "Core/Rendering/Vulkan/VkPipeline.h"
+#include "Core/Rendering/Core/Pipeline.h"
 
 namespace RenderPasses
 {

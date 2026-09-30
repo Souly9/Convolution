@@ -7,12 +7,12 @@
 #include "Core/Global/ThreadBase.h"
 #include "Core/Rendering/Core/View.h"
 #include "Core/Rendering/Core/Synchronization.h"
-#include "Core/Rendering/Vulkan/VkSynchronization.h"
-#include "Core/Rendering/Vulkan/VkDescriptorSetLayout.h"
+#include "Core/Rendering/Core/DescriptorSetLayout.h"
 #include "Core/Rendering/Core/Defines/UBODefines.h"
 #include "Core/Rendering/Core/Defines/BindingSlots.h"
 #include "Core/Rendering/Core/RenderingForwardDecls.h"
-#include "Core/Rendering/Vulkan/VkBuffer.h"
+#include "Core/Rendering/Core/Buffer.h"
+#include "Core/Rendering/Core/MappedUniformBuffer.h"
 #include "Core/Rendering/Core/DescriptorPool.h"
 #include "Core/Rendering/Passes/PassManagerDefines.h"
 #include <EASTL/fixed_vector.h>
@@ -34,23 +34,6 @@ struct LightDeltaUpdate
     RenderLight light;
 };
 
-struct FrameCameraData
-{
-    mathstl::Matrix viewToClip{mathstl::Matrix::Identity};
-    mathstl::Matrix clipToView{mathstl::Matrix::Identity};
-    mathstl::Matrix clipToPrevClip{mathstl::Matrix::Identity};
-    mathstl::Matrix prevClipToClip{mathstl::Matrix::Identity};
-    mathstl::Vector2 jitterOffset{mathstl::Vector2::Zero};
-    mathstl::Vector3 position{mathstl::Vector3::Zero};
-    mathstl::Vector3 up{0.0f, 1.0f, 0.0f};
-    mathstl::Vector3 right{1.0f, 0.0f, 0.0f};
-    mathstl::Vector3 forward{0.0f, 0.0f, -1.0f};
-    f32 fovRadians{0.0f};
-    f32 aspectRatio{1.0f};
-    f32 nearPlane{0.1f};
-    f32 farPlane{300.0f};
-};
-
 struct FrameRendererContext
 {
     TimelineSemaphore frameTimeline{};
@@ -68,8 +51,6 @@ struct FrameRendererContext
     DescriptorSet::Ptr sharedDataUBODescriptor{nullptr};
     DescriptorSet::Ptr gbufferPostProcessDescriptor{nullptr};
 
-    GPUMappedMemoryHandle pMappedSharedDataUBO{nullptr};
-
     StorageBuffer* pClusterGridBuffer{nullptr};
     DescriptorSet::Ptr clusterGridDescriptor{nullptr};
 
@@ -81,8 +62,6 @@ struct FrameRendererContext
 
     ::SharedResourceManager* pResourceManager{nullptr};
 
-    FrameCameraData cameraData{};
-    Texture* pDLSSExposureTexture{nullptr};
     f32 zNear{0.1f};
     f32 zFar{300.0f};
     u32 numLights{0};
@@ -154,7 +133,6 @@ public:
                                const DirectionalRenderLight& dirLight, u32 frameIdx);
     void SetSharedData(RenderView&& mainView, u32 frameIdx);
 
-    void UpdateSharedDataUBO(const void* data, size_t size, u32 frameIdx);
     void UpdateLightClusterSSBO(const UBO::LightClusterSSBO& data, u32 numLights, u32 frameIdx);
 
     void DispatchSSBOTransfer(
@@ -168,32 +146,26 @@ public:
     void UnlockData() { m_passDataMutex.unlock(); }
 
     StorageBuffer& GetLightClusterSSBO() { return m_lightClusterSSBO; }
-    UniformBuffer& GetSharedDataUBO() { return m_sharedDataUBO; }
-    UniformBuffer& GetLightUniformsUBO() { return m_lightUniformsUBO; }
-    UniformBuffer& GetGBufferPostProcessUBO() { return m_gbufferPostProcessUBO; }
-    UniformBuffer& GetShadowMapUBO() { return m_shadowMapUBO; }
+    MappedUniformBuffer& GetSharedDataUBO() { return m_sharedDataUBO; }
+    MappedUniformBuffer& GetLightUniformsUBO() { return m_lightUniformsUBO; }
+    MappedUniformBuffer& GetGBufferPostProcessUBO() { return m_gbufferPostProcessUBO; }
+    MappedUniformBuffer& GetShadowMapUBO() { return m_shadowMapUBO; }
     StorageBuffer& GetClusterGridSSBO() { return m_clusterGridSSBO; }
 
-    GPUMappedMemoryHandle GetMappedSharedDataUBOBuffer() const { return m_mappedSharedDataUBOBuffer; }
-    GPUMappedMemoryHandle GetMappedLightUniformsUBO() const { return m_mappedLightUniformsUBO; }
-    GPUMappedMemoryHandle GetMappedGBufferPostProcessUBO() const { return m_mappedGBufferPostProcessUBO; }
-    GPUMappedMemoryHandle GetMappedShadowMapUBO() const { return m_mappedShadowMapUBO; }
 
     UBO::LightClusterSSBO& GetLightCluster() { return *m_lightCluster; }
     ShadowMapState& GetShadowMapState() { return m_currentShadowMapState; }
-    StagingBuffer& GetDLSSExposureStagingBuffer() { return m_dlssExposureStagingBuffer; }
     const PassGeometryData& GetCurrentPassGeometryState() const { return m_currentPassGeometryState; }
+    // CPU copy of this frame's view UBO
+    const UBO::SharedDataUBO& GetViewData() const { return m_currentSharedDataUBO; }
     const DirectX::XMFLOAT4X4& GetCurrentTransform(u32 idx) const { return m_cachedTransformSSBO[idx]; }
 
 private:
     void BuildSharedDataForView(const RenderView& mainView,
                                 const mathstl::Vector2& renderResolution,
+                                const mathstl::Vector2& outputResolution,
                                 u64 jitterFrameNumber,
-                                UBO::SharedDataUBO& ubo,
-                                mathstl::Matrix& viewMat,
-                                mathstl::Matrix& viewProj,
-                                mathstl::Vector2& jitter,
-                                FrameCameraData& cameraData) const;
+                                UBO::SharedDataUBO& ubo) const;
 
     ProfiledLockable(CustomMutex, m_passDataMutex);
     RenderDataForPreProcessing m_dataToBePreProcessed;
@@ -201,21 +173,17 @@ private:
 
     StorageBuffer m_lightClusterSSBO;
     StorageBuffer m_clusterGridSSBO;
-    UniformBuffer m_sharedDataUBO;
-    UniformBuffer m_lightUniformsUBO;
-    UniformBuffer m_gbufferPostProcessUBO;
-    UniformBuffer m_shadowMapUBO;
+    MappedUniformBuffer m_sharedDataUBO;
+    MappedUniformBuffer m_lightUniformsUBO;
+    MappedUniformBuffer m_gbufferPostProcessUBO;
+    MappedUniformBuffer m_shadowMapUBO;
     stltype::unique_ptr<UBO::LightClusterSSBO> m_lightCluster;
 
-    GPUMappedMemoryHandle m_mappedSharedDataUBOBuffer{nullptr};
-    GPUMappedMemoryHandle m_mappedLightUniformsUBO{nullptr};
-    GPUMappedMemoryHandle m_mappedGBufferPostProcessUBO{nullptr};
-    GPUMappedMemoryHandle m_mappedShadowMapUBO{nullptr};
 
     DescriptorPool m_descriptorPool;
     DescriptorSetLayout m_clusterGridSSBOLayout;
-    DescriptorSetLayoutVulkan m_lightClusterSSBOLayout;
-    DescriptorSetLayoutVulkan m_sharedDataUBOLayout;
+    DescriptorSetLayout m_lightClusterSSBOLayout;
+    DescriptorSetLayout m_sharedDataUBOLayout;
     DescriptorSetLayout m_gbufferPostProcessLayout;
 
     stltype::fixed_vector<FrameRendererContext, SWAPCHAIN_IMAGES> m_frameRendererContexts =
@@ -240,7 +208,6 @@ private:
     u32 m_framesToRebuild{0};
 
     ShadowMapState m_currentShadowMapState{};
-    StagingBuffer m_dlssExposureStagingBuffer;
 
     TextureHandle m_skyboxTextureHandle{0};
     BindlessTextureHandle m_skyboxBindlessHandle{0};

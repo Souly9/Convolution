@@ -7,42 +7,29 @@
 #include "Core/Rendering/Core/ShaderManager.h"
 #include "Core/Rendering/Core/Synchronization.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
+#include "Core/Rendering/Core/AntiAliasing.h"
 #include "Core/Rendering/Core/Utils/TAA/JitterFunctions.h"
 #include "Core/Rendering/Core/View.h"
 #include "Core/Rendering/Passes/PassManager.h"
 #include "Core/Rendering/Passes/ShadowPass.h"
-#include "Core/Rendering/Vulkan/Utils/VkDescriptorLayoutUtils.h"
-#include "Core/Rendering/Vulkan/VkDescriptorPool.h"
-#include "Core/Rendering/Vulkan/VkTexture.h"
-#include "Core/Rendering/Vulkan/VkTextureManager.h"
+#include "Core/Rendering/Core/DescriptorUtils/DescriptorLayoutUtils.h"
+#include "Core/Rendering/Core/DescriptorPool.h"
+#include "Core/Rendering/Core/Texture.h"
+#include "Core/Rendering/Core/TextureManager.h"
 #include "Core/WindowManager.h"
 #include <EASTL/algorithm.h>
 
 namespace RenderPasses
 {
-namespace
-{
-int ResolveJitterPhaseCount(const mathstl::Vector2& renderResolution, const RendererState& renderState)
-{
-    if (renderState.aaType != AntialiasingType::DLSS || renderResolution.x <= 0.0f || renderResolution.y <= 0.0f)
-        return 32;
-
-    const f32 scaleRatio = renderState.swapchainResolution.x / renderResolution.x;
-    return stltype::max(1, static_cast<int>(8.0f * scaleRatio * scaleRatio + 0.5f));
-}
-} // namespace
-
 void FrameResourceManager::BuildSharedDataForView(const RenderView& mainView,
                                                   const mathstl::Vector2& renderResolution,
+                                                  const mathstl::Vector2& outputResolution,
                                                   u64 jitterFrameNumber,
-                                                  UBO::SharedDataUBO& ubo,
-                                                  mathstl::Matrix& viewMat,
-                                                  mathstl::Matrix& viewProj,
-                                                  mathstl::Vector2& jitter,
-                                                  FrameCameraData& cameraData) const
+                                                  UBO::SharedDataUBO& ubo) const
 {
     ScopedZone("BuildSharedDataForView");
     const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+    const AA::FrameConfig& aa = AA::Current();
     using namespace mathstl;
 
     const f32 fovRadians = DirectX::XMConvertToRadians(mainView.fov);
@@ -57,64 +44,30 @@ void FrameResourceManager::BuildSharedDataForView(const RenderView& mainView,
     const Vector3 upVector(0.f, 1.f, 0.f);
     const f32 aspectRatio = (renderResolution.y > 0.0f) ? (renderResolution.x / renderResolution.y) : 1.0f;
 
-    viewMat = Matrix::CreateLookAt(viewPos, rotatedFocusPos, upVector);
+    const Matrix viewMat = Matrix::CreateLookAt(viewPos, rotatedFocusPos, upVector);
     const f32 nearPlane = (mainView.zNear > 0.0f) ? mainView.zNear : 0.1f;
     const f32 farPlane = (mainView.zFar > nearPlane) ? mainView.zFar : 1000.0f;
-    Matrix projMat = Matrix::CreatePerspectiveFieldOfView(fovRadians, aspectRatio, farPlane, nearPlane);
-    // projMat.m[2][2] = 1.0f - projMat.m[2][2];
-    // projMat.m[3][2] = -projMat.m[3][2];
-    // Previous frame view data
-    ubo.prevView = ubo.view;
-    ubo.prevProjection = ubo.projection;
-    ubo.prevViewProjection = ubo.viewProjection;
-    ubo.prevJitteredProjection = ubo.jitteredProjection;
+    // Reversed Z: near and far are swapped on purpose
+    const Matrix projMat = Matrix::CreatePerspectiveFieldOfView(fovRadians, aspectRatio, farPlane, nearPlane);
+    const Matrix viewProj = viewMat * projMat;
 
-    // Current frame view data
-    viewProj = viewMat * projMat;
-    ubo.viewProjectionInverse = viewProj.Invert();
-    ubo.viewInverse = viewMat.Invert();
-    ubo.projectionInverse = projMat.Invert();
+    ubo.prevViewProjection = aa.temporalReset ? viewProj : ubo.viewProjection;
     ubo.view = viewMat;
     ubo.projection = projMat;
     ubo.viewProjection = viewProj;
+    ubo.viewProjectionInverse = viewProj.Invert();
+    ubo.viewInverse = viewMat.Invert();
+    ubo.projectionInverse = projMat.Invert();
+    ubo.clipToPrevClip = ubo.projectionInverse * ubo.viewInverse * ubo.prevViewProjection;
     ubo.viewPos = Vector4(viewPos.x, viewPos.y, viewPos.z, 1.0f);
     ubo.renderResolution = renderResolution;
-
-    Vector3 cameraRight = Vector3::Transform(Vector3(1.0f, 0.0f, 0.0f), rotationMatrix);
-    Vector3 cameraUp = Vector3::Transform(Vector3(0.0f, 1.0f, 0.0f), rotationMatrix);
-    Vector3 cameraForwardBasis = Vector3::Transform(Vector3(0.0f, 0.0f, 1.0f), rotationMatrix);
-    cameraRight.Normalize();
-    cameraUp.Normalize();
-    cameraForwardBasis.Normalize();
-    cameraData.viewToClip = ubo.projection;
-    cameraData.clipToView = ubo.projectionInverse;
-    cameraData.clipToPrevClip = ubo.projectionInverse * ubo.viewInverse * ubo.prevViewProjection;
-    cameraData.prevClipToClip = cameraData.clipToPrevClip.Invert();
-    cameraData.position = viewPos;
-    cameraData.up = cameraUp;
-    cameraData.right = cameraRight;
-    cameraData.forward = Vector3(-cameraForwardBasis.x, -cameraForwardBasis.y, -cameraForwardBasis.z);
-    cameraData.fovRadians = fovRadians;
-    cameraData.aspectRatio = aspectRatio;
-    cameraData.nearPlane = nearPlane;
-    cameraData.farPlane = farPlane;
-
-    // Jittered projection for temporal AA consumers.
-    if (renderState.aaType == AntialiasingType::TAA_SMAA || renderState.aaType == AntialiasingType::DLSS)
-    {
-        jitter = GenerateR2Jitter(static_cast<int>(jitterFrameNumber),
-                                  ResolveJitterPhaseCount(renderResolution, renderState));
-        ubo.jitteredProjection = viewProj;
-        ubo.jitteredViewProjectionInverse = viewProj.Invert();
-    }
-    else
-    {
-        jitter = mathstl::Vector2::Zero;
-        ubo.jitteredProjection = viewProj;
-        ubo.jitteredViewProjectionInverse = viewProj.Invert();
-    }
-    ubo.jitterOffset = jitter;
-    cameraData.jitterOffset = jitter;
+    ubo.outputResolution = outputResolution;
+    ubo.jitterOffset = aa.UsesJitter() ? GenerateHaltonJitter(jitterFrameNumber, aa.jitterPhases) : Vector2::Zero;
+    ubo.zNear = nearPlane;
+    ubo.zFar = farPlane;
+    ubo.fovY = fovRadians;
+    ubo.aspectRatio = aspectRatio;
+    ubo.temporalReset = aa.temporalReset ? 1u : 0u;
 
     // Debug state flags
     ubo.debugFlags = renderState.debugFlags;
@@ -126,7 +79,6 @@ void FrameResourceManager::BuildSharedDataForView(const RenderView& mainView,
     ubo.gt7ReferenceLuminance = renderState.gt7ReferenceLuminance;
     ubo.rtUseGlobalMaterialReflectance = renderState.rt.globalReflectanceOverrideEnabled ? 1u : 0u;
     ubo.rtGlobalMaterialReflectance = renderState.rt.globalMaterialReflectance;
-    ubo.debugFlags = (ubo.debugFlags & ~(0xFFu << 8)) | ((u32)renderState.aaType << 8);
     ubo.skyboxTextureIdx = m_skyboxBindlessHandle;
 }
 
@@ -139,23 +91,13 @@ void FrameResourceManager::Init()
     m_lightClusterSSBO = StorageBuffer(UBO::LightClusterSSBOSize, false);
     m_clusterGridSSBO = StorageBuffer(UBO::ClusterAABBSetSize, true);
 
-    m_sharedDataUBO = UniformBuffer(sharedDataUBOSize);
-    m_mappedSharedDataUBOBuffer = m_sharedDataUBO.MapMemory();
-    m_lightUniformsUBO = UniformBuffer(sizeof(LightUniforms));
-    m_gbufferPostProcessUBO = UniformBuffer(sizeof(UBO::GBufferPostProcessUBO));
-    m_shadowMapUBO = UniformBuffer(sizeof(UBO::ShadowMapUBO));
+    m_sharedDataUBO.Create(sharedDataUBOSize, "Shared Data UBO");
+    m_lightUniformsUBO.Create(sizeof(LightUniforms), "Light Uniforms UBO");
+    m_gbufferPostProcessUBO.Create(sizeof(UBO::GBufferPostProcessUBO), "GBuffer PostProcess UBO");
+    m_shadowMapUBO.Create(sizeof(UBO::ShadowMapUBO), "Shadow Map UBO");
 
     m_lightClusterSSBO.SetName("Light Cluster SSBO");
     m_clusterGridSSBO.SetName("Cluster AABB SSBO");
-
-    m_sharedDataUBO.SetName("Shared Data UBO");
-    m_lightUniformsUBO.SetName("Light Uniforms UBO");
-    m_gbufferPostProcessUBO.SetName("GBuffer PostProcess UBO");
-    m_shadowMapUBO.SetName("Shadow Map UBO");
-
-    m_mappedLightUniformsUBO = m_lightUniformsUBO.MapMemory();
-    m_mappedGBufferPostProcessUBO = m_gbufferPostProcessUBO.MapMemory();
-    m_mappedShadowMapUBO = m_shadowMapUBO.MapMemory();
 
     m_cachedTransformSSBO.resize(MAX_ENTITIES);
     m_cachedPrevTransformSSBO.resize(MAX_ENTITIES);
@@ -165,7 +107,6 @@ void FrameResourceManager::Init()
         {"../../Resources/Skyboxes/mpumalanga_veld_puresky_4k.hdr", false, TextureSemantic::Auto, true});
     m_skyboxBindlessHandle = g_pTexManager->MakeTextureBindless(m_skyboxTextureHandle, true);
 
-    m_dlssExposureStagingBuffer.EnsureCapacity(sizeof(float));
 }
 
 void FrameResourceManager::CreatePassObjectsAndLayouts()
@@ -213,14 +154,16 @@ void FrameResourceManager::CreateFrameRendererContexts(
 
         frameContext.sharedDataUBODescriptor = m_descriptorPool.CreateDescriptorSet(m_sharedDataUBOLayout.GetRef());
         frameContext.sharedDataUBODescriptor->SetBindingSlot(s_sharedDataBindingSlot);
-        frameContext.sharedDataUBODescriptor->WriteBufferUpdate(m_sharedDataUBO, s_sharedDataBindingSlot);
+        frameContext.sharedDataUBODescriptor->WriteBufferUpdate(m_sharedDataUBO.GetBuffer(i % FRAMES_IN_FLIGHT),
+                                                                s_sharedDataBindingSlot);
         frameContext.sharedDataUBODescriptor->SetName("Shared Data Descriptor Set " + stltype::to_string(i));
 
         frameContext.gbufferPostProcessDescriptor =
             m_descriptorPool.CreateDescriptorSet(m_gbufferPostProcessLayout.GetRef());
-        frameContext.gbufferPostProcessDescriptor->WriteBufferUpdate(m_gbufferPostProcessUBO,
-                                                                     s_globalGbufferPostProcessUBOSlot);
-        frameContext.gbufferPostProcessDescriptor->WriteBufferUpdate(m_shadowMapUBO, s_shadowmapUBOBindingSlot);
+        frameContext.gbufferPostProcessDescriptor->WriteBufferUpdate(
+            m_gbufferPostProcessUBO.GetBuffer(i % FRAMES_IN_FLIGHT), s_globalGbufferPostProcessUBOSlot);
+        frameContext.gbufferPostProcessDescriptor->WriteBufferUpdate(m_shadowMapUBO.GetBuffer(i % FRAMES_IN_FLIGHT),
+                                                                     s_shadowmapUBOBindingSlot);
         frameContext.gbufferPostProcessDescriptor->SetName("GBuffer PostProcess Descriptor Set " +
                                                            stltype::to_string(i));
 
@@ -241,7 +184,8 @@ void FrameResourceManager::CreateFrameRendererContexts(
         frameContext.tileArraySSBODescriptor = m_descriptorPool.CreateDescriptorSet(m_lightClusterSSBOLayout.GetRef());
         frameContext.tileArraySSBODescriptor->SetBindingSlot(s_tileArrayBindingSlot);
         frameContext.tileArraySSBODescriptor->WriteSSBOUpdate(m_lightClusterSSBO);
-        frameContext.tileArraySSBODescriptor->WriteBufferUpdate(m_lightUniformsUBO, s_globalLightUniformsBindingSlot);
+        frameContext.tileArraySSBODescriptor->WriteBufferUpdate(m_lightUniformsUBO.GetBuffer(i % FRAMES_IN_FLIGHT),
+                                                                s_globalLightUniformsBindingSlot);
 
         // Cluster grid descriptor
         frameContext.clusterGridDescriptor = m_descriptorPool.CreateDescriptorSet(m_clusterGridSSBOLayout.GetRef());
@@ -250,11 +194,6 @@ void FrameResourceManager::CreateFrameRendererContexts(
 
         // Point the rendering finished semaphore to the present transition semaphore for presentation sync
         frameContext.renderingFinishedSemaphore = &frameContext.pPresentLayoutTransitionSignalSemaphore;
-
-        frameContext.pMappedSharedDataUBO = m_mappedSharedDataUBOBuffer;
-
-        UBO::SharedDataUBO sharedData{};
-        UpdateSharedDataUBO((const void*)&sharedData, sizeof(UBO::SharedDataUBO), (u32)i);
     }
 }
 
@@ -287,9 +226,7 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
         ctx.zNear = m_dataToBePreProcessed.mainView.zNear;
         ctx.zFar = m_dataToBePreProcessed.mainView.zFar;
 
-        ctx.sharedDataUBODescriptor->WriteBufferUpdate(m_sharedDataUBO, s_sharedDataBindingSlot);
         ctx.tileArraySSBODescriptor->WriteSSBOUpdate(m_lightClusterSSBO);
-        ctx.tileArraySSBODescriptor->WriteBufferUpdate(m_lightUniformsUBO, s_globalLightUniformsBindingSlot);
     }
 
     if (g_pMaterialManager->IsBufferDirty())
@@ -311,19 +248,14 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
     {
         const auto& mainView = (m_dataToBePreProcessed.mainView.zFar > 0.0f) ? m_dataToBePreProcessed.mainView : m_cachedMainView;
         auto& ctx = m_frameRendererContexts[currentSwapChainIdx];
-        mathstl::Matrix viewMat{};
-        mathstl::Matrix viewProj{};
-        mathstl::Vector2 jitter{};
         BuildSharedDataForView(mainView,
                                passManagerRenderState.renderResolution,
+                               passManagerRenderState.swapchainResolution,
                                jitterFrameNumber,
-                               m_currentSharedDataUBO,
-                               viewMat,
-                               viewProj,
-                               jitter,
-                               ctx.cameraData);
+                               m_currentSharedDataUBO);
+        const mathstl::Matrix& viewMat = m_currentSharedDataUBO.view;
+        const mathstl::Matrix& viewProj = m_currentSharedDataUBO.viewProjection;
         frameViewProj = viewProj;
-        pPassManager->SetRenderJitter(jitter);
 
         if (m_cachedDirLights.empty() == false)
         {
@@ -346,7 +278,7 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
                                                   mainView.fov,
                                                   aspectRatio,
                                                   viewMat,
-                                                  viewProj.Invert(),
+                                                  m_currentSharedDataUBO.viewProjectionInverse,
                                                   lightDir,
                                                   splits,
                                                   m_currentSharedDataUBO.csmViewMatrices,
@@ -362,11 +294,14 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
             }
         }
 
-        UpdateSharedDataUBO(&m_currentSharedDataUBO, sizeof(UBO::SharedDataUBO), currentSwapChainIdx);
+        m_sharedDataUBO.Write(frameIdx, m_currentSharedDataUBO);
+
+        UBO::ShadowMapUBO shadowMapUBO{};
+        shadowMapUBO.directionalShadowMapIdx = pPassManager->GetRenderGraph().GetRegistry().GetShadowMap().bindlessHandle;
+        m_shadowMapUBO.Write(frameIdx, shadowMapUBO);
 
         auto& passData = pPassManager->GetMainPassData(currentSwapChainIdx);
-        passData.mainCamViewMatrix = viewMat;
-        passData.mainCamInvViewProj = viewProj.Invert();
+        passData.pViewData = &m_currentSharedDataUBO;
 
         g_pApplicationState->RegisterUpdateFunction(
             [viewInv = m_currentSharedDataUBO.viewInverse,
@@ -388,7 +323,12 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
 
         ctx.zNear = mainView.zNear;
         ctx.zFar = mainView.zFar;
-        ctx.sharedDataUBODescriptor->WriteBufferUpdate(m_sharedDataUBO, s_sharedDataBindingSlot);
+
+        // Contexts follow the swapchain image, the UBO copies follow the frame slot
+        ctx.sharedDataUBODescriptor->WriteBufferUpdate(m_sharedDataUBO.GetBuffer(frameIdx), s_sharedDataBindingSlot);
+        ctx.gbufferPostProcessDescriptor->WriteBufferUpdate(m_gbufferPostProcessUBO.GetBuffer(frameIdx),
+                                                            s_globalGbufferPostProcessUBOSlot);
+        ctx.gbufferPostProcessDescriptor->WriteBufferUpdate(m_shadowMapUBO.GetBuffer(frameIdx), s_shadowmapUBOBindingSlot);
     }
     {
         {
@@ -427,9 +367,9 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
                                                 (float)renderState.clusterCount.z,
                                                 0.0f);
 
-            auto pDescriptor = m_frameRendererContexts[currentSwapChainIdx].tileArraySSBODescriptor;
-            std::memcpy(m_mappedLightUniformsUBO, &data, m_lightUniformsUBO.GetInfo().size);
-            pDescriptor->WriteBufferUpdate(m_lightUniformsUBO, s_globalLightUniformsBindingSlot);
+            m_lightUniformsUBO.Write(frameIdx, data);
+            m_frameRendererContexts[currentSwapChainIdx].tileArraySSBODescriptor->WriteBufferUpdate(
+                m_lightUniformsUBO.GetBuffer(frameIdx), s_globalLightUniformsBindingSlot);
         }
     }
 
@@ -766,11 +706,6 @@ void FrameResourceManager::SetSharedData(RenderView&& mainView, u32 frameIdx)
     m_dataToBePreProcessed.mainView = std::move(mainView);
     m_dataToBePreProcessed.frameIdx = frameIdx;
     m_passDataMutex.unlock();
-}
-
-void FrameResourceManager::UpdateSharedDataUBO(const void* data, size_t size, u32 frameIdx)
-{
-    std::memcpy(m_mappedSharedDataUBOBuffer, data, size);
 }
 
 void FrameResourceManager::UpdateLightClusterSSBO(const UBO::LightClusterSSBO& data, u32 numLights, u32 frameIdx)

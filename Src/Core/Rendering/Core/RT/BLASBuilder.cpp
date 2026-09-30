@@ -117,6 +117,13 @@ bool BLASBuilder::PrepareBuildRecord(BLASRecord& record, SharedResourceManager& 
     if (!vertexBuffer.IsCreated() || !indexBuffer.IsCreated())
         return false;
 
+    // No RT device (e.g. MoltenVK): fail quietly instead of warning per mesh
+    if (!rtCaps.supported)
+    {
+        record.state = BLASState::Failed;
+        return false;
+    }
+
     if (record.primitiveCount == 0 || record.primitiveCount > rtCaps.maxPrimitiveCount)
     {
         record.state = BLASState::Failed;

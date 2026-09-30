@@ -1,7 +1,6 @@
 #pragma once
 #include "Core/Global/CommonGlobals.h"
 #include "Core/SceneGraph/Scene.h"
-#include <minwindef.h>
 
 class BistroExteriorScene : public Scene
 {

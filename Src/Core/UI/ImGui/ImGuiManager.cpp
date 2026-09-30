@@ -2,7 +2,9 @@
 #include "Core/Global/Profiling.h"
 #include "Core/Rendering/Core/Nvidia/StreamlineManager.h"
 #include <imgui/backends/imgui_impl_glfw.h>
+#ifdef USE_VULKAN
 #include <imgui/backends/imgui_impl_vulkan.h>
+#endif
 #include <imgui/imgui.h>
 #include <ImGuizmo/ImGuizmo.h>
 
@@ -12,14 +14,18 @@ bool ImGuiManager::s_streamlineOverlayInputMode = false;
 
 void ImGuiManager::CleanUp()
 {
+#ifdef USE_VULKAN
     ImGui_ImplVulkan_Shutdown();
+#endif
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
 }
 
 void ImGuiManager::BeginFrame()
 {
+#ifdef USE_VULKAN
     ImGui_ImplVulkan_NewFrame();
+#endif
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
     ImGuizmo::BeginFrame();

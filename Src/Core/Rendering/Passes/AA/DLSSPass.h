@@ -2,11 +2,16 @@
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Global/State/States.h"
+#include "Core/Rendering/Core/Buffer.h"
 #include "Core/Rendering/Core/RenderingForwardDecls.h"
+#include "Core/Rendering/Core/Nvidia/StreamlineManager.h"
 #include "Core/Rendering/Passes/RenderPass.h"
+#include <EASTL/array.h>
+#include <EASTL/fixed_vector.h>
 
 namespace RenderPasses
 {
+// DLSS Super Resolution and Ray Reconstruction; AA::Current() decides which one runs
 class DLSSPass : public ConvolutionRenderPass
 {
 public:
@@ -21,7 +26,49 @@ public:
     void RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
                              FrameRendererContext& previousFrameCtx,
                              u32 thisFrameNum) override {}
-    void Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer) {}
+    void RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const struct RGExecutionContext& execCtx) override;
+    void Setup(::RenderGraphBuilder& builder, const MainPassData& data) override;
+
+    bool WantsToRender() const override;
+    QueueType GetQueueType() const override { return QueueType::Compute; }
+    PassStage GetPassStage() const override { return PassStage::PostProcess; }
+
+    struct TagDesc
+    {
+        sl::BufferType type{};
+        uint64_t native{};
+        uint64_t view{};
+        uint32_t width{};
+        uint32_t height{};
+        uint32_t nativeFormat{};
+        uint32_t usage{};
+        uint32_t state{};
+        uint32_t mipLevels{1};
+        uint32_t arrayLayers{1};
+    };
+    using TagList = stltype::fixed_vector<TagDesc, 16, false>;
+
+private:
+    // Per frame slot so the native callback can outlive this frame's recording
+    stltype::array<TagList, FRAMES_IN_FLIGHT> m_tags{};
+    bool m_evaluatedLastFrame{false};
+    u32 m_lastResetGeneration{0};
+};
+
+// Copies the tonemapper exposure into DLSSExposure; a separate node so the graph owns the transfer barrier
+class DLSSExposurePass : public ConvolutionRenderPass
+{
+public:
+    DLSSExposurePass();
+
+    void Init(const SharedResourceManager& resourceManager) override {}
+    void BuildPipelines() override {}
+    void BuildBuffers() override {}
+    void CreateSharedDescriptorLayout() override {}
+
+    void RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
+                             FrameRendererContext& previousFrameCtx,
+                             u32 thisFrameNum) override {}
     void RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const struct RGExecutionContext& execCtx) override;
     void Setup(::RenderGraphBuilder& builder, const MainPassData& data) override;
 
@@ -30,6 +77,7 @@ public:
     PassStage GetPassStage() const override { return PassStage::PostProcess; }
 
 private:
-    mutable bool m_wasActive{false};
+    // The previous frame may still be copying from its own slot
+    stltype::array<StagingBuffer, FRAMES_IN_FLIGHT> m_staging{};
 };
 } // namespace RenderPasses

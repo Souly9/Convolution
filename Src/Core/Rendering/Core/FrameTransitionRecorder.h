@@ -9,9 +9,7 @@ class RGResourceRegistry;
 class FrameTransitionRecorder
 {
 public:
-    void RecordTemporalResourceInitialLayouts(CommandBuffer* pCmdBuffer,
-                                              RGResourceRegistry& registry,
-                                              StagingBuffer& dlssExposureStagingBuffer);
+    void RecordTemporalResourceInitialLayouts(CommandBuffer* pCmdBuffer, RGResourceRegistry& registry);
     void RecordInitialLayoutTransitions(CommandBuffer* pCmdBuffer,
                                         const stltype::fixed_vector<const Texture*, 16>& allGbufferAndSwapchain,
                                         Texture* pMainDepthTexture,
@@ -26,18 +24,12 @@ public:
     void RecordThisFrameColorToGeneral(CommandBuffer* pCmdBuffer, Texture* pThisFrameColorTexture);
     void RecordThisFrameColorToGeneralDiscard(CommandBuffer* pCmdBuffer, Texture* pThisFrameColorTexture);
     void RecordThisFrameColorFromGeneralToRead(CommandBuffer* pCmdBuffer, Texture* pThisFrameColorTexture);
-    void RecordResolveToGeneral(CommandBuffer* pCmdBuffer, Texture* pResolveTexture);
-    void RecordResolveToRead(CommandBuffer* pCmdBuffer, Texture* pResolveTexture);
-    void RecordCopyTextureToResolve(CommandBuffer* pCmdBuffer, Texture* pResolveTexture, Texture* pSourceTexture);
     static void RecordClearColorTexture(CommandBuffer* pCmdBuffer,
                                         Texture* pTexture,
                                         ImageLayout oldLayout,
                                         ImageLayout finalLayout);
     void RecordSSSOutputToGeneral(CommandBuffer* pCmdBuffer, Texture* pScreenSpaceShadowTexture);
     void RecordSSSOutputToShaderRead(CommandBuffer* pCmdBuffer, Texture* pScreenSpaceShadowTexture);
-    void RecordDLSSExposureUpdate(CommandBuffer* pCmdBuffer,
-                                  Texture* pDLSSExposureTexture,
-                                  StagingBuffer& dlssExposureStagingBuffer);
     void RecordSwapchainToAttachment(CommandBuffer* pCmdBuffer, Texture* pSwapchainTexture);
     void RecordSwapchainToPresent(CommandBuffer* pCmdBuffer, Texture* pSwapchainTexture);
 };

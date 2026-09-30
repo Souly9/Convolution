@@ -6,6 +6,7 @@
 #include "Core/Rendering/Core/ShaderManager.h"
 #include "Core/Rendering/Core/TextureManager.h"
 #include "Core/Global/Profiling.h"
+#include "Core/Rendering/Core/AntiAliasing.h"
 #include "Core/Rendering/Core/RenderGraph/RenderGraphBuilder.h"
 
 using namespace RenderPasses;
@@ -67,11 +68,8 @@ void CompositPass::RenderWithGraph(const MainPassData& data, const FrameRenderer
 
     CommandBuffer* pCmdBuffer = execCtx.pCmdBuffer;
 
-    const auto& appRenderState = g_pApplicationState->GetCurrentApplicationState().renderState;
-    const bool smaaActive = (appRenderState.aaType == AntialiasingType::SMAA || appRenderState.aaType == AntialiasingType::TAA_SMAA);
-    RGResourceID targetID = smaaActive ? RGResourceID::GBufferPostAAColor : RGResourceID::Swapchain;
-
-    RenderAttachmentInfo swapchainAttachment = execCtx.GetColorAttachment(targetID, LoadOp::CLEAR, StoreOp::STORE);
+    RenderAttachmentInfo swapchainAttachment =
+        execCtx.GetColorAttachment(AA::Current().CompositeTarget(), LoadOp::CLEAR, StoreOp::STORE);
     if (!swapchainAttachment.pTexture)
         swapchainAttachment.pTexture = ctx.pCurrentSwapchainTexture;
 
@@ -111,20 +109,19 @@ void CompositPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data
         PassCtx::GlobalInstance,
         PassCtx::GBufferCtx>();
 
-    builder.ReadTexture(RGResourceID::TemporalResolve, SyncStages::FRAGMENT_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-    builder.ReadTexture(RGResourceID::GBufferThisFrameColor, SyncStages::FRAGMENT_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-    builder.ReadTexture(RGResourceID::BloomMip0, SyncStages::FRAGMENT_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-
     const auto& appRenderState = g_pApplicationState->GetCurrentApplicationState().renderState;
-    const bool smaaActive = (appRenderState.aaType == AntialiasingType::SMAA || appRenderState.aaType == AntialiasingType::TAA_SMAA);
-    if (smaaActive)
-    {
-        builder.WriteColorAttachment(RGResourceID::GBufferPostAAColor, LoadOp::CLEAR, StoreOp::STORE);
-    }
-    else
-    {
-        builder.WriteColorAttachment(RGResourceID::Swapchain, LoadOp::CLEAR, StoreOp::STORE);
-    }
+    const AA::FrameConfig& aa = AA::Current();
+    const RGResourceID compositeInput = AA::CompositeInput(appRenderState, aa);
+
+    // Always read the AA output so TAA history ends the frame in a sampled layout
+    builder.ReadTexture(aa.aaOutput, SyncStages::FRAGMENT_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    if (compositeInput != aa.aaOutput)
+        builder.ReadTexture(compositeInput, SyncStages::FRAGMENT_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    builder.ReadTexture(RGResourceID::BloomMip0, SyncStages::FRAGMENT_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    if (appRenderState.debugViewMode == static_cast<s32>(DebugViewMode::MotionVectors))
+        builder.ReadTexture(RGResourceID::GBufferVelocity, SyncStages::FRAGMENT_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+
+    builder.WriteColorAttachment(aa.CompositeTarget(), LoadOp::CLEAR, StoreOp::STORE);
     builder.SetHasSideEffects();
 }
 

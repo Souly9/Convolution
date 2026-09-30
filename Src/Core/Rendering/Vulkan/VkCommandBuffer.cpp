@@ -220,12 +220,8 @@ static void RecordCommand(ImageBufferCopyCmd& cmd, CBufferVulkan& buffer)
 
     copyRegion.imageOffset = ::Conv(cmd.imageOffset);
     copyRegion.imageExtent = ::Conv(cmd.imageExtent);
-    vkCmdCopyBufferToImage(buffer.GetRef(),
-                           cmd.srcBuffer->GetRef(),
-                           cmd.dstImage->GetImage(),
-                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                           1,
-                           &copyRegion);
+    vkCmdCopyBufferToImage(
+        buffer.GetRef(), cmd.srcBuffer->GetRef(), cmd.dstImage->GetImage(), Conv(cmd.dstLayout), 1, &copyRegion);
 
     if (cmd.optionalCallback)
         buffer.AddExecutionFinishedCallback(std::move(cmd.optionalCallback));
@@ -253,9 +249,9 @@ static void RecordCommand(ImageToImageCopyCmd& cmd, CBufferVulkan& buffer)
 
     vkCmdCopyImage(buffer.GetRef(),
                    cmd.srcImage->GetImage(),
-                   VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                   Conv(cmd.srcLayout),
                    cmd.dstImage->GetImage(),
-                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                   Conv(cmd.dstLayout),
                    1,
                    &copyRegion);
 }

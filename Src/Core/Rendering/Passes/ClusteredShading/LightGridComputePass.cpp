@@ -6,7 +6,7 @@
 #include "Core/Rendering/Core/Shader.h"
 #include "Core/Rendering/Core/Defines/BindingSlots.h"
 #include "Core/Rendering/Core/Defines/GlobalBuffers.h"
-#include "Core/Rendering/Vulkan/Utils/VkDescriptorLayoutUtils.h"
+#include "Core/Rendering/Core/DescriptorUtils/DescriptorLayoutUtils.h"
 #include "Core/Rendering/Core/RenderGraph/PassContext.h"
 #include "Core/Rendering/Core/RenderGraph/RenderGraphBuilder.h"
 

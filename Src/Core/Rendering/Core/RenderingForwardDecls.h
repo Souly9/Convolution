@@ -26,8 +26,11 @@ class ShaderVulkan;
 
 class VkGPUTimingQuery;
 class QueryPoolVulkan;
+#elif defined(USE_METAL)
+#include "Core/Rendering/Metal/MtlForwardDecls.h"
+#endif
 
-// Type aliases - abstract API-specific types
+// API-agnostic templates and aliases
 // ...
 // Initial forward decl
 template<typename API>
@@ -109,15 +112,26 @@ using IndexBuffer = IndexBufferT<CurrentAPI>;
 
 using PSO = GraphicsPipelineT<CurrentAPI>;
 using ComputePipeline = ComputePipelineT<CurrentAPI>;
+
+// API-specific handle aliases
+#ifdef USE_VULKAN
 using GPUMemoryHandle = VmaAllocation;
 using GPUMappedMemoryHandle = void*;
 using RawSemaphoreHandle = VkSemaphore;
 using IndexedIndirectDrawCmd = VkDrawIndexedIndirectCommand;
 using QueryPool = QueryPoolVulkan;
+using TextureViewHandle = VkImageView;
 
 // Texture format macro
 #define TEXFORMAT(type) VK_FORMAT_##type
-#endif // USE_VULKAN
+#elif defined(USE_METAL)
+using GPUMemoryHandle = MTL::Heap*;
+using GPUMappedMemoryHandle = void*;
+using RawSemaphoreHandle = MTL::Event*;
+using IndexedIndirectDrawCmd = MtlDrawIndexedIndirectCommand;
+using QueryPool = QueryPoolMetal;
+using TextureViewHandle = MTL::Texture*;
+#endif
 
 // Note: Semaphore and Fence are defined via template pattern in Synchronization.h
 // Include Synchronization.h directly when those types are needed

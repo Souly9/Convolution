@@ -6,8 +6,8 @@
 #include "Core/Rendering/Core/Pipeline.h"
 #include "Core/Rendering/Passes/PassManager.h" // For MainPassData definition
 #include "Core/Rendering/Passes/Utils/RenderPassUtils.h"
-#include "Core/Rendering/Vulkan/Utils/VkDescriptorLayoutUtils.h"
-#include "Core/Rendering/Vulkan/VkShader.h"
+#include "Core/Rendering/Core/DescriptorUtils/DescriptorLayoutUtils.h"
+#include "Core/Rendering/Core/Shader.h"
 
 using namespace RenderPasses;
 ClusterDebugPass::ClusterDebugPass() : ConvolutionRenderPass("ClusterDebugPass")
@@ -41,11 +41,11 @@ void ClusterDebugPass::BuildBuffers()
     // 0-4, 1-5, 2-6, 3-7 (Sides)
     stltype::vector<u32> indices = {0, 1, 1, 2, 2, 3, 3, 0, 4, 5, 5, 6, 6, 7, 7, 4, 0, 4, 1, 5, 2, 6, 3, 7};
 
-    m_indexBuffer = IndexBufferVulkan(indices.size() * sizeof(u32));
+    m_indexBuffer = IndexBuffer(indices.size() * sizeof(u32));
     m_indexBuffer.FillImmediate(indices.data());
 
     // Create dummy vertex buffer
-    m_dummyVertexBuffer = VertexBufferVulkan(4); // 4 bytes, just to be valid
+    m_dummyVertexBuffer = VertexBuffer(4); // 4 bytes, just to be valid
     u32 dummyData = 0;
     m_dummyVertexBuffer.FillImmediate(&dummyData);
 

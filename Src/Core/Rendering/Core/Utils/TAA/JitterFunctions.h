@@ -16,15 +16,10 @@ inline float HaltonSequence(int index, int base)
     return result;
 }
 
-// Halton 2,3 gives a denser low-discrepancy pattern than the temporary 4-tap
-// box test while still staying in the standard sub-pixel [-0.5, 0.5] range.
-inline mathstl::Vector2 GenerateR2Jitter(int frameIndex, int numSamples = 32)
+// Halton(2,3) sub-pixel offset in [-0.5, 0.5], index 0 is skipped since it is (0, 0)
+inline mathstl::Vector2 GenerateHaltonJitter(u64 frameIndex, u32 phaseCount)
 {
-    const int sampleCount = numSamples > 0 ? numSamples : 8;
-    const int wrappedFrameIndex = ((frameIndex % sampleCount) + sampleCount) % sampleCount;
-    const int sequenceIndex = wrappedFrameIndex + 1;
-
-    const float x = HaltonSequence(sequenceIndex, 2) - 0.5f;
-    const float y = HaltonSequence(sequenceIndex, 3) - 0.5f;
-    return {x, y};
+    const u32 phases = phaseCount > 0 ? phaseCount : 1u;
+    const int sequenceIndex = static_cast<int>(frameIndex % phases) + 1;
+    return {HaltonSequence(sequenceIndex, 2) - 0.5f, HaltonSequence(sequenceIndex, 3) - 0.5f};
 }

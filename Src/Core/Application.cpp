@@ -2,8 +2,7 @@
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Rendering/Core/ShaderManager.h"
 #include "Core/Rendering/RenderLayer.h"
-#include "Core/Rendering/Vulkan/VkGlobals.h"
-#include "Core/Rendering/Vulkan/VkProfiler.h"
+#include "Core/Rendering/Backend/BackendGlobals.h"
 #include "Core/Rendering/Core/Utils/DeleteQueue.h"
 #include "Scenes/BistroExteriorScene.h"
 #include "Scenes/ClusteredLightingScene.h"
@@ -11,17 +10,20 @@
 #include "Scenes/SponzaScene.h"
 #include "StaticBehaviors/StaticBehaviorCollection.h"
 #include "TimeData.h"
-#include "vulkan/vulkan_core.h"
+#include "Core/Rendering/Core/StaticFunctions.h"
 #include <GLFW/glfw3.h>
+#include <filesystem>
 #include <imgui/backends/imgui_impl_glfw.h>
+#ifdef USE_VULKAN
 #include <imgui/backends/imgui_impl_vulkan.h>
+#endif
 #include <imgui/imgui.h>
 
 Application::Application(bool canRender, RenderLayer<RenderAPI>& layer)
     : m_renderThread(&m_imGuiManager, &layer.GetBackend())
 {
-    m_pProfiler = stltype::make_unique<VkProfiler>();
-    VkGlobals::SetProfiler(m_pProfiler.get());
+    m_pProfiler = stltype::make_unique<BackendProfiler>();
+    RenderGlobals::SetProfiler(m_pProfiler.get());
     g_pApplicationState = &m_applicationState;
 
     layer.InitRenderLayer(
@@ -41,7 +43,11 @@ Application::Application(bool canRender, RenderLayer<RenderAPI>& layer)
     g_pGlobalTimeData->Reset();
 
     FrameGlobals::SetFrameNumber(0);
-    m_applicationState.SetCurrentScene(stltype::make_unique<BistroExteriorScene>());
+    // Bistro is a local-only asset; fall back to Sponza when it isn't there
+    if (std::filesystem::exists("Resources/Models/BistroExterior.fbx"))
+        m_applicationState.SetCurrentScene(stltype::make_unique<BistroExteriorScene>());
+    else
+        m_applicationState.SetCurrentScene(stltype::make_unique<SponzaScene>());
     g_pShaderManager->ReadAllSourceShaders();
     m_applicationState.ProcessStateUpdates();
 
@@ -73,12 +79,12 @@ Application::~Application()
     g_imguiSemaphore.Post();
 
     m_renderThread.ShutdownThread();
-    vkDeviceWaitIdle(VkGlobals::GetLogicalDevice());
+    SRF::WaitForDeviceIdle<RenderAPI>();
 
     m_renderThread.CleanUp();
 
     m_pProfiler->Destroy();
-    VkGlobals::SetProfiler(nullptr);
+    RenderGlobals::SetProfiler(nullptr);
 
     g_pDeleteQueue->ForceEmptyQueue();
     m_imGuiManager.CleanUp();
@@ -118,7 +124,7 @@ void Application::Run()
         glfwPollEvents();
         g_pWindowManager->Update();
     }
-    vkDeviceWaitIdle(VkGlobals::GetLogicalDevice());
+    SRF::WaitForDeviceIdle<RenderAPI>();
 }
 
 void Application::Update(u32 currentFrame)

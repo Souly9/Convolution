@@ -114,21 +114,27 @@ STRUCTDECL(DirectionalLight)
 STRUCTEND()
 
 STRUCTDECL(SharedDataUBO)
+    // Per-frame view data (CPU copy feeds the upscalers); matrices are unjittered, ApplyFrameJitter adds the jitter
     STRUCTFIELD(mat4, view)
     STRUCTFIELD(mat4, projection)
     STRUCTFIELD(mat4, viewProjection)
     STRUCTFIELD(mat4, viewProjectionInverse)
     STRUCTFIELD(mat4, viewInverse)
     STRUCTFIELD(mat4, projectionInverse)
-    STRUCTFIELD(mat4, jitteredProjection)
-    STRUCTFIELD(mat4, jitteredViewProjectionInverse)
-    STRUCTFIELD(mat4, prevView)
-    STRUCTFIELD(mat4, prevProjection)
     STRUCTFIELD(mat4, prevViewProjection)
-    STRUCTFIELD(mat4, prevJitteredProjection)
+    // Unjittered clip space -> previous frame clip space
+    STRUCTFIELD(mat4, clipToPrevClip)
     STRUCTFIELD(vec4, viewPos)
     STRUCTFIELD(vec2, renderResolution)
+    STRUCTFIELD(vec2, outputResolution)
+    // Render pixels (+x right, +y down) the rasterized image is shifted by
     STRUCTFIELD(vec2, jitterOffset)
+    STRUCTFIELD(float, zNear)
+    STRUCTFIELD(float, zFar)
+    STRUCTFIELD(float, fovY)
+    STRUCTFIELD(float, aspectRatio)
+    // 1 when temporal history must be discarded this frame
+    STRUCTFIELD(uint, temporalReset)
 
     // CSM shadow parameters
     STRUCTFIELD_ARRAY(mat4, csmViewMatrices, 16)
@@ -155,11 +161,15 @@ layout(scalar, set = SharedDataUBOSet, binding = SharedDataUBOBindingSlot) unifo
     SharedDataUBO ubo;
 };
 
+// Jitter as an NDC offset (NDC +y is up, pixel +y is down)
+vec2 FrameJitterNdc()
+{
+    return ubo.jitterOffset * vec2(2.0, -2.0) / ubo.renderResolution;
+}
+
 vec4 ApplyFrameJitter(vec4 clipPos)
 {
-    vec2 jitterNdc = ubo.jitterOffset * 2.0 / ubo.renderResolution;
-    jitterNdc.y *= -1;
-    clipPos.xy += jitterNdc * clipPos.w;
+    clipPos.xy += FrameJitterNdc() * clipPos.w;
     return clipPos;
 }
 #endif

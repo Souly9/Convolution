@@ -522,7 +522,7 @@ void RenderGraph::ExecuteNode(u32 nodeIdx, CommandBuffer* pCmdBuffer, const Rend
 
 void RenderGraph::EmitSwapchainInit(CommandBuffer* pCmdBuffer, Texture* pSwapchainTexture, Semaphore* pImageAvailableSemaphore)
 {
-    if (pImageAvailableSemaphore && pImageAvailableSemaphore->GetRef() != VK_NULL_HANDLE)
+    if (pImageAvailableSemaphore && pImageAvailableSemaphore->GetRef() != nullptr)
     {
         pCmdBuffer->AddWaitSemaphore(pImageAvailableSemaphore);
         pCmdBuffer->SetWaitStages(SyncStages::COLOR_ATTACHMENT_OUTPUT);
@@ -553,7 +553,7 @@ void RenderGraph::EmitSwapchainPresent(CommandBuffer* pCmdBuffer, Texture* pSwap
         swapchainPresent.dstAccessMask = AccessFlags::NONE;
         pCmdBuffer->RecordCommand(swapchainPresent);
     }
-    if (pPresentSignalSemaphore && pPresentSignalSemaphore->GetRef() != VK_NULL_HANDLE)
+    if (pPresentSignalSemaphore && pPresentSignalSemaphore->GetRef() != nullptr)
     {
         pCmdBuffer->AddSignalSemaphore(pPresentSignalSemaphore);
     }

@@ -21,6 +21,9 @@ public:
 #ifdef USE_VULKAN
 #include "../Vulkan/VulkanTraits.h"
 #include "../Vulkan/VkDescriptorPool.h"
+#elif defined(USE_METAL)
+#include "Core/Rendering/Metal/MetalTraits.h"
+#include "Core/Rendering/Metal/MtlDescriptorPool.h"
 #endif
 
 template <typename API>

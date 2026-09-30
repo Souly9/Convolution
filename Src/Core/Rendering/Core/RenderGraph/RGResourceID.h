@@ -13,6 +13,7 @@ enum class RGResourceID : u32
     GBufferThisFrameColor,
     GBufferLastFrameDepth,
     TemporalResolve,
+    TAAHistory,
     GBufferPostAAColor,
     GBufferRoughness,
     GBufferEntityID,
@@ -46,6 +47,7 @@ inline const char* ToString(RGResourceID id)
         case RGResourceID::GBufferThisFrameColor: return "GBufferThisFrameColor";
         case RGResourceID::GBufferLastFrameDepth: return "GBufferLastFrameDepth";
         case RGResourceID::TemporalResolve: return "TemporalResolve";
+        case RGResourceID::TAAHistory: return "TAAHistory";
         case RGResourceID::GBufferPostAAColor: return "GBufferPostAAColor";
         case RGResourceID::GBufferRoughness: return "GBufferRoughness";
         case RGResourceID::GBufferEntityID: return "GBufferEntityID";

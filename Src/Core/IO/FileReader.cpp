@@ -35,7 +35,7 @@ void FileReader::FinishAllRequests()
 {
     while (m_requests.empty() == false)
     {
-        Sleep(1);
+        threadstl::ThreadSleep(1);
     }
     m_threadPool.WaitAll();
 }
@@ -52,7 +52,16 @@ void FileReader::CancelAllRequests()
 void FileReader::SubmitIORequest(const IORequest& request)
 {
     SimpleScopedGuard<CustomMutex> lock(m_requestSubmitMutex);
+#ifdef _WIN32
     m_requests.push(request);
+#else
+    // Some asset paths are written with Windows separators
+    IORequest normalized = request;
+    for (auto& c : normalized.filePath)
+        if (c == '\\')
+            c = '/';
+    m_requests.push(normalized);
+#endif
 }
 
 void FileReader::CheckIORequests()

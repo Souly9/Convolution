@@ -13,6 +13,8 @@ enum class BindlessType : u32
     GlobalTextures,
     GlobalArrayTextures,
     GlobalImages,
+    GlobalSampledTextures,
+    GlobalSamplers,
     GlobalMatrices,
     Custom // Just indicate the class itself will specify all binding slots and so on
 };
@@ -21,11 +23,15 @@ static inline stltype::hash_map<BindlessType, u32> s_BindlessTypeToSlot = {
     {BindlessType::GlobalTextures, s_globalBindlessTextureBufferBindingSlot},
     {BindlessType::GlobalArrayTextures, s_globalBindlessArrayTextureBufferBindingSlot},
     {BindlessType::GlobalImages, s_globalBindlessImageBufferBindingSlot},
+    {BindlessType::GlobalSampledTextures, s_globalBindlessSampledTextureBindingSlot},
+    {BindlessType::GlobalSamplers, s_globalSamplerBindingSlot},
     {BindlessType::GlobalMatrices, s_globalBindlessViewMatricesBufferBindingSlot}};
 static inline stltype::hash_map<BindlessType, u32> s_BindlessTypeToCount = {
     {BindlessType::GlobalTextures, MAX_BINDLESS_TEXTURES},
     {BindlessType::GlobalArrayTextures, MAX_BINDLESS_TEXTURES},
     {BindlessType::GlobalImages, MAX_BINDLESS_TEXTURES},
+    {BindlessType::GlobalSampledTextures, MAX_BINDLESS_TEXTURES},
+    {BindlessType::GlobalSamplers, GLOBAL_SAMPLER_COUNT},
     {BindlessType::GlobalMatrices, 1}};
 
 static inline DescriptorType ToDescriptorType(BindlessType type)
@@ -38,6 +44,10 @@ static inline DescriptorType ToDescriptorType(BindlessType type)
             return DescriptorType::BindlessTextures;
         case BindlessType::GlobalImages:
             return DescriptorType::BindlessImages;
+        case BindlessType::GlobalSampledTextures:
+            return DescriptorType::BindlessSampledImages;
+        case BindlessType::GlobalSamplers:
+            return DescriptorType::Samplers;
         case BindlessType::GlobalMatrices:
             return DescriptorType::UniformBuffer;
         default:
@@ -63,6 +73,10 @@ static inline bool IsBindless(DescriptorType type)
             return true;
         case DescriptorType::BindlessImages:
             return true;
+        case DescriptorType::BindlessSampledImages:
+            return true;
+        case DescriptorType::Samplers:
+            return false;
         default:
             DEBUG_ASSERT(false);
     }

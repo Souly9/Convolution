@@ -8,7 +8,7 @@
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
 #include "Core/Rendering/Passes/PassManager.h"
 #include "Defines/GlobalBuffers.h"
-#include "Core/Rendering/Vulkan/Utils/VkDescriptorLayoutUtils.h"
+#include "Core/Rendering/Core/DescriptorUtils/DescriptorLayoutUtils.h"
 #include "Utils/GeometryBufferBuildUtils.h"
 
 void SharedResourceManager::UploadDebugMesh(const Mesh& mesh, u32 thisFrame)

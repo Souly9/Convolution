@@ -196,7 +196,7 @@ void main()
         Material mat = globalObjectDataSSBO.materials[materialIdx];
         SurfaceParameters surface = BuildMaterialSurface(mat, uvMatData.xy, albedo * mat.baseColor.rgb);
 
-        vec3 worldPos = DepthToWorldSpace(uv, fragmentDepth, ubo.jitteredViewProjectionInverse).xyz;
+        vec3 worldPos = DepthToWorldSpace(uv, fragmentDepth, ubo.viewProjectionInverse).xyz;
         vec3 normal = normalize(normalData.xyz);
         vec3 viewDir = normalize(ubo.viewPos.xyz - worldPos);
 

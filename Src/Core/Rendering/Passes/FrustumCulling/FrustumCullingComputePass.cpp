@@ -3,7 +3,7 @@
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
 #include "Core/Rendering/Core/Defines/BindingSlots.h"
-#include "Core/Rendering/Vulkan/Utils/VkDescriptorLayoutUtils.h"
+#include "Core/Rendering/Core/DescriptorUtils/DescriptorLayoutUtils.h"
 #include "Core/Global/Profiling.h"
 
 using namespace RenderPasses;

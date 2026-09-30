@@ -9,6 +9,7 @@
 #include "../../../../Shaders/Globals/Types.h"
 
 class SharedResourceManager;
+struct SharedDataUBO;
 namespace RT
 {
 class RTSceneManager;
@@ -23,15 +24,13 @@ struct MainPassData
         bool recreatedThisFrame{false};
         mathstl::Vector2 renderResolution{};
         mathstl::Vector2 swapchainResolution{};
-        mathstl::Vector2 jitter{};
-        mathstl::Vector2 previousJitter{};
     };
 
     ::SharedResourceManager* pResourceManager{nullptr};
     PassManagerRenderState renderState{};
     RenderView mainView{};
-    mathstl::Matrix mainCamViewMatrix{};
-    mathstl::Matrix mainCamInvViewProj{};
+    // CPU copy of the view UBO for this frame
+    const ::SharedDataUBO* pViewData{nullptr};
     stltype::vector<CsmRenderView> csmViews;
     stltype::vector<RenderView> shadowViews;
     stltype::vector<DescriptorSet::Ptr> viewDescriptorSets;

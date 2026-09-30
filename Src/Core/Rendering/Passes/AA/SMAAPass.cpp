@@ -3,11 +3,12 @@
 #include "AreaTex.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Global/Profiling.h"
+#include "Core/Rendering/Core/AntiAliasing.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
 #include "Core/Rendering/Core/ShaderManager.h"
 #include "Core/Rendering/Core/SharedResourceManager.h"
 #include "Core/Rendering/Passes/PassManager.h"
-#include "Core/Rendering/Vulkan/VkTextureManager.h"
+#include "Core/Rendering/Core/TextureManager.h"
 #include "SearchTex.h"
 #include <DirectXMath.h>
 
@@ -108,8 +109,7 @@ void SMAAPass::BuildPipelines()
 
 bool SMAAPass::WantsToRender() const
 {
-    const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
-    return renderState.aaType == AntialiasingType::SMAA || renderState.aaType == AntialiasingType::TAA_SMAA;
+    return AA::Current().smaa;
 }
 
 void SMAAPass::CreateSharedDescriptorLayout()

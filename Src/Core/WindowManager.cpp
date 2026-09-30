@@ -1,4 +1,6 @@
+#ifdef USE_VULKAN
 #include <vulkan/vulkan.h>
+#endif
 #define GLFW_INCLUDE_VULKAN
 #include "./WindowManager.h"
 #include "Core/Events/EventSystem.h"
@@ -31,6 +33,10 @@ void FramebufferSizeCallback(GLFWwindow* pWindow, int width, int height)
 
 WindowManager::WindowManager(uint32_t width, uint32_t height, stltype::string_view title) : m_title{title}
 {
+#if defined(__APPLE__) && defined(USE_VULKAN)
+    // MoltenVK is linked directly; hand GLFW its entry point instead of letting it dlopen libvulkan
+    glfwInitVulkanLoader(vkGetInstanceProcAddr);
+#endif
     glfwInit();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);

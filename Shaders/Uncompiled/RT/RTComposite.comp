@@ -20,14 +20,14 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 void main()
 {
     ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
-    ivec2 renderResolution = imageSize(GlobalBindlessImages[nonuniformEXT(gbufferUBO.deferredLightingColorIdx)]);
+    ivec2 renderResolution = imageSize(GlobalBindlessImages[nonuniformEXT(gbufferUBO.sceneColorIdx)]);
     if (pixelCoord.x >= renderResolution.x || pixelCoord.y >= renderResolution.y)
         return;
 
     vec2 uv = (vec2(pixelCoord) + 0.5) / vec2(renderResolution);
 
     // 1. Sample deferred lighting color using imageLoad to avoid write-hazard on the same storage image
-    vec3 sceneColor = imageLoad(GlobalBindlessImages[nonuniformEXT(gbufferUBO.deferredLightingColorIdx)], pixelCoord).rgb;
+    vec3 sceneColor = imageLoad(GlobalBindlessImages[nonuniformEXT(gbufferUBO.sceneColorIdx)], pixelCoord).rgb;
 
     // 2. Sample RT outputs via push-constant indices
     float currentAO = 1.0;
@@ -84,5 +84,5 @@ void main()
         sceneColor += accumulated.rgb;
 
     imageStore(
-        GlobalBindlessImages[nonuniformEXT(gbufferUBO.deferredLightingColorIdx)], pixelCoord, vec4(sceneColor, 1.0));
+        GlobalBindlessImages[nonuniformEXT(gbufferUBO.sceneColorIdx)], pixelCoord, vec4(sceneColor, 1.0));
 }

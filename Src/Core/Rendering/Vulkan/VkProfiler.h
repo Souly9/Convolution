@@ -23,7 +23,11 @@ public:
             VK_QUERY_PIPELINE_STATISTIC_FRAGMENT_SHADER_INVOCATIONS_BIT |
             VK_QUERY_PIPELINE_STATISTIC_COMPUTE_SHADER_INVOCATIONS_BIT;
 
-        m_queryPool.Init(VK_QUERY_TYPE_PIPELINE_STATISTICS, 8192, stats);
+        // MoltenVK (Apple GPUs) has no pipeline statistics queries; leave the pool empty there
+        VkPhysicalDeviceFeatures features{};
+        vkGetPhysicalDeviceFeatures(VkGlobals::GetPhysicalDevice(), &features);
+        if (features.pipelineStatisticsQuery)
+            m_queryPool.Init(VK_QUERY_TYPE_PIPELINE_STATISTICS, 8192, stats);
         
         for(u32 i = 0; i < FRAMES_IN_FLIGHT; ++i)
             m_accumulatedStats[i] = {};
@@ -44,7 +48,8 @@ public:
         m_baseQueryIdx = m_currentQueryIdx;
         m_maxQueryIdx = m_baseQueryIdx + queriesPerFrame;
         
-        vkResetQueryPool(VkGlobals::GetLogicalDevice(), m_queryPool.GetRef(), m_baseQueryIdx, queriesPerFrame);
+        if (m_queryPool.GetRef() != VK_NULL_HANDLE)
+            vkResetQueryPool(VkGlobals::GetLogicalDevice(), m_queryPool.GetRef(), m_baseQueryIdx, queriesPerFrame);
 
         SimpleScopedGuard<CustomMutex> lock(m_statsMutex);
         m_accumulatedStats[slotIdx] = {};

@@ -28,6 +28,8 @@ void DescriptorPoolVulkan::Create(const DescriptorPoolCreateInfo& createInfo)
             CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, samplerCount));
         poolSizes.push_back(
             CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, storageImageCount));
+        poolSizes.push_back(CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, storageImageCount));
+        poolSizes.push_back(CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_SAMPLER, maxSets));
     }
     if (createInfo.enableStorageBufferDescriptors)
     {
@@ -224,6 +226,13 @@ void DescriptorSetVulkan::WriteAccelerationStructureUpdate(const AccelerationStr
     vkUpdateDescriptorSets(VK_LOGICAL_DEVICE, 1, &descriptorWrite, 0, nullptr);
 }
 
+static VkImageLayout GetSampledImageLayout(const TextureVulkan* pTex)
+{
+    const auto usage = (u32)pTex->GetInfo().usage;
+    const bool isDepthStencil = (usage & (u32)Usage::DepthAttachment) || (usage & (u32)Usage::StencilAttachment);
+    return isDepthStencil ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+}
+
 void DescriptorSetVulkan::WriteBindlessTextureUpdate(const TextureVulkan* pTex, u32 idx, u32 bindingSlot)
 {
     if (GetRef() == VK_NULL_HANDLE)
@@ -233,17 +242,7 @@ void DescriptorSetVulkan::WriteBindlessTextureUpdate(const TextureVulkan* pTex, 
     }
 
     VkDescriptorImageInfo imageInfo{};
-    
-    auto usage = pTex->GetInfo().usage;
-    if (((u32)usage & (u32)Usage::DepthAttachment) || ((u32)usage & (u32)Usage::StencilAttachment))
-    {
-        imageInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-    }
-    else
-    {
-        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    }
-    
+    imageInfo.imageLayout = GetSampledImageLayout(pTex);
     imageInfo.imageView = pTex->GetImageView();
     imageInfo.sampler = pTex->GetSampler();
 
@@ -257,6 +256,53 @@ void DescriptorSetVulkan::WriteBindlessTextureUpdate(const TextureVulkan* pTex, 
     descriptorWrite.pImageInfo = &imageInfo;
     descriptorWrite.pBufferInfo = nullptr;
     descriptorWrite.pTexelBufferView = nullptr;
+
+    vkUpdateDescriptorSets(VK_LOGICAL_DEVICE, 1, &descriptorWrite, 0, nullptr);
+}
+
+void DescriptorSetVulkan::WriteBindlessSampledImageUpdate(const TextureVulkan* pTex, u32 idx, u32 bindingSlot)
+{
+    if (GetRef() == VK_NULL_HANDLE)
+    {
+        DEBUG_LOG_ERR("DescriptorSetVulkan: Attempted WriteBindlessSampledImageUpdate on VK_NULL_HANDLE descriptor set");
+        return;
+    }
+
+    VkDescriptorImageInfo imageInfo{};
+    imageInfo.imageLayout = GetSampledImageLayout(pTex);
+    imageInfo.imageView = pTex->GetImageView();
+
+    VkWriteDescriptorSet descriptorWrite{};
+    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrite.dstSet = GetRef();
+    descriptorWrite.dstBinding = bindingSlot;
+    descriptorWrite.dstArrayElement = idx;
+    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    descriptorWrite.descriptorCount = 1;
+    descriptorWrite.pImageInfo = &imageInfo;
+
+    vkUpdateDescriptorSets(VK_LOGICAL_DEVICE, 1, &descriptorWrite, 0, nullptr);
+}
+
+void DescriptorSetVulkan::WriteSamplerUpdate(VkSampler sampler, u32 idx, u32 bindingSlot)
+{
+    if (GetRef() == VK_NULL_HANDLE)
+    {
+        DEBUG_LOG_ERR("DescriptorSetVulkan: Attempted WriteSamplerUpdate on VK_NULL_HANDLE descriptor set");
+        return;
+    }
+
+    VkDescriptorImageInfo samplerInfo{};
+    samplerInfo.sampler = sampler;
+
+    VkWriteDescriptorSet descriptorWrite{};
+    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrite.dstSet = GetRef();
+    descriptorWrite.dstBinding = bindingSlot;
+    descriptorWrite.dstArrayElement = idx;
+    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+    descriptorWrite.descriptorCount = 1;
+    descriptorWrite.pImageInfo = &samplerInfo;
 
     vkUpdateDescriptorSets(VK_LOGICAL_DEVICE, 1, &descriptorWrite, 0, nullptr);
 }

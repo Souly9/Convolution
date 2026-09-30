@@ -1,49 +1,34 @@
 #include "DLSSPass.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Global/LogDefines.h"
-#include "Core/Global/Utils/MathFunctions.h"
+#include "Core/Rendering/Core/AntiAliasing.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
-#include "Core/Rendering/Core/FrameTransitionRecorder.h"
 #include "Core/Rendering/Core/SharedResourceManager.h"
 #include "Core/Rendering/Passes/PassManager.h"
-#include "Core/Rendering/Core/Nvidia/StreamlineManager.h"
 #include "Core/Rendering/Vulkan/VkTexture.h"
-#include "Core/Rendering/Vulkan/VkTextureManager.h"
 #include "Core/Rendering/Vulkan/Utils/VkEnumHelpers.h"
 #include "Core/Rendering/Core/RenderGraph/RenderGraphBuilder.h"
-#include "sl.h"
-#include "sl_dlss.h"
+#include "Core/Rendering/Core/RenderGraph/RGExecutionContext.h"
 #include <cstring>
 
 using namespace RenderPasses;
+using SL = Nvidia::StreamlineManager;
+
 namespace
 {
-constexpr bool kForceStaticCameraDebug = false;
+// Velocity holds current minus previous NDC (+y up), Streamline wants current -> previous in UV units
+const mathstl::Vector2 kMotionVectorScale{-0.5f, 0.5f};
 
-struct StreamlineTagDesc
-{
-    sl::BufferType type{};
-    uint64_t native{};
-    uint64_t view{};
-    uint32_t width{};
-    uint32_t height{};
-    uint32_t nativeFormat{};
-    uint32_t usage{};
-    uint32_t state{};
-    uint32_t mipLevels{1};
-    uint32_t arrayLayers{1};
-};
-
+// Must match the layouts DLSSPass::Setup requests from the render graph
 uint32_t GetTaggedLayout(sl::BufferType type)
 {
     switch (type)
     {
+        case sl::kBufferTypeScalingInputColor:
         case sl::kBufferTypeScalingOutputColor:
             return static_cast<uint32_t>(Conv(ImageLayout::GENERAL));
         case sl::kBufferTypeDepth:
             return static_cast<uint32_t>(Conv(ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL));
-        case sl::kBufferTypeBackbuffer:
-            return static_cast<uint32_t>(Conv(ImageLayout::COLOR_ATTACHMENT_OPTIMAL));
         default:
             return static_cast<uint32_t>(Conv(ImageLayout::SHADER_READ_ONLY_OPTIMAL));
     }
@@ -51,38 +36,144 @@ uint32_t GetTaggedLayout(sl::BufferType type)
 
 void CopyMatrixToStreamline(sl::float4x4& dst, const mathstl::Matrix& src)
 {
-    static_assert(sizeof(sl::float4x4) == sizeof(float) * 16, "Unexpected Streamline matrix size");
     static_assert(sizeof(mathstl::Matrix) == sizeof(sl::float4x4), "mathstl::Matrix must match Streamline matrix ABI");
-
     std::memcpy(&dst, &src, sizeof(dst));
 }
 
-mathstl::Vector3 GetNormalizedOrFallback(mathstl::Vector3 value, const mathstl::Vector3& fallback)
+sl::float3 ToStreamline(mathstl::Vector3 v)
 {
-    if (value.LengthSquared() <= 0.0f)
-        return fallback;
-    value.Normalize();
-    return value;
+    v.Normalize();
+    return {v.x, v.y, v.z};
 }
 
-sl::DLSSMode ResolveDLSSModeForRenderScale(const mathstl::Vector2& renderResolution,
-                                           const mathstl::Vector2& swapchainResolution)
+sl::DLSSMode ResolveDLSSMode(u32 renderScalePercent)
 {
-    if (swapchainResolution.x <= 0.0f || renderResolution.x >= swapchainResolution.x)
+    if (renderScalePercent >= 100)
         return sl::DLSSMode::eDLAA;
-
-    const f32 upscalingPercentage = (renderResolution.x * 100.0f) / swapchainResolution.x;
-    if (upscalingPercentage >= 75)
+    if (renderScalePercent >= 75)
         return sl::DLSSMode::eMaxQuality;
-    if (upscalingPercentage >= 50)
+    if (renderScalePercent >= 50)
         return sl::DLSSMode::eMaxPerformance;
     return sl::DLSSMode::eUltraPerformance;
 }
+
+DLSSPass::TagDesc MakeTag(Texture* pTex, sl::BufferType type)
+{
+    DLSSPass::TagDesc desc{};
+    desc.type = type;
+    desc.state = GetTaggedLayout(type);
+    desc.nativeFormat = static_cast<uint32_t>(VK_FORMAT_R8G8B8A8_UNORM);
+
+    auto* pVkTex = static_cast<TextureVulkan*>(pTex);
+    if (!pVkTex || pVkTex->GetImage() == VK_NULL_HANDLE || pVkTex->GetImageView() == VK_NULL_HANDLE)
+        return desc;
+
+    const auto& info = pVkTex->GetInfo();
+    desc.native = reinterpret_cast<uint64_t>(pVkTex->GetImage());
+    desc.view = reinterpret_cast<uint64_t>(pVkTex->GetImageView());
+    desc.width = info.extents.x;
+    desc.height = info.extents.y;
+    desc.nativeFormat = static_cast<uint32_t>(Conv(info.format));
+    desc.usage = Conv(info.usage);
+    desc.mipLevels = info.mipLevels > 0 ? info.mipLevels : 1u;
+    desc.arrayLayers = info.extents.z > 0 ? info.extents.z : 1u;
+    return desc;
 }
 
-// ============================================================================
-// DLSSPass Implementation
-// ============================================================================
+sl::Constants BuildConstants(const ::SharedDataUBO& view, bool reset, const SL::DebugSettings& settings)
+{
+    sl::Constants constants{};
+    // Streamline requires jitter free matrices, the jitter goes into jitterOffset
+    CopyMatrixToStreamline(constants.cameraViewToClip, view.projection);
+    CopyMatrixToStreamline(constants.clipToCameraView, view.projectionInverse);
+    CopyMatrixToStreamline(constants.clipToLensClip, mathstl::Matrix::Identity);
+    CopyMatrixToStreamline(constants.clipToPrevClip, view.clipToPrevClip);
+    CopyMatrixToStreamline(constants.prevClipToClip, view.clipToPrevClip.Invert());
+
+    // Same convention ApplyFrameJitter rasterizes with; the flips only exist for A/B testing
+    constants.jitterOffset = {settings.flipJitterX ? -view.jitterOffset.x : view.jitterOffset.x,
+                              settings.flipJitterY ? -view.jitterOffset.y : view.jitterOffset.y};
+    const mathstl::Vector2 mvScale = settings.overrideMotionVectorScale ? settings.motionVectorScale : kMotionVectorScale;
+    constants.mvecScale = {mvScale.x, mvScale.y};
+    constants.cameraPinholeOffset = {0.0f, 0.0f};
+
+    // Rows of the inverse view matrix are the camera basis in world space
+    constants.cameraPos = {view.viewPos.x, view.viewPos.y, view.viewPos.z};
+    constants.cameraRight = ToStreamline(view.viewInverse.Right());
+    constants.cameraUp = ToStreamline(view.viewInverse.Up());
+    constants.cameraFwd = ToStreamline(view.viewInverse.Forward());
+    constants.cameraNear = view.zNear;
+    constants.cameraFar = view.zFar;
+    constants.cameraFOV = view.fovY;
+    constants.cameraAspectRatio = view.aspectRatio;
+
+    constants.motionVectorsInvalidValue = sl::INVALID_FLOAT;
+    constants.depthInverted = sl::Boolean::eTrue;
+    constants.cameraMotionIncluded = sl::Boolean::eTrue;
+    constants.motionVectors3D = sl::Boolean::eFalse;
+    constants.motionVectorsJittered = sl::Boolean::eFalse;
+    constants.reset = reset ? sl::Boolean::eTrue : sl::Boolean::eFalse;
+    return constants;
+}
+
+struct StreamlineTagStorage
+{
+    stltype::fixed_vector<sl::Resource, 16, false> resources;
+    stltype::fixed_vector<sl::ResourceTag, 16, false> tags;
+};
+StreamlineTagStorage s_tagStorage[FRAMES_IN_FLIGHT];
+
+void TagAndEvaluate(VkCommandBuffer cmd,
+                    const DLSSPass::TagList& tagDescs,
+                    StreamlineTagStorage& storage,
+                    const sl::FrameToken& frameToken,
+                    Nvidia::DLSSVariant variant)
+{
+    storage.resources.clear();
+    storage.tags.clear();
+    for (const auto& td : tagDescs)
+    {
+        const bool isNull = td.native == 0 && td.view == 0;
+        sl::Resource res(sl::ResourceType::eTex2d,
+                         isNull ? nullptr : reinterpret_cast<void*>(td.native),
+                         nullptr,
+                         isNull ? nullptr : reinterpret_cast<void*>(td.view),
+                         td.state);
+        res.nativeFormat = td.nativeFormat;
+        if (!isNull)
+        {
+            res.width = td.width;
+            res.height = td.height;
+            res.usage = td.usage;
+            res.mipLevels = td.mipLevels;
+            res.arrayLayers = td.arrayLayers;
+            res.flags = 0;
+        }
+        storage.resources.push_back(res);
+    }
+    for (size_t i = 0; i < storage.resources.size(); ++i)
+    {
+        const bool isNull = tagDescs[i].native == 0 && tagDescs[i].view == 0;
+        storage.tags.emplace_back(
+            isNull ? nullptr : &storage.resources[i], tagDescs[i].type, sl::ResourceLifecycle::eValidUntilPresent);
+    }
+
+    const sl::Result tagRes = SL::SetTagForFrame(frameToken,
+                                                 sl::ViewportHandle(0),
+                                                 storage.tags.data(),
+                                                 static_cast<u32>(storage.tags.size()),
+                                                 (sl::CommandBuffer*)cmd);
+    auto debugState = SL::GetDLSSDebugState();
+    debugState.lastTagResult = tagRes;
+    SL::SetDLSSDebugState(debugState);
+    if (tagRes != sl::Result::eOk)
+    {
+        DEBUG_LOG_WARNF("[DLSSPass] slSetTagForFrame failed with result: 0x{:X}", static_cast<u32>(tagRes));
+        return;
+    }
+    SL::Evaluate(variant, cmd, frameToken);
+}
+} // namespace
 
 DLSSPass::DLSSPass() : ConvolutionRenderPass("DLSSPass")
 {
@@ -98,284 +189,174 @@ void DLSSPass::Init(const SharedResourceManager& resourceManager)
 
 bool DLSSPass::WantsToRender() const
 {
-    const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
-    const bool dlssSupported = Nvidia::StreamlineManager::IsDLSSSupported();
-    if (!dlssSupported || renderState.aaType != AntialiasingType::DLSS)
-    {
-        m_wasActive = false;
-        return false;
-    }
-
-    const bool useRayReconstruction = Nvidia::StreamlineManager::IsDLSSRRSupported() &&
-                                      Nvidia::StreamlineManager::GetUseRayReconstructionThisFrame();
-
-    const bool wantsToRender = !useRayReconstruction;
-    if (!wantsToRender)
-        m_wasActive = false;
-    return wantsToRender;
+    return AA::Current().IsDLSS();
 }
 
 void DLSSPass::RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const RGExecutionContext& execCtx)
 {
     ScopedZone("DLSSPass::Render");
-    u32 frameIdx = ctx.currentFrame;
+    const AA::FrameConfig& aa = AA::Current();
+    const bool rayReconstruction = aa.temporal == AA::Temporal::DLSSRR;
+    const Nvidia::DLSSVariant variant =
+        rayReconstruction ? Nvidia::DLSSVariant::RayReconstruction : Nvidia::DLSSVariant::SuperResolution;
+    const SL::DebugSettings settings = SL::GetDebugSettings();
+    const ::SharedDataUBO& view = *data.pViewData;
+    CommandBuffer* pCmdBuffer = execCtx.pCmdBuffer;
 
     Texture* pColorIn = execCtx.GetTexture(RGResourceID::GBufferThisFrameColor);
     Texture* pColorOut = execCtx.GetTexture(RGResourceID::TemporalResolve);
     Texture* pDepth = execCtx.GetTexture(RGResourceID::MainDepth);
     Texture* pMotion = execCtx.GetTexture(RGResourceID::GBufferVelocity);
-    Texture* pExposure = execCtx.GetTexture(RGResourceID::DLSSExposure);
-
     if (!pColorIn || !pColorOut)
         return;
 
-    sl::FrameToken* pFrameToken = nullptr;
-    if (!Nvidia::StreamlineManager::GetFrameToken(frameIdx, pFrameToken) || !pDepth || !pMotion || !pExposure || !ctx.pCurrentSwapchainTexture)
-    {
-        FrameTransitionRecorder recorder{};
-        recorder.RecordCopyTextureToResolve(execCtx.pCmdBuffer, pColorOut, pColorIn);
-        return;
-    }
+    StartRenderPassProfilingScope(pCmdBuffer);
 
     const auto outputExtents = pColorOut->GetInfo().extents;
     const auto inputExtents = pColorIn->GetInfo().extents;
+    const sl::DLSSMode mode = ResolveDLSSMode(aa.renderScalePercent);
 
-    const sl::DLSSMode dlssMode =
-        ResolveDLSSModeForRenderScale(data.renderState.renderResolution, data.renderState.swapchainResolution);
-
-    if (!Nvidia::StreamlineManager::EnsureDLSSConfigured(outputExtents.x, outputExtents.y, dlssMode) ||
-        Nvidia::StreamlineManager::IsDLSSEvaluateBlocked())
-    {
-        FrameTransitionRecorder recorder{};
-        recorder.RecordCopyTextureToResolve(execCtx.pCmdBuffer, pColorOut, pColorIn);
-        return;
-    }
-
-    sl::ViewportHandle viewport(0);
-
-    stltype::fixed_vector<StreamlineTagDesc, 16> tagDescs;
-    auto pushTagDesc = [&](Texture* pTex, sl::BufferType type) {
-        if (!pTex)
-        {
-            return true;
-        }
-        TextureVulkan* pVkTex = static_cast<TextureVulkan*>(pTex);
-        if (pVkTex->GetImageView() == VK_NULL_HANDLE || pVkTex->GetImage() == VK_NULL_HANDLE)
-        {
-            return true;
-        }
-        StreamlineTagDesc desc{};
-        desc.type = type;
-        desc.native = reinterpret_cast<uint64_t>(pVkTex->GetImage());
-        desc.view = reinterpret_cast<uint64_t>(pVkTex->GetImageView());
-        desc.width = pVkTex->GetInfo().extents.x;
-        desc.height = pVkTex->GetInfo().extents.y;
-        desc.nativeFormat = static_cast<uint32_t>(Conv(pVkTex->GetInfo().format));
-        desc.usage = Conv(pVkTex->GetInfo().usage);
-        desc.state = static_cast<uint32_t>(GetTaggedLayout(type));
-        desc.mipLevels = pVkTex->GetInfo().mipLevels > 0 ? pVkTex->GetInfo().mipLevels : 1u;
-        desc.arrayLayers = pVkTex->GetInfo().extents.z > 0 ? pVkTex->GetInfo().extents.z : 1u;
-        if (desc.nativeFormat == 0)
-        {
-            DEBUG_LOG_WARNF("[DLSSPass] Texture format is UNDEFINED for BufferType %d, falling back to RGBA8", static_cast<int>(type));
-            desc.nativeFormat = static_cast<uint32_t>(VK_FORMAT_R8G8B8A8_UNORM);
-        }
-        tagDescs.push_back(desc);
-        return true;
-    };
-
-    bool tagsOk = pushTagDesc(pColorIn, sl::kBufferTypeScalingInputColor) &&
-                  pushTagDesc(pColorOut, sl::kBufferTypeScalingOutputColor) &&
-                  pushTagDesc(pDepth, sl::kBufferTypeDepth) &&
-                  pushTagDesc(pMotion, sl::kBufferTypeMotionVectors);
-
-    if (!tagsOk)
-    {
-        FrameTransitionRecorder recorder{};
-        recorder.RecordCopyTextureToResolve(execCtx.pCmdBuffer, pColorOut, pColorIn);
-        return;
-    }
-
-    // Camera constants
-    sl::Constants slConst{};
-    const auto& cameraData = ctx.cameraData;
-    const mathstl::Matrix clipToPrevClip =
-        kForceStaticCameraDebug ? mathstl::Matrix::Identity : cameraData.clipToPrevClip;
-    const mathstl::Matrix prevClipToClip =
-        kForceStaticCameraDebug ? mathstl::Matrix::Identity : cameraData.prevClipToClip;
-
-    const mathstl::Vector2 streamlineJitter = cameraData.jitterOffset;
-
-    mathstl::Matrix jitteredProj = cameraData.viewToClip;
-    if (data.renderState.renderResolution.x > 0.0f && data.renderState.renderResolution.y > 0.0f)
-    {
-        jitteredProj.m[2][0] += streamlineJitter.x * 2.0f / data.renderState.renderResolution.x;
-        jitteredProj.m[2][1] += streamlineJitter.y * -2.0f / data.renderState.renderResolution.y;
-    }
-
-    CopyMatrixToStreamline(slConst.cameraViewToClip, jitteredProj);
-    CopyMatrixToStreamline(slConst.clipToCameraView, cameraData.clipToView);
-    CopyMatrixToStreamline(slConst.clipToLensClip, mathstl::Matrix::Identity);
-    CopyMatrixToStreamline(slConst.clipToPrevClip, clipToPrevClip);
-    CopyMatrixToStreamline(slConst.prevClipToClip, prevClipToClip);
-
-    slConst.jitterOffset = {streamlineJitter.x, streamlineJitter.y};
-    slConst.mvecScale = {1.0f, -1.0f};
-    slConst.cameraPinholeOffset = {0.0f, 0.0f};
-    const mathstl::Vector3 streamlineCameraUp =
-        GetNormalizedOrFallback(cameraData.up, mathstl::Vector3::Up);
-    const mathstl::Vector3 streamlineCameraRight =
-        GetNormalizedOrFallback(cameraData.right, mathstl::Vector3::Right);
-    const mathstl::Vector3 streamlineCameraForward =
-        GetNormalizedOrFallback(cameraData.forward, mathstl::Vector3::Forward);
-    slConst.cameraPos = {cameraData.position.x, cameraData.position.y, cameraData.position.z};
-    slConst.cameraUp = {streamlineCameraUp.x, streamlineCameraUp.y, streamlineCameraUp.z};
-    slConst.cameraRight = {streamlineCameraRight.x, streamlineCameraRight.y, streamlineCameraRight.z};
-    slConst.cameraFwd = {streamlineCameraForward.x, streamlineCameraForward.y, streamlineCameraForward.z};
-    slConst.cameraNear = cameraData.nearPlane;
-    slConst.cameraFar = cameraData.farPlane;
-    slConst.cameraFOV = cameraData.fovRadians;
-    slConst.cameraAspectRatio = cameraData.aspectRatio;
-    slConst.motionVectorsInvalidValue = sl::INVALID_FLOAT;
-    slConst.depthInverted = sl::Boolean::eTrue;
-    slConst.cameraMotionIncluded = sl::Boolean::eTrue;
-    slConst.motionVectors3D = sl::Boolean::eFalse;
-    const bool shouldReset =
-        !m_wasActive || data.renderState.recreatedThisFrame || Nvidia::StreamlineManager::ConsumeDLSSResetFlag();
-    slConst.reset = shouldReset ? sl::Boolean::eTrue : sl::Boolean::eFalse;
-    slConst.motionVectorsJittered = sl::Boolean::eFalse;
-
-    auto debugState = Nvidia::StreamlineManager::GetDLSSDebugState();
-    debugState.streamlineInitialized = Nvidia::StreamlineManager::IsAvailable();
+    auto debugState = SL::GetDLSSDebugState();
+    debugState.variant = variant;
     debugState.inputWidth = inputExtents.x;
     debugState.inputHeight = inputExtents.y;
     debugState.outputWidth = outputExtents.x;
     debugState.outputHeight = outputExtents.y;
-    debugState.jitter = streamlineJitter;
-    debugState.motionVectorScale = mathstl::Vector2(slConst.mvecScale.x, slConst.mvecScale.y);
-    debugState.nearPlane = cameraData.nearPlane;
-    debugState.farPlane = cameraData.farPlane;
-    debugState.fovRadians = cameraData.fovRadians;
-    debugState.aspectRatio = cameraData.aspectRatio;
-    debugState.cameraMotionIncluded = slConst.cameraMotionIncluded == sl::Boolean::eTrue;
-    debugState.motionVectorsJittered = slConst.motionVectorsJittered == sl::Boolean::eTrue;
-    debugState.depthInverted = slConst.depthInverted == sl::Boolean::eTrue;
-    debugState.lastSetConstantsResult = sl::Result::eOk;
-    debugState.lastTagResult = sl::Result::eOk;
-    debugState.lastEvaluateResult = sl::Result::eOk;
+    debugState.nearPlane = view.zNear;
+    debugState.farPlane = view.zFar;
+    debugState.fovRadians = view.fovY;
+    debugState.aspectRatio = view.aspectRatio;
 
-    sl::DLSSState dlssState{};
-    if (Nvidia::StreamlineManager::GetDLSSState(dlssState))
-    {
-        debugState.estimatedVRAMUsageInBytes = dlssState.estimatedVRAMUsageInBytes;
-    }
-
-    Nvidia::StreamlineManager::SetDLSSDebugState(debugState);
-
-    ExecuteNativeCmd streamlineCmd{};
     const u32 frameSlot = ctx.currentFrame;
-    streamlineCmd.callback = [tagDescs, pFrameToken, frameSlot](void* pNativeCmdBuf) mutable {
-        VkCommandBuffer cmd = reinterpret_cast<VkCommandBuffer>(pNativeCmdBuf);
-        sl::ViewportHandle viewportHandle(0);
-        if (!pFrameToken)
-            return;
+    sl::FrameToken* pFrameToken = nullptr;
+    const bool canEvaluate = !settings.bypass && pDepth && pMotion && SL::GetFrameToken(frameSlot, pFrameToken) &&
+                             SL::EnsureConfigured(variant, outputExtents.x, outputExtents.y, mode, view.view, view.viewInverse) &&
+                             !SL::IsEvaluateBlocked(variant);
 
-        static struct {
-            stltype::fixed_vector<sl::Resource, 16> resources;
-            stltype::fixed_vector<sl::ResourceTag, 16> tags;
-        } s_slData[SWAPCHAIN_IMAGES];
-
-        auto& frameData = s_slData[frameSlot];
-        frameData.resources.clear();
-        frameData.tags.clear();
-        frameData.resources.reserve(tagDescs.size());
-        frameData.tags.reserve(tagDescs.size());
-
-        for (const auto& td : tagDescs)
-        {
-            if (td.native == 0 && td.view == 0)
-            {
-                sl::Resource nullRes(
-                    sl::ResourceType::eTex2d,
-                    nullptr,
-                    nullptr,
-                    nullptr,
-                    td.state
-                );
-                nullRes.nativeFormat = static_cast<uint32_t>(VK_FORMAT_R8G8B8A8_UNORM);
-                frameData.resources.push_back(nullRes);
-            }
-            else
-            {
-                sl::Resource res(
-                    sl::ResourceType::eTex2d,
-                    reinterpret_cast<void*>(td.native),
-                    nullptr,
-                    reinterpret_cast<void*>(td.view),
-                    td.state
-                );
-                res.width = td.width;
-                res.height = td.height;
-                res.nativeFormat = td.nativeFormat;
-                res.usage = td.usage;
-                res.mipLevels = td.mipLevels;
-                res.arrayLayers = td.arrayLayers;
-                res.flags = 0;
-
-                frameData.resources.push_back(res);
-            }
-        }
-
-        for (size_t i = 0; i < frameData.resources.size(); ++i)
-        {
-            const bool isNull = (tagDescs[i].native == 0 && tagDescs[i].view == 0);
-            frameData.tags.emplace_back(isNull ? nullptr : &frameData.resources[i], tagDescs[i].type, sl::ResourceLifecycle::eValidUntilPresent);
-        }
-
-        const sl::Result tagRes =
-            Nvidia::StreamlineManager::SetTagForFrame(*pFrameToken,
-                                                      viewportHandle,
-                                                      frameData.tags.data(),
-                                                      static_cast<u32>(frameData.tags.size()),
-                                                      (sl::CommandBuffer*)cmd);
-        auto debugState = Nvidia::StreamlineManager::GetDLSSDebugState();
-        debugState.lastTagResult = tagRes;
-        Nvidia::StreamlineManager::SetDLSSDebugState(debugState);
-        if (tagRes != sl::Result::eOk)
-        {
-            DEBUG_LOG_WARNF("[DLSSPass] slSetTagForFrame failed with result: 0x{:X}", static_cast<u32>(tagRes));
-            return;
-        }
-
-        Nvidia::StreamlineManager::EvaluateDLSS(cmd, *pFrameToken);
-    };
-
-    StartRenderPassProfilingScope(execCtx.pCmdBuffer);
-    const sl::Result constRes = Nvidia::StreamlineManager::SetConstants(slConst, *pFrameToken, viewport);
-    debugState = Nvidia::StreamlineManager::GetDLSSDebugState();
-    debugState.lastSetConstantsResult = constRes;
-    Nvidia::StreamlineManager::SetDLSSDebugState(debugState);
-    if (constRes != sl::Result::eOk)
+    sl::Result constRes = sl::Result::eOk;
+    Texture* pExposure = nullptr;
+    bool reset = false;
+    if (canEvaluate)
     {
-        DEBUG_LOG_WARNF("[DLSSPass] slSetConstants failed with result: 0x{:X}", static_cast<u32>(constRes));
-        FrameTransitionRecorder recorder{};
-        recorder.RecordCopyTextureToResolve(execCtx.pCmdBuffer, pColorOut, pColorIn);
-        EndRenderPassProfilingScope(execCtx.pCmdBuffer);
-        return;
+        // Filled by DLSSExposurePass earlier in the graph
+        pExposure = settings.useExposureTexture ? execCtx.GetTexture(RGResourceID::DLSSExposure) : nullptr;
+
+        TagList& tags = m_tags[frameSlot];
+        tags.clear();
+        tags.push_back(MakeTag(pColorIn, sl::kBufferTypeScalingInputColor));
+        tags.push_back(MakeTag(pColorOut, sl::kBufferTypeScalingOutputColor));
+        tags.push_back(MakeTag(pDepth, sl::kBufferTypeDepth));
+        tags.push_back(MakeTag(pMotion, sl::kBufferTypeMotionVectors));
+        if (pExposure)
+            tags.push_back(MakeTag(pExposure, sl::kBufferTypeExposure));
+        if (rayReconstruction)
+        {
+            Texture* pAlbedo = execCtx.GetTexture(RGResourceID::GBufferAlbedo);
+            Texture* pNoisyReflections = execCtx.GetTexture(RGResourceID::RTReflections);
+            tags.push_back(MakeTag(pAlbedo, sl::kBufferTypeAlbedo));
+            tags.push_back(MakeTag(pAlbedo, sl::kBufferTypeSpecularAlbedo));
+            tags.push_back(MakeTag(execCtx.GetTexture(RGResourceID::GBufferNormal), sl::kBufferTypeNormals));
+            tags.push_back(MakeTag(execCtx.GetTexture(RGResourceID::GBufferRoughness), sl::kBufferTypeRoughness));
+            tags.push_back(MakeTag(pNoisyReflections, sl::kBufferTypeSpecularHitNoisy));
+            tags.push_back(MakeTag(pNoisyReflections, sl::kBufferTypeDiffuseHitNoisy));
+        }
+
+        const bool uiReset = settings.resetGeneration != m_lastResetGeneration;
+        reset = aa.temporalReset || !m_evaluatedLastFrame || uiReset || SL::ConsumeResetFlag(variant);
+        const sl::Constants constants = BuildConstants(view, reset, settings);
+        constRes = SL::SetConstants(constants, *pFrameToken, sl::ViewportHandle(0));
+        debugState.jitter = mathstl::Vector2(constants.jitterOffset.x, constants.jitterOffset.y);
+        debugState.motionVectorScale = mathstl::Vector2(constants.mvecScale.x, constants.mvecScale.y);
+        if (constRes != sl::Result::eOk)
+            DEBUG_LOG_WARNF("[DLSSPass] slSetConstants failed with result: 0x{:X}", static_cast<u32>(constRes));
     }
-    m_wasActive = true;
-    execCtx.pCmdBuffer->RecordCommand(streamlineCmd);
-    EndRenderPassProfilingScope(execCtx.pCmdBuffer);
+    m_lastResetGeneration = settings.resetGeneration;
+
+    const bool evaluate = canEvaluate && constRes == sl::Result::eOk;
+    debugState.lastSetConstantsResult = constRes;
+    debugState.bypassed = !evaluate;
+    debugState.reset = reset;
+    debugState.exposureTextureTagged = evaluate && pExposure != nullptr;
+    SL::SetDLSSDebugState(debugState);
+
+    if (evaluate)
+    {
+        ExecuteNativeCmd evaluateCmd{};
+        const TagList* pTags = &m_tags[frameSlot];
+        evaluateCmd.callback = [pTags, pFrameToken, frameSlot, variant](void* pNativeCmdBuf)
+        { TagAndEvaluate(reinterpret_cast<VkCommandBuffer>(pNativeCmdBuf), *pTags, s_tagStorage[frameSlot], *pFrameToken, variant); };
+        pCmdBuffer->RecordCommand(evaluateCmd);
+    }
+    else
+    {
+        // Both images are in GENERAL for this node; a smaller input lands in the top-left corner (no blit on compute)
+        ImageToImageCopyCmd passthrough(pColorIn, pColorOut);
+        passthrough.srcLayout = ImageLayout::GENERAL;
+        passthrough.dstLayout = ImageLayout::GENERAL;
+        pCmdBuffer->RecordCommand(passthrough);
+    }
+    m_evaluatedLastFrame = evaluate;
+
+    EndRenderPassProfilingScope(pCmdBuffer);
 }
 
 void DLSSPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
 {
-    builder.ReadTexture(RGResourceID::GBufferThisFrameColor, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    // GENERAL + transfer access so either DLSS or the bypass copy can run without extra barriers
+    builder.ReadTexture(RGResourceID::GBufferThisFrameColor,
+                        SyncStages::COMPUTE_SHADER | SyncStages::TRANSFER,
+                        AccessFlags::SHADER_READ | AccessFlags::TRANSFER_READ,
+                        ImageLayout::GENERAL);
     builder.ReadTexture(RGResourceID::MainDepth, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
     builder.ReadTexture(RGResourceID::GBufferVelocity, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
     builder.ReadTexture(RGResourceID::DLSSExposure, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
+    if (AA::Current().temporal == AA::Temporal::DLSSRR)
+    {
+        builder.ReadTexture(RGResourceID::GBufferNormal, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+        builder.ReadTexture(RGResourceID::GBufferRoughness, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+        builder.ReadTexture(RGResourceID::GBufferAlbedo, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+        builder.ReadTexture(RGResourceID::RTReflections, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    }
+
     auto resolve = builder.DeclareStorageTexture(RGResourceID::TemporalResolve, TexFormat::R16G16B16A16_FLOAT, RGSizeClass::OutputResolution);
-    builder.WriteStorageImage(resolve, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_WRITE);
+    builder.WriteStorageImage(resolve,
+                              SyncStages::COMPUTE_SHADER | SyncStages::TRANSFER,
+                              AccessFlags::SHADER_WRITE | AccessFlags::TRANSFER_WRITE);
     builder.SetHasSideEffects();
+}
+
+DLSSExposurePass::DLSSExposurePass() : ConvolutionRenderPass("DLSSExposurePass")
+{
+}
+
+bool DLSSExposurePass::WantsToRender() const
+{
+    return AA::Current().IsDLSS() && SL::GetDebugSettings().useExposureTexture;
+}
+
+void DLSSExposurePass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
+{
+    auto exposure = builder.DeclareStorageTexture(RGResourceID::DLSSExposure, TexFormat::R32_FLOAT, RGSizeClass::Fixed);
+    builder.WriteStorageImage(exposure, SyncStages::TRANSFER, AccessFlags::TRANSFER_WRITE);
+    builder.SetHasSideEffects();
+}
+
+void DLSSExposurePass::RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const RGExecutionContext& execCtx)
+{
+    ScopedZone("DLSSExposurePass::Render");
+    Texture* pExposure = execCtx.GetTexture(RGResourceID::DLSSExposure);
+    if (!pExposure)
+        return;
+
+    // DLSS applies it the way the composite applies ubo.exposure before tonemapping
+    const f32 exposure = g_pApplicationState->GetCurrentApplicationState().renderState.exposure;
+    StagingBuffer& staging = m_staging[ctx.currentFrame];
+    staging.EnsureCapacity(sizeof(f32));
+    staging.CopyToMapped(&exposure, sizeof(exposure));
+
+    ImageBufferCopyCmd copyExposure(&staging, pExposure);
+    copyExposure.imageExtent = {1, 1, 1};
+    copyExposure.dstLayout = ImageLayout::GENERAL;
+    execCtx.pCmdBuffer->RecordCommand(copyExposure);
 }

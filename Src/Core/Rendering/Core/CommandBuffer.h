@@ -238,6 +238,8 @@ struct ImageBufferCopyCmd : public CopyBaseCmd
     u32 mipLevel{0};
     u32 baseArrayLayer{0};
     u32 layerCount{1};
+    // Layout the image is in during the copy (GENERAL when the render graph owns the transition)
+    ImageLayout dstLayout{ImageLayout::TRANSFER_DST_OPTIMAL};
 
     ImageBufferCopyCmd(GenericBuffer::Ptr src, Texture::Ptr dst) : CopyBaseCmd(src), dstImage(dst)
     {
@@ -255,6 +257,9 @@ struct ImageToImageCopyCmd : public CommandBase
     u32 srcBaseLayer{0};
     u32 dstBaseLayer{0};
     u32 layerCount{1};
+    // Layouts during the copy (GENERAL when the render graph owns the transitions)
+    ImageLayout srcLayout{ImageLayout::TRANSFER_SRC_OPTIMAL};
+    ImageLayout dstLayout{ImageLayout::TRANSFER_DST_OPTIMAL};
 
     ImageToImageCopyCmd(Texture::Ptr src, Texture::Ptr dst) : srcImage(src), dstImage(dst)
     {
@@ -591,6 +596,9 @@ protected:
 #ifdef USE_VULKAN
 #include "Core/Rendering/Vulkan/VulkanTraits.h"
 #include "Core/Rendering/Vulkan/VkCommandBuffer.h"
+#elif defined(USE_METAL)
+#include "Core/Rendering/Metal/MetalTraits.h"
+#include "Core/Rendering/Metal/MtlCommandBuffer.h"
 #endif
 
 template <typename API>

@@ -4,7 +4,7 @@
 #include "Core/Global/Profiling.h"
 #include "Core/Rendering/Core/TextureManager.h"
 #include "Core/Rendering/Core/Utils/DeleteQueue.h"
-#include "Core/Rendering/Vulkan/VkGlobals.h"
+#include "Core/Rendering/Backend/BackendGlobals.h"
 
 RGResourceRegistry::~RGResourceRegistry()
 {
@@ -32,6 +32,7 @@ static TexFormat GetDefaultFormatForRGResourceID(RGResourceID id)
         case RGResourceID::GBufferLastFrameDepth:
             return TexFormat::D32_SFLOAT;
         case RGResourceID::TemporalResolve:
+        case RGResourceID::TAAHistory:
             return TexFormat::R16G16B16A16_FLOAT;
         case RGResourceID::GBufferPostAAColor:
             return TexFormat::R16G16B16A16_FLOAT;
@@ -51,6 +52,8 @@ static TexFormat GetDefaultFormatForRGResourceID(RGResourceID id)
             return TexFormat::R8G8_UNORM;
         case RGResourceID::SMAABlend:
             return TexFormat::R8G8B8A8_UNORM;
+        case RGResourceID::DLSSExposure:
+            return TexFormat::R32_FLOAT;
         case RGResourceID::Swapchain:
             return SWAPCHAIN_FORMAT;
         case RGResourceID::CSMShadowMap:
@@ -104,7 +107,7 @@ RGResourceHandle RGResourceRegistry::DeclareResource(const RGResourceSpec& spec)
     {
         finalSpec.usage |= Usage::DepthAttachment | Usage::Sampled;
     }
-    if (finalSpec.id == RGResourceID::GBufferVelocity || finalSpec.id == RGResourceID::TemporalResolve)
+    if (finalSpec.id == RGResourceID::GBufferVelocity || finalSpec.id == RGResourceID::TAAHistory)
     {
         finalSpec.SetIsPingPong(true);
     }
@@ -504,13 +507,15 @@ void RGResourceRegistry::FreeAll()
         g_pTexManager->FreeTexture(m_shadowMap.handle);
         m_shadowMap.handle = 0;
     }
+#ifdef USE_VULKAN
     for (const auto view : m_shadowMap.cascadeViews)
     {
         if (view != VK_NULL_HANDLE)
         {
-            vkDestroyImageView(VkGlobals::GetLogicalDevice(), view, nullptr);
+            vkDestroyImageView(RenderGlobals::GetLogicalDevice(), view, nullptr);
         }
     }
+#endif
     m_shadowMap.cascadeViews.clear();
 }
 
@@ -617,10 +622,9 @@ RenderAttachmentInfo RGResourceRegistry::GetReadOnlyDepthAttachment(RGResourceID
 
 #include "Core/Rendering/Core/Defines/DescriptorLayoutDefines.h"
 #include "Core/Rendering/Core/Defines/GlobalBuffers.h"
-#include "Core/Rendering/Core/FrameResourceManager.h"
-#include "Core/Rendering/Core/Utils/DeleteQueue.h"
+#ifdef USE_VULKAN
 #include "Core/Rendering/Vulkan/Utils/VkEnumHelpers.h"
-#include "Core/Rendering/Vulkan/VkGlobals.h"
+#endif
 #include <cstring>
 
 void RGResourceRegistry::DeclareEngineResources()
@@ -672,13 +676,15 @@ void RGResourceRegistry::DeclareEngineResources()
     Declare(RGResourceID::GBufferDebug,
             RGSizeClass::RenderResolution,
             Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
+    // TransferSrc for the DLSS bypass/fallback copy
     Declare(RGResourceID::GBufferThisFrameColor,
             RGSizeClass::RenderResolution,
-            Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
+            Usage::ColorAttachment | Usage::Sampled | Usage::Storage | Usage::TransferSrc);
+    // Upscaler output; TAA keeps its own ping-pong history
     Declare(RGResourceID::TemporalResolve,
             RGSizeClass::OutputResolution,
-            Usage::ColorAttachment | Usage::Sampled | Usage::Storage | Usage::TransferDst,
-            true);
+            Usage::ColorAttachment | Usage::Sampled | Usage::Storage | Usage::TransferDst);
+    Declare(RGResourceID::TAAHistory, RGSizeClass::OutputResolution, Usage::Sampled | Usage::Storage, true);
     Declare(RGResourceID::GBufferPostAAColor,
             RGSizeClass::OutputResolution,
             Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
@@ -730,12 +736,10 @@ void RGResourceRegistry::DeclareEngineResources()
     Declare(RGResourceID::RTAOOutput, RGSizeClass::RenderResolution, Usage::Storage | Usage::Sampled);
     Declare(RGResourceID::RTReflections, RGSizeClass::RenderResolution, Usage::Storage | Usage::Sampled);
     Declare(RGResourceID::RTAccumulation, RGSizeClass::RenderResolution, Usage::Storage | Usage::Sampled, true);
-    Declare(RGResourceID::DLSSExposure, RGSizeClass::Fixed, Usage::Sampled | Usage::TransferDst, false, {1.0f, 1.0f});
+    Declare(RGResourceID::DLSSExposure, RGSizeClass::Fixed, Usage::Sampled | Usage::Storage | Usage::TransferDst, false, {1.0f, 1.0f});
 }
 
-void RGResourceRegistry::RecreateShadowMap(u32 cascades,
-                                           const mathstl::Vector2& extents,
-                                           RenderPasses::FrameResourceManager& frameResourceManager)
+void RGResourceRegistry::RecreateShadowMap(u32 cascades, const mathstl::Vector2& extents)
 {
     const TextureHandle oldHandle = m_shadowMap.handle;
     auto oldCascadeViews = stltype::move(m_shadowMap.cascadeViews);
@@ -744,13 +748,15 @@ void RGResourceRegistry::RecreateShadowMap(u32 cascades,
         g_pDeleteQueue->RegisterDeleteForNextFrame(
             [oldHandle, oldCascadeViews = stltype::move(oldCascadeViews)]() mutable
             {
+#ifdef USE_VULKAN
                 for (const auto view : oldCascadeViews)
                 {
                     if (view != VK_NULL_HANDLE)
                     {
-                        vkDestroyImageView(VkGlobals::GetLogicalDevice(), view, nullptr);
+                        vkDestroyImageView(RenderGlobals::GetLogicalDevice(), view, nullptr);
                     }
                 }
+#endif
 
                 if (oldHandle != 0)
                 {
@@ -773,7 +779,8 @@ void RGResourceRegistry::RecreateShadowMap(u32 cascades,
     m_shadowMap.pTexture = static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(req));
     m_shadowMap.bindlessHandle = g_pTexManager->MakeTextureBindless(req.handle, true);
 
-    m_shadowMap.cascadeViews.resize(cascades, VK_NULL_HANDLE);
+    m_shadowMap.cascadeViews.resize(cascades, nullptr);
+#ifdef USE_VULKAN
     for (u32 i = 0; i < cascades; ++i)
     {
         VkImageViewCreateInfo viewInfo{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
@@ -785,10 +792,9 @@ void RGResourceRegistry::RecreateShadowMap(u32 cascades,
         viewInfo.subresourceRange.levelCount = 1;
         viewInfo.subresourceRange.baseArrayLayer = i;
         viewInfo.subresourceRange.layerCount = 1;
-        vkCreateImageView(VkGlobals::GetLogicalDevice(), &viewInfo, nullptr, &m_shadowMap.cascadeViews[i]);
+        vkCreateImageView(RenderGlobals::GetLogicalDevice(), &viewInfo, nullptr, &m_shadowMap.cascadeViews[i]);
     }
-
-    UBO::ShadowMapUBO shadowMapUBO{};
-    shadowMapUBO.directionalShadowMapIdx = m_shadowMap.bindlessHandle;
-    std::memcpy(frameResourceManager.GetMappedShadowMapUBO(), &shadowMapUBO, sizeof(shadowMapUBO));
+#else
+    // TODO(Metal): per-cascade views via MTL::Texture::newTextureView
+#endif
 }

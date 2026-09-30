@@ -22,5 +22,7 @@ enum class DescriptorType
     AccelerationStructure,
     CombinedImageSampler,
     BindlessTextures,
-    BindlessImages
+    BindlessImages,
+    BindlessSampledImages,
+    Samplers
 };

@@ -9,6 +9,7 @@
 #include "Core/Rendering/Vulkan/VkTextureManager.h"
 #include "Core/Rendering/Vulkan/VkGlobals.h"
 #include "Core/Rendering/Vulkan/Utils/VkEnumHelpers.h"
+#include "Core/Rendering/Core/AntiAliasing.h"
 #include "Core/Rendering/Core/RenderGraph/RenderGraphBuilder.h"
 #include <cstring>
 
@@ -51,11 +52,7 @@ void XeSSPass::Init(const SharedResourceManager& resourceManager)
 
 bool XeSSPass::WantsToRender() const
 {
-    const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
-    const bool wantsToRender = VulkanXeSS::XeSSManager::IsSupported() && renderState.aaType == AntialiasingType::XeSS;
-    if (!wantsToRender)
-        m_wasActive = false;
-    return wantsToRender;
+    return AA::Current().temporal == AA::Temporal::XeSS;
 }
 
 void XeSSPass::RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const RGExecutionContext& execCtx)
@@ -122,10 +119,8 @@ void XeSSPass::RenderWithGraph(const MainPassData& data, const FrameRendererCont
     execParams.exposureScaleTexture = {}; 
     execParams.responsivePixelMaskTexture = {};
 
-    const auto& cameraData = ctx.cameraData;
-    const mathstl::Vector2 streamlineJitter = cameraData.jitterOffset;
-    execParams.jitterOffsetX = streamlineJitter.x;
-    execParams.jitterOffsetY = streamlineJitter.y;
+    execParams.jitterOffsetX = data.pViewData->jitterOffset.x;
+    execParams.jitterOffsetY = data.pViewData->jitterOffset.y;
     execParams.exposureScale = 1.0f;
     execParams.inputWidth = inputExtents.x;
     execParams.inputHeight = inputExtents.y;
@@ -135,7 +130,7 @@ void XeSSPass::RenderWithGraph(const MainPassData& data, const FrameRendererCont
     execParams.inputResponsiveMaskBase = {0, 0};
     execParams.outputColorBase = {0, 0};
 
-    const bool shouldReset = !m_wasActive || data.renderState.recreatedThisFrame || VulkanXeSS::XeSSManager::ConsumeResetFlag();
+    const bool shouldReset = AA::Current().temporalReset || VulkanXeSS::XeSSManager::ConsumeResetFlag();
     execParams.resetHistory = shouldReset ? 1u : 0u;
 
     ExecuteNativeCmd xessCmd{};
@@ -145,7 +140,6 @@ void XeSSPass::RenderWithGraph(const MainPassData& data, const FrameRendererCont
     };
 
     StartRenderPassProfilingScope(execCtx.pCmdBuffer);
-    m_wasActive = true;
     execCtx.pCmdBuffer->RecordCommand(xessCmd);
     EndRenderPassProfilingScope(execCtx.pCmdBuffer);
 }

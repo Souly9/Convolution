@@ -30,11 +30,6 @@ public:
     PassStage GetPassStage() const override { return PassStage::PostProcess; }
 
 private:
-
     ComputePipeline m_taaPipeline;
-    TAAPushConstants m_pushConstants;
-    AntialiasingType m_lastAAType{AntialiasingType::None};
-    u32 m_lastDebugMode{0};
-    u32 m_resetFramesRemaining{0};
 };
 } // namespace RenderPasses

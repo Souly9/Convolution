@@ -130,5 +130,7 @@ private:
     stltype::vector<VkImage> m_swapChainImages;
     mathstl::Vector2 m_swapChainExtent;
     bool m_dlssSupportAvailable{false};
+    // MoltenVK has no ray tracing; RT is optional there and required elsewhere
+    bool m_rayTracingSupported{false};
     VulkanRayTracingProperties m_rayTracingProperties{};
 };

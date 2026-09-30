@@ -1,14 +1,17 @@
 #version 460
 #extension GL_EXT_nonuniform_qualifier : require
 #extension GL_ARB_shading_language_include : enable
+#extension GL_EXT_scalar_block_layout : enable
 
 #define GBufferUBOSet 3
 #include "../../Globals/Bindless.h"
 #include "../../Globals/Common.h"
+#include "../../Globals/Scene.h"
 #include "../../Globals/GBuffer/GBufferSampling.h"
 #include "../../Globals/PushConstants.h"
 #include "../../Globals/Utils/ScreenSpace.h"
 
+// TAA never upscales: scene color, depth, velocity and history share one resolution
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(push_constant) uniform PushConstants
@@ -19,9 +22,6 @@ pushConstantsBlock;
 
 #define pushConstants pushConstantsBlock.data
 
-/*------------------------------------------------------------------------------
-    YCOCG CONVERSION
-------------------------------------------------------------------------------*/
 vec3 RGBToYCoCg(vec3 c)
 {
     float y = dot(c, vec3(0.25f, 0.5f, 0.25f));
@@ -36,16 +36,14 @@ vec3 YCoCgToRGB(vec3 c)
     return vec3(y_minus_cg + c.y, c.x + c.z, y_minus_cg - c.y);
 }
 
-/*------------------------------------------------------------------------------
-    HDR TONEMAP & SAFE INVERSE TONEMAP
-------------------------------------------------------------------------------*/
+// Filtering, clipping and blending run on tonemapped values so bright samples cannot dominate
 vec3 Tonemap(vec3 c)
 {
     float l = max(c.r, max(c.g, c.b));
     return c / (1.0f + l);
 }
 
-vec3 SafeTonemapInv(vec3 c_tm)
+vec3 TonemapInverse(vec3 c_tm)
 {
     float l_tm = max(c_tm.r, max(c_tm.g, c_tm.b));
     float l_tm_safe = min(l_tm, 1.0f - 1e-3f);
@@ -54,40 +52,23 @@ vec3 SafeTonemapInv(vec3 c_tm)
     return clamp(c_hdr, vec3(0.0f), vec3(65500.0f));
 }
 
-/*------------------------------------------------------------------------------
-    AABB CLIP (Playdead style)
-------------------------------------------------------------------------------*/
-vec3 ClipAABB(vec3 aabb_min, vec3 aabb_max, vec3 p, vec3 q)
+// Playdead style: clip toward the box center instead of clamping per channel
+vec3 ClipAABB(vec3 aabb_min, vec3 aabb_max, vec3 q)
 {
-    vec3 r = q - p;
-    vec3 rmax = aabb_max - p;
-    vec3 rmin = aabb_min - p;
-
-    const float eps = 1e-7f;
-    if (r.x > rmax.x + eps)
-        r *= (rmax.x / r.x);
-    if (r.y > rmax.y + eps)
-        r *= (rmax.y / r.y);
-    if (r.z > rmax.z + eps)
-        r *= (rmax.z / r.z);
-    if (r.x < rmin.x - eps)
-        r *= (rmin.x / r.x);
-    if (r.y < rmin.y - eps)
-        r *= (rmin.y / r.y);
-    if (r.z < rmin.z - eps)
-        r *= (rmin.z / r.z);
-
-    return p + r;
+    vec3 center = 0.5f * (aabb_max + aabb_min);
+    vec3 extents = 0.5f * (aabb_max - aabb_min) + 1e-5f;
+    vec3 offset = q - center;
+    vec3 unit = abs(offset / extents);
+    float maxUnit = max(unit.x, max(unit.y, unit.z));
+    return maxUnit > 1.0f ? center + offset / maxUnit : q;
 }
 
-/*------------------------------------------------------------------------------
-    CATMULL-ROM HISTORY SAMPLING (SHARP 5-TAP)
-------------------------------------------------------------------------------*/
-vec3 SampleHistoryCatmullRom(vec2 uv, vec2 resolution, uint historyIdx)
+// 5-tap Catmull-Rom, relies on bilinear filtering of the history
+vec3 SampleHistoryCatmullRom(vec2 uv, vec2 resolution)
 {
-    vec2 sample_position = uv * resolution;
-    vec2 tex_pos_1 = floor(sample_position - 0.5f) + 0.5f;
-    vec2 f = sample_position - tex_pos_1;
+    vec2 samplePosition = uv * resolution;
+    vec2 texPos1 = floor(samplePosition - 0.5f) + 0.5f;
+    vec2 f = samplePosition - texPos1;
 
     vec2 w0 = f * (-0.5f + f * (1.0f - 0.5f * f));
     vec2 w1 = 1.0f + f * f * (-2.5f + 1.5f * f);
@@ -95,174 +76,126 @@ vec3 SampleHistoryCatmullRom(vec2 uv, vec2 resolution, uint historyIdx)
     vec2 w3 = f * f * (-0.5f + 0.5f * f);
 
     vec2 w12 = w1 + w2;
-    vec2 offset_12 = w2 / w12;
+    vec2 offset12 = w2 / w12;
 
-    vec2 inv_res = 1.0f / resolution;
-    vec2 tex_pos_0 = (tex_pos_1 - 1.0f) * inv_res;
-    vec2 tex_pos_3 = (tex_pos_1 + 2.0f) * inv_res;
-    vec2 tex_pos_12 = (tex_pos_1 + offset_12) * inv_res;
+    vec2 invResolution = 1.0f / resolution;
+    vec2 texPos0 = (texPos1 - 1.0f) * invResolution;
+    vec2 texPos3 = (texPos1 + 2.0f) * invResolution;
+    vec2 texPos12 = (texPos1 + offset12) * invResolution;
 
+    uint historyIdx = gbufferUBO.taaHistoryIdx;
     vec3 result = vec3(0.0f);
-    result += textureLod(GlobalBindlessTextures[nonuniformEXT(historyIdx)], vec2(tex_pos_12.x, tex_pos_0.y), 0.0f).rgb *
-              w12.x * w0.y;
-    result += textureLod(GlobalBindlessTextures[nonuniformEXT(historyIdx)], vec2(tex_pos_0.x, tex_pos_12.y), 0.0f).rgb *
-              w0.x * w12.y;
-    result +=
-        textureLod(GlobalBindlessTextures[nonuniformEXT(historyIdx)], vec2(tex_pos_12.x, tex_pos_12.y), 0.0f).rgb *
-        w12.x * w12.y;
-    result += textureLod(GlobalBindlessTextures[nonuniformEXT(historyIdx)], vec2(tex_pos_3.x, tex_pos_12.y), 0.0f).rgb *
-              w3.x * w12.y;
-    result += textureLod(GlobalBindlessTextures[nonuniformEXT(historyIdx)], vec2(tex_pos_12.x, tex_pos_3.y), 0.0f).rgb *
-              w12.x * w3.y;
+    result += SampleLinearClamp(historyIdx, vec2(texPos12.x, texPos0.y)).rgb * w12.x * w0.y;
+    result += SampleLinearClamp(historyIdx, vec2(texPos0.x, texPos12.y)).rgb * w0.x * w12.y;
+    result += SampleLinearClamp(historyIdx, vec2(texPos12.x, texPos12.y)).rgb * w12.x * w12.y;
+    result += SampleLinearClamp(historyIdx, vec2(texPos3.x, texPos12.y)).rgb * w3.x * w12.y;
+    result += SampleLinearClamp(historyIdx, vec2(texPos12.x, texPos3.y)).rgb * w12.x * w3.y;
 
-    float weight_sum = max(w12.x + w12.y - w12.x * w12.y, 1e-5f);
-    return max(result / weight_sum, vec3(0.0f));
+    float weightSum = w12.x * w0.y + w0.x * w12.y + w12.x * w12.y + w3.x * w12.y + w12.x * w3.y;
+    return max(result / max(weightSum, 1e-5f), vec3(0.0f));
+}
+
+// Gaussian fit of Blackman-Harris, distance in pixels
+float BlackmanHarris(vec2 d)
+{
+    return exp(-2.29f * dot(d, d));
+}
+
+vec3 LoadSceneColor(ivec2 pixel)
+{
+    vec3 c = texelFetch(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.sceneColorIdx)], pixel, 0).rgb;
+    return any(isnan(c)) ? vec3(0.0f) : max(c, vec3(0.0f));
 }
 
 void main()
 {
-    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
-    vec2 res_out = vec2(pushConstants.outputResolutionX, pushConstants.outputResolutionY);
-
-    if (pixelCoord.x >= int(res_out.x) || pixelCoord.y >= int(res_out.y))
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    vec2 resolution = ubo.renderResolution;
+    if (pixel.x >= int(resolution.x) || pixel.y >= int(resolution.y))
         return;
 
-    vec2 uv_out = (vec2(pixelCoord) + 0.5f) / res_out;
-    vec2 active_render = vec2(pushConstants.resolutionX, pushConstants.resolutionY);
-    ivec2 px_render_max = max(ivec2(active_render) - 1, ivec2(0));
+    ivec2 maxPixel = ivec2(resolution) - 1;
+    vec2 uv = (vec2(pixel) + 0.5f) / resolution;
 
-    // Jitter is in pixel space of active_render
-    vec2 currentJitter_px = vec2(pushConstants.currentJitterX, pushConstants.currentJitterY);
+    // Texel t holds the scene sample at t + 0.5 - jitter since rasterization shifted the image by +jitter
+    vec2 jitter = ubo.jitterOffset;
 
-    // Exact continuous subpixel sample position in current rendered color buffer
-    vec2 p_render = uv_out * active_render + currentJitter_px;
-    vec2 uv_render = clamp(p_render / active_render, vec2(0.5f / active_render), vec2(1.0f) - vec2(0.5f / active_render));
-
-    // 1. Sharp, crisp current-frame color reconstruction using hardware bilinear interpolation
-    vec3 current_rgb_raw = textureLod(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.thisFrameColorBufferIdx)], uv_render, 0.0).rgb;
-    vec3 current_rgb = (isnan(current_rgb_raw.x) || isnan(current_rgb_raw.y) || isnan(current_rgb_raw.z)) ? vec3(0.0f)
-                                                                                                  : max(current_rgb_raw, vec3(0.0f));
-    vec3 current_rgb_tm = Tonemap(current_rgb);
-    vec3 current_ycocg_tm = RGBToYCoCg(current_rgb_tm);
-
-    ivec2 center = clamp(ivec2(floor(p_render)), ivec2(0), px_render_max);
-    float current_alpha =
-        texelFetch(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.thisFrameColorBufferIdx)], center, 0).a;
-
-    // 2. 3x3 gather for neighborhood variance bounding box (cmin, cmax, mean, sigma) & velocity dilation
+    vec3 filtered = vec3(0.0f);
+    float filteredWeight = 0.0f;
     vec3 m1 = vec3(0.0f);
     vec3 m2 = vec3(0.0f);
-    vec3 cmin = vec3(1e10f);
-    vec3 cmax = vec3(-1e10f);
-    float count = 0.0f;
-
-    float closest_depth = texelFetch(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.depthBufferIdx)], center, 0).r;
-    float center_depth = closest_depth;
-    ivec2 closest_pos = center;
+    vec3 crossMin = vec3(1e10f);
+    vec3 crossMax = vec3(-1e10f);
+    float closestDepth = -1.0f;
+    ivec2 closestPixel = pixel;
 
     for (int dy = -1; dy <= 1; ++dy)
     {
         for (int dx = -1; dx <= 1; ++dx)
         {
-            ivec2 tap = center + ivec2(dx, dy);
-            if (any(lessThan(tap, ivec2(0))) || any(greaterThan(tap, px_render_max)))
-                continue;
+            ivec2 tap = clamp(pixel + ivec2(dx, dy), ivec2(0), maxPixel);
+            vec3 c = RGBToYCoCg(Tonemap(LoadSceneColor(tap)));
 
-            vec3 s_rgb_raw =
-                texelFetch(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.thisFrameColorBufferIdx)], tap, 0).rgb;
-            vec3 s_rgb = (isnan(s_rgb_raw.x) || isnan(s_rgb_raw.y) || isnan(s_rgb_raw.z)) ? vec3(0.0f)
-                                                                                          : max(s_rgb_raw, vec3(0.0f));
-            vec3 s_rgb_tm = Tonemap(s_rgb);
-            vec3 s_ycocg_tm = RGBToYCoCg(s_rgb_tm);
+            // Reconstructs the unjittered sample at this pixel center
+            float w = BlackmanHarris(vec2(dx, dy) - jitter);
+            filtered += c * w;
+            filteredWeight += w;
 
-            float z = texelFetch(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.depthBufferIdx)], tap, 0).r;
-            bool center_is_foreground = (center_depth > 0.0);
-            bool tap_is_background = (z <= 0.0);
-
-            if (!(center_is_foreground && tap_is_background))
+            m1 += c;
+            m2 += c * c;
+            // Cross shaped min/max keeps thin high contrast edges tight
+            if (dx == 0 || dy == 0)
             {
-                m1 += s_ycocg_tm;
-                m2 += s_ycocg_tm * s_ycocg_tm;
-                count += 1.0f;
-
-                // Use tighter 5-tap cross neighborhood for cmin/cmax to lock high-contrast geometry edges
-                if (dx == 0 || dy == 0)
-                {
-                    cmin = min(cmin, s_ycocg_tm);
-                    cmax = max(cmax, s_ycocg_tm);
-                }
+                crossMin = min(crossMin, c);
+                crossMax = max(crossMax, c);
             }
 
-            if (dx != 0 || dy != 0)
+            // Reversed Z, larger is closer
+            float z = texelFetch(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.depthBufferIdx)], tap, 0).r;
+            if (z > closestDepth)
             {
-                if (z > closest_depth)
-                {
-                    closest_depth = z;
-                    closest_pos = tap;
-                }
+                closestDepth = z;
+                closestPixel = tap;
             }
         }
     }
 
-    // 3. Motion vector fetch and history reprojection
-    // Dilate velocity for foreground geometry; keep center velocity for sky/background to prevent antenna trailing
-    ivec2 final_velocity_pos = (center_depth > 0.0) ? closest_pos : center;
-    vec2 velocity_ndc =
-        texelFetch(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.gbufferVelocityIdx)], final_velocity_pos, 0).rg;
-    vec2 velocity_uv = velocity_ndc * vec2(0.5f, -0.5f);
-    vec2 uv_prev = uv_out - velocity_uv;
+    vec3 current = filtered / filteredWeight;
+    float alpha = texelFetch(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.sceneColorIdx)], pixel, 0).a;
 
-    vec2 inset = 2.0f / res_out;
-    bool uv_prev_valid = all(greaterThan(uv_prev, inset)) && all(lessThan(uv_prev, vec2(1.0f) - inset));
-    bool history_invalid = pushConstants.resetHistory != 0u || !uv_prev_valid;
+    // Velocity is current minus previous NDC (+y up), dilated to the closest surface
+    vec2 velocityNdc =
+        texelFetch(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.gbufferVelocityIdx)], closestPixel, 0).rg;
+    vec2 velocityUV = velocityNdc * vec2(0.5f, -0.5f);
+    vec2 prevUV = uv - velocityUV;
 
-    if (history_invalid)
+    if (ubo.temporalReset != 0u || !IsUVInBounds(prevUV))
     {
-        vec3 final_rgb = SafeTonemapInv(current_rgb_tm);
-        imageStore(GlobalBindlessImages[nonuniformEXT(gbufferUBO.gbufferResolveIdx)],
-                   pixelCoord,
-                   vec4(final_rgb, current_alpha));
+        imageStore(GlobalBindlessImages[nonuniformEXT(gbufferUBO.taaOutputIdx)],
+                   pixel,
+                   vec4(TonemapInverse(YCoCgToRGB(current)), alpha));
         return;
     }
 
-    // 4. Sharp Catmull-Rom history sampling
-    vec3 history_rgb = SampleHistoryCatmullRom(uv_prev, res_out, gbufferUBO.lastFrameColorBufferIdx);
-    vec3 history_rgb_tm = Tonemap(history_rgb);
-    vec3 history_ycocg_tm = RGBToYCoCg(history_rgb_tm);
+    vec3 history = RGBToYCoCg(Tonemap(SampleHistoryCatmullRom(prevUV, resolution)));
 
-    // 5. Variance AABB clipping (PlayDead style)
-    float inv_count = (count > 0.0f) ? (1.0f / count) : 1.0f;
-    vec3 mean = m1 * inv_count;
-    vec3 sigma = sqrt(max(m2 * inv_count - mean * mean, vec3(0.0f)));
-    sigma = max(sigma, vec3(0.005f));
+    float velocityPixels = length(velocityUV * resolution);
+    float rejectionStart = pushConstants.velocityRejectionStart;
+    float rejectionEnd = max(pushConstants.velocityRejectionEnd, rejectionStart + 1e-3f);
+    float motion = clamp((velocityPixels - rejectionStart) / (rejectionEnd - rejectionStart), 0.0f, 1.0f);
 
-    float vel_len_px = length(velocity_uv * res_out);
-    float v_start = pushConstants.velocityRejectionStart;
-    float v_end = max(pushConstants.velocityRejectionEnd, v_start + 1e-3f);
-    float motion = clamp((vel_len_px - v_start) / (v_end - v_start), 0.0f, 1.0f);
-
+    // Variance box, tighter while moving
+    vec3 mean = m1 / 9.0f;
+    vec3 sigma = sqrt(max(m2 / 9.0f - mean * mean, vec3(0.0f)));
     float gamma = mix(1.25f, 1.0f, motion);
-    vec3 aabb_min = max(mean - sigma * gamma, cmin);
-    vec3 aabb_max = min(mean + sigma * gamma, cmax);
+    vec3 boxMin = max(mean - sigma * gamma, crossMin);
+    vec3 boxMax = min(mean + sigma * gamma, crossMax);
+    history = ClipAABB(min(boxMin, boxMax), max(boxMin, boxMax), history);
 
-    vec3 history_c = ClipAABB(aabb_min, aabb_max, mean, history_ycocg_tm);
+    float currentWeight = mix(0.05f, 0.125f, motion);
+    vec3 result = mix(history, current, currentWeight);
 
-    // 6. Temporal blend with Karis anti-flicker weighting (suppresses subpixel antenna/specular flickering)
-    float w_curr = 1.0f / (1.0f + current_ycocg_tm.x);
-    float w_hist = 1.0f / (1.0f + history_c.x);
-
-    float blend = mix(0.05f, 0.125f, motion);
-    float w_blend_curr = blend * w_curr;
-    float w_blend_hist = (1.0f - blend) * w_hist;
-    float total_w = max(w_blend_curr + w_blend_hist, 1e-5f);
-
-    vec3 result_ycocg_tm = (history_c * w_blend_hist + current_ycocg_tm * w_blend_curr) / total_w;
-    vec3 result_rgb_tm = max(YCoCgToRGB(result_ycocg_tm), vec3(0.0f));
-
-    vec3 result_rgb = SafeTonemapInv(result_rgb_tm);
-
-    imageStore(
-        GlobalBindlessImages[nonuniformEXT(gbufferUBO.gbufferResolveIdx)], pixelCoord, vec4(result_rgb, current_alpha));
+    imageStore(GlobalBindlessImages[nonuniformEXT(gbufferUBO.taaOutputIdx)],
+               pixel,
+               vec4(TonemapInverse(max(YCoCgToRGB(result), vec3(0.0f))), alpha));
 }
-
-

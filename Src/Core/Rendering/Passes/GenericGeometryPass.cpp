@@ -1,7 +1,7 @@
 #include "GenericGeometryPass.h"
-#include "Core/Rendering/Vulkan/VkPipeline.h"
-#include "Core/Rendering/Vulkan/VkGlobals.h"
-#include "Core/Rendering/Vulkan/Utils/VkDescriptorLayoutUtils.h"
+#include "Core/Rendering/Core/Pipeline.h"
+#include "Core/Rendering/Backend/BackendGlobals.h"
+#include "Core/Rendering/Core/DescriptorUtils/DescriptorLayoutUtils.h"
 
 using namespace RenderPasses;
 

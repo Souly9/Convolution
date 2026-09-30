@@ -35,16 +35,19 @@
 #define SMAA_FLATTEN
 #define SMAA_BRANCH
 
-// SMAA Porting for Bindless
+// SMAA Porting for Bindless; SMAA needs linear clamp everywhere except the point reads
 #define SMAATexture2D(tex) uint tex
 #define SMAATexture2DMS(tex) uint tex
 #define SMAATexture2DMS2(tex) uint tex
 #define SMAATexturePass2D(tex) tex
-#define SMAASampleLevelZero(tex, coord) textureLod(GlobalBindlessTextures[nonuniformEXT(tex)], coord, 0.0)
-#define SMAASampleLevelZeroOffset(tex, coord, offset) textureLodOffset(GlobalBindlessTextures[nonuniformEXT(tex)], coord, 0.0, offset)
-#define SMAASample(tex, coord) texture(GlobalBindlessTextures[nonuniformEXT(tex)], coord)
-#define SMAASamplePoint(tex, coord) texture(GlobalBindlessTextures[nonuniformEXT(tex)], coord)
-#define SMAAGather(tex, coord) textureGather(GlobalBindlessTextures[nonuniformEXT(tex)], coord)
+#define SMAALinear(tex) sampler2D(GlobalBindlessSampledTextures[nonuniformEXT(tex)], GlobalSamplers[SAMPLER_LINEAR_CLAMP])
+#define SMAAPoint(tex) sampler2D(GlobalBindlessSampledTextures[nonuniformEXT(tex)], GlobalSamplers[SAMPLER_POINT_CLAMP])
+#define SMAASampleLevelZero(tex, coord) textureLod(SMAALinear(tex), coord, 0.0)
+#define SMAASampleLevelZeroPoint(tex, coord) textureLod(SMAAPoint(tex), coord, 0.0)
+#define SMAASampleLevelZeroOffset(tex, coord, offset) textureLodOffset(SMAALinear(tex), coord, 0.0, offset)
+#define SMAASample(tex, coord) texture(SMAALinear(tex), coord)
+#define SMAASamplePoint(tex, coord) texture(SMAAPoint(tex), coord)
+#define SMAAGather(tex, coord) textureGather(SMAALinear(tex), coord)
 #define SMAALoad(tex, pos, sample) texelFetch(GlobalBindlessTextures[nonuniformEXT(tex)], pos, sample)
 
 #define SMAA_AREATEX_SELECT(sample) sample.rg

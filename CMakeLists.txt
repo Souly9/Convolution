@@ -54,6 +54,11 @@ if(WIN32)
     endif()
 endif()
 
+# Oldest macOS we target: covers 2019+ Intel Macs and all Apple silicon; 13.3 is the minimum for std::format floats
+if(CMAKE_HOST_APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "13.3" CACHE STRING "Minimum macOS version" FORCE)
+endif()
+
 project("Convolution")
 set(NAME "Convolution")
 
@@ -70,7 +75,7 @@ if(MSVC)
     add_compile_options(/MP)
 endif()
 
-set(CONV_OUTPUT_BASE_DIR "${CMAKE_SOURCE_DIR}/bin")
+set(CONV_OUTPUT_BASE_DIR "${CMAKE_SOURCE_DIR}/bin" CACHE PATH "Output directory for binaries and libraries")
 foreach(CONV_CONFIG Debug Release RelWithDebInfo MinSizeRel)
     string(TOUPPER "${CONV_CONFIG}" CONV_CONFIG_UPPER)
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${CONV_CONFIG_UPPER} "${CONV_OUTPUT_BASE_DIR}/${CONV_CONFIG}")
@@ -104,8 +109,11 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(TRACY_ENABLE ${CONV_ENABLE_TRACY_PROFILING} CACHE BOOL "Enable Tracy instrumentation" FORCE)
 
+include(ConvRenderBackend)
 
-FetchContent_Declare(VulkanMemoryAllocator GIT_REPOSITORY "https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git" GIT_TAG "master" SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/VMA")
+if(CONV_USE_VULKAN)
+    FetchContent_Declare(VulkanMemoryAllocator GIT_REPOSITORY "https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git" GIT_TAG "master" SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/VMA")
+endif()
 FetchContent_Declare(EASTL GIT_REPOSITORY "https://github.com/electronicarts/EASTL.git" GIT_TAG "master" SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/EASTL")
 FetchContent_Declare(EAStdC GIT_REPOSITORY "https://github.com/electronicarts/EAStdC.git" GIT_TAG "04253396f7253c0356163cfa955cdf598ff9ed1c" SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/EAStdC")
 FetchContent_Declare(EAAssert GIT_REPOSITORY "https://github.com/electronicarts/EAAssert.git" GIT_TAG "0f5090d856a558a846fb161991533fcd48493fe7" SOURCE_DIR "${CMAKE_SOURCE_DIR}/External/EAAssert")
@@ -130,6 +138,10 @@ set(EXTERNAL_HEADERS
     "smaa/SearchTex.h|https://raw.githubusercontent.com/iryoku/smaa/master/Textures/SearchTex.h"
     "smaa/AreaTex.h|https://raw.githubusercontent.com/iryoku/smaa/master/Textures/AreaTex.h"
 )
+if(NOT WIN32)
+    # DirectXMath needs SAL annotations outside the Windows SDK
+    list(APPEND EXTERNAL_HEADERS "sal/sal.h|https://raw.githubusercontent.com/dotnet/runtime/main/src/coreclr/pal/inc/rt/sal.h")
+endif()
 foreach(ENTRY IN LISTS EXTERNAL_HEADERS)
     string(REPLACE "|" ";" ENTRY_PARTS "${ENTRY}")
     list(GET ENTRY_PARTS 0 DEST_FILE)
@@ -168,8 +180,15 @@ if(MSVC OR USE_CLANG_CL)
     set(EASTL_HAS_ZCCHAR8T_FLAG ON CACHE BOOL "" FORCE)
 endif()
 
-FetchContent_MakeAvailable(VulkanMemoryAllocator EASTL EAStdC EAAssert EAThread GLFW3 IMGUI DIRECTXMATH ASSIMP TRACY ImGuizmo)
-find_package(Vulkan REQUIRED)
+FetchContent_MakeAvailable(EASTL EAStdC EAAssert EAThread GLFW3 IMGUI DIRECTXMATH ASSIMP TRACY ImGuizmo)
+if(UNIX)
+    # EAThread's unix path passes u8 literals as const char*, which breaks under C++20 char8_t
+    target_compile_options(EAThread PRIVATE -fno-char8_t)
+endif()
+if(CONV_USE_VULKAN)
+    FetchContent_MakeAvailable(VulkanMemoryAllocator)
+    find_package(Vulkan REQUIRED)
+endif()
 
 
 
@@ -197,22 +216,33 @@ set(IMGUI_SOURCE
     "${CMAKE_SOURCE_DIR}/External/imgui/imgui_widgets.cpp"
     "${CMAKE_SOURCE_DIR}/External/imgui/imgui_demo.cpp"
     "${CMAKE_SOURCE_DIR}/External/imgui/backends/imgui_impl_glfw.cpp"
-    "${CMAKE_SOURCE_DIR}/External/imgui/backends/imgui_impl_vulkan.cpp"
 )
+if(CONV_USE_VULKAN)
+    list(APPEND IMGUI_SOURCE "${CMAKE_SOURCE_DIR}/External/imgui/backends/imgui_impl_vulkan.cpp")
+endif()
 add_library(ImGui STATIC ${IMGUI_SOURCE} "${CMAKE_SOURCE_DIR}/External/ImGuizmo/ImGuizmo.cpp")
 target_include_directories(ImGui PUBLIC
    "${CMAKE_SOURCE_DIR}/External/imgui"
    "${CMAKE_SOURCE_DIR}/External/imgui/backends"
    "${CMAKE_SOURCE_DIR}/External/ImGuizmo"
-   SYSTEM
-	"${Vulkan_INCLUDE_DIRS}"
 )
+if(CONV_USE_VULKAN)
+    target_include_directories(ImGui SYSTEM PUBLIC "${Vulkan_INCLUDE_DIRS}")
+endif()
 target_compile_definitions(ImGui PUBLIC IMGUI_DEFINE_MATH_OPERATORS)
-target_compile_options(ImGui PRIVATE "/FI${CMAKE_SOURCE_DIR}/Src/ImGuiCompatibility.h")
+if(MSVC)
+    target_compile_options(ImGui PRIVATE "/FI${CMAKE_SOURCE_DIR}/Src/ImGuiCompatibility.h")
+else()
+    target_compile_options(ImGui PRIVATE -include "${CMAKE_SOURCE_DIR}/Src/ImGuiCompatibility.h")
+endif()
 target_link_libraries(ImGui PRIVATE glfw)
 
 add_compile_definitions(CONV_DEBUG)
-add_compile_definitions(USE_VULKAN)
+if(CONV_USE_VULKAN)
+    add_compile_definitions(USE_VULKAN)
+else()
+    add_compile_definitions(USE_METAL)
+endif()
 
 set(CONV_EXTERNAL_TARGETS
     assimp
@@ -264,9 +294,11 @@ if(CONV_SUPPRESS_EXTERNAL_WARNINGS)
 endif()
 
 set(LIBS
-    ${Vulkan_LIBRARIES}
     ${CONV_EXTERNAL_LINK_TARGETS}
 )
+if(CONV_USE_VULKAN)
+    list(APPEND LIBS ${Vulkan_LIBRARIES})
+endif()
 if(CONV_WITH_AFTERMATH_SDK)
     list(APPEND LIBS ${AFTERMATH_SDK_LIB})
 endif()
@@ -279,6 +311,9 @@ endif()
 
 link_directories(${CMAKE_SOURCE_DIR}/External/additional_libs)
 
+# Engine-wide include dirs and defines, shared by the executable and backend libraries
+add_library(ConvolutionConfig INTERFACE)
+
 add_executable(${NAME})
 file(GLOB_RECURSE CONV_SOURCE_FILES
     "${CMAKE_SOURCE_DIR}/Src/*.cpp"
@@ -289,6 +324,18 @@ file(GLOB_RECURSE CONV_HEADER_FILES
 )
 list(FILTER CONV_SOURCE_FILES EXCLUDE REGEX ".*\\.(glsl|vert|frag|comp|hlsl)$")
 list(FILTER CONV_HEADER_FILES EXCLUDE REGEX ".*\\.(glsl|vert|frag|comp|hlsl)$")
+# Metal sources live in their own library target
+list(FILTER CONV_SOURCE_FILES EXCLUDE REGEX ".*/Src/Core/Rendering/Metal/.*")
+list(FILTER CONV_HEADER_FILES EXCLUDE REGEX ".*/Src/Core/Rendering/Metal/.*")
+if(CONV_USE_METAL)
+    # Vulkan backend and Vulkan-only vendor SDKs (Streamline/DLSS, XeSS)
+    list(FILTER CONV_SOURCE_FILES EXCLUDE REGEX ".*/Src/Core/Rendering/(Vulkan|Core/Nvidia)/.*")
+    list(FILTER CONV_HEADER_FILES EXCLUDE REGEX ".*/Src/Core/Rendering/(Vulkan|Core/Nvidia)/.*")
+    list(FILTER CONV_SOURCE_FILES EXCLUDE REGEX ".*/Passes/AA/(DLSS|XeSS)Pass\\.cpp$")
+elseif(NOT WIN32)
+    # Streamline/Aftermath/XeSS runtimes are Windows-only; VendorSdkStubs.cpp covers their symbols
+    list(FILTER CONV_SOURCE_FILES EXCLUDE REGEX ".*/Src/Core/Rendering/(Core/Nvidia|Vulkan/XeSS)/.*\\.cpp$")
+endif()
 target_sources(${NAME} PRIVATE ${CONV_SOURCE_FILES} ${CONV_HEADER_FILES})
 
 set(CONV_UTILITY_COMMANDS
@@ -305,7 +352,6 @@ set(CONV_UTILITY_COMMANDS
 # Add natvis files for debugger visualization (embedded in PDB)
 target_sources(${NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/External/EASTL/doc/EASTL.natvis
-    ${CMAKE_SOURCE_DIR}/External/VMA/src/vk_mem_alloc.natvis
     ${CMAKE_SOURCE_DIR}/External/imgui/misc/debuggers/imgui.natvis
 )
 
@@ -314,12 +360,17 @@ list(APPEND CONV_UTILITY_COMMANDS
         ${CMAKE_SOURCE_DIR}/External/EASTL/doc/EASTL.natvis
         $<TARGET_FILE_DIR:${NAME}>/EASTL.natvis
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_SOURCE_DIR}/External/VMA/src/vk_mem_alloc.natvis
-        $<TARGET_FILE_DIR:${NAME}>/vk_mem_alloc.natvis
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_SOURCE_DIR}/External/imgui/misc/debuggers/imgui.natvis
         $<TARGET_FILE_DIR:${NAME}>/imgui.natvis
 )
+if(CONV_USE_VULKAN)
+    target_sources(${NAME} PRIVATE ${CMAKE_SOURCE_DIR}/External/VMA/src/vk_mem_alloc.natvis)
+    list(APPEND CONV_UTILITY_COMMANDS
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_SOURCE_DIR}/External/VMA/src/vk_mem_alloc.natvis
+            $<TARGET_FILE_DIR:${NAME}>/vk_mem_alloc.natvis
+    )
+endif()
 if(CONV_WITH_AFTERMATH_SDK AND EXISTS "${AFTERMATH_SDK_DLL}")
 list(APPEND CONV_UTILITY_COMMANDS
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -341,6 +392,8 @@ set(STREAMLINE_SL_DLLS
     sl.dlss.dll
     sl.dlss_d.dll
 )
+# Development DLLs carry the Streamline/NGX debug overlays, the debug UI reports which ones are deployed
+target_compile_definitions(${NAME} PRIVATE CONV_SL_DEVELOPMENT_DLLS=$<IF:${STREAMLINE_DEVELOPMENT_CONFIG},1,0>)
 foreach(FILE_NAME IN LISTS STREAMLINE_SL_DLLS)
     set(PRODUCTION_FILE "${STREAMLINE_ROOT}/${FILE_NAME}")
     set(DEVELOPMENT_FILE "${STREAMLINE_DEVELOPMENT_ROOT}/${FILE_NAME}")
@@ -421,9 +474,8 @@ set_target_properties(${NAME} PROPERTIES
     VS_DEBUGGER_WORKING_DIRECTORY "${CONV_OUTPUT_BASE_DIR}/$<CONFIG>"
 )
 
-target_include_directories(${NAME} PUBLIC "${CMAKE_SOURCE_DIR}/Src"
-SYSTEM
-	${Vulkan_INCLUDE_DIRS}
+target_include_directories(ConvolutionConfig INTERFACE "${CMAKE_SOURCE_DIR}/Src")
+target_include_directories(ConvolutionConfig SYSTEM INTERFACE
     "${CMAKE_SOURCE_DIR}/External/"
     # Explicitly add critical external includes that might not propagate to PCH correctly
     "${CMAKE_SOURCE_DIR}/External/GLFW/include"
@@ -442,6 +494,12 @@ SYSTEM
     "${CMAKE_SOURCE_DIR}/External/additional_libs/NVStreamline"
     "${CMAKE_SOURCE_DIR}/External/additional_libs/XeSS/inc"
 )
+if(NOT WIN32)
+    target_include_directories(ConvolutionConfig SYSTEM INTERFACE "${CMAKE_SOURCE_DIR}/External/sal")
+endif()
+if(CONV_USE_VULKAN)
+    target_include_directories(ConvolutionConfig SYSTEM INTERFACE ${Vulkan_INCLUDE_DIRS})
+endif()
 
 if(CONV_WITH_STREAMLINE_INTERPOSER_LIB AND MSVC)
     target_link_libraries(${NAME} PRIVATE delayimp)
@@ -452,7 +510,7 @@ if(CONV_WITH_XESS AND MSVC)
     target_link_options(${NAME} PRIVATE "/DELAYLOAD:libxess.dll")
 endif()
 
-target_compile_definitions(${NAME} PRIVATE 
+target_compile_definitions(ConvolutionConfig INTERFACE
     $<$<CONFIG:Debug>:CONV_DEBUG=1>
     $<$<BOOL:${CONV_ENABLE_TRACY_PROFILING}>:PROFILING_ENABLED=1>
     $<$<NOT:$<BOOL:${CONV_ENABLE_TRACY_PROFILING}>>:PROFILING_ENABLED=0>
@@ -461,19 +519,46 @@ target_compile_definitions(${NAME} PRIVATE
     $<$<BOOL:${CONV_WITH_STREAMLINE_INTERPOSER_LIB}>:CONV_WITH_STREAMLINE=1>
     $<$<NOT:$<BOOL:${CONV_WITH_STREAMLINE_INTERPOSER_LIB}>>:CONV_WITH_STREAMLINE=0>
     NOMINMAX
-    # Set Vulkan target version to 1.3 to help avoid promoted extension warnings
-    VK_API_VERSION_1_3=1
-    VULKAN_CORE_1_3=1
 )
+if(CONV_USE_VULKAN)
+    # Set Vulkan target version to 1.3 to help avoid promoted extension warnings
+    target_compile_definitions(ConvolutionConfig INTERFACE VK_API_VERSION_1_3=1 VULKAN_CORE_1_3=1)
+endif()
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    target_compile_options(${NAME} PRIVATE -Wno-nullability-completeness -Wno-unused-private-field)
+    target_compile_options(ConvolutionConfig INTERFACE -Wno-nullability-completeness -Wno-unused-private-field)
 endif()
+target_link_libraries(${NAME} PRIVATE ConvolutionConfig)
 
 target_precompile_headers(${NAME} PRIVATE "Src/PCH.h")
 
-set(GLSLANG_LIB_DIR "${CMAKE_SOURCE_DIR}/External/additional_libs/glsl/")
+if(CONV_USE_METAL)
+    file(GLOB_RECURSE CONV_METAL_SOURCES CONFIGURE_DEPENDS
+        "${CMAKE_SOURCE_DIR}/Src/Core/Rendering/Metal/*.cpp"
+        "${CMAKE_SOURCE_DIR}/Src/Core/Rendering/Metal/*.mm"
+        "${CMAKE_SOURCE_DIR}/Src/Core/Rendering/Metal/*.h"
+        "${CMAKE_SOURCE_DIR}/Src/Core/Rendering/Metal/*.inl"
+    )
+    add_library(ConvolutionMetal STATIC ${CONV_METAL_SOURCES})
+    target_include_directories(ConvolutionMetal SYSTEM PUBLIC "${CONV_METAL_CPP_INCLUDE_DIR}")
+    target_link_libraries(ConvolutionMetal PUBLIC ConvolutionConfig ${CONV_METAL_FRAMEWORKS} PRIVATE EASTL EAStdC EAAssert EAThread glfw)
+    if(CONV_ENABLE_TRACY_PROFILING)
+        target_link_libraries(ConvolutionMetal PRIVATE TracyClient)
+    endif()
+    target_precompile_headers(ConvolutionMetal PRIVATE "Src/PCH.h")
+
+    # metal-cpp implementation TU and ObjC++ bridges must not see the C++ PCH
+    set(CONV_METAL_OBJCXX_SOURCES ${CONV_METAL_SOURCES})
+    list(FILTER CONV_METAL_OBJCXX_SOURCES INCLUDE REGEX ".*\\.mm$")
+    set_source_files_properties(${CONV_METAL_OBJCXX_SOURCES} PROPERTIES SKIP_PRECOMPILE_HEADERS ON COMPILE_OPTIONS "-fobjc-arc")
+    set_source_files_properties("${CMAKE_SOURCE_DIR}/Src/Core/Rendering/Metal/MtlCppImpl.cpp" PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+
+    target_link_libraries(${NAME} PRIVATE ConvolutionMetal)
+endif()
+
 set(GLSLANG_LIBS)
+if(CONV_USE_VULKAN AND NOT APPLE)
+set(GLSLANG_LIB_DIR "${CMAKE_SOURCE_DIR}/External/additional_libs/glsl/")
 set(GLSLANG_COMPONENTS glslang glslang-default-resource-limits SPIRV SPIRV-Tools-opt SPIRV-Tools-link SPIRV-Tools-reduce SPIRV-Tools SPIRV-Tools-core SPIRV-Tools-opt SPIRV-Tools MachineIndependent GenericCodeGen OSDependent)
 set(GLSLANG_SEARCH_DIRS)
 if(DEFINED ENV{VULKAN_SDK} AND NOT "$ENV{VULKAN_SDK}" STREQUAL "")
@@ -505,8 +590,26 @@ foreach(COMP ${GLSLANG_COMPONENTS})
     unset(GLSLANG_COMP_RELEASE_PATH CACHE)
     unset(GLSLANG_COMP_DEBUG_PATH CACHE)
 endforeach()
+else()
+    # No Vulkan SDK on macOS; use a system glslang (brew install glslang) for the runtime shader compiler
+    find_package(glslang CONFIG QUIET)
+    if(glslang_FOUND)
+        foreach(CONV_GLSLANG_TARGET glslang::glslang glslang::SPIRV glslang::glslang-default-resource-limits)
+            if(TARGET ${CONV_GLSLANG_TARGET})
+                list(APPEND GLSLANG_LIBS ${CONV_GLSLANG_TARGET})
+            endif()
+        endforeach()
+        message(STATUS "glslang found: ${glslang_DIR}")
+    else()
+        set_target_properties(${NAME} PROPERTIES EXCLUDE_FROM_ALL ON)
+        message(WARNING "glslang not found (brew install glslang); '${NAME}' is excluded from ALL until it is")
+    endif()
+endif()
 
-target_link_libraries(${NAME} PRIVATE ${LIBS} GPUOpen::VulkanMemoryAllocator ${GLSLANG_LIBS})
+target_link_libraries(${NAME} PRIVATE ${LIBS} ${GLSLANG_LIBS})
+if(CONV_USE_VULKAN)
+    target_link_libraries(${NAME} PRIVATE GPUOpen::VulkanMemoryAllocator)
+endif()
 
 # Install the resources next to the executable in the install tree.
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/Resources/

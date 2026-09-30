@@ -11,7 +11,6 @@ namespace RenderPasses
 {
 struct MainPassData;
 struct FrameRendererContext;
-class FrameResourceManager;
 }
 
 class RGResourceRegistry
@@ -24,7 +23,7 @@ public:
     RGResourceHandle ImportTexture(RGResourceID id, Texture* pTexture, ImageLayout currentLayout = ImageLayout::UNDEFINED);
     void DeclareEngineResources();
 
-    void RecreateShadowMap(u32 cascades, const mathstl::Vector2& extents, RenderPasses::FrameResourceManager& frameResourceManager);
+    void RecreateShadowMap(u32 cascades, const mathstl::Vector2& extents);
     const CascadedShadowMap& GetShadowMap() const { return m_shadowMap; }
     CascadedShadowMap& GetShadowMap() { return m_shadowMap; }
 

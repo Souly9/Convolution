@@ -46,7 +46,14 @@ class AvailableRenderBackends
 class Vulkan : public AvailableRenderBackends
 {
 };
+class Metal : public AvailableRenderBackends
+{
+};
+#if defined(USE_METAL)
+using RenderAPI = Metal;
+#else
 using RenderAPI = Vulkan;
+#endif
 
 // Constants
 
@@ -69,6 +76,12 @@ using CurrentAPI = API_Vulkan;
 #define GLFW_INCLUDE_VULKAN
 #define CONV_MIN_VULKAN_VERSION     VK_API_VERSION_1_4
 #define CONV_DESIRED_VULKAN_VERSION VK_API_VERSION_1_4
+#elif defined(USE_METAL)
+#include "Core/Rendering/Core/APITraits.h"
+using CurrentAPI = API_Metal;
+// Metal has one queue family; no ownership transfers between queues
+#define SEPERATE_TRANSFERQUEUE false
+#define GLFW_INCLUDE_NONE
 #endif
 
 #define IMPLEMENT_GRAPHICS_API                                                                                         \
@@ -77,7 +90,7 @@ using CurrentAPI = API_Vulkan;
 
 // Logic Macros
 #define CUR_FRAME          FrameGlobals::GetFrameNumber()
-#define COMP_ID(component) ECS::ComponentID<ECS::Components::##component>::ID
+#define COMP_ID(component) ECS::ComponentID<ECS::Components::component>::ID
 
 static inline constexpr f32 FLOAT_TOLERANCE = 0.00001f;
 static inline constexpr f32 AMBIENT_STRENGTH = 0.03f;

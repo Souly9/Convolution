@@ -1,15 +1,17 @@
 #include "FrameTransitionRecorder.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
-#include "Core/Rendering/Vulkan/VkTextureManager.h"
+#include "Core/Rendering/Core/TextureManager.h"
 #include "Core/Rendering/Core/RenderGraph/RGResourceRegistry.h"
 #include "Core/Global/State/ApplicationState.h"
+#ifdef USE_VULKAN
 #include "vulkan/vulkan_core.h"
+#else
+// Metal ignores stage masks here; the value only needs to exist
+#define VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT 0u
+#endif
 
-void FrameTransitionRecorder::RecordTemporalResourceInitialLayouts(
-    CommandBuffer* pCmdBuffer,
-    RGResourceRegistry& registry,
-    StagingBuffer& dlssExposureStagingBuffer)
+void FrameTransitionRecorder::RecordTemporalResourceInitialLayouts(CommandBuffer* pCmdBuffer, RGResourceRegistry& registry)
 {
     auto transitionInitialTexture = [](CommandBuffer* pCmd, Texture* pTex)
     {
@@ -17,7 +19,7 @@ void FrameTransitionRecorder::RecordTemporalResourceInitialLayouts(
         ImageLayoutTransitionCmd cmd(pTex);
         cmd.oldLayout = ImageLayout::UNDEFINED;
         cmd.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-        VkTextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::UNDEFINED, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+        TextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::UNDEFINED, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
         pCmd->RecordCommand(cmd);
     };
 
@@ -27,7 +29,7 @@ void FrameTransitionRecorder::RecordTemporalResourceInitialLayouts(
         ImageLayoutTransitionCmd cmd(pTex);
         cmd.oldLayout = ImageLayout::UNDEFINED;
         cmd.newLayout = ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-        VkTextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::UNDEFINED, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+        TextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::UNDEFINED, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
         pCmd->RecordCommand(cmd);
     };
 
@@ -46,14 +48,12 @@ void FrameTransitionRecorder::RecordTemporalResourceInitialLayouts(
     setRegistryInitialLayout(RGResourceID::MainDepth, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
     setRegistryInitialLayout(RGResourceID::GBufferVelocity, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
-    Texture* pResolve = registry.ResolveByID(RGResourceID::TemporalResolve);
-    Texture* pResolveHistory = registry.ResolveHistoryByID(RGResourceID::TemporalResolve);
-    transitionInitialTexture(pCmdBuffer, pResolve);
-    if (pResolveHistory && pResolveHistory != pResolve)
-    {
-        transitionInitialTexture(pCmdBuffer, pResolveHistory);
-    }
+    transitionInitialTexture(pCmdBuffer, registry.ResolveByID(RGResourceID::TemporalResolve));
     setRegistryInitialLayout(RGResourceID::TemporalResolve, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+
+    transitionInitialTexture(pCmdBuffer, registry.ResolveByID(RGResourceID::TAAHistory));
+    transitionInitialTexture(pCmdBuffer, registry.ResolveHistoryByID(RGResourceID::TAAHistory));
+    setRegistryInitialLayout(RGResourceID::TAAHistory, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
     Texture* pPostAA = registry.ResolveByID(RGResourceID::GBufferPostAAColor);
     transitionInitialTexture(pCmdBuffer, pPostAA);
@@ -94,32 +94,9 @@ void FrameTransitionRecorder::RecordTemporalResourceInitialLayouts(
     transitionInitialTexture(pCmdBuffer, registry.ResolveByID(RGResourceID::GBufferDebug));
     setRegistryInitialLayout(RGResourceID::GBufferDebug, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
-    Texture* pDLSSExposureTexture = registry.ResolveByID(RGResourceID::DLSSExposure);
-    if (pDLSSExposureTexture)
-    {
-        const float exposureValue = g_pApplicationState->GetCurrentApplicationState().renderState.exposure;
-        dlssExposureStagingBuffer.CopyToMapped(&exposureValue, sizeof(exposureValue));
-
-        ImageLayoutTransitionCmd exposureToTransfer(pDLSSExposureTexture);
-        exposureToTransfer.oldLayout = ImageLayout::UNDEFINED;
-        exposureToTransfer.newLayout = ImageLayout::TRANSFER_DST_OPTIMAL;
-        VkTextureManager::SetLayoutBarrierMasks(
-            exposureToTransfer, ImageLayout::UNDEFINED, ImageLayout::TRANSFER_DST_OPTIMAL);
-        pCmdBuffer->RecordCommand(exposureToTransfer);
-
-        ImageBufferCopyCmd copyExposure(&dlssExposureStagingBuffer, pDLSSExposureTexture);
-        copyExposure.imageExtent = {1, 1, 1};
-        copyExposure.aspectFlagBits = VK_IMAGE_ASPECT_COLOR_BIT;
-        pCmdBuffer->RecordCommand(copyExposure);
-
-        ImageLayoutTransitionCmd exposureToRead(pDLSSExposureTexture);
-        exposureToRead.oldLayout = ImageLayout::TRANSFER_DST_OPTIMAL;
-        exposureToRead.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-        VkTextureManager::SetLayoutBarrierMasks(
-            exposureToRead, ImageLayout::TRANSFER_DST_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-        exposureToRead.dstStage = SyncStages::FRAGMENT_SHADER | SyncStages::COMPUTE_SHADER;
-        pCmdBuffer->RecordCommand(exposureToRead);
-    }
+    // DLSSPass uploads the exposure value itself when the exposure texture is enabled
+    transitionInitialTexture(pCmdBuffer, registry.ResolveByID(RGResourceID::DLSSExposure));
+    setRegistryInitialLayout(RGResourceID::DLSSExposure, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 }
 
 void FrameTransitionRecorder::RecordInitialLayoutTransitions(
@@ -140,7 +117,7 @@ void FrameTransitionRecorder::RecordInitialLayoutTransitions(
         ImageLayoutTransitionCmd colorCmd(colorTextures);
         colorCmd.oldLayout = ImageLayout::UNDEFINED;
         colorCmd.newLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
-        VkTextureManager::SetLayoutBarrierMasks(colorCmd, ImageLayout::UNDEFINED, ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+        TextureManager::SetLayoutBarrierMasks(colorCmd, ImageLayout::UNDEFINED, ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
         pCmdBuffer->RecordCommand(colorCmd);
     }
 
@@ -155,7 +132,7 @@ void FrameTransitionRecorder::RecordInitialLayoutTransitions(
         ImageLayoutTransitionCmd depthCmd(stltype::vector<const Texture*>(depthTextures.begin(), depthTextures.end()));
         depthCmd.oldLayout = ImageLayout::UNDEFINED;
         depthCmd.newLayout = ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-        VkTextureManager::SetLayoutBarrierMasks(
+        TextureManager::SetLayoutBarrierMasks(
             depthCmd, ImageLayout::UNDEFINED, ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
         pCmdBuffer->RecordCommand(depthCmd);
     }
@@ -175,7 +152,7 @@ void FrameTransitionRecorder::RecordPendingTextureUploadTransitions(CommandBuffe
     ImageLayoutTransitionCmd cmd(textures);
     cmd.oldLayout = ImageLayout::TRANSFER_DST_OPTIMAL;
     cmd.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::TRANSFER_DST_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    TextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::TRANSFER_DST_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
     pCmdBuffer->RecordCommand(cmd);
 }
 
@@ -187,7 +164,7 @@ void FrameTransitionRecorder::RecordGBufferToShaderRead(
     ImageLayoutTransitionCmd colorCmd(stltype::vector<const Texture*>(gbufferTextures.begin(), gbufferTextures.end()));
     colorCmd.oldLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
     colorCmd.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(
+    TextureManager::SetLayoutBarrierMasks(
         colorCmd, ImageLayout::COLOR_ATTACHMENT_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
     pCmdBuffer->RecordCommand(colorCmd);
 
@@ -196,7 +173,7 @@ void FrameTransitionRecorder::RecordGBufferToShaderRead(
         ImageLayoutTransitionCmd shadowCmd(pShadowMapTexture);
         shadowCmd.oldLayout = ImageLayout::UNDEFINED;
         shadowCmd.newLayout = ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-        VkTextureManager::SetLayoutBarrierMasks(
+        TextureManager::SetLayoutBarrierMasks(
             shadowCmd, ImageLayout::UNDEFINED, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
         pCmdBuffer->RecordCommand(shadowCmd);
     }
@@ -220,7 +197,7 @@ void FrameTransitionRecorder::RecordDepthToReadOnly(CommandBuffer* pCmdBuffer, T
         ImageLayoutTransitionCmd depthCmd(pMainDepthTexture);
         depthCmd.oldLayout = ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         depthCmd.newLayout = ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-        VkTextureManager::SetLayoutBarrierMasks(
+        TextureManager::SetLayoutBarrierMasks(
             depthCmd, ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
         pCmdBuffer->RecordCommand(depthCmd);
     }
@@ -232,7 +209,7 @@ void FrameTransitionRecorder::RecordThisFrameColorToRead(CommandBuffer* pCmdBuff
     ImageLayoutTransitionCmd cmd(pThisFrameColorTexture);
     cmd.oldLayout = ImageLayout::GENERAL;
     cmd.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::GENERAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    TextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::GENERAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
     pCmdBuffer->RecordCommand(cmd);
 }
 
@@ -242,7 +219,7 @@ void FrameTransitionRecorder::RecordThisFrameColorToGeneral(CommandBuffer* pCmdB
     ImageLayoutTransitionCmd cmd(pThisFrameColorTexture);
     cmd.oldLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
     cmd.newLayout = ImageLayout::GENERAL;
-    VkTextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::SHADER_READ_ONLY_OPTIMAL, ImageLayout::GENERAL);
+    TextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::SHADER_READ_ONLY_OPTIMAL, ImageLayout::GENERAL);
     pCmdBuffer->RecordCommand(cmd);
 }
 
@@ -252,7 +229,7 @@ void FrameTransitionRecorder::RecordThisFrameColorToGeneralDiscard(CommandBuffer
     ImageLayoutTransitionCmd cmd(pThisFrameColorTexture);
     cmd.oldLayout = ImageLayout::UNDEFINED;
     cmd.newLayout = ImageLayout::GENERAL;
-    VkTextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::UNDEFINED, ImageLayout::GENERAL);
+    TextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::UNDEFINED, ImageLayout::GENERAL);
     pCmdBuffer->RecordCommand(cmd);
 }
 
@@ -262,69 +239,8 @@ void FrameTransitionRecorder::RecordThisFrameColorFromGeneralToRead(CommandBuffe
     ImageLayoutTransitionCmd cmd(pThisFrameColorTexture);
     cmd.oldLayout = ImageLayout::GENERAL;
     cmd.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::GENERAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    TextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::GENERAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
     pCmdBuffer->RecordCommand(cmd);
-}
-
-void FrameTransitionRecorder::RecordResolveToGeneral(CommandBuffer* pCmdBuffer, Texture* pResolveTexture)
-{
-    if (!pResolveTexture) return;
-    ImageLayoutTransitionCmd cmd(pResolveTexture);
-    cmd.oldLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-    cmd.newLayout = ImageLayout::GENERAL;
-    VkTextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::SHADER_READ_ONLY_OPTIMAL, ImageLayout::GENERAL);
-    pCmdBuffer->RecordCommand(cmd);
-}
-
-void FrameTransitionRecorder::RecordResolveToRead(CommandBuffer* pCmdBuffer, Texture* pResolveTexture)
-{
-    if (!pResolveTexture) return;
-    ImageLayoutTransitionCmd cmd(pResolveTexture);
-    cmd.oldLayout = ImageLayout::GENERAL;
-    cmd.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::GENERAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-    pCmdBuffer->RecordCommand(cmd);
-}
-
-void FrameTransitionRecorder::RecordCopyTextureToResolve(CommandBuffer* pCmdBuffer,
-                                                         Texture* pResolveTexture,
-                                                         Texture* pSourceTexture)
-{
-    if (!pResolveTexture || !pSourceTexture) return;
-
-    ImageLayoutTransitionCmd sourceToCopy(pSourceTexture);
-    sourceToCopy.oldLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-    sourceToCopy.newLayout = ImageLayout::TRANSFER_SRC_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(
-        sourceToCopy, ImageLayout::SHADER_READ_ONLY_OPTIMAL, ImageLayout::TRANSFER_SRC_OPTIMAL);
-    pCmdBuffer->RecordCommand(sourceToCopy);
-
-    ImageLayoutTransitionCmd resolveToCopy(pResolveTexture);
-    resolveToCopy.oldLayout = ImageLayout::UNDEFINED;
-    resolveToCopy.newLayout = ImageLayout::TRANSFER_DST_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(resolveToCopy, ImageLayout::UNDEFINED, ImageLayout::TRANSFER_DST_OPTIMAL);
-    pCmdBuffer->RecordCommand(resolveToCopy);
-
-    const auto sourceExtents = pSourceTexture->GetInfo().extents;
-    const auto resolveExtents = pResolveTexture->GetInfo().extents;
-    if (sourceExtents.x == resolveExtents.x && sourceExtents.y == resolveExtents.y)
-        pCmdBuffer->RecordCommand(ImageToImageCopyCmd(pSourceTexture, pResolveTexture));
-    else
-        pCmdBuffer->RecordCommand(ImageToImageBlitCmd(pSourceTexture, pResolveTexture));
-
-    ImageLayoutTransitionCmd sourceToRead(pSourceTexture);
-    sourceToRead.oldLayout = ImageLayout::TRANSFER_SRC_OPTIMAL;
-    sourceToRead.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(
-        sourceToRead, ImageLayout::TRANSFER_SRC_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-    pCmdBuffer->RecordCommand(sourceToRead);
-
-    ImageLayoutTransitionCmd resolveToRead(pResolveTexture);
-    resolveToRead.oldLayout = ImageLayout::TRANSFER_DST_OPTIMAL;
-    resolveToRead.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(
-        resolveToRead, ImageLayout::TRANSFER_DST_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-    pCmdBuffer->RecordCommand(resolveToRead);
 }
 
 void FrameTransitionRecorder::RecordClearColorTexture(CommandBuffer* pCmdBuffer,
@@ -337,7 +253,7 @@ void FrameTransitionRecorder::RecordClearColorTexture(CommandBuffer* pCmdBuffer,
     ImageLayoutTransitionCmd toTransfer(pTexture);
     toTransfer.oldLayout = oldLayout;
     toTransfer.newLayout = ImageLayout::TRANSFER_DST_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(toTransfer, oldLayout, ImageLayout::TRANSFER_DST_OPTIMAL);
+    TextureManager::SetLayoutBarrierMasks(toTransfer, oldLayout, ImageLayout::TRANSFER_DST_OPTIMAL);
     pCmdBuffer->RecordCommand(toTransfer);
 
     ClearColorImageCmd clearCmd(pTexture);
@@ -350,7 +266,7 @@ void FrameTransitionRecorder::RecordClearColorTexture(CommandBuffer* pCmdBuffer,
     ImageLayoutTransitionCmd toFinal(pTexture);
     toFinal.oldLayout = ImageLayout::TRANSFER_DST_OPTIMAL;
     toFinal.newLayout = finalLayout;
-    VkTextureManager::SetLayoutBarrierMasks(toFinal, ImageLayout::TRANSFER_DST_OPTIMAL, finalLayout);
+    TextureManager::SetLayoutBarrierMasks(toFinal, ImageLayout::TRANSFER_DST_OPTIMAL, finalLayout);
     pCmdBuffer->RecordCommand(toFinal);
 }
 
@@ -361,7 +277,7 @@ void FrameTransitionRecorder::RecordSSSOutputToGeneral(CommandBuffer* pCmdBuffer
     ImageLayoutTransitionCmd cmd(pScreenSpaceShadowTexture);
     cmd.oldLayout = ImageLayout::UNDEFINED;
     cmd.newLayout = ImageLayout::GENERAL;
-    VkTextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::UNDEFINED, ImageLayout::GENERAL);
+    TextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::UNDEFINED, ImageLayout::GENERAL);
     pCmdBuffer->RecordCommand(cmd);
 }
 
@@ -372,42 +288,10 @@ void FrameTransitionRecorder::RecordSSSOutputToShaderRead(CommandBuffer* pCmdBuf
     ImageLayoutTransitionCmd cmd(pScreenSpaceShadowTexture);
     cmd.oldLayout = ImageLayout::GENERAL;
     cmd.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::GENERAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    TextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::GENERAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
     cmd.dstStage = static_cast<SyncStages>(VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT);
     cmd.dstAccessMask = static_cast<AccessFlags>(0);
     pCmdBuffer->RecordCommand(cmd);
-}
-
-void FrameTransitionRecorder::RecordDLSSExposureUpdate(CommandBuffer* pCmdBuffer,
-                                                       Texture* pDLSSExposureTexture,
-                                                       StagingBuffer& dlssExposureStagingBuffer)
-{
-    if (!pDLSSExposureTexture)
-        return;
-
-    const float exposureValue = g_pApplicationState->GetCurrentApplicationState().renderState.exposure;
-    dlssExposureStagingBuffer.CopyToMapped(&exposureValue, sizeof(exposureValue));
-
-    ImageLayoutTransitionCmd exposureToTransfer(pDLSSExposureTexture);
-    exposureToTransfer.oldLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-    exposureToTransfer.newLayout = ImageLayout::TRANSFER_DST_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(
-        exposureToTransfer, ImageLayout::SHADER_READ_ONLY_OPTIMAL, ImageLayout::TRANSFER_DST_OPTIMAL);
-    exposureToTransfer.srcStage = static_cast<SyncStages>(VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT);
-    pCmdBuffer->RecordCommand(exposureToTransfer);
-
-    ImageBufferCopyCmd copyExposure(&dlssExposureStagingBuffer, pDLSSExposureTexture);
-    copyExposure.imageExtent = {1, 1, 1};
-    copyExposure.aspectFlagBits = VK_IMAGE_ASPECT_COLOR_BIT;
-    pCmdBuffer->RecordCommand(copyExposure);
-
-    ImageLayoutTransitionCmd exposureToRead(pDLSSExposureTexture);
-    exposureToRead.oldLayout = ImageLayout::TRANSFER_DST_OPTIMAL;
-    exposureToRead.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(
-        exposureToRead, ImageLayout::TRANSFER_DST_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-    exposureToRead.dstStage = static_cast<SyncStages>(VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT);
-    pCmdBuffer->RecordCommand(exposureToRead);
 }
 
 void FrameTransitionRecorder::RecordSwapchainToAttachment(CommandBuffer* pCmdBuffer, Texture* pSwapchainTexture)
@@ -416,7 +300,7 @@ void FrameTransitionRecorder::RecordSwapchainToAttachment(CommandBuffer* pCmdBuf
     ImageLayoutTransitionCmd cmd(pSwapchainTexture);
     cmd.oldLayout = ImageLayout::UNDEFINED;
     cmd.newLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
-    VkTextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::UNDEFINED, ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+    TextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::UNDEFINED, ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
     pCmdBuffer->RecordCommand(cmd);
 }
 
@@ -426,6 +310,6 @@ void FrameTransitionRecorder::RecordSwapchainToPresent(CommandBuffer* pCmdBuffer
     ImageLayoutTransitionCmd cmd(pSwapchainTexture);
     cmd.oldLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
     cmd.newLayout = ImageLayout::PRESENT_SRC_KHR;
-    VkTextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::COLOR_ATTACHMENT_OPTIMAL, ImageLayout::PRESENT_SRC_KHR);
+    TextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::COLOR_ATTACHMENT_OPTIMAL, ImageLayout::PRESENT_SRC_KHR);
     pCmdBuffer->RecordCommand(cmd);
 }

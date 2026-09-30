@@ -45,7 +45,6 @@ struct APITraits<API_Vulkan>
     using StagingBufferType = StagingBufferVulkan;
     using UniformBufferType = UniformBufferVulkan;
     using StorageBufferType = StorageBufferVulkan;
-    using IndirectDrawCommandBufferType = IndirectDrawCommandBufferVulkan;
     using VertexBufferType = VertexBufferVulkan;
     using IndexBufferType = IndexBufferVulkan;
     using DescriptorSetType = DescriptorSetVulkan;

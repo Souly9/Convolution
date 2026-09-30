@@ -21,6 +21,9 @@
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
+// Aliases the bindless storage images for the RG32F velocity target
+layout(set = BindlessImageSet, binding = GlobalBindlessImageBufferSlot, rg32f) uniform writeonly image2D GlobalBindlessImagesRG32F[];
+
 // CSM debug colors for each cascade layer
 vec3 getCascadeDebugColor(int cascadeIndex)
 {
@@ -100,7 +103,18 @@ void main()
 
     float fragmentDepth = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.depthBufferIdx)], texCoords).r;
 
-    vec4 fragPosWorldSpace = DepthToWorldSpace(texCoords, fragmentDepth, ubo.jitteredViewProjectionInverse);
+    // No geometry wrote motion for the background, give it camera-only motion of the far plane
+    if (fragmentDepth <= 0.0)
+    {
+        vec2 ndc = vec2(texCoords.x * 2.0 - 1.0, 1.0 - texCoords.y * 2.0) - FrameJitterNdc();
+        vec4 prevClip = ubo.clipToPrevClip * vec4(ndc, 0.0, 1.0);
+        vec2 velocity = prevClip.w > 0.0 ? ndc - prevClip.xy / prevClip.w : vec2(0.0);
+        imageStore(GlobalBindlessImagesRG32F[nonuniformEXT(gbufferUBO.gbufferVelocityIdx)],
+                   texelCoords,
+                   vec4(velocity, 0.0, 0.0));
+    }
+
+    vec4 fragPosWorldSpace = DepthToWorldSpace(texCoords, fragmentDepth, ubo.viewProjectionInverse);
     mat4 view = ubo.view;
     vec4 fragPosViewSpace =
         view * fragPosWorldSpace; // Technically already got it when calculating world from depth but this is fiiine
@@ -126,7 +140,7 @@ void main()
         float shadow = computeShadow(fragPosWorldSpace, viewDepth, N, dirLightTravelDir);
         vec3 debugColor = mix(cascadeColor, albedo, shadow);
 
-        imageStore(GlobalBindlessImages[nonuniformEXT(gbufferUBO.deferredLightingColorIdx)],
+        imageStore(GlobalBindlessImages[nonuniformEXT(gbufferUBO.sceneColorIdx)],
                    texelCoords,
                    vec4(debugColor, 1.0));
         return;
@@ -140,7 +154,7 @@ void main()
         float b = fract(sin(float(clusterIdx) * 98.3125 + 98.654) * 87541.2356);
 
         imageStore(
-            GlobalBindlessImages[nonuniformEXT(gbufferUBO.deferredLightingColorIdx)], texelCoords, vec4(r, g, b, 1.0));
+            GlobalBindlessImages[nonuniformEXT(gbufferUBO.sceneColorIdx)], texelCoords, vec4(r, g, b, 1.0));
         return;
     }
 
@@ -200,7 +214,7 @@ void main()
 
     vec3 finalHDRColor = (directLighting + indirectLighting + emissive);
 
-    imageStore(GlobalBindlessImages[nonuniformEXT(gbufferUBO.deferredLightingColorIdx)],
+    imageStore(GlobalBindlessImages[nonuniformEXT(gbufferUBO.sceneColorIdx)],
                texelCoords,
                vec4(finalHDRColor, 1.0));
 }

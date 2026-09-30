@@ -2,7 +2,7 @@
 #include "../RenderPass.h"
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Rendering/Core/RenderingForwardDecls.h"
-#include "Core/Rendering/Vulkan/VkPipeline.h"
+#include "Core/Rendering/Core/Pipeline.h"
 #include "../../../../../Shaders/Globals/PushConstants.h"
 
 namespace RenderPasses

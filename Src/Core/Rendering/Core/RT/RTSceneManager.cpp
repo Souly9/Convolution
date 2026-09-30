@@ -10,7 +10,7 @@
 #include "Core/Rendering/Core/SharedResourceManager.h"
 #include "Core/Rendering/Core/Synchronization.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
-#include "Core/Rendering/Vulkan/Utils/VkDescriptorLayoutUtils.h"
+#include "Core/Rendering/Core/DescriptorUtils/DescriptorLayoutUtils.h"
 #include <EASTL/algorithm.h>
 #include <EASTL/sort.h>
 

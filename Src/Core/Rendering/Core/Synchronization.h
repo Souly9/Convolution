@@ -76,6 +76,9 @@ class TimelineSemaphoreBase : public GPUSyncer
 #ifdef USE_VULKAN
 #include "Core/Rendering/Vulkan/VkSynchronization.h"
 #include "Core/Rendering/Vulkan/VulkanTraits.h"
+#elif defined(USE_METAL)
+#include "Core/Rendering/Metal/MetalTraits.h"
+#include "Core/Rendering/Metal/MtlSynchronization.h"
 #endif
 
 template <typename API>

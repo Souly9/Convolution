@@ -2,7 +2,7 @@
 #include "Core/ECS/EntityManager.h"
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Global/ConvolutionState.h"
-#include "Core/Rendering/Vulkan/VkState.h"
+#include "Core/Rendering/Backend/BackendGlobals.h"
 
 int main()
 {
@@ -23,7 +23,7 @@ int main()
     ConvolutionState::pFileReader.reset();
     ConvolutionState::pMeshManager.reset();
     ConvolutionState::pDeleteQueue->ForceEmptyQueue();
-    VkState::pGPUMemoryManager.reset();
+    RenderGlobals::pGPUMemoryManager.reset();
     layer.CleanUp();
     return 0;
 }

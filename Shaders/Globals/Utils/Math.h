@@ -8,9 +8,7 @@ vec4 DepthToWorldSpace(vec2 texCoords, float fragmentDepth, mat4 invViewProjecti
     vec4 clipSpacePosition;
     clipSpacePosition.x = texCoords.x * 2.0 - 1.0;
     clipSpacePosition.y = 1.0 - texCoords.y * 2.0;
-    vec2 jitterNdc = ubo.jitterOffset * 2.0 / ubo.renderResolution;
-    jitterNdc.y *= -1.0;
-    clipSpacePosition.xy -= jitterNdc;
+    clipSpacePosition.xy -= FrameJitterNdc();
     clipSpacePosition.z = fragmentDepth;
     clipSpacePosition.w = 1.0;
 

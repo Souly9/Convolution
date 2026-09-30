@@ -8,6 +8,7 @@
 #include "Core/Global/Profiling.h"
 #include "Core/Global/State/ApplicationState.h"
 #include "Core/Global/Utils/MathFunctions.h"
+#include "Core/Rendering/Core/AntiAliasing.h"
 #include "Core/Rendering/Core/Nvidia/StreamlineManager.h"
 #include "Core/Rendering/Vulkan/XeSS/XeSSManager.h"
 #include "InfoWindow.h"
@@ -488,18 +489,9 @@ public:
                         const AntialiasingType selectedAA = aaValues[uiAAType];
                         if (selectedAA != currentAA)
                         {
+                            // History reset and render scale follow from AA::Resolve on the render thread
                             g_pApplicationState->RegisterUpdateFunction([selectedAA](ApplicationState& state)
-                            {
-                                state.renderState.aaType = selectedAA;
-                                if (selectedAA == AntialiasingType::None || selectedAA == AntialiasingType::SMAA || selectedAA == AntialiasingType::TAA_SMAA)
-                                {
-                                    state.renderState.upscalingPercentage = 100;
-                                }
-                                if (selectedAA == AntialiasingType::TAA_SMAA)
-                                {
-                                    state.renderState.taaSeedHistoryFromCurrentColor = true;
-                                }
-                            });
+                                                                        { state.renderState.aaType = selectedAA; });
                             needsUpdate = true;
                         }
                     }
@@ -507,11 +499,10 @@ public:
                     if (currentAA == AntialiasingType::TAA_SMAA)
                     {
                         ImGui::Indent();
-                        if (ImGui::Button("Seed History From Current Color"))
+                        if (ImGui::Button("Reset TAA History"))
                         {
                             g_pApplicationState->RegisterUpdateFunction(
-                                [](ApplicationState& state)
-                                { state.renderState.taaSeedHistoryFromCurrentColor = true; });
+                                [](ApplicationState& state) { ++state.renderState.temporalResetGeneration; });
                         }
 
                         float taaVelocityRejectionStart = renderState.taaVelocityRejectionStart;
@@ -536,12 +527,12 @@ public:
                     }
                 }
 
-                if (ImGui::CollapsingHeader("TAA / View Debug", ImGuiTreeNodeFlags_DefaultOpen))
+                if (ImGui::CollapsingHeader("View Debug", ImGuiTreeNodeFlags_DefaultOpen))
                 {
-                    const char* debugModes[] = {"None", "CSM Cascades", "Clusters"};
+                    const char* debugModes[] = {"None", "CSM Cascades", "Clusters", "Motion Vectors"};
                     int currentDebugMode = mathstl::clamp(renderState.debugViewMode,
                                                           static_cast<s32>(DebugViewMode::None),
-                                                          static_cast<s32>(DebugViewMode::Clusters));
+                                                          static_cast<s32>(DebugViewMode::MotionVectors));
                     int uiDebugMode = currentDebugMode;
 
                     if (ImGui::Combo("Debug View Mode", &uiDebugMode, debugModes, IM_ARRAYSIZE(debugModes)))
@@ -554,39 +545,20 @@ public:
                         }
                     }
 
-                    const char* taaDebugModes[] = {"Off",
-                                                   "Current Color",
-                                                   "History Color",
-                                                   "History Current Difference",
-                                                   "Velocity Magnitude",
-                                                   "History Velocity Magnitude"};
-                    int currentTAADebugMode = mathstl::clamp(static_cast<int>(renderState.taaDebugMode),
-                                                             static_cast<int>(TAADebugMode::Off),
-                                                             static_cast<int>(TAADebugMode::HistoryVelocityMagnitude));
-                    int uiTAADebugMode = currentTAADebugMode;
-                    if (ImGui::Combo("TAA Debug View", &uiTAADebugMode, taaDebugModes, IM_ARRAYSIZE(taaDebugModes)))
+                    if (renderState.debugViewMode == static_cast<s32>(DebugViewMode::MotionVectors))
                     {
-                        if (uiTAADebugMode != currentTAADebugMode)
-                        {
-                            g_pApplicationState->RegisterUpdateFunction(
-                                [uiTAADebugMode](ApplicationState& state)
-                                { state.renderState.taaDebugMode = static_cast<u32>(uiTAADebugMode); });
-                        }
-                    }
-
-                    bool taaForceHistory = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::TAAForceHistory);
-                    if (ImGui::Checkbox("TAA Force History", &taaForceHistory))
-                    {
-                        g_pApplicationState->RegisterUpdateFunction(
-                            [taaForceHistory](ApplicationState& state) {
-                                mathstl::setFlag(
-                                    state.renderState.debugFlags, (u32)DebugFlags::TAAForceHistory, taaForceHistory);
-                            });
+                        ImGui::TextWrapped("Current -> previous offset in pixels: gray = static, red/green = +x/+y, "
+                                           "saturates at 16 px. Sky should move with the camera.");
                     }
                 }
 
                 if (ImGui::CollapsingHeader("Upscaling Settings", ImGuiTreeNodeFlags_DefaultOpen))
                 {
+                    const bool upscalerSelected = AA::IsUpscalerMode(renderState.aaType);
+                    if (!upscalerSelected)
+                    {
+                        ImGui::BeginDisabled();
+                    }
                     const char* resolutionOptions[] = {"100%", "75%", "50%", "25%"};
                     const u32 resolutionValues[] = {100, 75, 50, 25};
                     u32 currentPercentage = renderState.upscalingPercentage;
@@ -612,7 +584,17 @@ public:
                             needsUpdate = true;
                         }
                     }
+                    if (!upscalerSelected)
+                    {
+                        ImGui::EndDisabled();
+                        ImGui::SameLine();
+                        ImGui::TextDisabled("(DLSS / XeSS only)");
+                    }
                 }
+
+#ifdef USE_VULKAN
+                DrawStreamlineDebug();
+#endif
 
                 if (needsUpdate)
                 {
@@ -652,6 +634,10 @@ public:
                         if (gbufferIDs.size() > 7)
                         {
                             buffers.push_back({"Bloom", gbufferIDs[7]});
+                        }
+                        if (gbufferIDs.size() > 8)
+                        {
+                            buffers.push_back({"Upscaler Output", gbufferIDs[8]});
                         }
 
                         for (u32 i = 0; i < csmIDs.size(); ++i)
@@ -737,6 +723,7 @@ private:
         return value ? "Yes" : "No";
     }
 
+#ifdef USE_VULKAN
     static const char* DLSSModeToString(sl::DLSSMode mode)
     {
         switch (mode)
@@ -784,6 +771,142 @@ private:
                 return "Other";
         }
     }
+
+    static const char* VariantToString(Nvidia::DLSSVariant variant)
+    {
+        return variant == Nvidia::DLSSVariant::RayReconstruction ? "Ray Reconstruction" : "Super Resolution";
+    }
+
+    static stltype::string VersionToString(const sl::Version& version)
+    {
+        return version ? stltype::string(version.toStr().c_str()) : stltype::string("n/a");
+    }
+
+    void DrawStreamlineDebug()
+    {
+        using SL = Nvidia::StreamlineManager;
+        if (!ImGui::CollapsingHeader("DLSS / Streamline Debug"))
+            return;
+        if (!SL::IsAvailable())
+        {
+            ImGui::TextDisabled("Streamline is not initialized");
+            return;
+        }
+
+        const auto state = SL::GetDLSSDebugState();
+        const auto versions = SL::GetVersionInfo();
+        auto settings = SL::GetDebugSettings();
+        bool changed = false;
+
+        ImGui::SeparatorText("Status");
+        ImGui::Text("SDK %s | DLSS %s (NGX %s) | RR %s (NGX %s)",
+                    VersionToString(versions.sdk).c_str(),
+                    VersionToString(versions.dlssPlugin).c_str(),
+                    VersionToString(versions.dlssNGX).c_str(),
+                    VersionToString(versions.rrPlugin).c_str(),
+                    VersionToString(versions.rrNGX).c_str());
+        const auto requirementSet = [](sl::FeatureRequirementFlags flags, sl::FeatureRequirementFlags bit)
+        { return (static_cast<u32>(flags) & static_cast<u32>(bit)) != 0; };
+        ImGui::Text("DLLs: %s | VSync off required: %s | HW scheduling required: %s",
+                    versions.developmentPlugins ? "development" : "production",
+                    BoolToString(requirementSet(versions.dlssFlags, sl::FeatureRequirementFlags::eVSyncOffRequired)),
+                    BoolToString(requirementSet(versions.dlssFlags, sl::FeatureRequirementFlags::eHardwareSchedulingRequired)));
+        ImGui::Text("Running: %s | Mode: %s | %u x %u -> %u x %u | VRAM: %.1f MB",
+                    VariantToString(state.variant),
+                    DLSSModeToString(state.configuredMode),
+                    state.inputWidth,
+                    state.inputHeight,
+                    state.outputWidth,
+                    state.outputHeight,
+                    static_cast<f32>(state.estimatedVRAMUsageInBytes) / (1024.0f * 1024.0f));
+        ImGui::Text("Optimal render: %u x %u (min %u x %u, max %u x %u)",
+                    state.optimalRenderWidth,
+                    state.optimalRenderHeight,
+                    state.renderWidthMin,
+                    state.renderHeightMin,
+                    state.renderWidthMax,
+                    state.renderHeightMax);
+        ImGui::Text("Configured: %s | Configure failed: %s | Evaluate blocked: %s",
+                    BoolToString(state.configured),
+                    BoolToString(state.lastConfigureFailed),
+                    BoolToString(state.evaluateBlocked));
+        ImGui::Text("Evaluating: %s | Reset this frame: %s | Exposure texture: %s | Calls: %llu",
+                    BoolToString(!state.bypassed),
+                    BoolToString(state.reset),
+                    BoolToString(state.exposureTextureTagged),
+                    static_cast<unsigned long long>(state.evaluateCallCount));
+        ImGui::Text("Constants: %s | Tag: %s | Evaluate: %s",
+                    ResultToString(state.lastSetConstantsResult),
+                    ResultToString(state.lastTagResult),
+                    ResultToString(state.lastEvaluateResult));
+        ImGui::Text("Jitter sent: (%.3f, %.3f) px | MV scale sent: (%.3f, %.3f)",
+                    state.jitter.x,
+                    state.jitter.y,
+                    state.motionVectorScale.x,
+                    state.motionVectorScale.y);
+
+        ImGui::SeparatorText("Controls");
+        changed |= ImGui::Checkbox("Bypass DLSS (copy input)", &settings.bypass);
+        changed |= ImGui::Checkbox("Use exposure texture (off = DLSS auto exposure)", &settings.useExposureTexture);
+        changed |= ImGui::Checkbox("Flip jitter X", &settings.flipJitterX);
+        ImGui::SameLine();
+        changed |= ImGui::Checkbox("Flip jitter Y", &settings.flipJitterY);
+        changed |= ImGui::Checkbox("Override motion vector scale", &settings.overrideMotionVectorScale);
+        if (settings.overrideMotionVectorScale)
+            changed |= ImGui::DragFloat2("Motion vector scale", &settings.motionVectorScale.x, 0.01f, -4.0f, 4.0f);
+
+        static const char* presetNames[] = {"Default", "J", "K", "L", "M"};
+        static const sl::DLSSPreset presetValues[] = {sl::DLSSPreset::eDefault,
+                                                      sl::DLSSPreset::ePresetJ,
+                                                      sl::DLSSPreset::ePresetK,
+                                                      sl::DLSSPreset::ePresetL,
+                                                      sl::DLSSPreset::ePresetM};
+        int presetIdx = 0;
+        for (int i = 0; i < IM_ARRAYSIZE(presetValues); ++i)
+        {
+            if (presetValues[i] == settings.preset)
+                presetIdx = i;
+        }
+        if (ImGui::Combo("SR Preset", &presetIdx, presetNames, IM_ARRAYSIZE(presetNames)))
+        {
+            settings.preset = presetValues[presetIdx];
+            changed = true;
+        }
+
+        changed |= ImGui::Checkbox("Invert DLSS indicator X", &settings.invertIndicatorAxisX);
+        ImGui::SameLine();
+        changed |= ImGui::Checkbox("Invert DLSS indicator Y", &settings.invertIndicatorAxisY);
+
+        static const char* verbosityNames[] = {"Off", "Errors", "Warnings", "Info"};
+        int verbosity = static_cast<int>(settings.logVerbosity);
+        if (ImGui::Combo("Streamline Log", &verbosity, verbosityNames, IM_ARRAYSIZE(verbosityNames)))
+        {
+            settings.logVerbosity = static_cast<SL::LogVerbosity>(verbosity);
+            changed = true;
+        }
+
+        if (ImGui::Button("Reset DLSS History"))
+        {
+            ++settings.resetGeneration;
+            changed = true;
+        }
+
+        if (changed)
+            SL::SetDebugSettings(settings);
+
+        ImGui::SeparatorText("Streamline Overlays");
+        if (SL::IsDLSSDebugUIAvailable())
+        {
+            ImGui::TextWrapped("Present is routed through Streamline. Ctrl+Shift+Home: stats overlay, "
+                               "Ctrl+Shift+Insert: tagged buffer view (keys in sl.common.json).");
+        }
+        else
+        {
+            ImGui::TextWrapped("Unavailable: needs the development DLLs (Debug/RelWithDebInfo) and CONV_SL_OVERLAY=1 "
+                               "at startup, which routes swapchain and present through sl.interposer.");
+        }
+    }
+#endif
 
     bool m_drawDebugMeshes{false};
 };

@@ -2,6 +2,7 @@
 
 // Supported APIs
 struct API_Vulkan {};
+struct API_Metal {};
 struct API_DX12 {}; // Future proofing
 
 // Traits system to map API tags to implementation types

@@ -4,13 +4,11 @@
 #include "Core/ECS/Components/Camera.h"
 #include "Core/ECS/Components/Light.h"
 #include "Core/ECS/Components/RenderComponent.h"
-#include "Core/Global/GlobalVariables.h"
 #include "Core/Global/State/ApplicationState.h"
 #include "Core/Rendering/Core/AABB.h"
 #include "Core/Rendering/Core/MaterialManager.h"
 #include "Core/Rendering/Core/TextureManager.h"
 #include "Core/Global/LogDefines.h"
-#include "Core/Rendering/Vulkan/VkTextureManager.h"
 #include "Core/SceneGraph/Mesh.h"
 #include <initializer_list>
 #include "Core/Global/ThreadPool.h"

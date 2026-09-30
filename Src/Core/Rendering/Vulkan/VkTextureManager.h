@@ -8,6 +8,8 @@
 #include "Core/Rendering/Core/CommandBuffer.h"
 #include "Core/Rendering/Core/RenderingForwardDecls.h"
 #include "Core/Rendering/Core/RenderDefinitions.h"
+#include "Core/Rendering/Core/Defines/BindingSlots.h"
+#include <EASTL/array.h>
 #include "Core/Rendering/Vulkan/Utils/TextureEnums.h"
 #include "Core/Rendering/Core/TransferUtils/TransferDefines.h"
 #include "Core/Rendering/Vulkan/VkCommandBuffer.h"
@@ -17,96 +19,12 @@
 #include "Core/Rendering/Vulkan/VkSynchronization.h"
 #include "Core/Rendering/Vulkan/VkBuffer.h"
 #include "Core/Rendering/Core/Texture.h"
+#include "Core/Rendering/Core/TextureManagerTypes.h"
 #include "VkTexture.h"
 #include <EASTL/deque.h>
 #include <EASTL/queue.h>
 
 enum VkFormat;
-
-struct TextureSamplerInfo
-{
-    TextureWrapMode wrapU{TextureWrapMode::REPEAT};
-    TextureWrapMode wrapV{TextureWrapMode::REPEAT};
-    TextureWrapMode wrapW{TextureWrapMode::REPEAT};
-    TextureFilter minFilter{TextureFilter::LINEAR};
-    TextureFilter magFilter{TextureFilter::LINEAR};
-    VkBorderColor borderColor{VK_BORDER_COLOR_INT_OPAQUE_WHITE};
-};
-
-enum class TextureSemantic : u8
-{
-    Auto,
-    BaseColor,
-    Emissive,
-    Normal,
-    Data,
-    Sheen,
-    Clearcoat,
-    Specular
-};
-
-struct DynamicTextureRequest
-{
-    DirectX::XMUINT3 extents;
-    TextureHandle handle;
-    TexFormat format;
-    Usage usage;
-    Tiling tiling{Tiling::OPTIMAL};
-    TextureSamplerInfo samplerInfo;
-    bool hasMipMaps{false};
-    bool createSampler{true};
-    bool isPersistent{false};
-    u32 mipLevels;
-
-    void AddName(const stltype::string& name)
-    {
-#ifdef CONV_DEBUG
-        m_debugName = name;
-#endif
-    }
-
-    const stltype::string& GetName() const
-    {
-#ifdef CONV_DEBUG
-        return m_debugName;
-#else
-        return "DynamicTexture";
-#endif
-    }
-
-private:
-#ifdef CONV_DEBUG
-    stltype::string m_debugName;
-#endif
-};
-
-struct FileTextureRequest
-{
-    ReadTextureInfo ioInfo;
-    TextureHandle handle;
-    bool makeBindless{true};
-    bool isPersistent{false};
-    TextureSemantic semantic{TextureSemantic::Auto};
-    TexFormat format{TexFormat::UNDEFINED};
-};
-struct AsyncLayoutTransitionRequest
-{
-    stltype::vector<const Texture*> textures;
-    ImageLayout oldLayout;
-    ImageLayout newLayout;
-    u32 mipLevels;
-    // Optional semaphores to wait on and signal
-    Semaphore* pWaitSemaphore{nullptr};
-    Semaphore* pSignalSemaphore{nullptr};
-
-    // Timeline semaphores
-    TimelineSemaphore* pTimelineWaitSemaphore{nullptr};
-    u64 timelineWaitValue{0};
-    TimelineSemaphore* pTimelineSignalSemaphore{nullptr};
-    u64 timelineSignalValue{0};
-};
-
-using TextureRequest = stltype::variant<FileTextureRequest, DynamicTextureRequest, AsyncLayoutTransitionRequest>;
 
 struct TextureCreationInfoVulkanImage
 {
@@ -138,18 +56,7 @@ public:
 
     void SubmitTextureRequest(const TextureRequest& req);
 
-    struct TexCreateInfo
-    {
-        const stltype::string& filePath;
-        bool makeBindless{true};
-        bool isPersistent{false};
-        TextureSemantic semantic{TextureSemantic::Auto};
-
-        TexCreateInfo(const stltype::string& filePath, bool makeBindless, TextureSemantic semantic, bool isPersistent = false)
-            : filePath(filePath), makeBindless(makeBindless), isPersistent(isPersistent), semantic(semantic)
-        {
-        }
-    };
+    using TexCreateInfo = TextureFileCreateInfo;
     TextureHandle SubmitAsyncTextureCreation(const TexCreateInfo& info);
     TextureHandle SubmitAsyncDynamicTextureCreation(const DynamicTextureRequest& info);
 
@@ -220,12 +127,7 @@ public:
         return m_combinedBindlessDescriptorSet;
     }
 
-    struct LoadedTexInfo
-    {
-        stltype::string filePath;
-        TextureSemantic semantic{TextureSemantic::Auto};
-        TextureHandle handle;
-    };
+    using LoadedTexInfo = LoadedTextureInfo;
 
     const stltype::hash_map<TextureHandle, stltype::unique_ptr<Texture>>& GetTextures() const { return m_textures; }
     const stltype::hash_map<TextureHandle, stltype::unique_ptr<Texture>>& GetPersistentTextures() const { return m_persistentTextures; }
@@ -249,6 +151,9 @@ protected:
     void CreateTransferCommandPool();
     void CreateTransferCommandBuffer();
     void CreateBindlessDescriptorSet();
+    void CreateGlobalSamplers();
+    // Writes a texture into every bindless array it belongs to at idx
+    void WriteBindlessTexture(TextureVulkan* pTex, u32 idx);
 
     const LoadedTexInfo* IsAlreadyRequested(const stltype::string& filePath, TextureSemantic semantic) const;
 
@@ -268,6 +173,8 @@ protected:
     DescriptorSetLayoutVulkan m_bindlessImageDescriptorSetLayout;
     DescriptorSetVulkan* m_combinedBindlessDescriptorSet{nullptr};
     DescriptorSetLayoutVulkan m_combinedBindlessDescriptorSetLayout;
+    // Indexed by SAMPLER_* from Shaders/Globals/Common.h
+    stltype::array<VkSampler, GLOBAL_SAMPLER_COUNT> m_globalSamplers{};
     stltype::vector<TextureHandle> m_texturesToMakeBindless;
     stltype::vector<TextureHandle> m_persistentTexturesToMakeBindless;
     stltype::vector<Texture*> m_pendingGraphicsShaderReadTransitions;

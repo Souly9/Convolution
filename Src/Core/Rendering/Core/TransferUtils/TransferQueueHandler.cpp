@@ -1,6 +1,7 @@
 #include "TransferQueueHandler.h"
 #include "../StaticFunctions.h"
 #include "Core/Events/EventSystem.h"
+#include "Core/Rendering/Backend/BackendGlobals.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Global/LogDefines.h"
 #include "Core/Global/Utils/MathFunctions.h"
@@ -52,8 +53,8 @@ AsyncQueueHandler::~AsyncQueueHandler()
 
 void AsyncQueueHandler::Init()
 {
-    auto indices = VkGlobals::GetQueueFamilyIndices();
-    m_commandPools.emplace(QueueType::Transfer, TransferCommandPoolVulkan::Create());
+    auto indices = RenderGlobals::GetQueueFamilyIndices();
+    m_commandPools.emplace(QueueType::Transfer, TransferCommandPool::Create());
     m_commandPools[QueueType::Transfer].SetName("AsyncQueueHandler Transfer Pool");
     
     m_commandPools.emplace(QueueType::Compute, CommandPool::Create(indices.computeFamily.value()));

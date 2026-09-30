@@ -66,3 +66,5 @@ protected:
     {
     }
 };
+
+using TransferCommandPool = TransferCommandPoolVulkan;

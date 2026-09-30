@@ -87,7 +87,7 @@ void ScreenSpaceShadowPass::RenderWithGraph(const MainPassData& data, const Fram
     DirectX::XMUINT3 depthExtents = pDepthTex ? pDepthTex->GetInfo().extents
                                               : DirectX::XMUINT3((u32)execCtx.GetRenderResolution().x, (u32)execCtx.GetRenderResolution().y, 1);
 
-    Bend::DispatchList dispatchList = SSSHelper::BuildBendDispatchList(lightDir, data.mainCamInvViewProj, depthExtents);
+    Bend::DispatchList dispatchList = SSSHelper::BuildBendDispatchList(lightDir, data.pViewData->viewProjectionInverse, depthExtents);
     
     StartRenderPassProfilingScope(execCtx.pCmdBuffer);
 

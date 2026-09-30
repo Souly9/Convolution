@@ -2,7 +2,7 @@
 #include "Core/Rendering/Core/Pipeline.h"
 #include "Core/Rendering/Core/RenderGraph/PassContext.h"
 #include "Core/Rendering/Core/RenderGraph/RenderGraphBuilder.h"
-#include "Core/Rendering/Vulkan/VkTextureManager.h"
+#include "Core/Rendering/Core/TextureManager.h"
 
 using namespace RenderPasses;
 
@@ -61,6 +61,9 @@ void LightingPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data
 
     auto sceneColor = builder.DeclareStorageTexture(RGResourceID::GBufferThisFrameColor, TexFormat::R16G16B16A16_FLOAT, RGSizeClass::RenderResolution);
     builder.WriteStorageImage(sceneColor, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_WRITE);
+    // Background pixels get camera motion vectors here
+    auto velocity = builder.DeclareStorageTexture(RGResourceID::GBufferVelocity, TexFormat::R32G32_FLOAT, RGSizeClass::RenderResolution);
+    builder.WriteStorageImage(velocity, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ | AccessFlags::SHADER_WRITE);
     builder.SetHasSideEffects();
 }
 

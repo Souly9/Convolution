@@ -20,4 +20,6 @@ using GPUMemoryManager = GPUMemManager<RenderAPI>;
 
 #ifdef USE_VULKAN
 #include "Core/Rendering/Vulkan/VkGPUMemoryManager.h"
+#elif defined(USE_METAL)
+#include "Core/Rendering/Metal/MtlGPUMemoryManager.h"
 #endif

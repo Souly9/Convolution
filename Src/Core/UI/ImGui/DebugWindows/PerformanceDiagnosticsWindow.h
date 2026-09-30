@@ -7,7 +7,7 @@
 #include "Core/Global/State/ApplicationState.h"
 #include "Core/Global/Utils/MathFunctions.h"
 #include "Core/Rendering/Core/Nvidia/StreamlineManager.h"
-#include "Core/Rendering/Vulkan/VkGlobals.h"
+#include "Core/Rendering/Backend/BackendGlobals.h"
 #include "InfoWindow.h"
 #include <EASTL/hash_map.h>
 #include <EASTL/sort.h>
@@ -112,14 +112,16 @@ public:
             ImGui::Text("Resident RT Instances: %u", m_lastState.rt.residentInstanceCount);
         }
 
+#ifdef USE_VULKAN
         // DLSS & Streamline (Condensed)
         if (m_lastState.dlssSupported && ImGui::CollapsingHeader("DLSS & Streamline"))
         {
             const auto debugState = Nvidia::StreamlineManager::GetDLSSDebugState();
 
-            ImGui::Text("Mode: %s | Streamline: %s | UI: Ctrl+Shift+Home",
+            ImGui::Text("Mode: %s | Streamline: %s | Overlay: %s",
                         (m_lastState.aaType == AntialiasingType::DLSS) ? DLSSModeToString(debugState.configuredMode) : "Off",
-                        debugState.streamlineInitialized ? "Ready" : "No");
+                        debugState.streamlineInitialized ? "Ready" : "No",
+                        Nvidia::StreamlineManager::IsDLSSDebugUIAvailable() ? "Ctrl+Shift+Home" : "Off");
 
             ImGui::Text("Resolution: %u x %u -> %u x %u | VRAM: %.1f MB",
                         debugState.inputWidth, debugState.inputHeight,
@@ -132,6 +134,7 @@ public:
                         ResultToString(debugState.lastSetConstantsResult),
                         ResultToString(debugState.lastEvaluateResult));
         }
+#endif
 
         ImGui::Spacing();
         ImGui::Separator();
@@ -201,7 +204,7 @@ public:
                 }
 
                 f32 rowsY = rulerY + RULER_HEIGHT;
-                auto qIndices = VkGlobals::GetQueueFamilyIndices();
+                auto qIndices = RenderGlobals::GetQueueFamilyIndices();
 
                 for (u32 qi = 0; qi < queues.size(); ++qi)
                 {
@@ -473,6 +476,7 @@ private:
         return value ? "Yes" : "No";
     }
 
+#ifdef USE_VULKAN
     static const char* DLSSModeToString(sl::DLSSMode mode)
     {
         switch (mode)
@@ -520,6 +524,7 @@ private:
                 return "Other";
         }
     }
+#endif
 
     stltype::hash_map<stltype::string, SmoothedPass> m_smoothed;
     f32 m_totalRangeMs{0.0f};

@@ -16,6 +16,9 @@ class CommandPoolBase : public TrackedResource
 #ifdef USE_VULKAN
 #include "Core/Rendering/Vulkan/VkCommandPool.h"
 #include "Core/Rendering/Vulkan/VulkanTraits.h"
+#elif defined(USE_METAL)
+#include "Core/Rendering/Metal/MetalTraits.h"
+#include "Core/Rendering/Metal/MtlCommandPool.h"
 #endif
 
 template <typename API>

@@ -25,23 +25,12 @@ enum class DebugFlags : u32
     RTEnabled = 1 << 3,
     RTReflectionsEnabled = 1 << 4,
     ShowClusterAABBs = 1 << 5,
-    TAAForceHistory = 1 << 6,
     CullFrustum = 1 << 7,
     RTAOEnabled = 1 << 8,
     FreezeFrustumCulling = 1 << 9,
     DisableClusterCulling = 1 << 16,
 };
 MAKE_FLAG_ENUM(DebugFlags)
-
-enum class TAADebugMode : u32
-{
-    Off = 0,
-    CurrentColor = 1,
-    HistoryColor = 2,
-    HistoryCurrentDifference = 3,
-    VelocityMagnitude = 4,
-    HistoryVelocityMagnitude = 5,
-};
 
 enum class AntialiasingType : u32
 {
@@ -57,6 +46,7 @@ enum class DebugViewMode : s32
     None = 0,
     CSMCascades = 1,
     Clusters = 2,
+    MotionVectors = 3,
 };
 
 enum class RTReflectionDebugMode : u32
@@ -141,8 +131,8 @@ struct RendererState
     stltype::string physicalRenderDeviceName{};
     AntialiasingType aaType{AntialiasingType::DLSS};
     bool dlssSupported{false};
-    u32 taaDebugMode{static_cast<u32>(TAADebugMode::Off)};
-    bool taaSeedHistoryFromCurrentColor{false};
+    // Bump to discard all temporal history (TAA and upscalers) once
+    u32 temporalResetGeneration{0};
     f32 taaVelocityRejectionStart{0.5f};
     f32 taaVelocityRejectionEnd{4.0f};
     u32 upscalingPercentage{100};

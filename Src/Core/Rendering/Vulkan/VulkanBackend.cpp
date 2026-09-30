@@ -196,7 +196,7 @@ bool RenderBackendImpl<Vulkan>::RecreateSwapChain()
 
     if (oldSwapchain != VK_NULL_HANDLE)
     {
-        vkDestroySwapchainKHR(m_logicalDevice, oldSwapchain, VulkanAllocator());
+        Nvidia::StreamlineManager::GetSwapchainFunctions().destroySwapchain(m_logicalDevice, oldSwapchain, VulkanAllocator());
     }
 
     CreateSwapChainImages();
@@ -207,16 +207,18 @@ bool RenderBackendImpl<Vulkan>::RecreateSwapChain()
 
 bool RenderBackendImpl<Vulkan>::Cleanup()
 {
+    const auto& swapchainFunctions = Nvidia::StreamlineManager::GetSwapchainFunctions();
     if (m_logicalDevice != VK_NULL_HANDLE)
-        vkDeviceWaitIdle(m_logicalDevice);
+        swapchainFunctions.deviceWaitIdle(m_logicalDevice);
 
 #ifdef CONV_DEBUG
     vkDestroyDebugUtilsMessengerEXT(m_instance, VulkanAllocator(), &m_debugMessenger);
 #endif
 
+    // Destroy through the same path that created it, before Streamline resets its hooks
+    swapchainFunctions.destroySwapchain(m_logicalDevice, m_swapChain, VulkanAllocator());
     Nvidia::StreamlineManager::Shutdown();
 
-    vkDestroySwapchainKHR(m_logicalDevice, m_swapChain, VulkanAllocator());
     vkDestroySurfaceKHR(m_instance, m_surface, VulkanAllocator());
     
     vkDestroyDevice(m_logicalDevice, VulkanAllocator());
@@ -362,6 +364,17 @@ bool RenderBackendImpl<Vulkan>::CreateInstance(uint32_t screenWidth, uint32_t sc
         DEBUG_LOG_WARN("VK_EXT_validation_features not available. Shader debug printf may be unavailable.");
     }
 
+#ifdef __APPLE__
+    for (const auto& ext : extensions)
+    {
+        if (strcmp(ext.extensionName, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME) == 0)
+        {
+            instanceExtensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+            createInfo.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+        }
+    }
+#endif
+
     createInfo.enabledExtensionCount = instanceExtensions.size();
     createInfo.ppEnabledExtensionNames = instanceExtensions.data();
     createInfo.enabledLayerCount = 0;
@@ -379,8 +392,13 @@ bool RenderBackendImpl<Vulkan>::CreateInstance(uint32_t screenWidth, uint32_t sc
     }
     else
     {
+#ifdef __APPLE__
+        // MoltenVK is linked directly without a loader, so there are no layers
+        DEBUG_LOG_WARN("Validation Layers not available!");
+#else
         DEBUG_ASSERT(false);
         DEBUG_LOG_ERR("Validation Layers not available!");
+#endif
     }
 
 #ifdef CONV_DEBUG
@@ -538,6 +556,27 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
     }
     if (hasPageableMemory)
         enabledExtensions.push_back(VK_EXT_PAGEABLE_DEVICE_LOCAL_MEMORY_EXTENSION_NAME);
+#ifdef __APPLE__
+    // Only enable what MoltenVK advertises (no RT); portability_subset is mandatory when present
+    stltype::vector<const char*> supportedExtensions;
+    for (const char* ext : enabledExtensions)
+    {
+        for (const auto& avail : availableDeviceExtensions)
+        {
+            if (strcmp(ext, avail.extensionName) == 0)
+            {
+                supportedExtensions.push_back(ext);
+                break;
+            }
+        }
+    }
+    enabledExtensions = supportedExtensions;
+    for (const auto& avail : availableDeviceExtensions)
+    {
+        if (strcmp(avail.extensionName, "VK_KHR_portability_subset") == 0)
+            enabledExtensions.push_back("VK_KHR_portability_subset");
+    }
+#endif
     NormalizeBufferDeviceAddressExtensions(enabledExtensions);
 
     uint32_t xessExtensionCount = 0;
@@ -591,6 +630,11 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR, &accelerationStructureFeatures, VK_TRUE};
     VkPhysicalDeviceVulkan11Features features11{
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES, &rayQueryFeatures, VK_TRUE};
+#ifdef __APPLE__
+    // Keep RT feature structs out of the chain when the device can't do RT
+    if (!m_rayTracingSupported)
+        features11.pNext = &features12;
+#endif
     VkPhysicalDeviceFeatures2 deviceFeatures2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &features11};
 
     void* featuresChain = &deviceFeatures2;
@@ -624,6 +668,15 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
 
     if (deviceResult != VK_SUCCESS)
         return false;
+
+#ifdef __APPLE__
+    if (!m_rayTracingSupported)
+    {
+        DEBUG_LOG_WARN("Ray tracing not supported by this device (MoltenVK); RT passes disabled");
+        PublishRTSupport(false);
+        return true;
+    }
+#endif
 
     if (!RayTracing::LoadFunctions(m_logicalDevice))
     {
@@ -793,8 +846,13 @@ bool RenderBackendImpl<Vulkan>::IsDeviceSuitable(VkPhysicalDevice device)
     if (isSuitable)
     {
         VulkanRayTracingProperties rtProperties{};
-        isSuitable = QueryRayTracingSupport(device, &rtProperties);
-        if (isSuitable)
+        m_rayTracingSupported = QueryRayTracingSupport(device, &rtProperties);
+#ifdef __APPLE__
+        isSuitable = true;
+#else
+        isSuitable = m_rayTracingSupported;
+#endif
+        if (m_rayTracingSupported)
         {
             m_rayTracingProperties = rtProperties;
         }
@@ -829,6 +887,12 @@ bool RenderBackendImpl<Vulkan>::AreExtensionsSupported(VkPhysicalDevice device)
     // BDA is provided via Vulkan 1.2 features in this renderer; don't require extension variants.
     requiredExtensions.erase(VK_EXT_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
     requiredExtensions.erase(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
+#ifdef __APPLE__
+    // RT extensions are optional on MoltenVK
+    requiredExtensions.erase(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+    requiredExtensions.erase(VK_KHR_RAY_QUERY_EXTENSION_NAME);
+    requiredExtensions.erase("VK_KHR_ray_tracing_pipeline");
+#endif
 
     for (const auto& extension : availableExtensions)
     {
@@ -995,6 +1059,18 @@ VkSurfaceFormatKHR RenderBackendImpl<Vulkan>::ChooseSwapSurfaceFormat(
         }
     }
 
+#ifdef __APPLE__
+    // CAMetalLayer only offers BGRA 8-bit formats; switch the engine's swapchain format to match
+    for (const auto& availableFormat : availableFormats)
+    {
+        if (availableFormat.format == VK_FORMAT_B8G8R8A8_UNORM && availableFormat.colorSpace == SWAPCHAINCOLORSPACE)
+        {
+            g_swapChainFormat = TexFormat::B8G8R8A8_UNORM;
+            return availableFormat;
+        }
+    }
+#endif
+
     DEBUG_LOG_ERR("No supported sRGB swapchain format found on this surface.");
     return availableFormats[0];
 }
@@ -1090,13 +1166,14 @@ bool RenderBackendImpl<Vulkan>::CreateSwapChain(VkSwapchainKHR oldSwapchain)
     createInfo.oldSwapchain = oldSwapchain;
 
     VkSwapchainKHR newSwapchain = VK_NULL_HANDLE;
-    if (vkCreateSwapchainKHR(m_logicalDevice, &createInfo, nullptr, &newSwapchain) != VK_SUCCESS)
+    const auto& swapchainFunctions = Nvidia::StreamlineManager::GetSwapchainFunctions();
+    if (swapchainFunctions.createSwapchain(m_logicalDevice, &createInfo, nullptr, &newSwapchain) != VK_SUCCESS)
         return false;
 
     m_swapChain = newSwapchain;
-    vkGetSwapchainImagesKHR(m_logicalDevice, m_swapChain, &imageCount, nullptr);
+    swapchainFunctions.getSwapchainImages(m_logicalDevice, m_swapChain, &imageCount, nullptr);
     m_swapChainImages.resize(imageCount);
-    vkGetSwapchainImagesKHR(m_logicalDevice, m_swapChain, &imageCount, m_swapChainImages.data());
+    swapchainFunctions.getSwapchainImages(m_logicalDevice, m_swapChain, &imageCount, m_swapChainImages.data());
 
     FrameGlobals::SetSwapChainFormat(Conv(surfaceFormat.format));
     m_swapChainExtent = mathstl::Vector2(extent.x, extent.y);

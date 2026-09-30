@@ -24,6 +24,9 @@ class EntityManager;
 #ifdef USE_VULKAN
 class VkTextureManager;
 using TextureManager = VkTextureManager;
+#elif defined(USE_METAL)
+class MtlTextureManager;
+using TextureManager = MtlTextureManager;
 #else
 class TextureManager;
 #endif

@@ -26,6 +26,7 @@
 // DirectX Math
 #include <DirectXMath.h>
 #include <DirectXPackedVector.h>
+#include "Core/Global/Win32TypeShims.h"
 #include <SimpleMath/SimpleMath.h>
 
 // EA StdC
@@ -35,10 +36,15 @@
 #include <eathread/eathread_futex.h>
 #include <eathread/eathread_thread.h>
 
-// Vulkan / GLFW
+// Graphics API / GLFW
+#ifdef USE_VULKAN
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
+#else
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
+#endif
 
 // Internal Base Types - Unified common header
 #include "Core/Global/CoreCommon.h"

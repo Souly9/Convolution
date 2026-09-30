@@ -17,6 +17,13 @@
 #define GlobalBindlessTextureBufferSlot      1
 #define GlobalBindlessArrayTextureBufferSlot 2
 #define GlobalBindlessImageBufferSlot        3
+#define GlobalBindlessSampledTextureSlot     4
+#define GlobalSamplerSlot                    5
+
+// Fixed samplers in GlobalSamplers, shaders pick filtering instead of the texture
+#define SAMPLER_LINEAR_CLAMP 0
+#define SAMPLER_POINT_CLAMP  1
+#define GLOBAL_SAMPLER_COUNT 2
 #define GlobalTileArraySSBOSlot              1
 #define GlobalLightDataUBOSlot               2
 #define GlobalViewSpaceLightsSSBOSlot        3
@@ -67,7 +74,6 @@
 #define DEBUG_FLAG_RT_ENABLED              (1 << 3)
 #define DEBUG_FLAG_RT_REFLECTIONS_ENABLED  (1 << 4)
 #define DEBUG_FLAG_SHOW_CLUSTER_AABBS      (1 << 5)
-#define DEBUG_FLAG_TAA_FORCE_HISTORY       (1 << 6)
 #define DEBUG_FLAG_CULL_FRUSTUM            (1 << 7)
 #define DEBUG_FLAG_RTAO_ENABLED            (1 << 8)
 #define DEBUG_FLAG_DISABLE_CLUSTER_CULLING (1 << 16)
@@ -75,18 +81,7 @@
 #define DEBUG_VIEW_MODE_NONE         0
 #define DEBUG_VIEW_MODE_CSM_CASCADES 1
 #define DEBUG_VIEW_MODE_CLUSTERS     2
-
-#define TAA_DEBUG_MODE_OFF                        0u
-#define TAA_DEBUG_MODE_CURRENT_COLOR              1u
-#define TAA_DEBUG_MODE_HISTORY_COLOR              2u
-#define TAA_DEBUG_MODE_HISTORY_CURRENT_DIFF       3u
-#define TAA_DEBUG_MODE_VELOCITY_MAGNITUDE         4u
-#define TAA_DEBUG_MODE_HISTORY_VELOCITY_MAGNITUDE 5u
-
-#define AA_TYPE_TAA_SMAA 1u
-#define AA_TYPE_SMAA     2u
-#define AA_TYPE_DLSS     3u
-#define AA_TYPE_XESS     4u
+#define DEBUG_VIEW_MODE_MOTION_VECTORS 3
 
 #define RT_DEBUG_VIEW_MODE_NONE             0u
 #define RT_DEBUG_VIEW_MODE_TLAS             1u
@@ -99,7 +94,5 @@
 
 #define RT_REFLECTION_DEBUG_NONE             0u
 #define RT_REFLECTION_DEBUG_REFLECTIONS_ONLY 1u
-
-#define GET_AA_TYPE(flags) ((flags >> 8) & 0xFF)
 
 #endif // SHADERS_COMMON_H

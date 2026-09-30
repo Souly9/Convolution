@@ -2,6 +2,7 @@
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Global/Typedefs.h"
+#include "Core/Rendering/Core/AntiAliasing.h"
 #include "Core/Rendering/Core/Attachment.h"
 #include "Core/Rendering/Core/Defines/GlobalBuffers.h"
 #include "Core/Rendering/Core/Defines/LightDefines.h"
@@ -88,7 +89,6 @@ public:
     void RegisterDebugCallbacks();
 
     // Delegates down to FrameResourceManager
-    void UpdateSharedDataUBO(const void* data, size_t size, u32 frameIdx);
     void UpdateLightClusterSSBO(const UBO::LightClusterSSBO& data, u32 frameIdx);
 
     void DispatchSSBOTransfer(
@@ -97,11 +97,6 @@ public:
 
     MainPassData& GetMainPassData(u32 idx) { return m_mainPassData[idx]; }
     const MainPassData::PassManagerRenderState& GetRenderState() const { return m_renderState; }
-    void SetRenderJitter(const mathstl::Vector2& jitter)
-    {
-        m_renderState.previousJitter = m_renderState.jitter;
-        m_renderState.jitter = jitter;
-    }
     ::SharedResourceManager& GetResourceManager() { return m_resourceManager; }
     RenderGraph& GetRenderGraph() { return m_renderGraph; }
     const RenderGraph& GetRenderGraph() const { return m_renderGraph; }
@@ -144,8 +139,8 @@ protected:
                              FrameRendererContext& ctx,
                              Semaphore& imageAvailableSemaphore);
     void InitFrameContexts();
-    void UpdateFrameFeatureState(const MainPassData& data);
-    void UpdateGBufferUBO(const MainPassData& data);
+    void UpdateAAFrameConfig();
+    void UpdateGBufferUBO(u32 frameIdx);
 
     CommandBuffer* GetGraphicsCommandBuffer(u32 frameIdx, u32 batchIdx);
     CommandBuffer* GetComputeCommandBuffer(u32 frameIdx, u32 batchIdx);
@@ -182,6 +177,8 @@ private:
     u32 m_instanceBufferUpdateTimingIndex;
     u32 m_clearTileCountersTimingIndex{UINT32_MAX};
     MainPassData::PassManagerRenderState m_renderState{};
+    AA::Temporal m_lastTemporal{AA::Temporal::None};
+    u32 m_lastTemporalResetGeneration{0};
 };
 } // namespace RenderPasses
 

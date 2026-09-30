@@ -1,5 +1,20 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
+
+#ifndef USE_VULKAN
+// XeSS is wired up for Vulkan only; stub keeps shared code compiling on other backends
+namespace VulkanXeSS
+{
+class XeSSManager
+{
+public:
+    static bool Initialize() { return false; }
+    static void Shutdown() {}
+    static bool IsSupported() { return false; }
+    static void ResetHistory() {}
+};
+} // namespace VulkanXeSS
+#else
 #include <vulkan/vulkan.h>
 #include <xess/xess_vk.h>
 
@@ -42,3 +57,4 @@ private:
     static inline bool s_needsReset{false};
 };
 } // namespace VulkanXeSS
+#endif // USE_VULKAN

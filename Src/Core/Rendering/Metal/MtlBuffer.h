@@ -1,0 +1,159 @@
+#pragma once
+#include "MtlBackendDefines.h"
+#include "Core/Global/GlobalDefines.h"
+#include "Core/Rendering/Core/Buffer.h"
+#include "MtlGPUMemoryManager.h"
+
+struct BufferInfo
+{
+    u64 size{0};
+    BufferUsage usage;
+};
+
+// MTL::Buffer wrapper; storage mode (Shared/Private) replaces VMA memory properties
+class GenBufferMetal : public BufferBase
+{
+public:
+    GenBufferMetal(BufferCreateInfo& info);
+    virtual ~GenBufferMetal();
+
+    void Create(BufferCreateInfo& info);
+
+    virtual void CleanUp() override;
+
+    void FillImmediate(const void* data);
+    void FillImmediate(const void* data, u64 size, u64 offset);
+
+    void FillAndTransfer(StagingBuffer& stgBuffer,
+                         CommandBuffer* transferBuffer,
+                         const void* data,
+                         bool freeStagingBuffer = false,
+                         u64 offset = 0);
+
+    GPUMappedMemoryHandle MapMemory();
+    void UnmapMemory();
+
+    MTL::Buffer* GetRef() const
+    {
+        return m_buffer;
+    }
+    BufferInfo GetInfo() const
+    {
+        return m_info;
+    }
+    BufferUsage GetUsage() const
+    {
+        return m_info.usage;
+    }
+    virtual bool IsCreated() const override
+    {
+        return m_buffer != nullptr;
+    }
+
+    // MTL::Buffer::gpuAddress()
+    virtual u64 GetDeviceAddress() const override;
+
+    virtual void NamingCallBack(const stltype::string& name) override;
+
+protected:
+    GenBufferMetal()
+    {
+    }
+
+    BufferInfo m_info{};
+    MTL::Buffer* m_buffer{nullptr};
+};
+
+class VertexBufferMetal : public GenBufferMetal
+{
+public:
+    VertexBufferMetal(u64 size);
+    VertexBufferMetal()
+    {
+    }
+};
+
+class IndexBufferMetal : public GenBufferMetal
+{
+public:
+    IndexBufferMetal(u64 size);
+    IndexBufferMetal()
+    {
+    }
+};
+
+class UniformBufferMetal : public GenBufferMetal
+{
+public:
+    UniformBufferMetal(u64 size);
+    UniformBufferMetal()
+    {
+    }
+};
+
+class StagingBufferMetal : public GenBufferMetal
+{
+public:
+    StagingBufferMetal()
+    {
+    }
+    StagingBufferMetal(u64 size);
+
+    void CreatePersistentlyMapped(u64 size);
+    void CopyToMapped(const void* data, u64 size, u64 offset = 0);
+    GPUMappedMemoryHandle GetPersistentMapping() const
+    {
+        return m_persistentMapping;
+    }
+
+    void EnsureCapacity(u64 size);
+
+private:
+    GPUMappedMemoryHandle m_persistentMapping{nullptr};
+};
+
+class StorageBufferMetal : public GenBufferMetal
+{
+public:
+    StorageBufferMetal(u64 size, bool isDevice = false);
+    StorageBufferMetal()
+    {
+    }
+};
+
+// Metal has no DrawIndexedIndirectCount; GPU-driven draws need an ICB or per-draw indirect calls
+class IndirectDrawCommandBufferMetal : public GenBufferMetal
+{
+public:
+    explicit IndirectDrawCommandBufferMetal(u64 numOfCommands);
+    IndirectDrawCommandBufferMetal()
+    {
+    }
+
+    void Init(u64 numOfCommands);
+    void AddIndexedDrawCmd(u32 indexCount, u32 instanceCount, u32 firstIndex, u32 vertexOffset, u32 firstInstance);
+
+    void FillCmds();
+
+    void EmptyCmds();
+
+    u32 GetDrawCmdNum() const
+    {
+        return m_indexedIndirectCmds.size();
+    }
+
+protected:
+    stltype::vector<IndexedIndirectDrawCmd> m_indexedIndirectCmds;
+    GPUMappedMemoryHandle m_mappedMemoryHandle{nullptr};
+};
+
+class IndirectDrawCountBuffer : public GenBufferMetal
+{
+public:
+    IndirectDrawCountBuffer(u64 numOfCounts);
+    IndirectDrawCountBuffer()
+    {
+    }
+
+    void Init(u64 numOfCounts);
+};

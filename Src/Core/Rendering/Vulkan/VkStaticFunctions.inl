@@ -184,12 +184,13 @@ inline SwapchainAcquireStatus QueryImageForPresentationFromMainSwapchain<Vulkan>
 {
     while (true)
     {
-        const VkResult rslt = vkAcquireNextImageKHR(VkGlobals::GetLogicalDevice(),
-                                                    VkGlobals::GetMainSwapChain(),
-                                                    timeout,
-                                                    imageAvailableSemaphore.GetRef(),
-                                                    imageAvailableFence.GetRef(),
-                                                    &imageIndex);
+        const VkResult rslt =
+            Nvidia::StreamlineManager::GetSwapchainFunctions().acquireNextImage(VkGlobals::GetLogicalDevice(),
+                                                                                VkGlobals::GetMainSwapChain(),
+                                                                                timeout,
+                                                                                imageAvailableSemaphore.GetRef(),
+                                                                                imageAvailableFence.GetRef(),
+                                                                                &imageIndex);
 
         if (rslt == VK_SUCCESS || rslt == VK_SUBOPTIMAL_KHR)
             return SwapchainAcquireStatus::Acquired;
@@ -225,9 +226,8 @@ inline SwapchainPresentStatus SubmitForPresentationToMainSwapchain<Vulkan>(Semap
     presentInfo.pImageIndices = &swapChainIdx;
     presentInfo.pResults = nullptr;
 
-    Nvidia::StreamlineManager::OnPresent(swapChainIdx);
-
-    const VkResult result = vkQueuePresentKHR(VkGlobals::GetPresentQueue(), &presentInfo);
+    const VkResult result =
+        Nvidia::StreamlineManager::GetSwapchainFunctions().queuePresent(VkGlobals::GetPresentQueue(), &presentInfo);
     if (result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR)
         return SwapchainPresentStatus::Presented;
     if (result == VK_ERROR_OUT_OF_DATE_KHR)
@@ -239,7 +239,7 @@ inline SwapchainPresentStatus SubmitForPresentationToMainSwapchain<Vulkan>(Semap
 template<>
 inline void WaitForDeviceIdle<Vulkan>()
 {
-    vkDeviceWaitIdle(VK_LOGICAL_DEVICE);
+    Nvidia::StreamlineManager::GetSwapchainFunctions().deviceWaitIdle(VK_LOGICAL_DEVICE);
 }
 
 } // namespace SRF

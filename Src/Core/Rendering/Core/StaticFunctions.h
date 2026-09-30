@@ -34,4 +34,6 @@ static inline void WaitForDeviceIdle();
 
 #ifdef USE_VULKAN
 #include "Core/Rendering/Vulkan/VkStaticFunctions.inl"
+#elif defined(USE_METAL)
+#include "Core/Rendering/Metal/MtlStaticFunctions.inl"
 #endif

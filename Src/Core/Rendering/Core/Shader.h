@@ -12,6 +12,9 @@ public:
 #ifdef USE_VULKAN
 #include "Core/Rendering/Vulkan/VulkanTraits.h"
 #include "Core/Rendering/Vulkan/VkShader.h"
+#elif defined(USE_METAL)
+#include "Core/Rendering/Metal/MetalTraits.h"
+#include "Core/Rendering/Metal/MtlShader.h"
 #endif
 
 template <typename API>

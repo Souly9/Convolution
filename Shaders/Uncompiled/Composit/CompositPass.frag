@@ -24,6 +24,15 @@ layout(location = 0) out vec4 outColor;
 void main()
 {
     vec2 texCoords = IN.fragTexCoord;
+
+    if (ubo.debugViewMode == DEBUG_VIEW_MODE_MOTION_VECTORS)
+    {
+        // Current -> previous offset in render pixels, 0.5 gray is static
+        vec2 velocityNdc = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.gbufferVelocityIdx)], texCoords).rg;
+        vec2 toPrevPixels = velocityNdc * vec2(-0.5, 0.5) * ubo.renderResolution;
+        outColor = vec4(0.5 + 0.5 * clamp(toPrevPixels / 16.0, vec2(-1.0), vec2(1.0)), 0.5, 1.0);
+        return;
+    }
     
     vec3 finalHDRColor = vec3(0.0);
     if ((ubo.debugFlags & DEBUG_FLAG_RT_DEBUG_ENABLED) != 0u)
@@ -32,14 +41,7 @@ void main()
     }
     else
     {
-        if (gbufferUBO.finalTemporalColorBufferIdx != 0u)
-        {
-            finalHDRColor = texture(GlobalBindlessTextures[gbufferUBO.finalTemporalColorBufferIdx], texCoords).xyz;
-        }
-        else
-        {
-            finalHDRColor = texture(GlobalBindlessTextures[gbufferUBO.thisFrameColorBufferIdx], texCoords).xyz;
-        }
+        finalHDRColor = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.compositeInputIdx)], texCoords).xyz;
     }
 
     if (gbufferUBO.bloomResultIdx != 0u)

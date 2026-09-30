@@ -9,7 +9,7 @@
 #include "Core/Rendering/Passes/PassManager.h"
 #include "Core/Global/Profiling.h"
 #include "Core/Rendering/Core/RenderGraph/RenderGraphBuilder.h"
-#include "Core/Rendering/Core/Nvidia/StreamlineManager.h"
+#include "Core/Rendering/Core/AntiAliasing.h"
 
 using namespace RenderPasses;
 
@@ -27,8 +27,8 @@ void BloomPass::Init(const SharedResourceManager& resourceManager)
     ScopedZone("BloomPass::Init");
     BuildPipelines();
 
-    VkTextureManager::TexCreateInfo lens1Info("Textures/Bloom/lens_flare_1.png", true, TextureSemantic::Auto, true);
-    VkTextureManager::TexCreateInfo lens2Info("Textures/Bloom/lens_flare_2.png", true, TextureSemantic::Auto, true);
+    TextureManager::TexCreateInfo lens1Info("Resources/Bloom/lens_flare_1.png", true, TextureSemantic::Auto, true);
+    TextureManager::TexCreateInfo lens2Info("Resources/Bloom/lens_flare_2.png", true, TextureSemantic::Auto, true);
 
     m_hLens1 = g_pTexManager->SubmitAsyncTextureCreation(lens1Info);
     m_hLens2 = g_pTexManager->SubmitAsyncTextureCreation(lens2Info);
@@ -97,12 +97,7 @@ void BloomPass::RenderWithGraph(const MainPassData& data, const FrameRendererCon
         RGResourceID::BloomMip4
     };
 
-    const bool useRayReconstruction = Nvidia::StreamlineManager::IsDLSSRRSupported() &&
-                                      Nvidia::StreamlineManager::GetUseRayReconstructionThisFrame();
-    const bool dlssOrXeSSActive = renderState.aaType == AntialiasingType::DLSS ||
-                                 renderState.aaType == AntialiasingType::XeSS ||
-                                 useRayReconstruction;
-    const RGResourceID bloomInputID = dlssOrXeSSActive ? RGResourceID::TemporalResolve : RGResourceID::GBufferThisFrameColor;
+    const RGResourceID bloomInputID = AA::Current().aaOutput;
     const Texture* pInputTex = execCtx.GetTexture(bloomInputID);
 
     struct MipDimension
@@ -195,7 +190,7 @@ void BloomPass::RenderWithGraph(const MainPassData& data, const FrameRendererCon
         if (i == 0 && renderState.bloom.lensTextureIndex > 0)
         {
             TextureHandle targetLensHandle = (renderState.bloom.lensTextureIndex == 1) ? m_hLens1 : m_hLens2;
-            TextureVulkan* pLensTex = g_pTexManager->GetTexture(targetLensHandle);
+            auto* pLensTex = g_pTexManager->GetTexture(targetLensHandle);
             if (pLensTex)
             {
                 BindlessTextureHandle bindlessIdx = g_pTexManager->MakeTextureBindless(pLensTex, true);
@@ -226,15 +221,8 @@ void BloomPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
         PassCtx::View,
         PassCtx::GBufferCtx>();
 
-    const auto& appRenderState = g_pApplicationState->GetCurrentApplicationState().renderState;
-    const bool useRayReconstruction = Nvidia::StreamlineManager::IsDLSSRRSupported() &&
-                                      Nvidia::StreamlineManager::GetUseRayReconstructionThisFrame();
-    const bool dlssOrXeSSActive = appRenderState.aaType == AntialiasingType::DLSS ||
-                                 appRenderState.aaType == AntialiasingType::XeSS ||
-                                 useRayReconstruction;
-    const RGResourceID bloomInputID = dlssOrXeSSActive ? RGResourceID::TemporalResolve : RGResourceID::GBufferThisFrameColor;
-
-    builder.ReadTexture(bloomInputID, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    // Bloom works on the resolved image so it inherits the AA
+    builder.ReadTexture(AA::Current().aaOutput, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
     static const RGResourceID bloomResIDs[5] = {
         RGResourceID::BloomMip0,

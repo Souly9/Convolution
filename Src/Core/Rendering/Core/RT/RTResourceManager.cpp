@@ -1,7 +1,7 @@
 #include "RTResourceManager.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
-#include "Core/Rendering/Vulkan/VkTextureManager.h"
+#include "Core/Rendering/Core/TextureManager.h"
 
 namespace RT
 {
@@ -108,7 +108,7 @@ void RTResourceManager::RecordTransition(CommandBuffer* pCmdBuffer,
     ImageLayoutTransitionCmd cmd(resource.pTexture);
     cmd.oldLayout = currentLayout;
     cmd.newLayout = newLayout;
-    VkTextureManager::SetLayoutBarrierMasks(cmd, currentLayout, newLayout);
+    TextureManager::SetLayoutBarrierMasks(cmd, currentLayout, newLayout);
     pCmdBuffer->RecordCommand(cmd);
     resource.pTexture->GetInfo().layout = newLayout;
     resource.currentLayout = newLayout;
@@ -128,7 +128,7 @@ void RTResourceManager::RecordTransitionComputeOnly(CommandBuffer* pCmdBuffer,
     ImageLayoutTransitionCmd cmd(resource.pTexture);
     cmd.oldLayout = currentLayout;
     cmd.newLayout = newLayout;
-    VkTextureManager::SetLayoutBarrierMasks(cmd, currentLayout, newLayout);
+    TextureManager::SetLayoutBarrierMasks(cmd, currentLayout, newLayout);
     cmd.srcStage &= ~SyncStages::FRAGMENT_SHADER;
     cmd.dstStage &= ~SyncStages::FRAGMENT_SHADER;
     pCmdBuffer->RecordCommand(cmd);

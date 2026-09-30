@@ -25,6 +25,8 @@ public:
     void WriteAccelerationStructureUpdate(const AccelerationStructure& accelerationStructure, u32 bindingSlot = 0);
     void WriteBindlessTextureUpdate(const TextureVulkan* pTex, u32 idx, u32 bindingSlot = 0);
     void WriteBindlessImageUpdate(const TextureVulkan* pTex, u32 idx, u32 bindingSlot = 0);
+    void WriteBindlessSampledImageUpdate(const TextureVulkan* pTex, u32 idx, u32 bindingSlot);
+    void WriteSamplerUpdate(VkSampler sampler, u32 idx, u32 bindingSlot);
 
     virtual void NamingCallBack(const stltype::string& name) override;
 

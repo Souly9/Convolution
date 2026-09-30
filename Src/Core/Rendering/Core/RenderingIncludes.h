@@ -17,4 +17,17 @@
 #include "Core/Rendering/Vulkan/VkSynchronization.h"
 #include "Core/Rendering/Vulkan/VkTexture.h"
 #include "RenderingData.h"
+#elif defined(USE_METAL)
+#include "Core/Rendering/Metal/MetalTraits.h"
+#include "Core/Rendering/Metal/MtlAttachment.h"
+#include "Core/Rendering/Metal/MtlBuffer.h"
+#include "Core/Rendering/Metal/MtlCommandBuffer.h"
+#include "Core/Rendering/Metal/MtlCommandPool.h"
+#include "Core/Rendering/Metal/MtlDescriptorPool.h"
+#include "Core/Rendering/Metal/MtlDescriptorSetLayout.h"
+#include "Core/Rendering/Metal/MtlPipeline.h"
+#include "Core/Rendering/Metal/MtlShader.h"
+#include "Core/Rendering/Metal/MtlSynchronization.h"
+#include "Core/Rendering/Metal/MtlTexture.h"
+#include "RenderingData.h"
 #endif

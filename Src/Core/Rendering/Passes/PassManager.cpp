@@ -1,9 +1,10 @@
 #include "PassManager.h"
+#ifdef USE_VULKAN
 #include "AA/DLSSPass.h"
-#include "AA/DLSSRRPass.h"
+#include "AA/XeSSPass.h"
+#endif
 #include "AA/SMAAPass.h"
 #include "AA/TAAPass.h"
-#include "AA/XeSSPass.h"
 #include "ClusteredShading/ClusterDebugPass.h"
 #include "ClusteredShading/ClusterGeneratorComputePass.h"
 #include "ClusteredShading/LightGridComputePass.h"
@@ -11,6 +12,7 @@
 #include "ClusteredShading/TileAssignmentComputePass.h"
 #include "Compositing/CompositPass.h"
 #include "Compositing/LightingPass.h"
+#include "Core/Rendering/Core/AntiAliasing.h"
 #include "Core/Global/FrameGlobals.h"
 #include "Core/Global/State/ApplicationState.h"
 #include "Core/Global/State/States.h"
@@ -26,9 +28,10 @@
 #include "Core/Rendering/Core/Synchronization.h"
 #include "Core/Rendering/Core/TracyManager.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
+#ifdef USE_VULKAN
 #include "Core/Rendering/Vulkan/Utils/VkEnumHelpers.h"
-#include "Core/Rendering/Vulkan/VkGlobals.h"
-#include "Core/Rendering/Vulkan/VkTracyManager.h"
+#endif
+#include "Core/Rendering/Backend/BackendGlobals.h"
 #include "Core/Rendering/Vulkan/XeSS/XeSSManager.h"
 #include "Core/SceneGraph/Scene.h"
 #include "DebugShapePass.h"
@@ -47,9 +50,18 @@ using namespace RenderPasses;
 
 namespace
 {
-mathstl::Vector2 CalculateRenderResolution(const mathstl::Vector2& swapchainResolution, u32 upscalingPercentage)
+AA::Support GetAASupport()
 {
-    const f32 scale = static_cast<f32>(upscalingPercentage) / 100.0f;
+    AA::Support support{};
+    support.dlss = Nvidia::StreamlineManager::IsDLSSSupported();
+    support.dlssRR = Nvidia::StreamlineManager::IsDLSSRRSupported();
+    support.xess = VulkanXeSS::XeSSManager::IsSupported();
+    return support;
+}
+
+mathstl::Vector2 CalculateRenderResolution(const mathstl::Vector2& swapchainResolution, const RendererState& renderState)
+{
+    const f32 scale = static_cast<f32>(AA::ResolveRenderScalePercent(renderState, GetAASupport())) / 100.0f;
     return {static_cast<f32>(stltype::max(1u, static_cast<u32>(swapchainResolution.x * scale))),
             static_cast<f32>(stltype::max(1u, static_cast<u32>(swapchainResolution.y * scale)))};
 }
@@ -59,7 +71,7 @@ mathstl::Vector2 CalculateRenderResolution(const mathstl::Vector2& swapchainReso
 void PassManager::InitResourceManagerAndCallbacks()
 {
     m_resourceManager.Init();
-    m_rtSceneManager.Init(&m_resourceManager, VkGlobals::GetQueueFamilyIndices().graphicsFamily.value());
+    m_rtSceneManager.Init(&m_resourceManager, RenderGlobals::GetQueueFamilyIndices().graphicsFamily.value());
     auto registerSceneGeometry = [this]()
     {
         m_rtSceneManager.Reset();
@@ -95,18 +107,17 @@ void PassManager::InitResourceManagerAndCallbacks()
     AddPass(stltype::make_unique<RenderPasses::RTCompositePass>());
     AddPass(stltype::make_unique<RenderPasses::RTDebugViewPass>());
     AddPass(stltype::make_unique<RenderPasses::TAAPass>());
+#ifdef USE_VULKAN
     if (Nvidia::StreamlineManager::IsDLSSSupported())
     {
+        AddPass(stltype::make_unique<RenderPasses::DLSSExposurePass>());
         AddPass(stltype::make_unique<RenderPasses::DLSSPass>());
-    }
-    if (Nvidia::StreamlineManager::IsDLSSRRSupported())
-    {
-        AddPass(stltype::make_unique<RenderPasses::DLSSRRPass>());
     }
     if (VulkanXeSS::XeSSManager::IsSupported())
     {
         AddPass(stltype::make_unique<RenderPasses::XeSSPass>());
     }
+#endif
     AddPass(stltype::make_unique<RenderPasses::BloomPass>());
     AddPass(stltype::make_unique<RenderPasses::CompositPass>());
     AddPass(stltype::make_unique<RenderPasses::SMAAPass>());
@@ -130,8 +141,7 @@ bool PassManager::NeedsResizeDependentResourceRecreate(const mathstl::Vector2& s
 {
     // kind of a sanity check so we dont need to track events with bools but also not perfect
     const auto& appRenderState = g_pApplicationState->GetCurrentApplicationState().renderState;
-    const auto desiredRenderResolution =
-        CalculateRenderResolution(swapchainResolution, appRenderState.upscalingPercentage);
+    const auto desiredRenderResolution = CalculateRenderResolution(swapchainResolution, appRenderState);
     return swapchainResolution.x != m_renderState.swapchainResolution.x ||
            swapchainResolution.y != m_renderState.swapchainResolution.y ||
            desiredRenderResolution.x != m_renderState.renderResolution.x ||
@@ -145,7 +155,7 @@ void PassManager::RecreateResizeDependentResources(const mathstl::Vector2& swapc
 
     const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
     m_renderState.swapchainResolution = swapchainResolution;
-    m_renderState.renderResolution = CalculateRenderResolution(swapchainResolution, renderState.upscalingPercentage);
+    m_renderState.renderResolution = CalculateRenderResolution(swapchainResolution, renderState);
     m_renderState.recreatedThisFrame = true;
     g_pApplicationState->RegisterUpdateFunction(
         [renderResolution = m_renderState.renderResolution,
@@ -176,8 +186,7 @@ void PassManager::RecreateResizeDependentResources(const mathstl::Vector2& swapc
         CommandBuffer* pInitCmdBuffer = m_graphicsFrameCtx.cmdPool.CreateCommandBuffer(CommandBufferCreateInfo{});
         pInitCmdBuffer->SetName("One-time Resize Layout Setup Command Buffer");
 
-        m_transitionRecorder.RecordTemporalResourceInitialLayouts(
-            pInitCmdBuffer, m_renderGraph.GetRegistry(), m_frameResourceManager.GetDLSSExposureStagingBuffer());
+        m_transitionRecorder.RecordTemporalResourceInitialLayouts(pInitCmdBuffer, m_renderGraph.GetRegistry());
 
         pInitCmdBuffer->Bake();
         g_pQueueHandler->SubmitCommandBufferThisFrame({pInitCmdBuffer, QueueType::Graphics, 0});
@@ -203,14 +212,6 @@ void PassManager::RecreateResizeDependentResources(const mathstl::Vector2& swapc
 
         mainPassData.renderState = m_renderState;
         ++idx;
-    }
-
-    UpdateFrameFeatureState(m_mainPassData[0]);
-    UpdateGBufferUBO(m_mainPassData[0]);
-    for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
-    {
-        m_frameResourceManager.GetFrameRendererContext(i).gbufferPostProcessDescriptor->WriteBufferUpdate(
-            m_frameResourceManager.GetGBufferPostProcessUBO(), s_globalGbufferPostProcessUBOSlot);
     }
 
     for (auto& pPass : m_passes)
@@ -265,15 +266,13 @@ void PassManager::PrepareMainPassDataForFrame(MainPassData& mainPassData, FrameR
     mainPassData.bufferDescriptors[UBO::DescriptorContentsType::ClusterGrid] = ctx.clusterGridDescriptor;
     mainPassData.pRTSceneManager = &m_rtSceneManager;
 
-    ctx.pDLSSExposureTexture = m_renderGraph.GetRegistry().ResolveByID(RGResourceID::DLSSExposure);
-
     m_imguiRegistry.RegisterMaterialTextures();
     m_imguiRegistry.PublishGBufferTextureState(m_renderGraph.GetRegistry());
 }
 
 void PassManager::InitFrameContexts()
 {
-    const auto& indices = VkGlobals::GetQueueFamilyIndices();
+    const auto& indices = RenderGlobals::GetQueueFamilyIndices();
 
     if (!m_graphicsFrameCtx.initialized)
     {
@@ -306,8 +305,6 @@ void PassManager::InitFrameContexts()
 void PassManager::SetupRenderGraph(const MainPassData& mainPassData, FrameRendererContext& ctx)
 {
     ScopedZone("PassManager::SetupRenderGraph");
-
-    UpdateFrameFeatureState(mainPassData);
 
     CommandBuffer* pMainGraphicsWorkBuffer = m_graphicsFrameCtx.cmdBuffers[ctx.currentFrame];
     CommandBuffer* pComputeCmdBuffer = m_computeFrameCtx.cmdBuffers[ctx.currentFrame];
@@ -357,7 +354,7 @@ void PassManager::CompileAndExecuteRenderGraph(const MainPassData& mainPassData,
     ScopedZone("PassManager::CompileAndExecuteRenderGraph");
 
     m_renderGraph.Compile();
-    UpdateGBufferUBO(mainPassData);
+    UpdateGBufferUBO(ctx.currentFrame);
     m_renderGraph.BuildExecutionBatches(ctx);
 
     u32 graphicsBatchCount = 0;
@@ -431,90 +428,42 @@ CommandBuffer* PassManager::GetComputeCommandBuffer(u32 frameIdx, u32 batchIdx)
     return pBuf;
 }
 
-void PassManager::UpdateFrameFeatureState(const MainPassData& data)
+void PassManager::UpdateAAFrameConfig()
 {
-    const auto& appRenderState = g_pApplicationState->GetCurrentApplicationState().renderState;
-    const bool rtReflectionsRequested =
-        mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
-        mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTReflectionsEnabled);
+    const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+    const bool rtReflectionsActive = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
+                                     mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTReflectionsEnabled) &&
+                                     m_rtSceneManager.HasReadyTLAS(m_currentSwapChainIdx);
 
-    const bool useRTReflections = rtReflectionsRequested && data.pRTSceneManager != nullptr &&
-                                  data.pRTSceneManager->HasReadyTLAS(m_currentSwapChainIdx);
-
-    const bool useRayReconstruction = Nvidia::StreamlineManager::IsDLSSRRSupported() &&
-                                      appRenderState.rt.reflectionsUseRayReconstruction && useRTReflections;
-
-    Nvidia::StreamlineManager::SetUseRayReconstructionThisFrame(useRayReconstruction);
+    AA::FrameConfig config = AA::Resolve(renderState, GetAASupport(), rtReflectionsActive);
+    // Any technique switch (incl. RR on/off), resize, scene change or UI request invalidates history
+    config.temporalReset = m_renderState.recreatedThisFrame || config.temporal != m_lastTemporal ||
+                           renderState.temporalResetGeneration != m_lastTemporalResetGeneration;
+    m_lastTemporal = config.temporal;
+    m_lastTemporalResetGeneration = renderState.temporalResetGeneration;
+    AA::SetCurrent(config);
 }
 
-void PassManager::UpdateGBufferUBO(const MainPassData& data)
+void PassManager::UpdateGBufferUBO(u32 frameIdx)
 {
     const auto& reg = m_renderGraph.GetRegistry();
+    const auto& appRenderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+
     UBO::GBufferPostProcessUBO gbufferUBO{};
     gbufferUBO.gbufferAlbedoIdx = reg.ResolveBindlessByID(RGResourceID::GBufferAlbedo);
     gbufferUBO.gbufferNormalIdx = reg.ResolveBindlessByID(RGResourceID::GBufferNormal);
     gbufferUBO.gbufferTexCoordMatIdx = reg.ResolveBindlessByID(RGResourceID::GBufferUVMat);
-    gbufferUBO.gbufferDebugIdx = reg.ResolveBindlessByID(RGResourceID::GBufferDebug);
     gbufferUBO.gbufferVelocityIdx = reg.ResolveBindlessByID(RGResourceID::GBufferVelocity);
-    gbufferUBO.lastFrameVelocityIdx = reg.ResolveHistoryBindlessByID(RGResourceID::GBufferVelocity);
     gbufferUBO.depthBufferIdx = reg.ResolveBindlessByID(RGResourceID::MainDepth);
-    gbufferUBO.lastFrameColorBufferIdx = reg.ResolveHistoryBindlessByID(RGResourceID::TemporalResolve);
     gbufferUBO.lastFrameDepthIdx = reg.ResolveHistoryBindlessByID(RGResourceID::MainDepth);
-    gbufferUBO.gbufferResolveIdx = reg.ResolveBindlessByID(RGResourceID::TemporalResolve);
+    gbufferUBO.sceneColorIdx = reg.ResolveBindlessByID(RGResourceID::GBufferThisFrameColor);
+    gbufferUBO.taaHistoryIdx = reg.ResolveHistoryBindlessByID(RGResourceID::TAAHistory);
+    gbufferUBO.taaOutputIdx = reg.ResolveBindlessByID(RGResourceID::TAAHistory);
+    gbufferUBO.compositeInputIdx = reg.ResolveBindlessByID(AA::CompositeInput(appRenderState, AA::Current()));
     gbufferUBO.rtDebugViewIdx = reg.ResolveBindlessByID(RGResourceID::GBufferDebug);
-    gbufferUBO.rtReflectionsIdx = reg.ResolveBindlessByID(RGResourceID::RTReflections);
-    gbufferUBO.rtaoIdx = reg.ResolveBindlessByID(RGResourceID::RTAOOutput);
-    gbufferUBO.deferredLightingColorIdx = reg.ResolveBindlessByID(RGResourceID::GBufferThisFrameColor);
-    const auto& appRenderState = g_pApplicationState->GetCurrentApplicationState().renderState;
     gbufferUBO.bloomResultIdx = appRenderState.bloom.enabled ? reg.ResolveBindlessByID(RGResourceID::BloomMip0) : 0;
-    const bool taaModeActive = appRenderState.aaType == AntialiasingType::TAA_SMAA;
-    const bool smaaModeActive = appRenderState.aaType == AntialiasingType::SMAA;
-    const bool taaDebugOrSeed = appRenderState.taaSeedHistoryFromCurrentColor ||
-                                appRenderState.taaDebugMode == static_cast<u32>(TAADebugMode::CurrentColor) ||
-                                appRenderState.taaDebugMode == static_cast<u32>(TAADebugMode::HistoryColor);
 
-    const auto& rtState = appRenderState.rt;
-    const bool rtReflectionsRequested =
-        mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
-        mathstl::isFlagSet(appRenderState.debugFlags, (u32)DebugFlags::RTReflectionsEnabled);
-
-    const bool useRayReconstruction = Nvidia::StreamlineManager::GetUseRayReconstructionThisFrame();
-
-    gbufferUBO.aaType = static_cast<uint32_t>(appRenderState.aaType);
-
-    const auto rawColorHandle = reg.ResolveBindlessByID(RGResourceID::GBufferThisFrameColor);
-    const auto postAAHandle = reg.ResolveBindlessByID(RGResourceID::GBufferPostAAColor);
-    const auto resolveHandle = reg.ResolveBindlessByID(RGResourceID::TemporalResolve);
-
-    gbufferUBO.thisFrameColorBufferIdx = rawColorHandle;
-
-    if (appRenderState.aaType == AntialiasingType::SMAA && postAAHandle != 0)
-    {
-        gbufferUBO.finalTemporalColorBufferIdx = postAAHandle;
-    }
-    else if (appRenderState.aaType == AntialiasingType::TAA_SMAA)
-    {
-        gbufferUBO.finalTemporalColorBufferIdx = (postAAHandle != 0 && !taaDebugOrSeed) ? postAAHandle : resolveHandle;
-    }
-    else if (appRenderState.aaType == AntialiasingType::DLSS || appRenderState.aaType == AntialiasingType::XeSS)
-    {
-        gbufferUBO.finalTemporalColorBufferIdx = resolveHandle;
-    }
-    else
-    {
-        gbufferUBO.finalTemporalColorBufferIdx = rawColorHandle;
-    }
-
-    if (useRayReconstruction)
-    {
-        gbufferUBO.thisFrameColorBufferIdx = resolveHandle;
-    }
-    else if (rtReflectionsRequested && rtState.reflectionsDebugMode == RTReflectionDebugMode::ReflectionsOnly)
-    {
-        gbufferUBO.thisFrameColorBufferIdx = reg.ResolveBindlessByID(RGResourceID::RTReflections);
-    }
-
-    memcpy(m_frameResourceManager.GetMappedGBufferPostProcessUBO(), &gbufferUBO, sizeof(UBO::GBufferPostProcessUBO));
+    m_frameResourceManager.GetGBufferPostProcessUBO().Write(frameIdx, gbufferUBO);
 }
 
 void PassManager::Init()
@@ -529,12 +478,16 @@ void PassManager::Init()
         pPass->SetTimingQuery(&m_gpuTimingQuery);
     }
 
-    if (VkGlobals::GetTracyManager() && !VkGlobals::GetTracyManager()->IsEnabled())
+    if (RenderGlobals::GetTracyManager() && !RenderGlobals::GetTracyManager()->IsEnabled())
     {
-        VkGlobals::GetTracyManager()->Init(VkGlobals::GetPhysicalDevice(),
-                                           VkGlobals::GetLogicalDevice(),
-                                           VkGlobals::GetGraphicsQueue(),
+#ifdef USE_VULKAN
+        RenderGlobals::GetTracyManager()->Init(RenderGlobals::GetPhysicalDevice(),
+                                           RenderGlobals::GetLogicalDevice(),
+                                           RenderGlobals::GetGraphicsQueue(),
                                            m_graphicsFrameCtx.cmdBuffers[0]->GetRef());
+#else
+        RenderGlobals::GetTracyManager()->Init(RenderGlobals::GetDevice());
+#endif
     }
 }
 
@@ -599,9 +552,9 @@ void PassManager::ReadAndPublishTimingResults(u32 frameIdx)
 
 PassManager::~PassManager()
 {
-    if (VkGlobals::GetTracyManager())
+    if (RenderGlobals::GetTracyManager())
     {
-        VkGlobals::GetTracyManager()->Destroy();
+        RenderGlobals::GetTracyManager()->Destroy();
     }
 
     m_rtSceneManager.Reset();
@@ -677,6 +630,7 @@ void PassManager::PreProcessDataForCurrentFrame(u32 frameIdx, u64 jitterFrameNum
 
     m_renderGraph.GetRegistry().RotateHistory(frameIdx);
     m_imguiRegistry.PublishGBufferTextureState(m_renderGraph.GetRegistry());
+    UpdateAAFrameConfig();
 
     m_frameResourceManager.PreProcessDataForCurrentFrame(frameIdx, jitterFrameNumber, m_currentSwapChainIdx, this);
 }
@@ -690,7 +644,7 @@ void PassManager::ResetSceneState()
     g_pApplicationState->RegisterUpdateFunction(
         [](ApplicationState& state)
         {
-            state.renderState.taaSeedHistoryFromCurrentColor = true;
+            ++state.renderState.temporalResetGeneration;
             state.renderState.renderTargetsRecreatedThisFrame = true;
         });
 }
@@ -698,7 +652,7 @@ void PassManager::ResetSceneState()
 bool PassManager::BlockUntilPassesFinished(u32 frameIdx)
 {
     ScopedZone("Waiting for passes to finish (block until finished)");
-    // Wait for previous in-flight frame to finish as we dont double buffer UBOs etc
+    // Waits for the last frame that used this slot (N-2); CPU-written UBOs keep one copy per slot
     g_pQueueHandler->WaitForFences(frameIdx);
 
     auto& fence = m_imageAvailableFences.at(frameIdx);
@@ -752,7 +706,7 @@ void PassManager::RecreateShadowMaps(u32 cascades, const mathstl::Vector2& exten
     g_pApplicationState->RegisterUpdateFunction([](ApplicationState& state)
                                                 { state.renderState.renderTargetsRecreatedThisFrame = true; });
     m_imguiRegistry.ReleaseShadowMapIdsForNextFrame();
-    m_renderGraph.GetRegistry().RecreateShadowMap(cascades, extents, m_frameResourceManager);
+    m_renderGraph.GetRegistry().RecreateShadowMap(cascades, extents);
 
     for (auto& pass : m_passes)
     {

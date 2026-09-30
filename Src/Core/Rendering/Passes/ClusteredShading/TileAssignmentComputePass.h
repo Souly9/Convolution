@@ -3,7 +3,7 @@
 #include "LightGridComputePass.h"
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Rendering/Core/RenderingForwardDecls.h"
-#include "Core/Rendering/Vulkan/VkPipeline.h"
+#include "Core/Rendering/Core/Pipeline.h"
 
 namespace RenderPasses
 {
