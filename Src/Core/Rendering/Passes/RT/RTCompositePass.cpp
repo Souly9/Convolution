@@ -54,7 +54,7 @@ void RTCompositePass::Setup(::RenderGraphBuilder& builder, const MainPassData& d
     builder.ReadTexture(RGResourceID::MainDepth, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
     builder.ReadTexture(RGResourceID::GBufferVelocity, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
-    const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+    const auto& renderState = g_engine.GetApplicationState().GetCurrentApplicationState().renderState;
     const bool rtaoEnabled = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
                              mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTAOEnabled);
     if (rtaoEnabled)
@@ -94,7 +94,7 @@ void RTCompositePass::RenderWithGraph(const MainPassData& data, const FrameRende
     else
         m_accumFrameCount = eastl::min(m_accumFrameCount + 1u, 8u);
 
-    const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+    const auto& renderState = g_engine.GetApplicationState().GetCurrentApplicationState().renderState;
     const bool tlasReady = execCtx.HasReadyTLAS();
     const bool rtaoEnabled = tlasReady && mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
                              mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTAOEnabled);
@@ -142,7 +142,7 @@ void RTCompositePass::CreateSharedDescriptorLayout()
 
 bool RTCompositePass::WantsToRender() const
 {
-    const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+    const auto& renderState = g_engine.GetApplicationState().GetCurrentApplicationState().renderState;
     const bool reflectionsEnabled = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
                                     mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTReflectionsEnabled);
     const bool rtaoEnabled = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTEnabled) &&

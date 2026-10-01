@@ -28,21 +28,33 @@ void LogData::AddError(stltype::string&& error)
 {
     Format(error);
     m_logData.errors.push_back(error);
-    g_pConsoleLogger->ShowError(error);
+    // Null-safe: logging can happen before Engine::Init or after Engine::Shutdown
+    if (auto* pLogger = g_engine.TryGetConsoleLogger())
+        pLogger->ShowError(error);
+    else
+        printf("%s", error.c_str());
 }
 
 void LogData::AddWarning(stltype::string&& warning)
 {
     Format(warning);
     m_logData.warnings.push_back(warning);
-    g_pConsoleLogger->ShowWarning(warning);
+    // Null-safe: logging can happen before Engine::Init or after Engine::Shutdown
+    if (auto* pLogger = g_engine.TryGetConsoleLogger())
+        pLogger->ShowWarning(warning);
+    else
+        printf("%s", warning.c_str());
 }
 
 void LogData::AddInfo(stltype::string&& info)
 {
     Format(info);
     m_logData.infos.push_back(info);
-    g_pConsoleLogger->ShowInfo(info);
+    // Null-safe: logging can happen before Engine::Init or after Engine::Shutdown
+    if (auto* pLogger = g_engine.TryGetConsoleLogger())
+        pLogger->ShowInfo(info);
+    else
+        printf("%s", info.c_str());
 }
 
 void LogData::Format(stltype::string& str)

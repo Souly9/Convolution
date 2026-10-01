@@ -6,8 +6,7 @@
 #include "Core/Global/Profiling.h"
 #include "Core/Global/State/ApplicationState.h"
 #include "Core/Global/Utils/MathFunctions.h"
-#include "Core/Rendering/Core/Nvidia/StreamlineManager.h"
-#include "Core/Rendering/Backend/BackendGlobals.h"
+#include "Core/Global/GlobalVariables.h"
 #include "InfoWindow.h"
 #include <EASTL/hash_map.h>
 #include <EASTL/sort.h>
@@ -20,7 +19,7 @@ public:
     PerformanceDiagnosticsWindow()
     {
         m_isOpen = true;
-        g_pEventSystem->AddUpdateEventCallback([this](const UpdateEventData& d) { OnUpdate(d); });
+        g_engine.GetEventSystem().AddUpdateEventCallback([this](const UpdateEventData& d) { OnUpdate(d); });
     }
 
     void DrawWindow(f32 dt)
@@ -45,7 +44,7 @@ public:
         ImGui::Text("Hardware Details");
         ImGui::Separator();
         ImGui::Text("Device: %s", m_lastState.physicalRenderDeviceName.c_str());
-        ImGui::Text("Swapchain: %s", SwapchainFormatToString(FrameGlobals::GetSwapChainFormat()));
+        ImGui::Text("Swapchain: %s", SwapchainFormatToString(g_renderer.GetSwapchainFormat()));
         ImGui::Spacing();
 
         // VRAM Usage
@@ -93,9 +92,13 @@ public:
             ImGui::Text("Compute Dispatches: %u", m_lastState.stats.numComputeDispatches);
             ImGui::Text("Descriptor Binds: %u", m_lastState.stats.numDescriptorBinds);
             ImGui::Text("Pipeline Binds: %u", m_lastState.stats.numPipelineBinds);
-            ImGui::Text("Vertices: %llu", m_lastState.stats.numVertices);
-            ImGui::Text("Primitives: %llu", m_lastState.stats.numPrimitives);
-            ImGui::Text("Shader Invocations: %llu", m_lastState.stats.numShadersInvocations);
+            // These come from pipeline statistics queries, which not every device has (MoltenVK)
+            if (g_renderer.SupportsPipelineStatistics())
+            {
+                ImGui::Text("Vertices: %llu", m_lastState.stats.numVertices);
+                ImGui::Text("Primitives: %llu", m_lastState.stats.numPrimitives);
+                ImGui::Text("Shader Invocations: %llu", m_lastState.stats.numShadersInvocations);
+            }
         }
 
         // Clustered Shading
@@ -112,29 +115,7 @@ public:
             ImGui::Text("Resident RT Instances: %u", m_lastState.rt.residentInstanceCount);
         }
 
-#ifdef USE_VULKAN
-        // DLSS & Streamline (Condensed)
-        if (m_lastState.dlssSupported && ImGui::CollapsingHeader("DLSS & Streamline"))
-        {
-            const auto debugState = Nvidia::StreamlineManager::GetDLSSDebugState();
-
-            ImGui::Text("Mode: %s | Streamline: %s | Overlay: %s",
-                        (m_lastState.aaType == AntialiasingType::DLSS) ? DLSSModeToString(debugState.configuredMode) : "Off",
-                        debugState.streamlineInitialized ? "Ready" : "No",
-                        Nvidia::StreamlineManager::IsDLSSDebugUIAvailable() ? "Ctrl+Shift+Home" : "Off");
-
-            ImGui::Text("Resolution: %u x %u -> %u x %u | VRAM: %.1f MB",
-                        debugState.inputWidth, debugState.inputHeight,
-                        debugState.outputWidth, debugState.outputHeight,
-                        static_cast<f32>(debugState.estimatedVRAMUsageInBytes) / (1024.0f * 1024.0f));
-
-            ImGui::Text("Calls: %llu eval | Tag: %s | Const: %s | Eval: %s",
-                        debugState.evaluateCallCount,
-                        ResultToString(debugState.lastTagResult),
-                        ResultToString(debugState.lastSetConstantsResult),
-                        ResultToString(debugState.lastEvaluateResult));
-        }
-#endif
+        g_renderer.DrawVendorDiagnosticsUI(m_lastState);
 
         ImGui::Spacing();
         ImGui::Separator();
@@ -204,7 +185,7 @@ public:
                 }
 
                 f32 rowsY = rulerY + RULER_HEIGHT;
-                auto qIndices = RenderGlobals::GetQueueFamilyIndices();
+                auto qIndices = g_renderer.GetQueueFamilyIndices();
 
                 for (u32 qi = 0; qi < queues.size(); ++qi)
                 {
@@ -297,10 +278,10 @@ private:
         const auto& state = d.state;
         m_lastState = state.renderState;
 
-        if (g_pEntityManager)
+        if (g_engine.TryGetEntityManager())
         {
-            m_entityCount = static_cast<u32>(g_pEntityManager->GetAllEntities().size());
-            m_lightCount = static_cast<u32>(g_pEntityManager->GetComponentVector<ECS::Components::Light>().size());
+            m_entityCount = static_cast<u32>(g_engine.GetEntityManager().GetAllEntities().size());
+            m_lightCount = static_cast<u32>(g_engine.GetEntityManager().GetComponentVector<ECS::Components::Light>().size());
         }
 
         m_frameTimeSamples[m_sampleIndex] = dt;
@@ -476,55 +457,6 @@ private:
         return value ? "Yes" : "No";
     }
 
-#ifdef USE_VULKAN
-    static const char* DLSSModeToString(sl::DLSSMode mode)
-    {
-        switch (mode)
-        {
-            case sl::DLSSMode::eOff:
-                return "Off";
-            case sl::DLSSMode::eMaxPerformance:
-                return "Max Performance";
-            case sl::DLSSMode::eBalanced:
-                return "Balanced";
-            case sl::DLSSMode::eMaxQuality:
-                return "Max Quality";
-            case sl::DLSSMode::eUltraPerformance:
-                return "Ultra Performance";
-            case sl::DLSSMode::eUltraQuality:
-                return "Ultra Quality";
-            case sl::DLSSMode::eDLAA:
-                return "DLAA";
-            default:
-                return "Unknown";
-        }
-    }
-
-    static const char* ResultToString(sl::Result result)
-    {
-        switch (result)
-        {
-            case sl::Result::eOk:
-                return "Ok";
-            case sl::Result::eErrorNGXFailed:
-                return "NGX Failed";
-            case sl::Result::eErrorNotInitialized:
-                return "Not Initialized";
-            case sl::Result::eErrorInvalidParameter:
-                return "Invalid Parameter";
-            case sl::Result::eErrorFeatureNotSupported:
-                return "Feature Not Supported";
-            case sl::Result::eErrorMissingConstants:
-                return "Missing Constants";
-            case sl::Result::eErrorInvalidState:
-                return "Invalid State";
-            case sl::Result::eWarnOutOfVRAM:
-                return "Out Of VRAM";
-            default:
-                return "Other";
-        }
-    }
-#endif
 
     stltype::hash_map<stltype::string, SmoothedPass> m_smoothed;
     f32 m_totalRangeMs{0.0f};

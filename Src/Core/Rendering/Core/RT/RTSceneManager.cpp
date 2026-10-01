@@ -84,29 +84,33 @@ void RTSceneManager::Init(SharedResourceManager* pResourceManager, u32 graphicsQ
     m_tlasBuildCommandPool = CommandPool::Create(graphicsQueueFamilyIdx);
     m_tlasBuildCommandPool.SetName("RT TLAS Build Command Pool");
 
-    m_descriptorPool = DescriptorPool();
-    m_descriptorPool.Create({.enableBindlessTextureDescriptors = false,
-                             .enableStorageBufferDescriptors = true,
-                             .enableAccelerationStructureDescriptors = true,
-                             .freeDescriptorSet = true});
-    m_descriptorPool.SetName("RTSceneManager Descriptor Pool");
-
-    const auto rtLayouts = DescriptorPresets::RTScene(true);
-    stltype::vector<PipelineDescriptorLayout> setLocalLayouts;
-    setLocalLayouts.reserve(rtLayouts.size());
-    for (auto l : rtLayouts)
+    // Acceleration-structure descriptors only exist on devices with ray tracing
+    if (g_renderer.SupportsRayTracing())
     {
-        l.setIndex = 0;
-        setLocalLayouts.push_back(l);
-    }
-    m_tlasDescriptorLayout = DescriptorLayoutUtils::CreateOneDescriptorSetForAll(setLocalLayouts);
-    m_tlasDescriptorLayout.SetName("RTSceneManager TLAS Layout");
+        m_descriptorPool = DescriptorPool();
+        m_descriptorPool.Create({.enableBindlessTextureDescriptors = false,
+                                 .enableStorageBufferDescriptors = true,
+                                 .enableAccelerationStructureDescriptors = true,
+                                 .freeDescriptorSet = true});
+        m_descriptorPool.SetName("RTSceneManager Descriptor Pool");
 
-    for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
-    {
-        m_tlasDescriptors[i] = m_descriptorPool.CreateDescriptorSet(m_tlasDescriptorLayout);
-        m_tlasDescriptors[i]->SetBindingSlot(s_rtSceneASBindingSlot);
-        m_tlasDescriptors[i]->SetName("RTSceneManager TLAS Set " + stltype::to_string(i));
+        const auto rtLayouts = DescriptorPresets::RTScene(true);
+        stltype::vector<PipelineDescriptorLayout> setLocalLayouts;
+        setLocalLayouts.reserve(rtLayouts.size());
+        for (auto l : rtLayouts)
+        {
+            l.setIndex = 0;
+            setLocalLayouts.push_back(l);
+        }
+        m_tlasDescriptorLayout = DescriptorLayoutUtils::CreateOneDescriptorSetForAll(setLocalLayouts);
+        m_tlasDescriptorLayout.SetName("RTSceneManager TLAS Layout");
+
+        for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
+        {
+            m_tlasDescriptors[i] = m_descriptorPool.CreateDescriptorSet(m_tlasDescriptorLayout);
+            m_tlasDescriptors[i]->SetBindingSlot(s_rtSceneASBindingSlot);
+            m_tlasDescriptors[i]->SetName("RTSceneManager TLAS Set " + stltype::to_string(i));
+        }
     }
 
     PublishDebugState();
@@ -276,7 +280,7 @@ bool RTSceneManager::BuildTLASForFrame(TLASFrameData& frameData,
                                       TimelineSemaphore* pSignalTimeline,
                                       u64 signalValue)
 {
-    const auto& rtCaps = RayTracingDevice::GetCapabilities();
+    const auto& rtCaps = g_renderer.GetRayTracingLimits();
     const u32 instanceCount = static_cast<u32>(m_currentSortedInstances.size());
 
     if (instanceCount == 0)
@@ -403,18 +407,18 @@ bool RTSceneManager::BuildTLASForFrame(TLASFrameData& frameData,
         });
 
     pBuildCmdBuffer->Bake();
-    g_pQueueHandler->SubmitCommandBufferThisFrame({pBuildCmdBuffer, QueueType::Graphics, frameSubmitIdx});
+    g_renderer.GetQueueHandler().SubmitCommandBufferThisFrame({pBuildCmdBuffer, QueueType::Graphics, frameSubmitIdx});
     return true;
 }
 
 void RTSceneManager::PublishDebugState() const
 {
-    if (!g_pApplicationState)
+    if (!g_engine.TryGetApplicationState())
         return;
 
     const u32 pendingBlasCount = m_blasBuilder.GetPendingCount();
     const u32 residentInstanceCount = m_residentInstanceCount;
-    g_pApplicationState->RegisterUpdateFunction(
+    g_engine.GetApplicationState().RegisterUpdateFunction(
         [pendingBlasCount, residentInstanceCount](ApplicationState& state)
         {
             state.renderState.rt.pendingBlasCount = pendingBlasCount;

@@ -2,21 +2,50 @@
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Rendering/Backend/RenderBackendBase.h"
 #include "Core/Rendering/Core/AccelerationStructure.h"
-#include "Core/Rendering/Metal/MtlGlobals.h"
+#include "Core/Rendering/Metal/MtlBackendAccess.h"
+#include "Core/Rendering/Metal/MtlBackendDefines.h"
+#include "Core/Rendering/LayerDefines.h"
 #include "Core/Rendering/Metal/MtlPipeline.h"
 #include "Core/Rendering/Metal/MtlTexture.h"
 
 // No instance/physical device/surface split on Metal: device + CAMetalLayer is the whole setup
+class Profiler;
+struct RendererState;
+namespace RenderPasses
+{
+class PassManager;
+}
+
 template <>
 class RenderBackendImpl<Metal>
 {
 public:
     virtual ~RenderBackendImpl() = default;
+    // Before the window exists (vendor SDK hooks, Vulkan loader for GLFW)
+    static void PreWindowSystemInit();
+    static stltype::unique_ptr<Profiler> CreateProfiler();
+
+    RenderCapabilities QueryCapabilities() const;
+
     bool Init(uint32_t screenWidth, uint32_t screenHeight, stltype::string_view title);
 
     bool Cleanup();
 
     bool RecreateSwapChain();
+
+    void InitImGui(const DescriptorPool& pool);
+    void ImGuiNewFrame();
+    void ShutdownImGui();
+
+    // Vendor upscalers (DLSS / XeSS); Vulkan-only today
+    bool IsDLSSSupported() const;
+    bool IsDLSSRRSupported() const;
+    bool IsXeSSSupported() const;
+    bool IsDLSSDebugUIAvailable() const;
+    void AddVendorUpscalerPasses(RenderPasses::PassManager& passManager);
+    void BeginFrame(u32 frameIdx);
+    void DrawVendorSettingsUI();
+    void DrawVendorDiagnosticsUI(const RendererState& state);
 
     QueueFamilyIndices GetQueueFamilies() const
     {
@@ -30,6 +59,10 @@ public:
     MTL::CommandQueue* GetGraphicsQueue() const
     {
         return m_pGraphicsQueue;
+    }
+    CA::MetalLayer* GetMetalLayer() const
+    {
+        return m_pMetalLayer;
     }
 
 private:

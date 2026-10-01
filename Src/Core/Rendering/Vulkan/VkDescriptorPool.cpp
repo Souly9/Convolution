@@ -1,7 +1,10 @@
 #include "VkDescriptorPool.h"
+#include "Core/Rendering/Core/BindlessTexturesDefines.h"
+#include "Core/Global/GlobalVariables.h"
+#include "Core/Rendering/Core/DescriptorSetLayout.h"
 #include "Core/Global/GlobalDefines.h"
 #include "VkAccelerationStructure.h"
-#include "VkGlobals.h"
+#include "VkBackendAccess.h"
 #include "VkTexture.h"
 
 DescriptorPoolVulkan::DescriptorPoolVulkan()
@@ -10,7 +13,7 @@ DescriptorPoolVulkan::DescriptorPoolVulkan()
 
 DescriptorPoolVulkan::~DescriptorPoolVulkan()
 {
-    vkDestroyDescriptorPool(VK_LOGICAL_DEVICE, m_descriptorPool, VulkanAllocator());
+    vkDestroyDescriptorPool(VkBackend::Device(), m_descriptorPool, VulkanAllocator());
 }
 
 void DescriptorPoolVulkan::Create(const DescriptorPoolCreateInfo& createInfo)
@@ -22,8 +25,9 @@ void DescriptorPoolVulkan::Create(const DescriptorPoolCreateInfo& createInfo)
 
     if (createInfo.enableBindlessTextureDescriptors)
     {
-        const u32 samplerCount = stltype::max(maxSets * 4, MAX_BINDLESS_TEXTURES * 8);
-        const u32 storageImageCount = stltype::max(maxSets * 2, MAX_BINDLESS_TEXTURES * 4);
+        const u32 bindlessTextureCount = g_renderer.GetBindlessCapacity(Bindless::BindlessType::GlobalTextures);
+        const u32 samplerCount = stltype::max(maxSets * 4, bindlessTextureCount * 8);
+        const u32 storageImageCount = stltype::max(maxSets * 2, bindlessTextureCount * 4);
         poolSizes.push_back(
             CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, samplerCount));
         poolSizes.push_back(
@@ -53,7 +57,7 @@ void DescriptorPoolVulkan::Create(const DescriptorPoolCreateInfo& createInfo)
     poolInfo.pPoolSizes = poolSizes.data();
     poolInfo.maxSets = maxSets;
 
-    DEBUG_ASSERT(vkCreateDescriptorPool(VK_LOGICAL_DEVICE, &poolInfo, VulkanAllocator(), &m_descriptorPool) ==
+    DEBUG_ASSERT(vkCreateDescriptorPool(VkBackend::Device(), &poolInfo, VulkanAllocator(), &m_descriptorPool) ==
                  VK_SUCCESS);
 }
 
@@ -75,7 +79,7 @@ stltype::vector<DescriptorSetVulkan*> DescriptorPoolVulkan::CreateDescriptorSets
 
     stltype::vector<VkDescriptorSet> descriptorSets;
     descriptorSets.resize(layouts.size());
-    const VkResult allocRes = vkAllocateDescriptorSets(VK_LOGICAL_DEVICE, &allocInfo, descriptorSets.data());
+    const VkResult allocRes = vkAllocateDescriptorSets(VkBackend::Device(), &allocInfo, descriptorSets.data());
     if (allocRes != VK_SUCCESS)
     {
         DEBUG_LOG_ERRF("DescriptorPoolVulkan: vkAllocateDescriptorSets failed with error: {}", static_cast<int>(allocRes));
@@ -111,7 +115,7 @@ DescriptorSetVulkan* DescriptorPoolVulkan::CreateDescriptorSet(const VkDescripto
     allocInfo.pSetLayouts = &layout;
 
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
-    const VkResult allocRes = vkAllocateDescriptorSets(VK_LOGICAL_DEVICE, &allocInfo, &descriptorSet);
+    const VkResult allocRes = vkAllocateDescriptorSets(VkBackend::Device(), &allocInfo, &descriptorSet);
     if (allocRes != VK_SUCCESS || descriptorSet == VK_NULL_HANDLE)
     {
         DEBUG_LOG_ERRF("DescriptorPoolVulkan: vkAllocateDescriptorSets failed with error: {}", static_cast<int>(allocRes));
@@ -193,7 +197,7 @@ void DescriptorSetVulkan::WriteBufferUpdate(
     descriptorWrite.pImageInfo = nullptr;       // Optional
     descriptorWrite.pTexelBufferView = nullptr; // Optional
 
-    vkUpdateDescriptorSets(VK_LOGICAL_DEVICE, 1, &descriptorWrite, 0, nullptr);
+    vkUpdateDescriptorSets(VkBackend::Device(), 1, &descriptorWrite, 0, nullptr);
 }
 
 void DescriptorSetVulkan::WriteAccelerationStructureUpdate(const AccelerationStructure& accelerationStructure,
@@ -223,7 +227,7 @@ void DescriptorSetVulkan::WriteAccelerationStructureUpdate(const AccelerationStr
     descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
     descriptorWrite.descriptorCount = 1;
 
-    vkUpdateDescriptorSets(VK_LOGICAL_DEVICE, 1, &descriptorWrite, 0, nullptr);
+    vkUpdateDescriptorSets(VkBackend::Device(), 1, &descriptorWrite, 0, nullptr);
 }
 
 static VkImageLayout GetSampledImageLayout(const TextureVulkan* pTex)
@@ -257,7 +261,7 @@ void DescriptorSetVulkan::WriteBindlessTextureUpdate(const TextureVulkan* pTex, 
     descriptorWrite.pBufferInfo = nullptr;
     descriptorWrite.pTexelBufferView = nullptr;
 
-    vkUpdateDescriptorSets(VK_LOGICAL_DEVICE, 1, &descriptorWrite, 0, nullptr);
+    vkUpdateDescriptorSets(VkBackend::Device(), 1, &descriptorWrite, 0, nullptr);
 }
 
 void DescriptorSetVulkan::WriteBindlessSampledImageUpdate(const TextureVulkan* pTex, u32 idx, u32 bindingSlot)
@@ -281,7 +285,7 @@ void DescriptorSetVulkan::WriteBindlessSampledImageUpdate(const TextureVulkan* p
     descriptorWrite.descriptorCount = 1;
     descriptorWrite.pImageInfo = &imageInfo;
 
-    vkUpdateDescriptorSets(VK_LOGICAL_DEVICE, 1, &descriptorWrite, 0, nullptr);
+    vkUpdateDescriptorSets(VkBackend::Device(), 1, &descriptorWrite, 0, nullptr);
 }
 
 void DescriptorSetVulkan::WriteSamplerUpdate(VkSampler sampler, u32 idx, u32 bindingSlot)
@@ -304,7 +308,7 @@ void DescriptorSetVulkan::WriteSamplerUpdate(VkSampler sampler, u32 idx, u32 bin
     descriptorWrite.descriptorCount = 1;
     descriptorWrite.pImageInfo = &samplerInfo;
 
-    vkUpdateDescriptorSets(VK_LOGICAL_DEVICE, 1, &descriptorWrite, 0, nullptr);
+    vkUpdateDescriptorSets(VkBackend::Device(), 1, &descriptorWrite, 0, nullptr);
 }
 
 void DescriptorSetVulkan::WriteBindlessImageUpdate(const TextureVulkan* pTex, u32 idx, u32 bindingSlot)
@@ -331,7 +335,7 @@ void DescriptorSetVulkan::WriteBindlessImageUpdate(const TextureVulkan* pTex, u3
     descriptorWrite.pBufferInfo = nullptr;
     descriptorWrite.pTexelBufferView = nullptr;
 
-    vkUpdateDescriptorSets(VK_LOGICAL_DEVICE, 1, &descriptorWrite, 0, nullptr);
+    vkUpdateDescriptorSets(VkBackend::Device(), 1, &descriptorWrite, 0, nullptr);
 }
 
 void DescriptorPoolVulkan::NamingCallBack(const stltype::string& name)
@@ -342,7 +346,7 @@ void DescriptorPoolVulkan::NamingCallBack(const stltype::string& name)
     nameInfo.objectHandle = (uint64_t)m_descriptorPool;
     nameInfo.pObjectName = name.c_str();
 
-    vkSetDebugUtilsObjectName(VK_LOGICAL_DEVICE, &nameInfo);
+    vkSetDebugUtilsObjectName(VkBackend::Device(), &nameInfo);
 }
 
 void DescriptorSetVulkan::NamingCallBack(const stltype::string& name)
@@ -353,5 +357,5 @@ void DescriptorSetVulkan::NamingCallBack(const stltype::string& name)
     nameInfo.objectHandle = (uint64_t)m_descriptorSet;
     nameInfo.pObjectName = name.c_str();
 
-    vkSetDebugUtilsObjectName(VK_LOGICAL_DEVICE, &nameInfo);
+    vkSetDebugUtilsObjectName(VkBackend::Device(), &nameInfo);
 }

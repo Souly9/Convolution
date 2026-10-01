@@ -1,8 +1,6 @@
 #include "Application.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Rendering/Core/ShaderManager.h"
-#include "Core/Rendering/RenderLayer.h"
-#include "Core/Rendering/Backend/BackendGlobals.h"
 #include "Core/Rendering/Core/Utils/DeleteQueue.h"
 #include "Scenes/BistroExteriorScene.h"
 #include "Scenes/ClusteredLightingScene.h"
@@ -13,55 +11,48 @@
 #include "Core/Rendering/Core/StaticFunctions.h"
 #include <GLFW/glfw3.h>
 #include <filesystem>
-#include <imgui/backends/imgui_impl_glfw.h>
-#ifdef USE_VULKAN
-#include <imgui/backends/imgui_impl_vulkan.h>
-#endif
 #include <imgui/imgui.h>
 
-Application::Application(bool canRender, RenderLayer<RenderAPI>& layer)
-    : m_renderThread(&m_imGuiManager, &layer.GetBackend())
+Application::Application() : m_renderThread(&m_imGuiManager)
 {
-    m_pProfiler = stltype::make_unique<BackendProfiler>();
-    RenderGlobals::SetProfiler(m_pProfiler.get());
-    g_pApplicationState = &m_applicationState;
+    // Registers ImGui and EventSystem callbacks, so it can only exist once the Engine is up
+    m_pMainMenuBar = stltype::make_unique<MainMenuBar>();
 
-    layer.InitRenderLayer(
-        g_pWindowManager->GetScreenWidth(), g_pWindowManager->GetScreenHeight(), g_pWindowManager->GetTitle());
-
-    g_pGPUMemoryManager->Init();
-    m_pProfiler->Init();
-    g_pQueueHandler->Init();
-    g_pTexManager->Init();
+    if (!g_renderer.InitDevice())
+    {
+        DEBUG_LOG_ERR("Render device initialization failed, shutting down");
+        return;
+    }
 
     // Load placeholder first
-    auto placeholderHandle = g_pTexManager->SubmitAsyncTextureCreation(
+    auto placeholderHandle = g_renderer.GetTextureManager().SubmitAsyncTextureCreation(
         {"Resources\\Textures\\placeholder.png", false, TextureSemantic::BaseColor, true});
-    g_pTexManager->WaitFor(placeholderHandle);
-    g_pTexManager->SetPlaceholder(placeholderHandle);
+    g_renderer.GetTextureManager().WaitFor(placeholderHandle);
+    g_renderer.GetTextureManager().SetPlaceholder(placeholderHandle);
 
-    g_pGlobalTimeData->Reset();
+    g_engine.GetTime().Reset();
 
-    FrameGlobals::SetFrameNumber(0);
+    g_engine.SetFrameNumber(0);
     // Bistro is a local-only asset; fall back to Sponza when it isn't there
     if (std::filesystem::exists("Resources/Models/BistroExterior.fbx"))
-        m_applicationState.SetCurrentScene(stltype::make_unique<BistroExteriorScene>());
+        g_engine.GetApplicationState().SetCurrentScene(stltype::make_unique<BistroExteriorScene>());
     else
-        m_applicationState.SetCurrentScene(stltype::make_unique<SponzaScene>());
-    g_pShaderManager->ReadAllSourceShaders();
-    m_applicationState.ProcessStateUpdates();
+        g_engine.GetApplicationState().SetCurrentScene(stltype::make_unique<SponzaScene>());
+    g_renderer.GetShaderManager().ReadAllSourceShaders();
+    g_engine.GetApplicationState().ProcessStateUpdates();
 
-    g_pEventSystem->OnBaseInit({});
+    g_engine.GetEventSystem().OnBaseInit({});
 
-    m_applicationState.ProcessStateUpdates();
+    g_engine.GetApplicationState().ProcessStateUpdates();
 
     auto pRenderer = m_renderThread.Start();
-    m_applicationState.SetPassManager(pRenderer);
-    g_pEventSystem->OnAppInit({pRenderer});
+    g_engine.GetApplicationState().SetPassManager(pRenderer);
+    g_engine.GetEventSystem().OnAppInit({pRenderer});
     StaticBehaviorCollection::RegisterAllBehaviors();
+    m_initialized = true;
 
-    m_applicationState.ProcessStateUpdates();
-    g_pQueueHandler->WaitForFences(~0u);
+    g_engine.GetApplicationState().ProcessStateUpdates();
+    g_renderer.GetQueueHandler().WaitForFences(~0u);
     Update(0);
     Update(1);
 }
@@ -72,73 +63,76 @@ void Application::CreateMainPSO()
 
 Application::~Application()
 {
+    if (!m_initialized)
+        return;
+
     m_renderThread.Stop();
 
-    g_mainRenderThreadSyncSemaphore.Post();
-    g_frameTimerSemaphore2.Post();
-    g_imguiSemaphore.Post();
+    g_engine.GetFrameSync().mainRenderThreadSync.Post();
+    g_engine.GetFrameSync().frameTimer2.Post();
+    g_engine.GetFrameSync().imgui.Post();
 
     m_renderThread.ShutdownThread();
     SRF::WaitForDeviceIdle<RenderAPI>();
 
+    // Before the pass manager goes away: ImGuiPass owns the descriptor pool the ImGui backend frees into
+    m_imGuiManager.CleanUp();
     m_renderThread.CleanUp();
 
-    m_pProfiler->Destroy();
-    RenderGlobals::SetProfiler(nullptr);
+    g_renderer.ReleaseProfiler();
 
-    g_pDeleteQueue->ForceEmptyQueue();
-    m_imGuiManager.CleanUp();
+    g_renderer.GetDeleteQueue().ForceEmptyQueue();
 }
 
 void Application::Run()
 {
     u32 currentFrame = 0;
     
-    while (!glfwWindowShouldClose(g_pWindowManager->GetWindow()))
+    while (!glfwWindowShouldClose(g_engine.GetWindowManager().GetWindow()))
     {
         WaitForRendererToFinish();
 
         {
             
             currentFrame = ++currentFrame % FRAMES_IN_FLIGHT;
-            FrameGlobals::SetFrameNumber(currentFrame);
+            g_engine.SetFrameNumber(currentFrame);
         }
 
-        g_frameTimerSemaphore2.Post();
+        g_engine.GetFrameSync().frameTimer2.Post();
 
-        g_renderThreadReadSemaphore.Wait();
-        m_applicationState.ProcessStateUpdates();
+        g_engine.GetFrameSync().renderThreadRead.Wait();
+        g_engine.GetApplicationState().ProcessStateUpdates();
         // ImGui accesses the entity manager to update data, which isn't designed
         // for multi-threaded access Hence we run the draw on the main thread and
         // just retrieve the data on the renderthread for simplicity
         m_imGuiManager.BeginFrame();
         m_imGuiManager.RenderElements(0.16f, LogData::Get()->GetApplicationInfos());
-        g_imguiSemaphore.Post();
+        g_engine.GetFrameSync().imgui.Post();
 
         // Notify all systems the next frame started, mainly used as pre-update
-        g_pEventSystem->OnNextFrame({currentFrame});
+        g_engine.GetEventSystem().OnNextFrame({currentFrame});
 
         // Update game on multiple threads
         Update(currentFrame);
 
         glfwPollEvents();
-        g_pWindowManager->Update();
+        g_engine.GetWindowManager().Update();
     }
     SRF::WaitForDeviceIdle<RenderAPI>();
 }
 
 void Application::Update(u32 currentFrame)
 {
-    g_pGlobalTimeData->Step();
+    g_engine.GetTime().Step();
 
-    const auto& appState = m_applicationState.GetCurrentApplicationState();
-    g_pEventSystem->OnUpdate({appState, g_pGlobalTimeData->GetDeltaTime()});
+    const auto& appState = g_engine.GetApplicationState().GetCurrentApplicationState();
+    g_engine.GetEventSystem().OnUpdate({appState, g_engine.GetTime().GetDeltaTime()});
 
-    g_pEntityManager->UpdateSystems(currentFrame);
+    g_engine.GetEntityManager().UpdateSystems(currentFrame);
 }
 
 void Application::WaitForRendererToFinish()
 {
-    g_mainRenderThreadSyncSemaphore.Post();
-    g_frameTimerSemaphore.Wait();
+    g_engine.GetFrameSync().mainRenderThreadSync.Post();
+    g_engine.GetFrameSync().frameTimer.Wait();
 }

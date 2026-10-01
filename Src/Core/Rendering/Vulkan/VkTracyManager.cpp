@@ -1,13 +1,18 @@
 #include "VkTracyManager.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
 #include "Core/Rendering/Vulkan/VkCommandBuffer.h"
-#include "Core/Rendering/Vulkan/VkGlobals.h"
+#include "Core/Rendering/Vulkan/VkBackendAccess.h"
 
 VkTracyGPUManager::VkTracyGPUManager() = default;
 
 VkTracyGPUManager::~VkTracyGPUManager()
 {
     Destroy();
+}
+
+void VkTracyGPUManager::Init(CommandBuffer* pSetupCmd)
+{
+    Init(VkBackend::PhysicalDevice(), VkBackend::Device(), VkBackend::GraphicsQueue(), pSetupCmd->GetRef());
 }
 
 void VkTracyGPUManager::Init(VkPhysicalDevice physDev, VkDevice device, VkQueue queue, VkCommandBuffer setupCmd)

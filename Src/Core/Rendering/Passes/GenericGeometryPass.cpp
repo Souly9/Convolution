@@ -1,6 +1,6 @@
 #include "GenericGeometryPass.h"
 #include "Core/Rendering/Core/Pipeline.h"
-#include "Core/Rendering/Backend/BackendGlobals.h"
+#include "Core/Global/GlobalVariables.h"
 #include "Core/Rendering/Core/DescriptorUtils/DescriptorLayoutUtils.h"
 
 using namespace RenderPasses;

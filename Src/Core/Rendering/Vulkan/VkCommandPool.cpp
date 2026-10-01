@@ -1,6 +1,6 @@
 #include "VkCommandPool.h"
 #include "Core/Global/GlobalDefines.h"
-#include "VkGlobals.h"
+#include "VkBackendAccess.h"
 
 #define MAX_REASONABLE_COMMAND_BUFFERS 2048
 
@@ -19,7 +19,7 @@ void CommandPoolVulkan::NamingCallBack(const stltype::string& name)
     nameInfo.objectHandle = (u64)GetRef();
     nameInfo.pObjectName = name.c_str();
 
-    vkSetDebugUtilsObjectName(VkGlobals::GetLogicalDevice(), &nameInfo);
+    vkSetDebugUtilsObjectName(VkBackend::Device(), &nameInfo);
 }
 CommandPoolVulkan::CommandPoolVulkan(u32 graphicsFamilyIdx)
     : CommandPoolVulkan(graphicsFamilyIdx, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT)
@@ -34,7 +34,7 @@ CommandPoolVulkan::CommandPoolVulkan(u32 graphicsFamilyIdx, VkCommandPoolCreateF
     poolInfo.queueFamilyIndex = graphicsFamilyIdx;
     m_queueFamilyIndex = graphicsFamilyIdx;
 
-    DEBUG_ASSERT(vkCreateCommandPool(VkGlobals::GetLogicalDevice(), &poolInfo, VulkanAllocator(), &m_commandPool) ==
+    DEBUG_ASSERT(vkCreateCommandPool(VkBackend::Device(), &poolInfo, VulkanAllocator(), &m_commandPool) ==
                  VK_SUCCESS);
 }
 
@@ -49,7 +49,7 @@ CommandPoolVulkan::~CommandPoolVulkan()
 }
 
 void CommandPoolVulkan::CleanUp(){
-    VK_FREE_IF(m_commandPool, vkDestroyCommandPool(VkGlobals::GetLogicalDevice(), m_commandPool, VulkanAllocator()))}
+    VK_FREE_IF(m_commandPool, vkDestroyCommandPool(VkBackend::Device(), m_commandPool, VulkanAllocator()))}
 
 CommandBuffer* CommandPoolVulkan::CreateCommandBuffer(const CommandBufferCreateInfo& createInfo)
 {
@@ -71,7 +71,7 @@ CommandBuffer* CommandPoolVulkan::CreateCommandBuffer(const CommandBufferCreateI
 
     CommandBuffer* commandBuffer;
     VkCommandBuffer buffer;
-    DEBUG_ASSERT(vkAllocateCommandBuffers(VkGlobals::GetLogicalDevice(), &allocInfo, &buffer) == VK_SUCCESS);
+    DEBUG_ASSERT(vkAllocateCommandBuffers(VkBackend::Device(), &allocInfo, &buffer) == VK_SUCCESS);
 
     commandBuffer = &m_commandBuffers.emplace_back(buffer);
     commandBuffer->SetPool(this);
@@ -107,7 +107,7 @@ stltype::vector<CommandBuffer*> CommandPoolVulkan::CreateCommandBuffers(const Co
     stltype::vector<VkCommandBuffer> buffers;
     buffers.resize(remainingCount);
 
-    DEBUG_ASSERT(vkAllocateCommandBuffers(VkGlobals::GetLogicalDevice(), &allocInfo, buffers.data()) == VK_SUCCESS);
+    DEBUG_ASSERT(vkAllocateCommandBuffers(VkBackend::Device(), &allocInfo, buffers.data()) == VK_SUCCESS);
 
     const size_t startIdx = m_commandBuffers.size();
 
@@ -128,5 +128,5 @@ stltype::vector<CommandBuffer*> CommandPoolVulkan::CreateCommandBuffers(const Co
 
 TransferCommandPoolVulkan TransferCommandPoolVulkan::Create()
 {
-    return {VkGlobals::GetQueueFamilyIndices().transferFamily.value()};
+    return {VkBackend::QueueFamilies().transferFamily.value()};
 }

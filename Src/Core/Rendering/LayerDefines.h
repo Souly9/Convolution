@@ -14,7 +14,3 @@ struct QueueFamilyIndices
                computeFamily.has_value();
     }
 };
-
-#ifdef USE_VULKAN
-#include <vulkan/vulkan.h>
-#endif

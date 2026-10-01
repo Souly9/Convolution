@@ -13,7 +13,7 @@ using namespace Components;
 
 EntityManager::EntityManager()
 {
-    g_pEventSystem->AddAppInitEventCallback(
+    g_engine.GetEventSystem().AddAppInitEventCallback(
         [this](const AppInitEventData& data)
         {
             for (auto& pSystem : m_systems)
@@ -100,14 +100,14 @@ void EntityManager::DestroyEntity(Entity entity)
 
 void EntityManager::AddToFrameDirtyList(C_ID componentID)
 {
-    u32 frameIdx = FrameGlobals::GetFrameNumber();
+    u32 frameIdx = g_engine.GetFrameNumber();
     auto& dirtyCompVec = m_dirtyComponents[frameIdx];
     auto it = stltype::find(dirtyCompVec.begin(), dirtyCompVec.end(), componentID);
     if (it == dirtyCompVec.end())
         dirtyCompVec.emplace_back(componentID);
     else
     {
-        auto& prevDirtyCompVec = m_dirtyComponents[FrameGlobals::GetPreviousFrameNumber(frameIdx)];
+        auto& prevDirtyCompVec = m_dirtyComponents[Engine::GetPreviousFrameNumber(frameIdx)];
         auto prevIt = stltype::find(prevDirtyCompVec.begin(), prevDirtyCompVec.end(), componentID);
         if (prevIt == prevDirtyCompVec.end())
             prevDirtyCompVec.emplace_back(componentID);

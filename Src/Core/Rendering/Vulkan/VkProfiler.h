@@ -1,7 +1,7 @@
 #pragma once
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Global/LogDefines.h"
-#include "Core/Rendering/Vulkan/VkGlobals.h"
+#include "Core/Rendering/Vulkan/VkBackendAccess.h"
 #include "Core/Rendering/Core/Profiler.h"
 #include "Core/Rendering/Vulkan/VkQueryPool.h"
 #include "Core/Global/State/ApplicationState.h"
@@ -24,9 +24,7 @@ public:
             VK_QUERY_PIPELINE_STATISTIC_COMPUTE_SHADER_INVOCATIONS_BIT;
 
         // MoltenVK (Apple GPUs) has no pipeline statistics queries; leave the pool empty there
-        VkPhysicalDeviceFeatures features{};
-        vkGetPhysicalDeviceFeatures(VkGlobals::GetPhysicalDevice(), &features);
-        if (features.pipelineStatisticsQuery)
+        if (g_renderer.SupportsPipelineStatistics())
             m_queryPool.Init(VK_QUERY_TYPE_PIPELINE_STATISTICS, 8192, stats);
         
         for(u32 i = 0; i < FRAMES_IN_FLIGHT; ++i)
@@ -49,7 +47,7 @@ public:
         m_maxQueryIdx = m_baseQueryIdx + queriesPerFrame;
         
         if (m_queryPool.GetRef() != VK_NULL_HANDLE)
-            vkResetQueryPool(VkGlobals::GetLogicalDevice(), m_queryPool.GetRef(), m_baseQueryIdx, queriesPerFrame);
+            vkResetQueryPool(VkBackend::Device(), m_queryPool.GetRef(), m_baseQueryIdx, queriesPerFrame);
 
         SimpleScopedGuard<CustomMutex> lock(m_statsMutex);
         m_accumulatedStats[slotIdx] = {};
@@ -62,7 +60,7 @@ public:
         SimpleScopedGuard<CustomMutex> lock(m_statsMutex);
         RendererState::SceneRenderStats gpuStats = m_accumulatedStats[slotIdx];
 
-        g_pApplicationState->RegisterUpdateFunction([gpuStats](ApplicationState& appState) {
+        g_engine.GetApplicationState().RegisterUpdateFunction([gpuStats](ApplicationState& appState) {
             appState.renderState.stats.numVertices = gpuStats.numVertices;
             appState.renderState.stats.numPrimitives = gpuStats.numPrimitives;
             appState.renderState.stats.numShadersInvocations = gpuStats.numShadersInvocations;

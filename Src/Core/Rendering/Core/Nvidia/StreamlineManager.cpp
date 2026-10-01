@@ -2,7 +2,7 @@
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Global/LogDefines.h"
 #include "Core/Global/ThreadBase.h"
-#include "Core/Rendering/Vulkan/VkGlobals.h"
+#include "Core/Rendering/Vulkan/VkBackendAccess.h"
 #include <atomic>
 #include <cstdlib>
 #include <cstring>
@@ -347,13 +347,12 @@ bool StreamlineManager::Init()
     if (!g_slInitialized)
         return false;
 
-    const auto& context = VkGlobals::GetContext();
-    const auto queueFamilies = VkGlobals::GetQueueFamilyIndices();
+    const auto queueFamilies = VkBackend::QueueFamilies();
 
     sl::VulkanInfo vulkanInfo{};
-    vulkanInfo.instance = context.Instance;
-    vulkanInfo.device = context.Device;
-    vulkanInfo.physicalDevice = context.PhysicalDevice;
+    vulkanInfo.instance = VkBackend::Instance();
+    vulkanInfo.device = VkBackend::Device();
+    vulkanInfo.physicalDevice = VkBackend::PhysicalDevice();
     vulkanInfo.graphicsQueueFamily = queueFamilies.graphicsFamily.value_or(0);
     vulkanInfo.computeQueueFamily = queueFamilies.computeFamily.value_or(0);
     vulkanInfo.graphicsQueueIndex = g_slGraphicsQueueStartIndex;
@@ -367,7 +366,7 @@ bool StreamlineManager::Init()
     }
 
     sl::AdapterInfo adapterInfo{};
-    adapterInfo.vkPhysicalDevice = context.PhysicalDevice;
+    adapterInfo.vkPhysicalDevice = VkBackend::PhysicalDevice();
 
     VkPhysicalDeviceIDProperties physicalDeviceIDProperties{};
     physicalDeviceIDProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES;
@@ -376,7 +375,7 @@ bool StreamlineManager::Init()
     physicalDeviceProperties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
     physicalDeviceProperties2.pNext = &physicalDeviceIDProperties;
 
-    vkGetPhysicalDeviceProperties2(context.PhysicalDevice, &physicalDeviceProperties2);
+    vkGetPhysicalDeviceProperties2(VkBackend::PhysicalDevice(), &physicalDeviceProperties2);
 
     if (physicalDeviceIDProperties.deviceLUIDValid)
     {

@@ -14,6 +14,7 @@ public:
     VkTracyGPUManager();
     ~VkTracyGPUManager() override;
 
+    void Init(CommandBuffer* pSetupCmd) override;
     void Init(VkPhysicalDevice physDev, VkDevice device, VkQueue queue, VkCommandBuffer setupCmd);
     void Destroy() override;
 

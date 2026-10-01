@@ -153,7 +153,7 @@ bool CSMPass::WantsToRender() const
         }
     }
     return hasDraws &&
-           mathstl::isFlagSet(g_pApplicationState->GetCurrentApplicationState().renderState.debugFlags,
+           mathstl::isFlagSet(g_engine.GetApplicationState().GetCurrentApplicationState().renderState.debugFlags,
                               (u32)DebugFlags::ShadowsEnabled);
 }
 

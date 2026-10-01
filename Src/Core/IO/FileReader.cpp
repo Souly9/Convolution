@@ -26,6 +26,11 @@ FileReader::FileReader() : m_threadPool(CORE_COUNT_AVAILABLE)
 
 FileReader::~FileReader()
 {
+    Stop();
+}
+
+void FileReader::Stop()
+{
     m_keepRunning = false;
     m_ioThread.WaitForEnd();
     m_threadPool.WaitAll();
@@ -43,25 +48,24 @@ void FileReader::FinishAllRequests()
 void FileReader::CancelAllRequests()
 {
     SimpleScopedGuard<CustomMutex> lock(m_requestSubmitMutex);
-    for (int i = 0; i < m_requests.size(); ++i)
-    {
+    while (!m_requests.empty())
         m_requests.pop();
-    }
 }
 
 void FileReader::SubmitIORequest(const IORequest& request)
 {
     SimpleScopedGuard<CustomMutex> lock(m_requestSubmitMutex);
-#ifdef _WIN32
-    m_requests.push(request);
-#else
+    if (Engine::IsWindows())
+    {
+        m_requests.push(request);
+        return;
+    }
     // Some asset paths are written with Windows separators
     IORequest normalized = request;
     for (auto& c : normalized.filePath)
         if (c == '\\')
             c = '/';
     m_requests.push(normalized);
-#endif
 }
 
 void FileReader::CheckIORequests()

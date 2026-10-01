@@ -28,7 +28,7 @@ struct BufferCreateInfo
 {
     u64 size;
     BufferUsage usage;
-    bool isExclusive{SEPERATE_TRANSFERQUEUE};
+    bool isExclusive{true};
 };
 
 class BufferBase : public TrackedResource

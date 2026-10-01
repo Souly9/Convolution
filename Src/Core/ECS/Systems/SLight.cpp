@@ -17,7 +17,7 @@ void ECS::System::SLight::Process()
 {
     ScopedZone("Light System::Process");
 
-    const auto& lightComps = g_pEntityManager->GetComponentVector<Components::Light>();
+    const auto& lightComps = g_engine.GetEntityManager().GetComponentVector<Components::Light>();
     const bool countChanged = lightComps.size() != m_lastLightCount;
     m_lastLightCount = lightComps.size();
 
@@ -36,7 +36,7 @@ void ECS::System::SLight::Process()
         for (const auto& holder : lightComps)
         {
             const auto* pLight = &holder.component;
-            const auto* pTransform = g_pEntityManager->GetComponentUnsafe<Components::Transform>(holder.entity);
+            const auto* pTransform = g_engine.GetEntityManager().GetComponentUnsafe<Components::Transform>(holder.entity);
 
             if (pLight->type == Components::LightType::Directional)
             {
@@ -51,7 +51,7 @@ void ECS::System::SLight::Process()
             }
         }
         // Emissive mesh point light injection
-        const auto& renderComps = g_pEntityManager->GetComponentVector<Components::RenderComponent>();
+        const auto& renderComps = g_engine.GetEntityManager().GetComponentVector<Components::RenderComponent>();
         for (const auto& holder : renderComps)
         {
             const auto* pRenderComp = &holder.component;
@@ -64,7 +64,7 @@ void ECS::System::SLight::Process()
             
             if (hasEmissiveFlag || hasEmissiveColor)
             {
-                const auto* pTransform = g_pEntityManager->GetComponentUnsafe<Components::Transform>(holder.entity);
+                const auto* pTransform = g_engine.GetEntityManager().GetComponentUnsafe<Components::Transform>(holder.entity);
                 if (!pTransform)
                     continue;
 
@@ -95,13 +95,13 @@ void ECS::System::SLight::Process()
     else
     {
         ScopedZone("Light System::Update");
-        const auto& dirtyLights = g_pEntityManager->GetDirtyEntities(C_ID(Light));
-        const auto& updatedTransforms = g_pEntityManager->GetTransformsUpdatedThisFrame();
+        const auto& dirtyLights = g_engine.GetEntityManager().GetDirtyEntities(C_ID(Light));
+        const auto& updatedTransforms = g_engine.GetEntityManager().GetTransformsUpdatedThisFrame();
 
         auto updateLight = [&](Entity entity)
         {
-            const auto* pLight = g_pEntityManager->GetComponentUnsafe<Components::Light>(entity);
-            const auto* pTransform = g_pEntityManager->GetComponentUnsafe<Components::Transform>(entity);
+            const auto* pLight = g_engine.GetEntityManager().GetComponentUnsafe<Components::Light>(entity);
+            const auto* pTransform = g_engine.GetEntityManager().GetComponentUnsafe<Components::Transform>(entity);
 
             auto it = m_lightEntityToIdx.find(entity.ID);
             if (it != m_lightEntityToIdx.end())
@@ -118,7 +118,7 @@ void ECS::System::SLight::Process()
 
         for (const Entity& e : updatedTransforms)
         {
-            if (g_pEntityManager->HasComponent<Components::Light>(e))
+            if (g_engine.GetEntityManager().HasComponent<Components::Light>(e))
                 updateLight(e);
         }
 
@@ -128,7 +128,7 @@ void ECS::System::SLight::Process()
             {
                 if (holder.component.type == Components::LightType::Directional)
                 {
-                    m_cachedDirLight = ConvertToDirectionalRenderLight(&holder.component, g_pEntityManager->GetComponentUnsafe<Components::Transform>(holder.entity));
+                    m_cachedDirLight = ConvertToDirectionalRenderLight(&holder.component, g_engine.GetEntityManager().GetComponentUnsafe<Components::Transform>(holder.entity));
                     m_dirLightDirty = true;
                     m_lightDataDirty = true;
                     break;

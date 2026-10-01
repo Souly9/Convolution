@@ -1,8 +1,10 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
+#include "Core/Engine.h"
 #include "Core/Rendering/Core/AccelerationStructure.h"
 #include "Core/Rendering/Backend/RenderBackendBase.h"
-#include "Core/Rendering/Vulkan/VkGlobals.h"
+#include "Core/Rendering/Vulkan/VkBackendAccess.h"
+#include "Core/Rendering/LayerDefines.h"
 #include "Core/Rendering/Vulkan/VkPipeline.h"
 #include "Core/Rendering/Vulkan/VkTexture.h"
 #include <vulkan/vulkan.h>
@@ -13,16 +15,44 @@ struct VulkanRayTracingProperties
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR};
 };
 
+class Profiler;
+struct RendererState;
+namespace RenderPasses
+{
+class PassManager;
+}
+
 template <>
 class RenderBackendImpl<Vulkan>
 {
 public:
     virtual ~RenderBackendImpl() = default;
+    // Before the window exists (vendor SDK hooks, Vulkan loader for GLFW)
+    static void PreWindowSystemInit();
+    static stltype::unique_ptr<Profiler> CreateProfiler();
+
+    // Filled from the picked physical device; published to g_renderer right after device creation
+    RenderCapabilities QueryCapabilities() const;
+
     bool Init(uint32_t screenWidth, uint32_t screenHeight, stltype::string_view title);
 
     bool Cleanup();
 
     bool RecreateSwapChain();
+
+    void InitImGui(const DescriptorPool& pool);
+    void ImGuiNewFrame();
+    void ShutdownImGui();
+
+    // Vendor upscalers (DLSS / XeSS); Vulkan-only today
+    bool IsDLSSSupported() const;
+    bool IsDLSSRRSupported() const;
+    bool IsXeSSSupported() const;
+    bool IsDLSSDebugUIAvailable() const;
+    void AddVendorUpscalerPasses(RenderPasses::PassManager& passManager);
+    void BeginFrame(u32 frameIdx);
+    void DrawVendorSettingsUI();
+    void DrawVendorDiagnosticsUI(const RendererState& state);
 
     bool AreValidationLayersAvailable(const stltype::vector<VkLayerProperties>& availableExtensions);
 
@@ -57,6 +87,30 @@ public:
     VkQueue GetGraphicsQueue() const
     {
         return m_graphicsQueue;
+    }
+    VkQueue GetPresentQueue() const
+    {
+        return m_presentQueue;
+    }
+    VulkanQueues GetQueues() const
+    {
+        return {m_graphicsQueue, m_presentQueue, m_transferQueue, m_computeQueue};
+    }
+    VkSwapchainKHR GetSwapchain() const
+    {
+        return m_swapChain;
+    }
+    const VkPhysicalDeviceProperties& GetDeviceProperties() const
+    {
+        return m_deviceProperties;
+    }
+    const VkPhysicalDeviceMemoryProperties& GetMemoryProperties() const
+    {
+        return m_memoryProperties;
+    }
+    u64 GetTotalVram() const
+    {
+        return m_totalVram;
     }
 
     VKAPI_ATTR VkResult VKAPI_CALL vkCreateDebugUtilsMessengerEXT(VkInstance instance,
@@ -93,6 +147,11 @@ private:
     bool IsDeviceSuitable(VkPhysicalDevice device);
     bool AreExtensionsSupported(VkPhysicalDevice device);
     bool DeviceSupportsDLSSRequirements(VkPhysicalDevice device) const;
+    // MoltenVK has no ray tracing, so it is optional on macOS and required elsewhere
+    static bool IsRayTracingRequired()
+    {
+        return !Engine::IsMacOS();
+    }
     bool QueryRayTracingSupport(VkPhysicalDevice device,
                                 VulkanRayTracingProperties* pProperties = nullptr) const;
     void PublishDLSSSupport(bool supported) const;
@@ -113,7 +172,7 @@ private:
 
     bool CreateGraphicsPipeline();
 
-    void UpdateGlobals() const;
+    void PublishSwapchainState() const;
 
     VkDebugUtilsMessengerEXT m_debugMessenger;
     VkInstance m_instance{VK_NULL_HANDLE};
@@ -123,6 +182,9 @@ private:
     VkSurfaceKHR m_surface{VK_NULL_HANDLE}; ///< Surface that establishes
                                             ///< connection to the glfw window.
     VkQueue m_presentQueue{VK_NULL_HANDLE};
+    VkPhysicalDeviceProperties m_deviceProperties{};
+    VkPhysicalDeviceMemoryProperties m_memoryProperties{};
+    u64 m_totalVram{0};
     VkQueue m_transferQueue{VK_NULL_HANDLE};
     VkQueue m_computeQueue{VK_NULL_HANDLE};
     QueueFamilyIndices m_indices;
@@ -132,5 +194,8 @@ private:
     bool m_dlssSupportAvailable{false};
     // MoltenVK has no ray tracing; RT is optional there and required elsewhere
     bool m_rayTracingSupported{false};
+    RayTracingCapabilities m_rayTracingCaps{};
+    bool m_validationLayersEnabled{false};
+    bool m_hasPortabilitySubset{false};
     VulkanRayTracingProperties m_rayTracingProperties{};
 };

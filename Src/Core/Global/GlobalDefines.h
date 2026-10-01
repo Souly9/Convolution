@@ -33,13 +33,6 @@
 #endif
 #define DEBUG_ASSERT(x) ASSERT(x)
 
-// Forward Decls
-struct VkAllocationCallbacks;
-inline VkAllocationCallbacks* VulkanAllocator()
-{
-    return nullptr;
-};
-
 class AvailableRenderBackends
 {
 };
@@ -49,11 +42,6 @@ class Vulkan : public AvailableRenderBackends
 class Metal : public AvailableRenderBackends
 {
 };
-#if defined(USE_METAL)
-using RenderAPI = Metal;
-#else
-using RenderAPI = Vulkan;
-#endif
 
 // Constants
 
@@ -63,25 +51,22 @@ constexpr static inline u32 SWAPCHAIN_IMAGES = 2u;
 constexpr static inline u32 CSM_INITIAL_CASCADES = 3u;
 constexpr static inline mathstl::Vector2 CSM_DEFAULT_RES = mathstl::Vector2(2048.0f, 2048.0f);
 constexpr static inline u32 MAX_BINDLESS_TEXTURES = 16536;
+// Bindless texture slots from here up hold persistent (render target) textures
+constexpr static inline u32 PERSISTENT_BINDLESS_REGION_START = 14000;
 constexpr static inline u32 MAX_MESHES = 8192;
 
-#define SWAPCHAIN_FORMAT    FrameGlobals::GetSwapChainFormat()
 #define DEPTH_BUFFER_FORMAT TexFormat::D32_SFLOAT
 
-// Definitions
+// Compiled-in graphics API; query it at runtime through Renderer::GetAPI()/IsVulkan()/IsMetal()
+#include "Core/Rendering/Core/APITraits.h"
 #ifdef USE_VULKAN
-#include "Core/Rendering/Core/APITraits.h"
+using RenderAPI = Vulkan;
 using CurrentAPI = API_Vulkan;
-#define SEPERATE_TRANSFERQUEUE true
-#define GLFW_INCLUDE_VULKAN
-#define CONV_MIN_VULKAN_VERSION     VK_API_VERSION_1_4
-#define CONV_DESIRED_VULKAN_VERSION VK_API_VERSION_1_4
 #elif defined(USE_METAL)
-#include "Core/Rendering/Core/APITraits.h"
+using RenderAPI = Metal;
 using CurrentAPI = API_Metal;
-// Metal has one queue family; no ownership transfers between queues
-#define SEPERATE_TRANSFERQUEUE false
-#define GLFW_INCLUDE_NONE
+#else
+#error "No render backend selected (USE_VULKAN / USE_METAL)"
 #endif
 
 #define IMPLEMENT_GRAPHICS_API                                                                                         \
@@ -89,7 +74,6 @@ using CurrentAPI = API_Metal;
         requires stltype::is_base_of_v<AvailableRenderBackends, BackendAPI>
 
 // Logic Macros
-#define CUR_FRAME          FrameGlobals::GetFrameNumber()
 #define COMP_ID(component) ECS::ComponentID<ECS::Components::component>::ID
 
 static inline constexpr f32 FLOAT_TOLERANCE = 0.00001f;

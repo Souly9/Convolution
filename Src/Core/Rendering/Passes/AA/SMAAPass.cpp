@@ -37,7 +37,7 @@ void SMAAPass::Init(const SharedResourceManager& resourceManager)
 
     // Upload SMAA textures
 
-    auto searchHandle = g_pTexManager->SubmitAsyncTextureCreation(
+    auto searchHandle = g_renderer.GetTextureManager().SubmitAsyncTextureCreation(
         {"Resources\\Textures\\SearchTex.dds", false, TextureSemantic::Data, true});
 
     ReadTextureInfo areaTexInfo{};
@@ -49,16 +49,16 @@ void SMAAPass::Init(const SharedResourceManager& resourceManager)
 
     FileTextureRequest areaReq{};
     areaReq.ioInfo = areaTexInfo;
-    areaReq.handle = g_pTexManager->GenerateHandle();
+    areaReq.handle = g_renderer.GetTextureManager().GenerateHandle();
     areaReq.makeBindless = true;
     areaReq.isPersistent = true;
     areaReq.format = TexFormat::R8G8_UNORM;
     areaReq.semantic = TextureSemantic::Data;
 
-    g_pTexManager->SubmitTextureRequest(areaReq);
+    g_renderer.GetTextureManager().SubmitTextureRequest(areaReq);
 
-    m_searchTexBindless = g_pTexManager->MakeTextureBindless(searchHandle, true);
-    m_areaTexBindless = g_pTexManager->MakeTextureBindless(areaReq.handle, true);
+    m_searchTexBindless = g_renderer.GetTextureManager().MakeTextureBindless(searchHandle, true);
+    m_areaTexBindless = g_renderer.GetTextureManager().MakeTextureBindless(areaReq.handle, true);
 
     BuildPipelines();
 }
@@ -98,7 +98,7 @@ void SMAAPass::BuildPipelines()
     auto neighborFrag = Shader("Shaders/SMAANeighborhood.frag.spv", "main");
     PipelineInfo neighborInfo{};
     neighborInfo.descriptorSetLayout.sharedDescriptors = m_sharedDescriptors;
-    neighborInfo.attachmentInfos.colorAttachments = { SWAPCHAIN_FORMAT };
+    neighborInfo.attachmentInfos.colorAttachments = { g_renderer.GetSwapchainFormat() };
     neighborInfo.pushConstantInfo.constants = {
         {ShaderTypeBits::Vertex | ShaderTypeBits::Fragment, 0, (u32)sizeof(SMAAPushConstants)}};
     neighborInfo.hasDepth = false;
@@ -126,7 +126,7 @@ void SMAAPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
     m_currentFrameIdx = thisFrameNum % SWAPCHAIN_IMAGES;
     auto& cmdBuf = m_indirectCmdBuffers.at(m_currentFrameIdx);
     cmdBuf.EmptyCmds();
-    const auto pFullScreenQuadMesh = g_pMeshManager->GetPrimitiveMesh(MeshManager::PrimitiveType::Quad);
+    const auto pFullScreenQuadMesh = g_engine.GetMeshManager().GetPrimitiveMesh(MeshManager::PrimitiveType::Quad);
     const auto meshHandle = previousFrameCtx.pResourceManager->GetMeshHandle(pFullScreenQuadMesh);
     cmdBuf.AddIndexedDrawCmd(meshHandle.indexCount, 1, meshHandle.indexBufferOffset, meshHandle.vertBufferOffset, 0);
     RebuildPerObjectBuffer({0});

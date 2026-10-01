@@ -41,7 +41,7 @@ void CompositPass::BuildPipelines()
 
     PipelineInfo info{};
     info.descriptorSetLayout.sharedDescriptors = m_sharedDescriptors;
-    info.attachmentInfos.colorAttachments = { SWAPCHAIN_FORMAT };
+    info.attachmentInfos.colorAttachments = { g_renderer.GetSwapchainFormat() };
     info.hasDepth = false;
     m_mainPSO = PSO(
         ShaderCollection{&mainVert, &mainFrag}, PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions}, info);
@@ -54,7 +54,7 @@ void CompositPass::RebuildInternalData(const stltype::vector<PassMeshData>& mesh
     m_currentFrameIdx = thisFrameNum % SWAPCHAIN_IMAGES;
     auto& cmdBuf = m_indirectCmdBuffers.at(m_currentFrameIdx);
     cmdBuf.EmptyCmds();
-    const auto pFullScreenQuadMesh = g_pMeshManager->GetPrimitiveMesh(MeshManager::PrimitiveType::Quad);
+    const auto pFullScreenQuadMesh = g_engine.GetMeshManager().GetPrimitiveMesh(MeshManager::PrimitiveType::Quad);
     const auto meshHandle = previousFrameCtx.pResourceManager->GetMeshHandle(pFullScreenQuadMesh);
     cmdBuf.AddIndexedDrawCmd(
         meshHandle.indexCount, 1, meshHandle.indexBufferOffset, meshHandle.vertBufferOffset, 0);
@@ -109,7 +109,7 @@ void CompositPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data
         PassCtx::GlobalInstance,
         PassCtx::GBufferCtx>();
 
-    const auto& appRenderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+    const auto& appRenderState = g_engine.GetApplicationState().GetCurrentApplicationState().renderState;
     const AA::FrameConfig& aa = AA::Current();
     const RGResourceID compositeInput = AA::CompositeInput(appRenderState, aa);
 

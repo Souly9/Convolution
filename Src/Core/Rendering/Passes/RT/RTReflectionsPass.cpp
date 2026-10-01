@@ -63,7 +63,7 @@ void RTReflectionsPass::RebuildInternalData(const stltype::vector<PassMeshData>&
 
 bool RTReflectionsPass::WantsToRender() const
 {
-    const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+    const auto& renderState = g_engine.GetApplicationState().GetCurrentApplicationState().renderState;
     return mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
            mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTReflectionsEnabled);
 }
@@ -117,7 +117,7 @@ void RTReflectionsPass::RenderWithGraph(const MainPassData& data, const FrameRen
         return;
     }
 
-    const auto& rtState = g_pApplicationState->GetCurrentApplicationState().renderState.rt;
+    const auto& rtState = g_engine.GetApplicationState().GetCurrentApplicationState().renderState.rt;
     m_pushConstants.reflectionsTexIdx = execCtx.GetBindless(RGResourceID::RTReflections);
     m_pushConstants.debugMode = static_cast<u32>(rtState.reflectionsDebugMode);
     m_pushConstants.maxRayDistance = execCtx.GetZFar();

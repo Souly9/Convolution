@@ -64,7 +64,7 @@ void ScreenSpaceShadowPass::RebuildInternalData(const stltype::vector<PassMeshDa
 
 bool ScreenSpaceShadowPass::WantsToRender() const
 {
-    return mathstl::isFlagSet(g_pApplicationState->GetCurrentApplicationState().renderState.debugFlags, (u32)DebugFlags::SSSEnabled);
+    return mathstl::isFlagSet(g_engine.GetApplicationState().GetCurrentApplicationState().renderState.debugFlags, (u32)DebugFlags::SSSEnabled);
 }
 
 void ScreenSpaceShadowPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)

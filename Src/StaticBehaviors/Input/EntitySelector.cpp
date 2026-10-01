@@ -12,9 +12,9 @@ ECS::Entity mainCamEntity;
 
 void EntitySelector::RegisterCallbacks()
 {
-    g_pEventSystem->AddMouseMoveEventCallback([](const auto& d) { OnMouseMove(d); });
-    g_pEventSystem->AddLeftMouseClickEventCallback([](const auto& d) { OnLeftMouseClick(d); });
-    g_pEventSystem->AddUpdateEventCallback(
+    g_engine.GetEventSystem().AddMouseMoveEventCallback([](const auto& d) { OnMouseMove(d); });
+    g_engine.GetEventSystem().AddLeftMouseClickEventCallback([](const auto& d) { OnLeftMouseClick(d); });
+    g_engine.GetEventSystem().AddUpdateEventCallback(
         [](const UpdateEventData& d)
         {
             invProj = d.state.renderState.invMainCamProjectionMatrix;
@@ -105,7 +105,7 @@ void EntitySelector::OnLeftMouseClick(const LeftMouseClickEventData& data)
         return;
     using namespace DirectX::SimpleMath;
     const Vector2 mousePos{(f32)data.mousePosX, (f32)data.mousePosY};
-    const auto& resolution = FrameGlobals::GetSwapChainExtent();
+    const auto& resolution = g_renderer.GetSwapchainExtent();
     if (resolution.x <= 0.0f || resolution.y <= 0.0f)
         return;
 
@@ -117,14 +117,14 @@ void EntitySelector::OnLeftMouseClick(const LeftMouseClickEventData& data)
     f32 overallMinDist = FLT_MAX;
     ECS::Entity rsltEntity;
 
-    const auto& meshAABBs = g_pMeshManager->GetMeshAABBs();
+    const auto& meshAABBs = g_engine.GetMeshManager().GetMeshAABBs();
 
     auto checkIntersections = [&](const auto& comps)
     {
         for (size_t i = 0; i < comps.size(); i++)
         {
             const auto entity = comps[i].entity;
-            const auto* pTransform = g_pEntityManager->GetComponent<ECS::Components::Transform>(entity);
+            const auto* pTransform = g_engine.GetEntityManager().GetComponent<ECS::Components::Transform>(entity);
             if (!pTransform)
                 continue;
 
@@ -167,21 +167,21 @@ void EntitySelector::OnLeftMouseClick(const LeftMouseClickEventData& data)
         }
     };
 
-    checkIntersections(g_pEntityManager->GetComponentVector<ECS::Components::RenderComponent>());
-    checkIntersections(g_pEntityManager->GetComponentVector<ECS::Components::DebugRenderComponent>());
+    checkIntersections(g_engine.GetEntityManager().GetComponentVector<ECS::Components::RenderComponent>());
+    checkIntersections(g_engine.GetEntityManager().GetComponentVector<ECS::Components::DebugRenderComponent>());
 
     auto deslectEntity = [](const ECS::Entity& entity, bool select = false)
     {
-        auto pRenderComp = g_pEntityManager->GetComponent<ECS::Components::RenderComponent>(entity);
+        auto pRenderComp = g_engine.GetEntityManager().GetComponent<ECS::Components::RenderComponent>(entity);
         if (pRenderComp == nullptr)
             pRenderComp = (ECS::Components::RenderComponent*)
-                              g_pEntityManager->GetComponent<ECS::Components::DebugRenderComponent>(entity);
+                              g_engine.GetEntityManager().GetComponent<ECS::Components::DebugRenderComponent>(entity);
         if (pRenderComp != nullptr)
             pRenderComp->isSelected = select;
     };
     if (rsltEntity.IsValid())
     {
-        g_pApplicationState->RegisterUpdateFunction(
+        g_engine.GetApplicationState().RegisterUpdateFunction(
             [rsltEntity, deslectEntity](ApplicationState& state)
             {
                 for (auto& selectedEntity : state.selectedEntities)
@@ -191,14 +191,14 @@ void EntitySelector::OnLeftMouseClick(const LeftMouseClickEventData& data)
                 state.selectedEntities.clear();
                 state.selectedEntities.push_back(rsltEntity);
                 deslectEntity(rsltEntity, true);
-                g_pEntityManager->MarkComponentDirty(rsltEntity, ECS::ComponentID<ECS::Components::Transform>::ID);
-                g_pEntityManager->MarkComponentDirty(rsltEntity,
+                g_engine.GetEntityManager().MarkComponentDirty(rsltEntity, ECS::ComponentID<ECS::Components::Transform>::ID);
+                g_engine.GetEntityManager().MarkComponentDirty(rsltEntity,
                                                      ECS::ComponentID<ECS::Components::RenderComponent>::ID);
             });
     }
     else
     {
-        g_pApplicationState->RegisterUpdateFunction(
+        g_engine.GetApplicationState().RegisterUpdateFunction(
             [deslectEntity](ApplicationState& state)
             {
                 for (auto& selectedEntity : state.selectedEntities)

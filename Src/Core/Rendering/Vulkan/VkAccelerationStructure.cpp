@@ -1,7 +1,7 @@
 #include "VkAccelerationStructure.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Rendering/Core/Utils/DeleteQueue.h"
-#include "VkGlobals.h"
+#include "VkBackendAccess.h"
 #include "VkRayTracingFunctions.h"
 
 namespace
@@ -131,7 +131,7 @@ AccelerationStructureBuildSizes AccelerationStructureVulkan::GetBuildSizes(const
     const u32 primitiveCount = desc.primitiveCount;
     VkAccelerationStructureBuildSizesInfoKHR sizeInfo{};
     sizeInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
-    RayTracing::vkGetAccelerationStructureBuildSizesKHR(VK_LOGICAL_DEVICE,
+    RayTracing::vkGetAccelerationStructureBuildSizesKHR(VkBackend::Device(),
                                                         VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
                                                         &buildInfo,
                                                         &primitiveCount,
@@ -156,7 +156,7 @@ void AccelerationStructureVulkan::Create(const AccelerationStructureCreateInfo& 
     createInfo.type = Conv(info.type);
 
     DEBUG_ASSERT(RayTracing::vkCreateAccelerationStructureKHR(
-                     VK_LOGICAL_DEVICE, &createInfo, VulkanAllocator(), &m_accelerationStructure) == VK_SUCCESS);
+                     VkBackend::Device(), &createInfo, VulkanAllocator(), &m_accelerationStructure) == VK_SUCCESS);
     RefreshDeviceAddress();
 }
 
@@ -171,7 +171,7 @@ void AccelerationStructureVulkan::RefreshDeviceAddress()
     VkAccelerationStructureDeviceAddressInfoKHR addressInfo{};
     addressInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
     addressInfo.accelerationStructure = m_accelerationStructure;
-    m_deviceAddress = RayTracing::vkGetAccelerationStructureDeviceAddressKHR(VK_LOGICAL_DEVICE, &addressInfo);
+    m_deviceAddress = RayTracing::vkGetAccelerationStructureDeviceAddressKHR(VkBackend::Device(), &addressInfo);
 }
 
 void AccelerationStructureVulkan::CleanUp()
@@ -183,11 +183,11 @@ void AccelerationStructureVulkan::CleanUp()
     m_accelerationStructure = VK_NULL_HANDLE;
     m_deviceAddress = 0;
 
-    g_pDeleteQueue->RegisterDeleteForNextFrame(
+    g_renderer.GetDeleteQueue().RegisterDeleteForNextFrame(
         [accelerationStructure]()
         {
             RayTracing::vkDestroyAccelerationStructureKHR(
-                VK_LOGICAL_DEVICE, accelerationStructure, VulkanAllocator());
+                VkBackend::Device(), accelerationStructure, VulkanAllocator());
         });
 }
 
@@ -202,5 +202,5 @@ void AccelerationStructureVulkan::NamingCallBack(const stltype::string& name)
     nameInfo.objectHandle = (u64)m_accelerationStructure;
     nameInfo.pObjectName = name.c_str();
 
-    vkSetDebugUtilsObjectName(VK_LOGICAL_DEVICE, &nameInfo);
+    vkSetDebugUtilsObjectName(VkBackend::Device(), &nameInfo);
 }

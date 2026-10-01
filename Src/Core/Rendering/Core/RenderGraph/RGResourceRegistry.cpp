@@ -4,7 +4,6 @@
 #include "Core/Global/Profiling.h"
 #include "Core/Rendering/Core/TextureManager.h"
 #include "Core/Rendering/Core/Utils/DeleteQueue.h"
-#include "Core/Rendering/Backend/BackendGlobals.h"
 
 RGResourceRegistry::~RGResourceRegistry()
 {
@@ -55,7 +54,7 @@ static TexFormat GetDefaultFormatForRGResourceID(RGResourceID id)
         case RGResourceID::DLSSExposure:
             return TexFormat::R32_FLOAT;
         case RGResourceID::Swapchain:
-            return SWAPCHAIN_FORMAT;
+            return g_renderer.GetSwapchainFormat();
         case RGResourceID::CSMShadowMap:
             return DEPTH_BUFFER_FORMAT;
         case RGResourceID::BloomMip0:
@@ -172,7 +171,7 @@ RGResourceHandle RGResourceRegistry::ImportTexture(RGResourceID id, Texture* pTe
     BindlessTextureHandle bindlessHandle = 0;
     if (pTexture)
     {
-        bindlessHandle = g_pTexManager->MakeTextureBindless(Texture::Cast(pTexture), true);
+        bindlessHandle = g_renderer.GetTextureManager().MakeTextureBindless(Texture::Cast(pTexture), true);
     }
 
     for (u32 i = 0; i < static_cast<u32>(m_resources.size()); ++i)
@@ -280,27 +279,27 @@ void RGResourceRegistry::AllocatePending()
         req.extents = DirectX::XMUINT3(static_cast<u32>(extents.x), static_cast<u32>(extents.y), 1);
         req.format = res.spec.format;
         req.usage = res.spec.usage;
-        req.handle = g_pTexManager->GenerateHandle();
+        req.handle = g_renderer.GetTextureManager().GenerateHandle();
         req.isPersistent = true;
         req.samplerInfo.minFilter = res.spec.minFilter;
         req.samplerInfo.magFilter = res.spec.magFilter;
         req.AddName(res.spec.GetName());
 
         res.textureHandle = req.handle;
-        res.pTexture = static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(req));
+        res.pTexture = static_cast<Texture*>(g_renderer.GetTextureManager().CreateTextureImmediate(req));
         if (res.spec.NeedsBindless())
-            res.bindlessHandle = g_pTexManager->MakeTextureBindless(req.handle, true);
+            res.bindlessHandle = g_renderer.GetTextureManager().MakeTextureBindless(req.handle, true);
 
         if (res.spec.IsPingPong())
         {
             DynamicTextureRequest historyReq = req;
-            historyReq.handle = g_pTexManager->GenerateHandle();
+            historyReq.handle = g_renderer.GetTextureManager().GenerateHandle();
             historyReq.AddName(stltype::string(res.spec.GetName()) + " (History)");
 
             res.historyTextureHandle = historyReq.handle;
-            res.pHistoryTexture = static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(historyReq));
+            res.pHistoryTexture = static_cast<Texture*>(g_renderer.GetTextureManager().CreateTextureImmediate(historyReq));
             if (res.spec.NeedsBindless())
-                res.historyBindlessHandle = g_pTexManager->MakeTextureBindless(historyReq.handle, true);
+                res.historyBindlessHandle = g_renderer.GetTextureManager().MakeTextureBindless(historyReq.handle, true);
         }
 
         res.allocatedExtents = extents;
@@ -317,13 +316,13 @@ void RGResourceRegistry::AllocatePending()
 
     if (!oldHandles.empty())
     {
-        g_pDeleteQueue->RegisterDeleteForNextFrame(
+        g_renderer.GetDeleteQueue().RegisterDeleteForNextFrame(
             [handles = stltype::move(oldHandles)]() mutable
             {
                 for (auto h : handles)
                 {
                     if (h != 0)
-                        g_pTexManager->FreeTexture(h);
+                        g_renderer.GetTextureManager().FreeTexture(h);
                 }
             });
     }
@@ -343,9 +342,9 @@ void RGResourceRegistry::TickUnreferenced()
             if (res.framesUnreferenced > kFreeAfterFrames && res.IsAllocated())
             {
                 if (res.textureHandle != 0)
-                    g_pTexManager->FreeTexture(res.textureHandle);
+                    g_renderer.GetTextureManager().FreeTexture(res.textureHandle);
                 if (res.historyTextureHandle != 0)
-                    g_pTexManager->FreeTexture(res.historyTextureHandle);
+                    g_renderer.GetTextureManager().FreeTexture(res.historyTextureHandle);
                 res.pTexture = nullptr;
                 res.pHistoryTexture = nullptr;
                 res.textureHandle = 0;
@@ -495,27 +494,20 @@ void RGResourceRegistry::FreeAll()
         if (!res.IsImported() && res.IsAllocated())
         {
             if (res.textureHandle != 0)
-                g_pTexManager->FreeTexture(res.textureHandle);
+                g_renderer.GetTextureManager().FreeTexture(res.textureHandle);
             if (res.historyTextureHandle != 0)
-                g_pTexManager->FreeTexture(res.historyTextureHandle);
+                g_renderer.GetTextureManager().FreeTexture(res.historyTextureHandle);
         }
     }
     m_resources.clear();
 
     if (m_shadowMap.handle != 0)
     {
-        g_pTexManager->FreeTexture(m_shadowMap.handle);
+        g_renderer.GetTextureManager().FreeTexture(m_shadowMap.handle);
         m_shadowMap.handle = 0;
     }
-#ifdef USE_VULKAN
     for (const auto view : m_shadowMap.cascadeViews)
-    {
-        if (view != VK_NULL_HANDLE)
-        {
-            vkDestroyImageView(RenderGlobals::GetLogicalDevice(), view, nullptr);
-        }
-    }
-#endif
+        g_renderer.GetTextureManager().DestroyTextureView(view);
     m_shadowMap.cascadeViews.clear();
 }
 
@@ -622,9 +614,6 @@ RenderAttachmentInfo RGResourceRegistry::GetReadOnlyDepthAttachment(RGResourceID
 
 #include "Core/Rendering/Core/Defines/DescriptorLayoutDefines.h"
 #include "Core/Rendering/Core/Defines/GlobalBuffers.h"
-#ifdef USE_VULKAN
-#include "Core/Rendering/Vulkan/Utils/VkEnumHelpers.h"
-#endif
 #include <cstring>
 
 void RGResourceRegistry::DeclareEngineResources()
@@ -745,22 +734,15 @@ void RGResourceRegistry::RecreateShadowMap(u32 cascades, const mathstl::Vector2&
     auto oldCascadeViews = stltype::move(m_shadowMap.cascadeViews);
     if (oldHandle != 0 || !oldCascadeViews.empty())
     {
-        g_pDeleteQueue->RegisterDeleteForNextFrame(
+        g_renderer.GetDeleteQueue().RegisterDeleteForNextFrame(
             [oldHandle, oldCascadeViews = stltype::move(oldCascadeViews)]() mutable
             {
-#ifdef USE_VULKAN
                 for (const auto view : oldCascadeViews)
-                {
-                    if (view != VK_NULL_HANDLE)
-                    {
-                        vkDestroyImageView(RenderGlobals::GetLogicalDevice(), view, nullptr);
-                    }
-                }
-#endif
+                    g_renderer.GetTextureManager().DestroyTextureView(view);
 
                 if (oldHandle != 0)
                 {
-                    g_pTexManager->FreeTexture(oldHandle);
+                    g_renderer.GetTextureManager().FreeTexture(oldHandle);
                 }
             });
     }
@@ -771,30 +753,15 @@ void RGResourceRegistry::RecreateShadowMap(u32 cascades, const mathstl::Vector2&
     DynamicTextureRequest req{};
     req.AddName("Directional Light CSM");
     req.isPersistent = true;
-    m_shadowMap.handle = req.handle = g_pTexManager->GenerateHandle();
+    m_shadowMap.handle = req.handle = g_renderer.GetTextureManager().GenerateHandle();
     req.extents = DirectX::XMUINT3(static_cast<u32>(extents.x), static_cast<u32>(extents.y), cascades);
     req.format = m_shadowMap.format;
     req.usage = Usage::ShadowMap;
     req.samplerInfo.wrapU = req.samplerInfo.wrapV = req.samplerInfo.wrapW = TextureWrapMode::CLAMP_TO_BORDER;
-    m_shadowMap.pTexture = static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(req));
-    m_shadowMap.bindlessHandle = g_pTexManager->MakeTextureBindless(req.handle, true);
+    m_shadowMap.pTexture = static_cast<Texture*>(g_renderer.GetTextureManager().CreateTextureImmediate(req));
+    m_shadowMap.bindlessHandle = g_renderer.GetTextureManager().MakeTextureBindless(req.handle, true);
 
     m_shadowMap.cascadeViews.resize(cascades, nullptr);
-#ifdef USE_VULKAN
     for (u32 i = 0; i < cascades; ++i)
-    {
-        VkImageViewCreateInfo viewInfo{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-        viewInfo.image = m_shadowMap.pTexture->GetImage();
-        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        viewInfo.format = Conv(m_shadowMap.format);
-        viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-        viewInfo.subresourceRange.baseMipLevel = 0;
-        viewInfo.subresourceRange.levelCount = 1;
-        viewInfo.subresourceRange.baseArrayLayer = i;
-        viewInfo.subresourceRange.layerCount = 1;
-        vkCreateImageView(RenderGlobals::GetLogicalDevice(), &viewInfo, nullptr, &m_shadowMap.cascadeViews[i]);
-    }
-#else
-    // TODO(Metal): per-cascade views via MTL::Texture::newTextureView
-#endif
+        m_shadowMap.cascadeViews[i] = g_renderer.GetTextureManager().CreateDepthLayerView(*m_shadowMap.pTexture, m_shadowMap.format, i);
 }

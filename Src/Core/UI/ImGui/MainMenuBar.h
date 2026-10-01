@@ -9,7 +9,7 @@
 #include "UIElement.h"
 #include <imgui/imgui.h>
 
-class MainMenuBar : public SelfInstantiatingUIElement<MainMenuBar>
+class MainMenuBar : public UIElement
 {
 public:
     MainMenuBar();

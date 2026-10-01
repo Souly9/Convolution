@@ -122,8 +122,6 @@ using IndexedIndirectDrawCmd = VkDrawIndexedIndirectCommand;
 using QueryPool = QueryPoolVulkan;
 using TextureViewHandle = VkImageView;
 
-// Texture format macro
-#define TEXFORMAT(type) VK_FORMAT_##type
 #elif defined(USE_METAL)
 using GPUMemoryHandle = MTL::Heap*;
 using GPUMappedMemoryHandle = void*;

@@ -11,7 +11,7 @@ public:
     MtlTracyGPUManager() = default;
     ~MtlTracyGPUManager() override = default;
 
-    void Init(MTL::Device* pDevice)
+    void Init(CommandBuffer* pSetupCmd) override
     {
     }
     void Destroy() override

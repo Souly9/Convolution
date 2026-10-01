@@ -33,7 +33,7 @@ void RTResourceManager::FreeResources()
     {
         if (resource.textureHandle != 0)
         {
-            g_pTexManager->FreeTexture(resource.textureHandle);
+            g_renderer.GetTextureManager().FreeTexture(resource.textureHandle);
         }
         resource = RTTextureResource{};
     }
@@ -46,7 +46,7 @@ void RTResourceManager::CreateResource(RTTextureType type,
 {
     DynamicTextureRequest request{};
     request.extents = DirectX::XMUINT3(static_cast<u32>(renderResolution.x), static_cast<u32>(renderResolution.y), 1);
-    request.handle = g_pTexManager->GenerateHandle();
+    request.handle = g_renderer.GetTextureManager().GenerateHandle();
     request.format = format;
     request.usage = Usage::Storage | Usage::Sampled | Usage::TransferDst | Usage::TransferSrc;
     request.isPersistent = true;
@@ -54,8 +54,8 @@ void RTResourceManager::CreateResource(RTTextureType type,
 
     auto& resource = Get(type);
     resource.textureHandle = request.handle;
-    resource.pTexture = static_cast<Texture*>(g_pTexManager->CreateTextureImmediate(request));
-    resource.bindlessHandle = g_pTexManager->MakeTextureBindless(request.handle, true);
+    resource.pTexture = static_cast<Texture*>(g_renderer.GetTextureManager().CreateTextureImmediate(request));
+    resource.bindlessHandle = g_renderer.GetTextureManager().MakeTextureBindless(request.handle, true);
     resource.currentLayout = ImageLayout::UNDEFINED;
 }
 

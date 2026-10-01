@@ -51,8 +51,8 @@ Entity ConvertScene(ThreadPool* pPool, const aiScene* pScene, const aiNode* pNod
     mathstl::Quaternion q;
     nodeMat.Decompose(scaling, q, position);
 
-    Entity nodeEntity = g_pEntityManager->CreateEntity(position, pNode->mName.C_Str());
-    auto* pNodeTransform = g_pEntityManager->GetComponentUnsafe<Components::Transform>(nodeEntity);
+    Entity nodeEntity = g_engine.GetEntityManager().CreateEntity(position, pNode->mName.C_Str());
+    auto* pNodeTransform = g_engine.GetEntityManager().GetComponentUnsafe<Components::Transform>(nodeEntity);
     pNodeTransform->parent = parentEntity;
     pNodeTransform->scale = scaling;
     
@@ -74,7 +74,7 @@ Entity ConvertScene(ThreadPool* pPool, const aiScene* pScene, const aiNode* pNod
                 lightComp.type = ECS::Components::LightType::Point;
                 lightComp.color = mathstl::Vector4(aiLight->mColorDiffuse.r, aiLight->mColorDiffuse.g, aiLight->mColorDiffuse.b, 1.0f);
                 // Set reasonable defaults or use assimp's attenuation if needed
-                g_pEntityManager->AddComponent(nodeEntity, lightComp);
+                g_engine.GetEntityManager().AddComponent(nodeEntity, lightComp);
                 break;
             }
             if (aiLight->mType == aiLightSource_DIRECTIONAL)
@@ -84,7 +84,7 @@ Entity ConvertScene(ThreadPool* pPool, const aiScene* pScene, const aiNode* pNod
                 lightComp.color = mathstl::Vector4(aiLight->mColorDiffuse.r, aiLight->mColorDiffuse.g, aiLight->mColorDiffuse.b, 1.0f);
                 lightComp.direction = mathstl::Vector3(aiLight->mDirection.x, aiLight->mDirection.y, aiLight->mDirection.z);
                 // Set reasonable defaults or use assimp's attenuation if needed
-                g_pEntityManager->AddComponent(nodeEntity, lightComp);
+                g_engine.GetEntityManager().AddComponent(nodeEntity, lightComp);
                 break;
             }
             if (aiLight->mType == aiLightSource_SPOT)
@@ -96,7 +96,7 @@ Entity ConvertScene(ThreadPool* pPool, const aiScene* pScene, const aiNode* pNod
                 lightComp.cutoff  = aiLight->mAngleInnerCone;
                 lightComp.outerCutoff = aiLight->mAngleOuterCone;
                 // Set reasonable defaults or use assimp's attenuation if needed
-                g_pEntityManager->AddComponent(nodeEntity, lightComp);
+                g_engine.GetEntityManager().AddComponent(nodeEntity, lightComp);
                 break;
             }
         }
@@ -106,25 +106,25 @@ Entity ConvertScene(ThreadPool* pPool, const aiScene* pScene, const aiNode* pNod
     {
         ScopedZone("Convert Assimp leaf Node");
 
-        Entity childEntity = g_pEntityManager->CreateEntity();
+        Entity childEntity = g_engine.GetEntityManager().CreateEntity();
         const auto& pAiMesh = pScene->mMeshes[pNode->mMeshes[i]];
 
         auto pConvMesh = ExtractMesh(pAiMesh);
         auto* pConvMaterial = ExtractMaterial(pScene->mMaterials[pAiMesh->mMaterialIndex]);
 
-        auto* pTransform = g_pEntityManager->GetComponentUnsafe<Components::Transform>(childEntity);
+        auto* pTransform = g_engine.GetEntityManager().GetComponentUnsafe<Components::Transform>(childEntity);
         Components::RenderComponent comp{};
         comp.pMaterial = pConvMaterial;
         comp.pMesh = pConvMesh;
         const auto& aiAABB = pAiMesh->mAABB;
-        comp.boundingBox = g_pMeshManager->CalcAABB(
+        comp.boundingBox = g_engine.GetMeshManager().CalcAABB(
             mathstl::Vector3(aiAABB.mMin.x, aiAABB.mMin.y, aiAABB.mMin.z),
             mathstl::Vector3(aiAABB.mMax.x, aiAABB.mMax.y, aiAABB.mMax.z),
             pConvMesh);
 
         pTransform->parent = nodeEntity;
         pTransform->SetName(pAiMesh->mName.C_Str());
-        g_pEntityManager->AddComponent(childEntity, comp);
+        g_engine.GetEntityManager().AddComponent(childEntity, comp);
     }
 
     for (u32 i = 0; i < pNode->mNumChildren; ++i)
@@ -140,31 +140,31 @@ SceneNode Convert(const aiScene* pScene)
     ScopedZone("Convert Assimp Scene");
     DEBUG_ASSERT(CheckScene(pScene));
 
-    Entity rootEntity = g_pEntityManager->CreateEntity(mathstl::Vector3(0, 0, 0), "RootEntity");
+    Entity rootEntity = g_engine.GetEntityManager().CreateEntity(mathstl::Vector3(0, 0, 0), "RootEntity");
 
     if (pScene->HasCameras())
     {
         auto& aiCam = pScene->mCameras[0];
-        auto camEnt = g_pEntityManager->CreateEntity(Convert(aiCam->mPosition));
-        auto* pTransform = g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(camEnt);
+        auto camEnt = g_engine.GetEntityManager().CreateEntity(Convert(aiCam->mPosition));
+        auto* pTransform = g_engine.GetEntityManager().GetComponentUnsafe<ECS::Components::Transform>(camEnt);
         pTransform->rotation.y = DirectX::XMConvertToDegrees(
             atan2f(aiCam->mLookAt.z, aiCam->mLookAt.x));
         ECS::Components::Camera compV{};
-        g_pEntityManager->AddComponent(camEnt, compV);
-        g_pApplicationState->RegisterUpdateFunction([camEnt](ApplicationState& state)
+        g_engine.GetEntityManager().AddComponent(camEnt, compV);
+        g_engine.GetApplicationState().RegisterUpdateFunction([camEnt](ApplicationState& state)
                                                     { state.mainCameraEntity = camEnt; });
     }
     else
     {
-        auto camEnt = g_pEntityManager->CreateEntity(mathstl::Vector3(0, 2, -5), "MainCamera");
+        auto camEnt = g_engine.GetEntityManager().CreateEntity(mathstl::Vector3(0, 2, -5), "MainCamera");
         ECS::Components::Camera compV{};
-        g_pEntityManager->AddComponent(camEnt, compV);
-        g_pApplicationState->RegisterUpdateFunction([camEnt](ApplicationState& state)
+        g_engine.GetEntityManager().AddComponent(camEnt, compV);
+        g_engine.GetApplicationState().RegisterUpdateFunction([camEnt](ApplicationState& state)
                                                     { state.mainCameraEntity = camEnt; });
     }
     //ThreadPool pool(8);
     ConvertScene(nullptr, pScene, pScene->mRootNode, rootEntity);
-    g_pQueueHandler->DispatchAllRequests();
+    g_renderer.GetQueueHandler().DispatchAllRequests();
     return SceneNode{rootEntity};
 }
 
@@ -172,7 +172,7 @@ Mesh* ExtractMesh(const aiMesh* pMesh)
 {
     ScopedZone("Convert Assimp Mesh");
 
-    auto* pConvMesh = g_pMeshManager->AllocateMesh(pMesh->mNumVertices, pMesh->mNumFaces);
+    auto* pConvMesh = g_engine.GetMeshManager().AllocateMesh(pMesh->mNumVertices, pMesh->mNumFaces);
     for (u32 i = 0; i < pMesh->mNumVertices; ++i)
     {
         auto& vertex = pConvMesh->vertices.push_back();
@@ -246,14 +246,14 @@ Material* ExtractMaterial(const aiMaterial* pMaterial)
                 stltype::string texPath = texturePath.C_Str();
                 
                 // Auto-flip logic for .dds normal maps
-                if (semantic == TextureSemantic::Normal && g_pTexManager->ShouldFlipNormalMap(texPath))
+                if (semantic == TextureSemantic::Normal && g_renderer.GetTextureManager().ShouldFlipNormalMap(texPath))
                 {
                     SetMaterialFlag(mat.flags, MATERIAL_FLAG_FLIPPED_NORMAL_BIT, true);
                 }
 
                 stltype::string fullPath = "Resources\\Models\\" + texPath;
-                outHandle = g_pTexManager->MakeTextureBindless(
-                    g_pTexManager->SubmitAsyncTextureCreation({fullPath, true, semantic}));
+                outHandle = g_renderer.GetTextureManager().MakeTextureBindless(
+                    g_renderer.GetTextureManager().SubmitAsyncTextureCreation({fullPath, true, semantic}));
                 
                 SetMaterialFlag(mat.flags, bit, true);
                 return true;
@@ -350,6 +350,6 @@ Material* ExtractMaterial(const aiMaterial* pMaterial)
         mat.pbr3.x = sheen;
     }
 
-    return g_pMaterialManager->AllocateMaterial(materialName, mat);
+    return g_renderer.GetMaterialManager().AllocateMaterial(materialName, mat);
 }
 } // namespace MeshConversion

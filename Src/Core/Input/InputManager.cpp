@@ -37,14 +37,14 @@ void InputManager::RegisterInputCallbacks(GLFWwindow* pWindow)
     glfwSetMouseButtonCallback(pWindow, MouseButtonCallback);
     glfwSetScrollCallback(pWindow, ScrollCallback);
     glfwSetCursorPosCallback(pWindow, MouseMoveCallback);
-    g_pEventSystem->AddUpdateEventCallback(
+    g_engine.GetEventSystem().AddUpdateEventCallback(
         [](const UpdateEventData& d)
         {
             for (auto& [key, keyInfo] : s_keyMap)
             {
                 if (keyInfo.wasPressedLastFrame)
                 {
-                    g_pEventSystem->OnKeyHold({keyInfo.key});
+                    g_engine.GetEventSystem().OnKeyHold({keyInfo.key});
                 }
             }
         });
@@ -64,7 +64,7 @@ void InputManager::KeyPressCallback(GLFWwindow* window, s32 key, s32 scancode, s
     if (action == GLFW_PRESS)
     {
         keyInfo.wasPressedLastFrame = true;
-        g_pEventSystem->OnKeyPress({keyInfo.key});
+        g_engine.GetEventSystem().OnKeyPress({keyInfo.key});
     }
     else if (action == GLFW_RELEASE)
     {
@@ -83,7 +83,7 @@ void InputManager::MouseButtonCallback(GLFWwindow* window, s32 button, s32 actio
 
     if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS)
     {
-        g_pEventSystem->OnLeftMouseClick({xPos, yPos});
+        g_engine.GetEventSystem().OnLeftMouseClick({xPos, yPos});
     }
     if (button == GLFW_MOUSE_BUTTON_RIGHT)
     {
@@ -92,12 +92,12 @@ void InputManager::MouseButtonCallback(GLFWwindow* window, s32 button, s32 actio
             s_rightButtonDown = true;
             s_lastCursorX = xPos;
             s_lastCursorY = yPos;
-            g_pEventSystem->OnRightMouseClick({xPos, yPos, DirectX::XMFLOAT2(0.0f, 0.0f), true});
+            g_engine.GetEventSystem().OnRightMouseClick({xPos, yPos, DirectX::XMFLOAT2(0.0f, 0.0f), true});
         }
         else if (action == GLFW_RELEASE)
         {
             s_rightButtonDown = false;
-            g_pEventSystem->OnRightMouseClick({xPos, yPos, DirectX::XMFLOAT2(0.0f, 0.0f), false});
+            g_engine.GetEventSystem().OnRightMouseClick({xPos, yPos, DirectX::XMFLOAT2(0.0f, 0.0f), false});
         }
     }
 }
@@ -125,7 +125,7 @@ void InputManager::MouseMoveCallback(GLFWwindow* window, f64 xpos, f64 ypos)
         data.mousePosY = ypos;
         data.mouseDelta = DirectX::XMFLOAT2((float)dx, (float)dy);
         data.pressed = true;
-        g_pEventSystem->OnRightMouseClick(data);
+        g_engine.GetEventSystem().OnRightMouseClick(data);
     }
     else
     {
@@ -133,7 +133,7 @@ void InputManager::MouseMoveCallback(GLFWwindow* window, f64 xpos, f64 ypos)
         MouseMoveEventData mdata;
         mdata.mousePos = DirectX::XMUINT2((u32)xpos, (u32)ypos);
         mdata.mouseDelta = DirectX::XMFLOAT2((float)dx, (float)dy);
-        g_pEventSystem->OnMouseMove(mdata);
+        g_engine.GetEventSystem().OnMouseMove(mdata);
     }
 }
 
@@ -143,5 +143,5 @@ void InputManager::ScrollCallback(GLFWwindow* window, f64 xoffset, f64 yoffset)
     {
         return;
     }
-    g_pEventSystem->OnScroll({mathstl::Vector2((f32)xoffset, (f32)yoffset)});
+    g_engine.GetEventSystem().OnScroll({mathstl::Vector2((f32)xoffset, (f32)yoffset)});
 }

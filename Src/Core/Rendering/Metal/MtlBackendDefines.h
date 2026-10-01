@@ -5,7 +5,6 @@
 
 static inline constexpr u64 MAX_TEXTURES = 4096;
 
-#define MTL_DEVICE MtlGlobals::GetDevice()
 
 // Releases a retained metal-cpp object and nulls the pointer
 #define MTL_RELEASE_IF(res)                                                                                            \

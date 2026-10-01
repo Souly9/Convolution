@@ -350,7 +350,7 @@ void DLSSExposurePass::RenderWithGraph(const MainPassData& data, const FrameRend
         return;
 
     // DLSS applies it the way the composite applies ubo.exposure before tonemapping
-    const f32 exposure = g_pApplicationState->GetCurrentApplicationState().renderState.exposure;
+    const f32 exposure = g_engine.GetApplicationState().GetCurrentApplicationState().renderState.exposure;
     StagingBuffer& staging = m_staging[ctx.currentFrame];
     staging.EnsureCapacity(sizeof(f32));
     staging.CopyToMapped(&exposure, sizeof(exposure));

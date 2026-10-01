@@ -5,7 +5,7 @@
 #include "Core/Rendering/Core/Utils/DeleteQueue.h"
 #include "Core/Rendering/Vulkan/Utils/VkDescriptorLayoutUtils.h"
 #include "Utils/VkEnumHelpers.h"
-#include "VkGlobals.h"
+#include "VkBackendAccess.h"
 
 void PipelineVulkanBase::PrepareGraphicsBase(const ShaderCollection& shaders,
                                              const PipeVertInfo& vertexInputs,
@@ -23,7 +23,7 @@ void PipelineVulkanBase::PrepareGraphicsBase(const ShaderCollection& shaders,
     // Assume we always have a vert shader here for now
     Shader& vertShader = *shaders.pVertShader;
     if (vertShader.GetDesc() == VK_NULL_HANDLE)
-        g_pFileReader->FinishAllRequests();
+        g_engine.GetFileReader().FinishAllRequests();
     // At least one shader must be valid
     DEBUG_ASSERT(vertShader.GetDesc() != VK_NULL_HANDLE);
 
@@ -83,7 +83,7 @@ ComputePipelineVulkan::ComputePipelineVulkan(const ShaderCollection& shaders, co
     // Use pVertShader as compute shader slot
     Shader& compShader = *shaders.pComputeShader;
     if (compShader.GetDesc() == VK_NULL_HANDLE)
-        g_pFileReader->FinishAllRequests();
+        g_engine.GetFileReader().FinishAllRequests();
     DEBUG_ASSERT(compShader.GetDesc() != VK_NULL_HANDLE);
 
     VkPipelineShaderStageCreateInfo compStage{};
@@ -100,7 +100,7 @@ ComputePipelineVulkan::ComputePipelineVulkan(const ShaderCollection& shaders, co
     computeInfo.layout = m_pipelineLayout;
 
     DEBUG_ASSERT(vkCreateComputePipelines(
-                     VkGlobals::GetLogicalDevice(), VK_NULL_HANDLE, 1, &computeInfo, VulkanAllocator(), &m_pipeline) ==
+                     VkBackend::Device(), VK_NULL_HANDLE, 1, &computeInfo, VulkanAllocator(), &m_pipeline) ==
                  VK_SUCCESS);
 }
 
@@ -111,11 +111,11 @@ ComputePipelineVulkan::~ComputePipelineVulkan()
 
 void ComputePipelineVulkan::CleanUp()
 {
-    VK_FREE_IF(m_pipelineLayout, vkDestroyPipelineLayout(VK_LOGICAL_DEVICE, m_pipelineLayout, VulkanAllocator()));
+    VK_FREE_IF(m_pipelineLayout, vkDestroyPipelineLayout(VkBackend::Device(), m_pipelineLayout, VulkanAllocator()));
     if (m_pipeline != VK_NULL_HANDLE)
     {
-        g_pDeleteQueue->RegisterDeleteForNextFrame([pip = m_pipeline]() mutable
-                                                   { vkDestroyPipeline(VK_LOGICAL_DEVICE, pip, VulkanAllocator()); });
+        g_renderer.GetDeleteQueue().RegisterDeleteForNextFrame([pip = m_pipeline]() mutable
+                                                   { vkDestroyPipeline(VkBackend::Device(), pip, VulkanAllocator()); });
     }
 }
 
@@ -173,14 +173,14 @@ GraphicsPipelineVulkan::GraphicsPipelineVulkan(const ShaderCollection& shaders,
         pipelineInfo.pDepthStencilState = &depthStencil;
         DEBUG_ASSERT(
             vkCreateGraphicsPipelines(
-                VkGlobals::GetLogicalDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, VulkanAllocator(), &m_pipeline) ==
+                VkBackend::Device(), VK_NULL_HANDLE, 1, &pipelineInfo, VulkanAllocator(), &m_pipeline) ==
             VK_SUCCESS);
     }
     else
     {
         DEBUG_ASSERT(
             vkCreateGraphicsPipelines(
-                VkGlobals::GetLogicalDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, VulkanAllocator(), &m_pipeline) ==
+                VkBackend::Device(), VK_NULL_HANDLE, 1, &pipelineInfo, VulkanAllocator(), &m_pipeline) ==
             VK_SUCCESS);
     }
 }
@@ -192,11 +192,11 @@ GraphicsPipelineVulkan::~GraphicsPipelineVulkan()
 
 void GraphicsPipelineVulkan::CleanUp()
 {
-    VK_FREE_IF(m_pipelineLayout, vkDestroyPipelineLayout(VK_LOGICAL_DEVICE, m_pipelineLayout, VulkanAllocator()));
+    VK_FREE_IF(m_pipelineLayout, vkDestroyPipelineLayout(VkBackend::Device(), m_pipelineLayout, VulkanAllocator()));
     if (m_pipeline != VK_NULL_HANDLE)
     {
-        g_pDeleteQueue->RegisterDeleteForNextFrame([pip = m_pipeline]() mutable
-                                                   { vkDestroyPipeline(VK_LOGICAL_DEVICE, pip, VulkanAllocator()); });
+        g_renderer.GetDeleteQueue().RegisterDeleteForNextFrame([pip = m_pipeline]() mutable
+                                                   { vkDestroyPipeline(VkBackend::Device(), pip, VulkanAllocator()); });
     }
 }
 
@@ -412,7 +412,7 @@ VkPipelineLayout PipelineVulkanBase::CreatePipelineLayout(const DescriptorSetLay
     }
 
     DEBUG_ASSERT(vkCreatePipelineLayout(
-                     VkGlobals::GetLogicalDevice(), &pipelineLayoutInfo, VulkanAllocator(), &pipelineLayout) ==
+                     VkBackend::Device(), &pipelineLayoutInfo, VulkanAllocator(), &pipelineLayout) ==
                  VK_SUCCESS);
     return pipelineLayout;
 }
@@ -425,7 +425,7 @@ void GraphicsPipelineVulkan::NamingCallBack(const stltype::string& name)
     nameInfo.objectHandle = (uint64_t)m_pipeline;
     nameInfo.pObjectName = name.c_str();
 
-    vkSetDebugUtilsObjectName(VK_LOGICAL_DEVICE, &nameInfo);
+    vkSetDebugUtilsObjectName(VkBackend::Device(), &nameInfo);
 
     VkDebugUtilsObjectNameInfoEXT layoutNameInfo = {};
     layoutNameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
@@ -434,7 +434,7 @@ void GraphicsPipelineVulkan::NamingCallBack(const stltype::string& name)
     stltype::string layoutName = name + "_Layout";
     layoutNameInfo.pObjectName = layoutName.c_str();
 
-    vkSetDebugUtilsObjectName(VK_LOGICAL_DEVICE, &layoutNameInfo);
+    vkSetDebugUtilsObjectName(VkBackend::Device(), &layoutNameInfo);
 }
 
 void ComputePipelineVulkan::NamingCallBack(const stltype::string& name)
@@ -445,7 +445,7 @@ void ComputePipelineVulkan::NamingCallBack(const stltype::string& name)
     nameInfo.objectHandle = (uint64_t)m_pipeline;
     nameInfo.pObjectName = name.c_str();
 
-    vkSetDebugUtilsObjectName(VK_LOGICAL_DEVICE, &nameInfo);
+    vkSetDebugUtilsObjectName(VkBackend::Device(), &nameInfo);
 
     VkDebugUtilsObjectNameInfoEXT layoutNameInfo = {};
     layoutNameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
@@ -454,6 +454,6 @@ void ComputePipelineVulkan::NamingCallBack(const stltype::string& name)
     stltype::string layoutName = name + "_Layout";
     layoutNameInfo.pObjectName = layoutName.c_str();
 
-    vkSetDebugUtilsObjectName(VK_LOGICAL_DEVICE, &layoutNameInfo);
+    vkSetDebugUtilsObjectName(VkBackend::Device(), &layoutNameInfo);
 }
 

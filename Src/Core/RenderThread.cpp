@@ -1,20 +1,20 @@
 #include "RenderThread.h"
+#include "Core/Rendering/Core/Profiler.h"
 #include "Core/ECS/EntityManager.h"
-#include "Core/Global/FrameGlobals.h"
+#include "Core/Global/GlobalVariables.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Global/State/ApplicationState.h"
 #include "Core/Rendering/Core/StaticFunctions.h"
 #include "Core/Rendering/Core/TextureManager.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
 #include "Core/Rendering/Core/Utils/DeleteQueue.h"
-#include "Core/Rendering/Backend/BackendGlobals.h"
+#include "Core/Global/GlobalVariables.h"
 
-RenderThread::RenderThread(ImGuiManager* pImGuiManager, RenderBackendImpl<RenderAPI>* pRenderBackend)
-    : m_pImGuiManager(pImGuiManager), m_pRenderBackend(pRenderBackend)
+RenderThread::RenderThread(ImGuiManager* pImGuiManager) : m_pImGuiManager(pImGuiManager)
 {
     m_passManager = stltype::make_unique<RenderPasses::PassManager>();
     m_keepRunning = false;
-    g_pEventSystem->AddSwapchainRecreationEventCallback(
+    g_engine.GetEventSystem().AddSwapchainRecreationEventCallback(
         [this](const SwapchainRecreationEventData&)
         {
             m_swapchainRecreationRequested.store(true, std::memory_order_release);
@@ -23,9 +23,9 @@ RenderThread::RenderThread(ImGuiManager* pImGuiManager, RenderBackendImpl<Render
 
 void RenderThread::WaitForGameThreadAndPreviousFrame()
 {
-    g_mainRenderThreadSyncSemaphore.Wait();
-    g_frameTimerSemaphore.Post();
-    g_frameTimerSemaphore2.Wait();
+    g_engine.GetFrameSync().mainRenderThreadSync.Wait();
+    g_engine.GetFrameSync().frameTimer.Post();
+    g_engine.GetFrameSync().frameTimer2.Wait();
 }
 
 bool RenderThread::HandleResizeAtFrameStart()
@@ -33,18 +33,18 @@ bool RenderThread::HandleResizeAtFrameStart()
     ScopedZone("Handle Resize");
     const bool swapchainResizeRequested = m_swapchainRecreationRequested.exchange(false, std::memory_order_acq_rel);
     const bool renderTargetsResizeRequested =
-        m_passManager->NeedsResizeDependentResourceRecreate(FrameGlobals::GetSwapChainExtent());
+        m_passManager->NeedsResizeDependentResourceRecreate(g_renderer.GetSwapchainExtent());
     if (!swapchainResizeRequested && !renderTargetsResizeRequested)
         return true;
 
-    g_pQueueHandler->DispatchAllRequests();
-    g_pQueueHandler->WaitForFences(~0u);
+    g_renderer.GetQueueHandler().DispatchAllRequests();
+    g_renderer.GetQueueHandler().WaitForFences(~0u);
     SRF::WaitForDeviceIdle<RenderAPI>();
 
     bool swapchainRecreated = false;
-    if (swapchainResizeRequested && m_pRenderBackend != nullptr)
+    if (swapchainResizeRequested)
     {
-        swapchainRecreated = m_pRenderBackend->RecreateSwapChain();
+        swapchainRecreated = g_renderer.RecreateSwapchain();
         if (!swapchainRecreated)
         {
             m_swapchainRecreationRequested.store(true, std::memory_order_release);
@@ -52,28 +52,28 @@ bool RenderThread::HandleResizeAtFrameStart()
         }
     }
 
-    m_passManager->RecreateResizeDependentResources(FrameGlobals::GetSwapChainExtent(), swapchainRecreated);
+    m_passManager->RecreateResizeDependentResources(g_renderer.GetSwapchainExtent(), swapchainRecreated);
     return true;
 }
 
 bool RenderThread::HandleSceneSwitchAtFrameStart()
 {
     ScopedZone("Handle Scene Switch");
-    if (!g_pApplicationState || !g_pApplicationState->HasPendingSceneSwitch())
+    if (!g_engine.TryGetApplicationState() || !g_engine.GetApplicationState().HasPendingSceneSwitch())
         return true;
 
-    g_pQueueHandler->DispatchAllRequests();
-    g_pQueueHandler->WaitForFences(~0u);
+    g_renderer.GetQueueHandler().DispatchAllRequests();
+    g_renderer.GetQueueHandler().WaitForFences(~0u);
     SRF::WaitForDeviceIdle<RenderAPI>();
 
-    g_pApplicationState->ExecuteSceneSwitchOnRenderThread();
+    g_engine.GetApplicationState().ExecuteSceneSwitchOnRenderThread();
     return true;
 }
 
 void RenderThread::RenderLoop()
 {
-    auto currentFrame = FrameGlobals::GetFrameNumber();
-    auto lastFrame = FrameGlobals::GetPreviousFrameNumber(currentFrame);
+    auto currentFrame = g_engine.GetFrameNumber();
+    auto lastFrame = Engine::GetPreviousFrameNumber(currentFrame);
     u64 jitterFrameNumber = 0;
 
     while (KeepRunning())
@@ -88,34 +88,34 @@ void RenderThread::RenderLoop()
         u64 currentJitterFrameNumber = 0;
         {
             lastFrame = currentFrame;
-            currentFrame = FrameGlobals::GetFrameNumber();
+            currentFrame = g_engine.GetFrameNumber();
             currentJitterFrameNumber = jitterFrameNumber++;
         }
         // First sync game data with renderthread
 
-        g_pEntityManager->SyncSystemData(lastFrame);
+        g_engine.GetEntityManager().SyncSystemData(lastFrame);
 
         if (!HandleResizeAtFrameStart())
         {
-            g_renderThreadReadSemaphore.Post();
-            g_imguiSemaphore.Wait();
+            g_engine.GetFrameSync().renderThreadRead.Post();
+            g_engine.GetFrameSync().imgui.Wait();
             continue;
         }
 
         if (!HandleSceneSwitchAtFrameStart())
         {
-            g_renderThreadReadSemaphore.Post();
-            g_imguiSemaphore.Wait();
+            g_engine.GetFrameSync().renderThreadRead.Post();
+            g_engine.GetFrameSync().imgui.Wait();
             continue;
         }
 
         const bool acquiredFrame = m_passManager->BlockUntilPassesFinished(lastFrame);
         // All previous frame's command buffers have finished executing, safe to process deferred deletes
-        g_pDeleteQueue->ProcessDeleteQueue();
+        g_renderer.GetDeleteQueue().ProcessDeleteQueue();
 
         // Sync ended, signal gamethread
-        g_renderThreadReadSemaphore.Post();
-        g_imguiSemaphore.Wait();
+        g_engine.GetFrameSync().renderThreadRead.Post();
+        g_engine.GetFrameSync().imgui.Wait();
         if (!KeepRunning())
         {
             break;
@@ -130,15 +130,15 @@ void RenderThread::RenderLoop()
         }
 
         {
-            RenderGlobals::GetProfiler()->PublishResults(lastFrame);
-            RenderGlobals::GetProfiler()->ResetFrame(lastFrame);
+            g_renderer.TryGetProfiler()->PublishResults(lastFrame);
+            g_renderer.TryGetProfiler()->ResetFrame(lastFrame);
             m_passManager->ReadAndPublishTimingResults(lastFrame);
             m_passManager->ExecutePasses(lastFrame);
         }
 
         {
-            g_pEventSystem->OnPostFrame({lastFrame});
-            g_pTexManager->PostRender();
+            g_engine.GetEventSystem().OnPostFrame({lastFrame});
+            g_renderer.GetTextureManager().PostRender();
         }
     }
 }
@@ -146,9 +146,9 @@ void RenderThread::RenderLoop()
 RenderPasses::PassManager* RenderThread::Start()
 {
     m_keepRunning = true;
-    if (g_pApplicationState)
+    if (g_engine.TryGetApplicationState())
     {
-        g_pApplicationState->SetRenderThreadRunning(true);
+        g_engine.GetApplicationState().SetRenderThreadRunning(true);
     }
     m_thread = threadstl::MakeThread([this]() { RenderLoop(); });
     InitializeThread("Convolution_RenderThread");
@@ -157,10 +157,10 @@ RenderPasses::PassManager* RenderThread::Start()
 
 void RenderThread::CleanUp()
 {
-    if (g_pApplicationState)
+    if (g_engine.TryGetApplicationState())
     {
-        g_pApplicationState->SetRenderThreadRunning(false);
+        g_engine.GetApplicationState().SetRenderThreadRunning(false);
     }
     m_passManager.reset();
-    g_pDeleteQueue->ForceEmptyQueue();
+    g_renderer.GetDeleteQueue().ForceEmptyQueue();
 }

@@ -1,5 +1,6 @@
 #include "VkQueryPool.h"
-#include "VkGlobals.h"
+#include "BackendDefines.h"
+#include "VkBackendAccess.h"
 
 QueryPoolVulkan::~QueryPoolVulkan()
 {
@@ -8,7 +9,7 @@ QueryPoolVulkan::~QueryPoolVulkan()
 
 void QueryPoolVulkan::CleanUp()
 {
-    VK_FREE_IF(m_pool, vkDestroyQueryPool(VK_LOGICAL_DEVICE, m_pool, VulkanAllocator()));
+    VK_FREE_IF(m_pool, vkDestroyQueryPool(VkBackend::Device(), m_pool, VulkanAllocator()));
 }
 
 void QueryPoolVulkan::Init(VkQueryType type, u32 count, VkQueryPipelineStatisticFlags stats)
@@ -19,7 +20,7 @@ void QueryPoolVulkan::Init(VkQueryType type, u32 count, VkQueryPipelineStatistic
     queryPoolInfo.queryCount = count;
     queryPoolInfo.pipelineStatistics = stats;
 
-    vkCreateQueryPool(VK_LOGICAL_DEVICE, &queryPoolInfo, nullptr, &m_pool);
+    vkCreateQueryPool(VkBackend::Device(), &queryPoolInfo, nullptr, &m_pool);
     m_type = type;
     m_count = count;
     m_statsFlags = stats;
@@ -48,7 +49,7 @@ void QueryPoolVulkan::GetPipelineStatistics(u32 index, u32 count, stltype::vecto
         return;
 
     results.resize(count * numStats);
-    const VkResult result = vkGetQueryPoolResults(VK_LOGICAL_DEVICE,
+    const VkResult result = vkGetQueryPoolResults(VkBackend::Device(),
                                                   m_pool,
                                                   index,
                                                   count,

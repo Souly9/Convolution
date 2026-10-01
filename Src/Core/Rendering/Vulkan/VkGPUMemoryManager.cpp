@@ -1,8 +1,9 @@
 #define VMA_IMPLEMENTATION
 #include "VkGPUMemoryManager.h"
+#include "Core/Global/GlobalVariables.h"
 #include "BackendDefines.h"
 #include "Utils/VkEnumHelpers.h"
-#include "VkGlobals.h"
+#include "VkBackendAccess.h"
 #include "vk_mem_alloc.h"
 
 // Don't want to include the VMA header in the header file, so we define it here
@@ -78,9 +79,9 @@ void GPUMemManager<Vulkan>::InitializeVMA()
     allocatorCreateInfo.flags =
         VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT | VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
     allocatorCreateInfo.vulkanApiVersion = VK_API_VERSION_1_2;
-    allocatorCreateInfo.physicalDevice = VK_PHYS_DEVICE;
-    allocatorCreateInfo.device = VK_LOGICAL_DEVICE;
-    allocatorCreateInfo.instance = VkGlobals::GetContext().Instance;
+    allocatorCreateInfo.physicalDevice = VkBackend::PhysicalDevice();
+    allocatorCreateInfo.device = VkBackend::Device();
+    allocatorCreateInfo.instance = VkBackend::Instance();
     allocatorCreateInfo.pVulkanFunctions = &vulkanFunctions;
 
     vmaCreateAllocator(&allocatorCreateInfo, &s_vmaAllocator);
@@ -95,7 +96,7 @@ GPUMemManager<Vulkan>::~GPUMemManager()
         {
             /*
             UnmapMemory(handle);
-            vkFreeMemory(VK_LOGICAL_DEVICE, handle, VulkanAllocator());
+            vkFreeMemory(VkBackend::Device(), handle, VulkanAllocator());
             */
             DEBUG_ASSERT(false);
         }
@@ -144,7 +145,7 @@ GPUMemoryHandle GPUMemManager<Vulkan>::AllocateMemory(size_t size,
     // allocInfo.memoryTypeIndex = GetMemoryTypeIndex(properties, requirements.memoryTypeBits);
 
     // m_allocatinggMutex.Lock();
-    // DEBUG_ASSERT(vkAllocateMemory(VK_LOGICAL_DEVICE, &allocInfo, nullptr, &allocation.memoryHandle.memory) ==
+    // DEBUG_ASSERT(vkAllocateMemory(VkBackend::Device(), &allocInfo, nullptr, &allocation.memoryHandle.memory) ==
     // VK_SUCCESS);
 
     // s_memoryHandles.push_back(allocation);
@@ -210,7 +211,7 @@ GPUMemoryHandle GPUMemManager<Vulkan>::AllocateImage(VkImageCreateInfo imageInfo
 u32 GPUMemManager<Vulkan>::GetMemoryTypeIndex(VkMemoryPropertyFlags properties, u32 filter)
 {
     VkPhysicalDeviceMemoryProperties memProperties;
-    vkGetPhysicalDeviceMemoryProperties(VK_PHYS_DEVICE, &memProperties);
+    vkGetPhysicalDeviceMemoryProperties(VkBackend::PhysicalDevice(), &memProperties);
 
     for (u32 i = 0; i < memProperties.memoryTypeCount; i++)
     {
@@ -246,7 +247,7 @@ void GPUMemManager<Vulkan>::UnmapMemory(GPUMemoryHandle memory)
 
     if (mapped_it != m_mappedMemoryHandles.end())
     {
-        // vkUnmapMemory(VK_LOGICAL_DEVICE, *it);
+        // vkUnmapMemory(VkBackend::Device(), *it);
         vmaUnmapMemory(s_vmaAllocator, *mapped_it);
         m_mappedMemoryHandles.erase(mapped_it);
     }
@@ -258,7 +259,7 @@ void GPUMemManager<Vulkan>::TryFreeMemory(GPUMemoryHandle memory)
     if (memory != VK_NULL_HANDLE)
     {
         UnmapMemory(memory);
-        // vkFreeMemory(VK_LOGICAL_DEVICE, memoryHandle, VulkanAllocator());
+        // vkFreeMemory(VkBackend::Device(), memoryHandle, VulkanAllocator());
         FreeMemory(memory);
     }
 }
@@ -279,12 +280,12 @@ void GPUMemManager<Vulkan>::FreeVMA()
 
 void GPUMemManager<Vulkan>::GetVramStats(u64& total, u64& used)
 {
-    total = VkGlobals::GetTotalVram();
+    total = g_renderer.GetTotalVram();
     used = 0;
     if (m_allocatorMode != Allocator::VMA || s_vmaAllocator == VK_NULL_HANDLE)
         return;
 
-    const VkPhysicalDeviceMemoryProperties& memProps = VkGlobals::GetPhysicalDeviceMemoryProperties();
+    const VkPhysicalDeviceMemoryProperties& memProps = VkBackend::MemoryProperties();
 
     VmaBudget budgets[VK_MAX_MEMORY_HEAPS];
     vmaGetHeapBudgets(s_vmaAllocator, budgets);

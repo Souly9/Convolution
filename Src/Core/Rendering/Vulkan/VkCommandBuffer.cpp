@@ -1,4 +1,5 @@
 #include "VkCommandBuffer.h"
+#include "Core/Rendering/Core/CommandPool.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
 #include "Core/Rendering/Core/RenderDefinitions.h"
 #include "Core/Rendering/Vulkan/VkProfiler.h"
@@ -7,7 +8,7 @@
 #include "Core/Rendering/Vulkan/VkTexture.h"
 #include "Core/Rendering/Vulkan/VulkanTraits.h"
 #include "Utils/VkEnumHelpers.h"
-#include "VkGlobals.h"
+#include "VkBackendAccess.h"
 #include "VkTracyManager.h"
 #include <backends/imgui_impl_vulkan.h>
 #include <imgui.h>
@@ -32,9 +33,9 @@ static void RecordCommand(StartProfilingScopeCmd& cmd, CBufferVulkan& buffer)
         vkBeginDebugUtilsLabel(buffer.GetRef(), &profilingScopeInfo);
     }
 
-    if (VkGlobals::GetTracyManager())
+    if (VkBackend::TracyManager())
     {
-        VkGlobals::GetTracyManager()->StartZone(CommandBuffer::Cast(&buffer), cmd.name, cmd.color);
+        VkBackend::TracyManager()->StartZone(CommandBuffer::Cast(&buffer), cmd.name, cmd.color);
     }
 }
 
@@ -45,9 +46,9 @@ static void RecordCommand(EndProfilingScopeCmd& cmd, CBufferVulkan& buffer)
         vkCmdEndDebugUtilsLabel(buffer.GetRef());
     }
 
-    if (VkGlobals::GetTracyManager())
+    if (VkBackend::TracyManager())
     {
-        VkGlobals::GetTracyManager()->EndZone(CommandBuffer::Cast(&buffer));
+        VkBackend::TracyManager()->EndZone(CommandBuffer::Cast(&buffer));
     }
 }
 
@@ -610,7 +611,7 @@ CBufferVulkan::~CBufferVulkan()
     if (m_pool != nullptr && m_pool->GetRef() != VK_NULL_HANDLE)
     {
         CallCallbacks();
-        vkFreeCommandBuffers(VK_LOGICAL_DEVICE, m_pool->GetRef(), 1, &GetRef());
+        vkFreeCommandBuffers(VkBackend::Device(), m_pool->GetRef(), 1, &GetRef());
     }
 }
 
@@ -623,7 +624,7 @@ void CBufferVulkan::Bake()
     if (m_pool)
     {
         u32 queueFamilyIdx = m_pool->GetQueueFamilyIndex();
-        const auto& indices = VkGlobals::GetQueueFamilyIndices();
+        const auto& indices = VkBackend::QueueFamilies();
         if (indices.graphicsFamily.has_value() && indices.graphicsFamily.value() == queueFamilyIdx)
         {
             bSupportsProfiling = true;
@@ -633,12 +634,12 @@ void CBufferVulkan::Bake()
     u32 queryIdx = ~0u;
     VkQueryPool queryPool = VK_NULL_HANDLE;
 
-    if (bSupportsProfiling && VkGlobals::GetProfiler() && VkGlobals::GetProfiler()->GetPool())
+    if (bSupportsProfiling && VkBackend::Profiler() && VkBackend::Profiler()->GetPool())
     {
-        queryPool = VkGlobals::GetProfiler()->GetPool()->GetRef();
+        queryPool = VkBackend::Profiler()->GetPool()->GetRef();
         if (queryPool != VK_NULL_HANDLE)
         {
-            queryIdx = VkGlobals::GetProfiler()->AllocateQuery();
+            queryIdx = VkBackend::Profiler()->AllocateQuery();
             if (queryIdx != ~0u)
             {
                 vkCmdResetQueryPool(GetRef(), queryPool, queryIdx, 1);
@@ -682,8 +683,8 @@ void CBufferVulkan::Bake()
             ctx.numComputeDispatches = capturedStats.computeDispatches;
 
             // Capture every commandbuffer for profiling
-            VkGlobals::GetProfiler()->AddCPUStats(ctx, m_frameIdx);
-            VkGlobals::GetProfiler()->AddQuery(queryIdx, m_frameIdx);
+            VkBackend::Profiler()->AddCPUStats(ctx, m_frameIdx);
+            VkBackend::Profiler()->AddQuery(queryIdx, m_frameIdx);
         });
 
     m_commands.clear();
@@ -957,5 +958,5 @@ void CBufferVulkan::NamingCallBack(const stltype::string& name)
     nameInfo.objectHandle = (uint64_t)GetRef();
     nameInfo.pObjectName = name.c_str();
 
-    vkSetDebugUtilsObjectName(VK_LOGICAL_DEVICE, &nameInfo);
+    vkSetDebugUtilsObjectName(VkBackend::Device(), &nameInfo);
 }

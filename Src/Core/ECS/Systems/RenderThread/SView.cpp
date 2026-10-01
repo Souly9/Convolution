@@ -15,17 +15,17 @@ void ECS::System::SView::CleanUp()
 void ECS::System::SView::Process()
 {
     ScopedZone("View System::Process");
-    const auto& camComps = g_pEntityManager->GetComponentVector<Components::Camera>();
+    const auto& camComps = g_engine.GetEntityManager().GetComponentVector<Components::Camera>();
 
     for (const auto& holder : camComps)
     {
         const auto entity = holder.entity;
         const auto* pCamera = &holder.component;
-        if (g_pEntityManager->HasComponent<Components::View>(entity) == false)
+        if (g_engine.GetEntityManager().HasComponent<Components::View>(entity) == false)
         {
-            g_pEntityManager->AddComponent<Components::View>(entity, {});
+            g_engine.GetEntityManager().AddComponent<Components::View>(entity, {});
         }
-        auto* pView = g_pEntityManager->GetComponentUnsafe<Components::View>(entity);
+        auto* pView = g_engine.GetEntityManager().GetComponentUnsafe<Components::View>(entity);
         pView->fov = pCamera->fov;
         pView->zNear = pCamera->zNear;
         pView->zFar = pCamera->zFar;
@@ -39,13 +39,13 @@ void ECS::System::SView::SyncData(u32 currentFrame)
     ScopedZone("View System::SyncData");
     // Not that beautiful but don't want to get into archetypes for now and the
     // view system won't run often or on many entities either way
-    const auto& viewComps = g_pEntityManager->GetComponentVector<Components::View>();
+    const auto& viewComps = g_engine.GetEntityManager().GetComponentVector<Components::View>();
 
     for (const auto& holder : viewComps)
     {
         const auto entity = holder.entity;
         const auto* pViewComp = &holder.component;
-        const auto* pTransformComp = g_pEntityManager->GetComponentUnsafe<Components::Transform>(entity);
+        const auto* pTransformComp = g_engine.GetEntityManager().GetComponentUnsafe<Components::Transform>(entity);
 
         if (pViewComp->type == ECS::Components::ViewType::MainRenderView)
         {

@@ -1,7 +1,7 @@
 #include "TransferQueueHandler.h"
 #include "../StaticFunctions.h"
 #include "Core/Events/EventSystem.h"
-#include "Core/Rendering/Backend/BackendGlobals.h"
+#include "Core/Global/GlobalVariables.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Global/LogDefines.h"
 #include "Core/Global/Utils/MathFunctions.h"
@@ -53,7 +53,7 @@ AsyncQueueHandler::~AsyncQueueHandler()
 
 void AsyncQueueHandler::Init()
 {
-    auto indices = RenderGlobals::GetQueueFamilyIndices();
+    auto indices = g_renderer.GetQueueFamilyIndices();
     m_commandPools.emplace(QueueType::Transfer, TransferCommandPool::Create());
     m_commandPools[QueueType::Transfer].SetName("AsyncQueueHandler Transfer Pool");
     
@@ -92,7 +92,7 @@ void AsyncQueueHandler::Init()
 
     m_recordingPool.Init(workerCount);
 
-    g_pEventSystem->AddPostFrameEventCallback([this](const PostFrameEventData& d) { DispatchAllRequests(); });
+    g_engine.GetEventSystem().AddPostFrameEventCallback([this](const PostFrameEventData& d) { DispatchAllRequests(); });
 
     InitStagingBufferPool(PREALLOC_STAGING_BUFFERS, 256 * 1024);
 
@@ -280,8 +280,8 @@ void AsyncQueueHandler::SubmitToSwapchainForPresentation(const stltype::vector<P
             SRF::SubmitForPresentationToMainSwapchain<RenderAPI>(request.pWaitSemaphore, request.swapChainImageIdx);
         if (status == SRF::SwapchainPresentStatus::NeedsRecreate)
         {
-            if (g_pEventSystem != nullptr)
-                g_pEventSystem->OnSwapchainRecreation({});
+            if (g_engine.TryGetEventSystem() != nullptr)
+                g_engine.GetEventSystem().OnSwapchainRecreation({});
         }
         else if (status == SRF::SwapchainPresentStatus::Failed)
         {

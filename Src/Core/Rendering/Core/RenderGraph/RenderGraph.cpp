@@ -355,7 +355,7 @@ void RenderGraph::Compile()
 
 void RenderGraph::PublishDebugState() const
 {
-    if (!g_pApplicationState) return;
+    if (!g_engine.TryGetApplicationState()) return;
 
     RendererState::RenderGraphDebugState snapshot{};
     u64 totalVRAM = 0;
@@ -432,7 +432,7 @@ void RenderGraph::PublishDebugState() const
 
     snapshot.totalVRAMBytes = totalVRAM;
 
-    g_pApplicationState->RegisterUpdateFunction([stateSnapshot = stltype::move(snapshot)](ApplicationState& appState) mutable {
+    g_engine.GetApplicationState().RegisterUpdateFunction([stateSnapshot = stltype::move(snapshot)](ApplicationState& appState) mutable {
         appState.renderState.rgDebugState = stltype::move(stateSnapshot);
     });
 }
@@ -763,6 +763,6 @@ void RenderGraph::Execute(const RenderPasses::MainPassData& data,
         req.pBuffer = pCmdBuffer;
         req.queueType = batch.queueType;
         req.frameIdx = ctx.currentFrame;
-        g_pQueueHandler->SubmitCommandBufferThisFrame(req);
+        g_renderer.GetQueueHandler().SubmitCommandBufferThisFrame(req);
     }
 }

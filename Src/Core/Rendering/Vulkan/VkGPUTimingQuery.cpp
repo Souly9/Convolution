@@ -1,12 +1,13 @@
 #include "VkGPUTimingQuery.h"
+#include "Core/Global/GlobalVariables.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
 #include "Core/Rendering/Vulkan/VkCommandBuffer.h"
 #include "Core/Rendering/Vulkan/VkCommandPool.h"
-#include "VkGlobals.h"
+#include "VkBackendAccess.h"
 
 u32 GPUTimingQueryVulkan::GetPoolIndex(u32 queueFamilyIndex) const
 {
-    const auto& families = VkGlobals::GetQueueFamilyIndices();
+    const auto& families = VkBackend::QueueFamilies();
     if (families.computeFamily.has_value() && queueFamilyIndex == families.computeFamily.value())
     {
         return COMPUTE_POOL_IDX;
@@ -27,8 +28,7 @@ void GPUTimingQueryVulkan::Init(u32 maxPasses)
     m_maxPasses = maxPasses;
     m_queryCount = maxPasses * 2; // 2 timestamps per pass (start/end)
 
-    const auto& props = VkGlobals::GetPhysicalDeviceProperties();
-    m_timestampPeriodNs = static_cast<f64>(props.limits.timestampPeriod);
+    m_timestampPeriodNs = g_renderer.GetTimestampPeriodNs();
 
     for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
     {
@@ -36,11 +36,11 @@ void GPUTimingQueryVulkan::Init(u32 maxPasses)
         m_queryPools[i][COMPUTE_POOL_IDX].Init(VK_QUERY_TYPE_TIMESTAMP, m_queryCount);
         m_timestampResults[i][GRAPHICS_POOL_IDX].resize(m_queryCount, 0);
         m_timestampResults[i][COMPUTE_POOL_IDX].resize(m_queryCount, 0);
-        vkResetQueryPool(VkGlobals::GetLogicalDevice(),
+        vkResetQueryPool(VkBackend::Device(),
                          m_queryPools[i][GRAPHICS_POOL_IDX].GetRef(),
                          0,
                          m_queryCount);
-        vkResetQueryPool(VkGlobals::GetLogicalDevice(),
+        vkResetQueryPool(VkBackend::Device(),
                          m_queryPools[i][COMPUTE_POOL_IDX].GetRef(),
                          0,
                          m_queryCount);
@@ -90,7 +90,7 @@ void GPUTimingQueryVulkan::ResetQueries(u32 frameIdx, CommandBuffer* pGraphicsCm
         }
         else
         {
-            vkResetQueryPool(VkGlobals::GetLogicalDevice(), poolHandle, 0, m_queryCount);
+            vkResetQueryPool(VkBackend::Device(), poolHandle, 0, m_queryCount);
             m_poolResetThisFrame[m_currentFrameIdx][poolIdx] = true;
         }
     }
@@ -134,7 +134,7 @@ void GPUTimingQueryVulkan::ResetQueriesHost(u32 frameIdx)
         auto poolHandle = m_queryPools[frameSlot][poolIdx].GetRef();
         if (poolHandle != VK_NULL_HANDLE)
         {
-            vkResetQueryPool(VkGlobals::GetLogicalDevice(), poolHandle, 0, m_queryCount);
+            vkResetQueryPool(VkBackend::Device(), poolHandle, 0, m_queryCount);
             m_poolResetThisFrame[frameSlot][poolIdx] = true;
         }
     }
@@ -165,7 +165,7 @@ void GPUTimingQueryVulkan::ReadResults(u32 frameIdx)
         if (poolHandle == VK_NULL_HANDLE)
             continue;
 
-        vkGetQueryPoolResults(VkGlobals::GetLogicalDevice(),
+        vkGetQueryPoolResults(VkBackend::Device(),
                               poolHandle,
                               0,
                               m_queryCount,

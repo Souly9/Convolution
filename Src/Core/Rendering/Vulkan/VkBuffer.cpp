@@ -1,9 +1,10 @@
 #include "VkBuffer.h"
+#include "Core/Rendering/Core/CommandBuffer.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Global/Typedefs.h"
 #include "Core/Rendering/Core/Utils/DeleteQueue.h"
 #include "Utils/VkEnumHelpers.h"
-#include "VkGlobals.h"
+#include "VkBackendAccess.h"
 
 GenBufferVulkan::GenBufferVulkan(BufferCreateInfo& info)
 {
@@ -26,22 +27,22 @@ void GenBufferVulkan::Create(BufferCreateInfo& info)
     if (info.isExclusive)
     {
         bufferInfo.queueFamilyIndexCount = info.isExclusive ? 0 : 2;
-        const auto& queues = VkGlobals::GetQueueFamilyIndices();
+        const auto& queues = VkBackend::QueueFamilies();
         u32 families[] = {queues.graphicsFamily.value(), queues.transferFamily.value()};
         bufferInfo.pQueueFamilyIndices = families;
     }
-    m_allocatedMemory = g_pGPUMemoryManager->AllocateBuffer(info.usage, bufferInfo, m_buffer);
+    m_allocatedMemory = g_renderer.GetGPUMemoryManager().AllocateBuffer(info.usage, bufferInfo, m_buffer);
     m_info.size = size;
     m_info.usage = info.usage;
 
-    // DEBUG_ASSERT(vkCreateBuffer(VK_LOGICAL_DEVICE, &bufferInfo, VulkanAllocator(), &m_buffer) == VK_SUCCESS);
+    // DEBUG_ASSERT(vkCreateBuffer(VkBackend::Device(), &bufferInfo, VulkanAllocator(), &m_buffer) == VK_SUCCESS);
     // DEBUG_ASSERT(m_buffer != VK_NULL_HANDLE);
     // VkMemoryRequirements memRequirements;
-    // vkGetBufferMemoryRequirements(VK_LOGICAL_DEVICE, m_buffer, &memRequirements);
+    // vkGetBufferMemoryRequirements(VkBackend::Device(), m_buffer, &memRequirements);
 
-    // m_allocatedMemory = g_pGPUMemoryManager->AllocateMemory(info.size, mainBufferProperties, memRequirements);
+    // m_allocatedMemory = g_renderer.GetGPUMemoryManager().AllocateMemory(info.size, mainBufferProperties, memRequirements);
     //
-    // vkBindBufferMemory(VK_LOGICAL_DEVICE, m_buffer, m_allocatedMemory, 0);
+    // vkBindBufferMemory(VkBackend::Device(), m_buffer, m_allocatedMemory, 0);
 }
 
 void GenBufferVulkan::CleanUp()
@@ -52,7 +53,7 @@ void GenBufferVulkan::CleanUp()
     auto memory = m_allocatedMemory;
     m_buffer = VK_NULL_HANDLE;
 
-    g_pDeleteQueue->RegisterDeleteForNextFrame([memory]() mutable { g_pGPUMemoryManager->TryFreeMemory(memory); });
+    g_renderer.GetDeleteQueue().RegisterDeleteForNextFrame([memory]() mutable { g_renderer.GetGPUMemoryManager().TryFreeMemory(memory); });
 }
 
 void GenBufferVulkan::FillImmediate(const void* data)
@@ -86,8 +87,8 @@ void GenBufferVulkan::FillAndTransfer(
         auto memory = stgBuffer.GetMemoryHandle();
         transferBuffer->AddExecutionFinishedCallback(
             [memory]() {
-                g_pDeleteQueue->RegisterDeleteForNextFrame([memory]() mutable
-                                                           { g_pGPUMemoryManager->TryFreeMemory(memory); });
+                g_renderer.GetDeleteQueue().RegisterDeleteForNextFrame([memory]() mutable
+                                                           { g_renderer.GetGPUMemoryManager().TryFreeMemory(memory); });
             });
 
         // Guarantee it won't get freed until we hit the callback
@@ -99,7 +100,7 @@ void GenBufferVulkan::FillAndTransfer(
 
 GPUMappedMemoryHandle GenBufferVulkan::MapMemory()
 {
-    return g_pGPUMemoryManager->MapMemory(m_allocatedMemory, m_info.size);
+    return g_renderer.GetGPUMemoryManager().MapMemory(m_allocatedMemory, m_info.size);
 }
 
 u64 GenBufferVulkan::GetDeviceAddress() const
@@ -110,12 +111,12 @@ u64 GenBufferVulkan::GetDeviceAddress() const
     VkBufferDeviceAddressInfo addressInfo{};
     addressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
     addressInfo.buffer = m_buffer;
-    return vkGetBufferDeviceAddress(VK_LOGICAL_DEVICE, &addressInfo);
+    return vkGetBufferDeviceAddress(VkBackend::Device(), &addressInfo);
 }
 
 void GenBufferVulkan::UnmapMemory()
 {
-    g_pGPUMemoryManager->UnmapMemory(m_allocatedMemory);
+    g_renderer.GetGPUMemoryManager().UnmapMemory(m_allocatedMemory);
 }
 
 void GenBufferVulkan::NamingCallBack(const stltype::string& name)
@@ -126,14 +127,14 @@ void GenBufferVulkan::NamingCallBack(const stltype::string& name)
     nameInfo.objectHandle = (uint64_t)GetRef();
     nameInfo.pObjectName = name.c_str();
 
-    vkSetDebugUtilsObjectName(VK_LOGICAL_DEVICE, &nameInfo);
+    vkSetDebugUtilsObjectName(VkBackend::Device(), &nameInfo);
 }
 
 void GenBufferVulkan::MapAndCopyToMemory(const GPUMemoryHandle& memory, const void* data, u64 size, u64 offset)
 {
-    const auto bufferData = g_pGPUMemoryManager->MapMemory(memory, size);
+    const auto bufferData = g_renderer.GetGPUMemoryManager().MapMemory(memory, size);
     memcpy((char*)bufferData + offset, data, (size_t)size);
-    g_pGPUMemoryManager->UnmapMemory(memory);
+    g_renderer.GetGPUMemoryManager().UnmapMemory(memory);
 }
 
 void GenBufferVulkan::CheckCopyArgs(const void* data, u64 size, u64 offset)

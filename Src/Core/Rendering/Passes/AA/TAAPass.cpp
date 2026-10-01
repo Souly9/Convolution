@@ -92,7 +92,7 @@ void TAAPass::RenderWithGraph(const MainPassData& data, const FrameRendererConte
     CommandBuffer* pCmdBuffer = execCtx.pCmdBuffer;
     StartRenderPassProfilingScope(pCmdBuffer);
 
-    const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+    const auto& renderState = g_engine.GetApplicationState().GetCurrentApplicationState().renderState;
     TAAPushConstants pushConstants{};
     pushConstants.velocityRejectionStart = renderState.taaVelocityRejectionStart;
     pushConstants.velocityRejectionEnd = renderState.taaVelocityRejectionEnd;

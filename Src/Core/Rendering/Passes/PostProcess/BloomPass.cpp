@@ -1,6 +1,6 @@
 #include "BloomPass.h"
 #include "Core/Global/GlobalVariables.h"
-#include "Core/Global/FrameGlobals.h"
+#include "Core/Global/GlobalVariables.h"
 #include "Core/Global/State/States.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
 #include "Core/Rendering/Core/SharedResourceManager.h"
@@ -30,8 +30,8 @@ void BloomPass::Init(const SharedResourceManager& resourceManager)
     TextureManager::TexCreateInfo lens1Info("Resources/Bloom/lens_flare_1.png", true, TextureSemantic::Auto, true);
     TextureManager::TexCreateInfo lens2Info("Resources/Bloom/lens_flare_2.png", true, TextureSemantic::Auto, true);
 
-    m_hLens1 = g_pTexManager->SubmitAsyncTextureCreation(lens1Info);
-    m_hLens2 = g_pTexManager->SubmitAsyncTextureCreation(lens2Info);
+    m_hLens1 = g_renderer.GetTextureManager().SubmitAsyncTextureCreation(lens1Info);
+    m_hLens2 = g_renderer.GetTextureManager().SubmitAsyncTextureCreation(lens2Info);
 }
 
 void BloomPass::BuildPipelines()
@@ -59,7 +59,7 @@ void BloomPass::BuildPipelines()
 
 bool BloomPass::WantsToRender() const
 {
-    const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+    const auto& renderState = g_engine.GetApplicationState().GetCurrentApplicationState().renderState;
     return renderState.bloom.enabled;
 }
 
@@ -82,7 +82,7 @@ void BloomPass::RenderWithGraph(const MainPassData& data, const FrameRendererCon
     ScopedZone("BloomPass::Render");
     StartRenderPassProfilingScope(execCtx.pCmdBuffer);
 
-    const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+    const auto& renderState = g_engine.GetApplicationState().GetCurrentApplicationState().renderState;
     if (!renderState.bloom.enabled || execCtx.pRegistry == nullptr)
     {
         EndRenderPassProfilingScope(execCtx.pCmdBuffer);
@@ -190,10 +190,10 @@ void BloomPass::RenderWithGraph(const MainPassData& data, const FrameRendererCon
         if (i == 0 && renderState.bloom.lensTextureIndex > 0)
         {
             TextureHandle targetLensHandle = (renderState.bloom.lensTextureIndex == 1) ? m_hLens1 : m_hLens2;
-            auto* pLensTex = g_pTexManager->GetTexture(targetLensHandle);
+            auto* pLensTex = g_renderer.GetTextureManager().GetTexture(targetLensHandle);
             if (pLensTex)
             {
-                BindlessTextureHandle bindlessIdx = g_pTexManager->MakeTextureBindless(pLensTex, true);
+                BindlessTextureHandle bindlessIdx = g_renderer.GetTextureManager().MakeTextureBindless(pLensTex, true);
                 m_pushConstants.useLensTexture = 1u;
                 m_pushConstants.lensTextureIdx = bindlessIdx;
             }

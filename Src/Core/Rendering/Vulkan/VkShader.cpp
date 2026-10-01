@@ -3,12 +3,12 @@
 #include "Core/Global/GlobalVariables.h"
 #include "Core/IO/FileReader.h"
 #include "Core/Rendering/Core/ShaderManager.h"
-#include "VkGlobals.h"
+#include "VkBackendAccess.h"
 #include <vulkan/vulkan.h>
 
 ShaderVulkan::ShaderVulkan(const stltype::string_view& filePath, stltype::string&& name) : m_name{name}
 {
-    const auto shaderData = g_pShaderManager->GetShader(filePath);
+    const auto shaderData = g_renderer.GetShaderManager().GetShader(filePath);
     DEBUG_LOGF("Creating shader for {}", filePath.data());
     CreateShaderModule(shaderData.words);
     /*IORequest req{};
@@ -21,10 +21,10 @@ ShaderVulkan::ShaderVulkan(const stltype::string_view& filePath, stltype::string
             createInfo.codeSize = result.bytes.size();
             createInfo.pCode = (const u32*)result.bytes.data();
 
-            DEBUG_ASSERT(vkCreateShaderModule(VkGlobals::GetLogicalDevice(), &createInfo, VulkanAllocator(),
+            DEBUG_ASSERT(vkCreateShaderModule(VkBackend::Device(), &createInfo, VulkanAllocator(),
     &m_shaderModule) == VK_SUCCESS);
         });
-    g_pFileReader->SubmitIORequest(req);*/
+    g_engine.GetFileReader().SubmitIORequest(req);*/
 }
 
 ShaderVulkan::ShaderVulkan(const char* filePath, const char* name)
@@ -34,7 +34,7 @@ ShaderVulkan::ShaderVulkan(const char* filePath, const char* name)
 
 ShaderVulkan::~ShaderVulkan()
 {
-    vkDestroyShaderModule(VkGlobals::GetLogicalDevice(), m_shaderModule, VulkanAllocator());
+    vkDestroyShaderModule(VkBackend::Device(), m_shaderModule, VulkanAllocator());
 }
 
 VkShaderModule ShaderVulkan::GetDesc() const
@@ -54,6 +54,6 @@ void ShaderVulkan::CreateShaderModule(const stltype::vector<u32>& byteCode)
     createInfo.codeSize = byteCode.size() * sizeof(u32);
     createInfo.pCode = byteCode.data();
 
-    DEBUG_ASSERT(vkCreateShaderModule(VkGlobals::GetLogicalDevice(), &createInfo, VulkanAllocator(), &m_shaderModule) ==
+    DEBUG_ASSERT(vkCreateShaderModule(VkBackend::Device(), &createInfo, VulkanAllocator(), &m_shaderModule) ==
                  VK_SUCCESS);
 }

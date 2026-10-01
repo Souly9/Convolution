@@ -85,11 +85,11 @@ void LightGridComputePass::RenderWithGraph(const MainPassData& data, const Frame
     ScopedZone("LightGridComputePass::RenderWithGraph");
     StartRenderPassProfilingScope(execCtx.pCmdBuffer);
 
-    auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+    auto& renderState = g_engine.GetApplicationState().GetCurrentApplicationState().renderState;
 
     const u32 totalClusters = renderState.clusterCount.x * renderState.clusterCount.y * renderState.clusterCount.z;
     const u32 numLightsEvaluated = execCtx.GetNumLights();
-    g_pApplicationState->RegisterUpdateFunction([totalClusters, numLightsEvaluated](ApplicationState& state)
+    g_engine.GetApplicationState().RegisterUpdateFunction([totalClusters, numLightsEvaluated](ApplicationState& state)
                                                 {
                                                     state.renderState.totalClusterCount = totalClusters;
                                                     state.renderState.numLightsEvaluated = numLightsEvaluated;

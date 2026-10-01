@@ -1,29 +1,22 @@
 #include "Core/Application.h"
-#include "Core/ECS/EntityManager.h"
-#include "Core/Global/GlobalDefines.h"
-#include "Core/Global/ConvolutionState.h"
-#include "Core/Rendering/Backend/BackendGlobals.h"
+#include "Core/Global/GlobalVariables.h"
 
 int main()
 {
-    stltype::string_view title("Convolution");
-    u32 screenWidth = 2560, screenHeight = 1440;
-
-    Nvidia::StreamlineManager::EarlyInit();
-    ConvolutionState::pWindowManager = stltype::make_unique<WindowManager>(screenWidth, screenHeight, title);
-    RenderLayer<RenderAPI> layer;
+    g_engine.Init();
+    g_renderer.CreateSubsystems();
+    Renderer::PreWindowSystemInit();
+    g_engine.CreateMainWindow(2560, 1440, "Convolution");
     {
-        Application app(true, layer);
-        app.Run();
+        Application app;
+        if (app.IsInitialized())
+            app.Run();
     }
-    ConvolutionState::pTexManager.reset();
-    ConvolutionState::pQueueHandler.reset();
-    ConvolutionState::pEntityManager.reset();
-    ConvolutionState::pQueueHandler.reset();
-    ConvolutionState::pFileReader.reset();
-    ConvolutionState::pMeshManager.reset();
-    ConvolutionState::pDeleteQueue->ForceEmptyQueue();
-    RenderGlobals::pGPUMemoryManager.reset();
-    layer.CleanUp();
+    g_engine.StopIO();
+    g_engine.DestroyApplicationState();
+    g_renderer.ShutdownResources();
+    g_engine.ShutdownWorld();
+    g_renderer.ShutdownDevice();
+    g_engine.Shutdown();
     return 0;
 }

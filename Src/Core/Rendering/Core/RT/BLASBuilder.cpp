@@ -1,5 +1,5 @@
 #include "BLASBuilder.h"
-#include "Core/Global/ConvolutionState.h"
+#include "Core/Global/GlobalVariables.h"
 #include "Core/Global/LogDefines.h"
 #include <format>
 #include "Core/Rendering/Core/CommandBuffer.h"
@@ -109,7 +109,7 @@ bool BLASBuilder::PrepareBuildRecord(BLASRecord& record, SharedResourceManager& 
     if (record.pMesh == nullptr)
         return false;
 
-    const auto& rtCaps = RayTracingDevice::GetCapabilities();
+    const auto& rtCaps = g_renderer.GetRayTracingLimits();
     const auto& geometryBuffers = resourceManager.GetSceneGeometryBuffers();
     const auto& vertexBuffer = geometryBuffers.GetVertexBuffer();
     const auto& indexBuffer = geometryBuffers.GetIndexBuffer();
@@ -264,7 +264,7 @@ void BLASBuilder::ProcessBuildQueue(SharedResourceManager& resourceManager, u32 
             });
 
         pBuildCmdBuffer->Bake();
-        g_pQueueHandler->SubmitCommandBufferThisFrame({pBuildCmdBuffer, QueueType::Graphics, frameIdx});
+        g_renderer.GetQueueHandler().SubmitCommandBufferThisFrame({pBuildCmdBuffer, QueueType::Graphics, frameIdx});
     }
 }
 

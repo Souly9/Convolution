@@ -28,14 +28,14 @@ public:
             return;
         }
 
-        if (!g_pApplicationState)
+        if (!g_engine.TryGetApplicationState())
         {
             ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "ApplicationState unavailable.");
             ImGui::End();
             return;
         }
 
-        const auto& appState = g_pApplicationState->GetCurrentApplicationState();
+        const auto& appState = g_engine.GetApplicationState().GetCurrentApplicationState();
         const auto& rgDebugState = appState.renderState.rgDebugState;
 
         // Summary Bar

@@ -28,7 +28,7 @@ static const char* ImageLayoutToString(ImageLayout layout)
 void RenderGraphDumper::DumpToFile(const RenderGraph& graph, u32 frameIdx)
 {
     static float s_accumulatedTime = 0.0f;
-    const float dt = g_pGlobalTimeData ? g_pGlobalTimeData->GetDeltaTime() : 0.016f;
+    const float dt = g_engine.GetDeltaTime();
     s_accumulatedTime += dt;
 
     if (frameIdx != 0 && s_accumulatedTime < 1.0f)

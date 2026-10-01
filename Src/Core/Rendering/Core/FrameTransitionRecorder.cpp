@@ -4,12 +4,6 @@
 #include "Core/Rendering/Core/TextureManager.h"
 #include "Core/Rendering/Core/RenderGraph/RGResourceRegistry.h"
 #include "Core/Global/State/ApplicationState.h"
-#ifdef USE_VULKAN
-#include "vulkan/vulkan_core.h"
-#else
-// Metal ignores stage masks here; the value only needs to exist
-#define VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT 0u
-#endif
 
 void FrameTransitionRecorder::RecordTemporalResourceInitialLayouts(CommandBuffer* pCmdBuffer, RGResourceRegistry& registry)
 {
@@ -140,7 +134,7 @@ void FrameTransitionRecorder::RecordInitialLayoutTransitions(
 
 void FrameTransitionRecorder::RecordPendingTextureUploadTransitions(CommandBuffer* pCmdBuffer)
 {
-    const auto pendingTextures = g_pTexManager->PopPendingGraphicsShaderReadTransitions();
+    const auto pendingTextures = g_renderer.GetTextureManager().PopPendingGraphicsShaderReadTransitions();
     if (pendingTextures.empty())
         return;
 
@@ -289,7 +283,7 @@ void FrameTransitionRecorder::RecordSSSOutputToShaderRead(CommandBuffer* pCmdBuf
     cmd.oldLayout = ImageLayout::GENERAL;
     cmd.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
     TextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::GENERAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-    cmd.dstStage = static_cast<SyncStages>(VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT);
+    cmd.dstStage = SyncStages::BOTTOM_OF_PIPE;
     cmd.dstAccessMask = static_cast<AccessFlags>(0);
     pCmdBuffer->RecordCommand(cmd);
 }

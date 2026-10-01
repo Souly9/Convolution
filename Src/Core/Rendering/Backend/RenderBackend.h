@@ -2,8 +2,7 @@
 #include "Core/Global/GlobalDefines.h"
 
 #include "RenderBackendBase.h"
-
-using RenderBackend = RenderBackendImpl<RenderAPI>;
+#include "BackendForwardDecls.h"
 
 #ifdef USE_VULKAN
 #include "Core/Rendering/Vulkan/VulkanBackend.h"

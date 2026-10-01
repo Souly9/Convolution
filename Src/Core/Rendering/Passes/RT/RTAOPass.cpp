@@ -1,5 +1,5 @@
 #include "RTAOPass.h"
-#include "Core/Global/FrameGlobals.h"
+#include "Core/Global/GlobalVariables.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Global/Profiling.h"
 #include "Core/Global/Utils/MathFunctions.h"
@@ -62,7 +62,7 @@ void RTAOPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
 
 bool RTAOPass::WantsToRender() const
 {
-    const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+    const auto& renderState = g_engine.GetApplicationState().GetCurrentApplicationState().renderState;
     return mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
            mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTAOEnabled);
 }
@@ -102,7 +102,7 @@ void RTAOPass::RenderWithGraph(const MainPassData& data, const FrameRendererCont
         return;
     }
 
-    const auto& rtState = g_pApplicationState->GetCurrentApplicationState().renderState.rt;
+    const auto& rtState = g_engine.GetApplicationState().GetCurrentApplicationState().renderState.rt;
     m_pushConstants.rtaoTexIdx = execCtx.GetBindless(RGResourceID::RTAOOutput);
     m_pushConstants.hasReadyTLAS = 1u;
     m_pushConstants.frameIndex = execCtx.GetFrameIndex();

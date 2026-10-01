@@ -4,7 +4,7 @@
 #endif
 #include "VulkanBackend.h"
 #include "Core/Events/EventSystem.h"
-#include "Core/Global/FrameGlobals.h"
+#include "Core/Global/GlobalVariables.h"
 #include "Core/Global/State/ApplicationState.h"
 #include "vulkan/vulkan_core.h"
 #undef max
@@ -14,14 +14,19 @@
 #include "Core/Rendering/Core/Attachment.h"
 #include "Core/Rendering/Core/Nvidia/StreamlineManager.h"
 #include "Core/Rendering/Core/TextureManager.h"
-#include "Core/Rendering/RenderLayer.h"
+#include "VkProfiler.h"
+#include "VkVendorIntegration.h"
 #include "Core/Rendering/Vulkan/BackendDefines.h"
 #include "Core/Rendering/Vulkan/VkRayTracingFunctions.h"
 #include "Core/Rendering/Vulkan/XeSS/XeSSManager.h"
 #include "Utils/VkEnumHelpers.h"
-#include "VkGlobals.h"
+#include "VkBackendAccess.h"
+#include "Core/Rendering/Core/TracyManager.h"
 #include "VkTextureManager.h"
 #include <EASTL/set.h>
+#include <imgui/backends/imgui_impl_glfw.h>
+#include <imgui/backends/imgui_impl_vulkan.h>
+#include "Core/Rendering/Core/DescriptorPool.h"
 #include <GLFW/glfw3.h>
 #ifdef _WIN32
 #include <GLFW/glfw3native.h>
@@ -97,6 +102,72 @@ void NormalizeBufferDeviceAddressExtensions(stltype::vector<const char*>& extens
 
 } // namespace
 
+void RenderBackendImpl<Vulkan>::PreWindowSystemInit()
+{
+    Nvidia::StreamlineManager::EarlyInit();
+    // MoltenVK is linked directly; hand GLFW its entry point instead of letting it dlopen libvulkan
+    if (Engine::IsMacOS())
+        glfwInitVulkanLoader(vkGetInstanceProcAddr);
+}
+
+stltype::unique_ptr<Profiler> RenderBackendImpl<Vulkan>::CreateProfiler()
+{
+    return stltype::make_unique<VkProfiler>();
+}
+
+static GPUDeviceType ConvDeviceType(VkPhysicalDeviceType type)
+{
+    switch (type)
+    {
+        case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU:
+            return GPUDeviceType::Integrated;
+        case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:
+            return GPUDeviceType::Discrete;
+        case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU:
+            return GPUDeviceType::Virtual;
+        case VK_PHYSICAL_DEVICE_TYPE_CPU:
+            return GPUDeviceType::CPU;
+        default:
+            return GPUDeviceType::Unknown;
+    }
+}
+
+RenderCapabilities RenderBackendImpl<Vulkan>::QueryCapabilities() const
+{
+    VkPhysicalDeviceVulkan12Properties props12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES};
+    VkPhysicalDeviceProperties2 props2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, &props12};
+    vkGetPhysicalDeviceProperties2(m_physicalDevice, &props2);
+    VkPhysicalDeviceFeatures features{};
+    vkGetPhysicalDeviceFeatures(m_physicalDevice, &features);
+    const auto& limits = props2.properties.limits;
+
+    RenderCapabilities caps{};
+    caps.device.name = props2.properties.deviceName;
+    caps.device.vendorID = props2.properties.vendorID;
+    caps.device.type = ConvDeviceType(props2.properties.deviceType);
+    caps.device.apiVersion = props2.properties.apiVersion;
+    caps.rayTracing = m_rayTracingCaps;
+    caps.pipelineStatistics = features.pipelineStatisticsQuery == VK_TRUE;
+    caps.timestamps = limits.timestampComputeAndGraphics == VK_TRUE;
+    caps.timestampPeriodNs = limits.timestampPeriod;
+    caps.textureCompressionBC = features.textureCompressionBC == VK_TRUE;
+    caps.unifiedMemory = props2.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
+    caps.totalVram = m_totalVram;
+    caps.dedicatedTransferQueue = m_indices.transferFamily != m_indices.graphicsFamily;
+    caps.asyncComputeQueue = m_indices.computeFamily != m_indices.graphicsFamily;
+    caps.portabilityDriver = m_hasPortabilitySubset;
+    caps.validationLayersEnabled = m_validationLayersEnabled;
+    caps.maxSamplerAnisotropy = limits.maxSamplerAnisotropy;
+    caps.maxSamplerObjects = limits.maxSamplerAllocationCount;
+    caps.maxPerStageSamplers =
+        stltype::min(props12.maxPerStageDescriptorUpdateAfterBindSamplers, props12.maxDescriptorSetUpdateAfterBindSamplers);
+    caps.maxBindlessSampledImages = stltype::min(props12.maxPerStageDescriptorUpdateAfterBindSampledImages,
+                                                 props12.maxDescriptorSetUpdateAfterBindSampledImages);
+    caps.maxBindlessStorageImages = stltype::min(props12.maxPerStageDescriptorUpdateAfterBindStorageImages,
+                                                 props12.maxDescriptorSetUpdateAfterBindStorageImages);
+    return caps;
+}
+
 bool RenderBackendImpl<Vulkan>::Init(uint32_t screenWidth, uint32_t screenHeight, stltype::string_view title)
 {
     m_dlssSupportAvailable = Nvidia::StreamlineManager::IsEarlyInitialized() || Nvidia::StreamlineManager::EarlyInit();
@@ -135,8 +206,7 @@ bool RenderBackendImpl<Vulkan>::Init(uint32_t screenWidth, uint32_t screenHeight
     }
     DEBUG_LOG("Vulkan physical and logical device created!");
 
-    VkGlobals::SetLogicalDevice(m_logicalDevice);
-    UpdateGlobals();
+    PublishSwapchainState();
     bool dlssSupported = false;
     if (m_dlssSupportAvailable)
     {
@@ -155,10 +225,12 @@ bool RenderBackendImpl<Vulkan>::Init(uint32_t screenWidth, uint32_t screenHeight
         DEBUG_LOG_ERR("Vulkan device queues couldn't be acquired!");
         return false;
     }
-    UpdateGlobals();
+    // Before swapchain/texture creation, which already reads limits (sampler anisotropy)
+    g_renderer.PublishCapabilities(QueryCapabilities());
+    PublishSwapchainState();
 
     vkCmdSetCheckpoint =
-        reinterpret_cast<PFN_vkCmdSetCheckpointNV>(vkGetDeviceProcAddr(VK_LOGICAL_DEVICE, "vkCmdSetCheckpointNV"));
+        reinterpret_cast<PFN_vkCmdSetCheckpointNV>(vkGetDeviceProcAddr(VkBackend::Device(), "vkCmdSetCheckpointNV"));
 
     vkSetDebugUtilsObjectName = reinterpret_cast<PFN_vkSetDebugUtilsObjectNameEXT>(
         vkGetInstanceProcAddr(m_instance, "vkSetDebugUtilsObjectNameEXT"));
@@ -175,11 +247,11 @@ bool RenderBackendImpl<Vulkan>::Init(uint32_t screenWidth, uint32_t screenHeight
             return false;
         }
 
-        UpdateGlobals();
+        PublishSwapchainState();
         CreateSwapChainImages();
     }
 
-    UpdateGlobals();
+    PublishSwapchainState();
 
     return true;
 }
@@ -200,7 +272,7 @@ bool RenderBackendImpl<Vulkan>::RecreateSwapChain()
     }
 
     CreateSwapChainImages();
-    UpdateGlobals();
+    PublishSwapchainState();
 
     return true;
 }
@@ -217,6 +289,7 @@ bool RenderBackendImpl<Vulkan>::Cleanup()
 
     // Destroy through the same path that created it, before Streamline resets its hooks
     swapchainFunctions.destroySwapchain(m_logicalDevice, m_swapChain, VulkanAllocator());
+    VulkanXeSS::XeSSManager::Shutdown();
     Nvidia::StreamlineManager::Shutdown();
 
     vkDestroySurfaceKHR(m_instance, m_surface, VulkanAllocator());
@@ -364,16 +437,18 @@ bool RenderBackendImpl<Vulkan>::CreateInstance(uint32_t screenWidth, uint32_t sc
         DEBUG_LOG_WARN("VK_EXT_validation_features not available. Shader debug printf may be unavailable.");
     }
 
-#ifdef __APPLE__
-    for (const auto& ext : extensions)
+    // Portability drivers (MoltenVK) are only enumerated through a loader with this flag
+    if (Engine::IsMacOS())
     {
-        if (strcmp(ext.extensionName, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME) == 0)
+        for (const auto& ext : extensions)
         {
-            instanceExtensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
-            createInfo.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+            if (strcmp(ext.extensionName, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME) == 0)
+            {
+                instanceExtensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+                createInfo.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+            }
         }
     }
-#endif
 
     createInfo.enabledExtensionCount = instanceExtensions.size();
     createInfo.ppEnabledExtensionNames = instanceExtensions.data();
@@ -389,16 +464,20 @@ bool RenderBackendImpl<Vulkan>::CreateInstance(uint32_t screenWidth, uint32_t sc
     {
         createInfo.enabledLayerCount = g_validationLayers.size();
         createInfo.ppEnabledLayerNames = g_validationLayers.data();
+        m_validationLayersEnabled = !g_validationLayers.empty();
     }
     else
     {
-#ifdef __APPLE__
-        // MoltenVK is linked directly without a loader, so there are no layers
-        DEBUG_LOG_WARN("Validation Layers not available!");
-#else
-        DEBUG_ASSERT(false);
-        DEBUG_LOG_ERR("Validation Layers not available!");
-#endif
+        if (Engine::IsMacOS())
+        {
+            // MoltenVK is linked directly without a loader, so there are no layers
+            DEBUG_LOG_WARN("Validation Layers not available!");
+        }
+        else
+        {
+            DEBUG_ASSERT(false);
+            DEBUG_LOG_ERR("Validation Layers not available!");
+        }
     }
 
 #ifdef CONV_DEBUG
@@ -556,27 +635,31 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
     }
     if (hasPageableMemory)
         enabledExtensions.push_back(VK_EXT_PAGEABLE_DEVICE_LOCAL_MEMORY_EXTENSION_NAME);
-#ifdef __APPLE__
-    // Only enable what MoltenVK advertises (no RT); portability_subset is mandatory when present
-    stltype::vector<const char*> supportedExtensions;
-    for (const char* ext : enabledExtensions)
+    if (Engine::IsMacOS())
     {
+        // Only enable what MoltenVK advertises (no RT); portability_subset is mandatory when present
+        stltype::vector<const char*> supportedExtensions;
+        for (const char* ext : enabledExtensions)
+        {
+            for (const auto& avail : availableDeviceExtensions)
+            {
+                if (strcmp(ext, avail.extensionName) == 0)
+                {
+                    supportedExtensions.push_back(ext);
+                    break;
+                }
+            }
+        }
+        enabledExtensions = supportedExtensions;
         for (const auto& avail : availableDeviceExtensions)
         {
-            if (strcmp(ext, avail.extensionName) == 0)
+            if (strcmp(avail.extensionName, "VK_KHR_portability_subset") == 0)
             {
-                supportedExtensions.push_back(ext);
-                break;
+                enabledExtensions.push_back("VK_KHR_portability_subset");
+                m_hasPortabilitySubset = true;
             }
         }
     }
-    enabledExtensions = supportedExtensions;
-    for (const auto& avail : availableDeviceExtensions)
-    {
-        if (strcmp(avail.extensionName, "VK_KHR_portability_subset") == 0)
-            enabledExtensions.push_back("VK_KHR_portability_subset");
-    }
-#endif
     NormalizeBufferDeviceAddressExtensions(enabledExtensions);
 
     uint32_t xessExtensionCount = 0;
@@ -630,11 +713,9 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR, &accelerationStructureFeatures, VK_TRUE};
     VkPhysicalDeviceVulkan11Features features11{
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES, &rayQueryFeatures, VK_TRUE};
-#ifdef __APPLE__
     // Keep RT feature structs out of the chain when the device can't do RT
     if (!m_rayTracingSupported)
         features11.pNext = &features12;
-#endif
     VkPhysicalDeviceFeatures2 deviceFeatures2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &features11};
 
     void* featuresChain = &deviceFeatures2;
@@ -669,29 +750,27 @@ bool RenderBackendImpl<Vulkan>::CreateLogicalDevice()
     if (deviceResult != VK_SUCCESS)
         return false;
 
-#ifdef __APPLE__
     if (!m_rayTracingSupported)
     {
-        DEBUG_LOG_WARN("Ray tracing not supported by this device (MoltenVK); RT passes disabled");
+        DEBUG_LOG_WARN("Ray tracing not supported by this device; RT passes disabled");
         PublishRTSupport(false);
         return true;
     }
-#endif
 
     if (!RayTracing::LoadFunctions(m_logicalDevice))
     {
-        RayTracingDevice::SetCapabilities({});
+        m_rayTracingCaps = {};
         DEBUG_LOG_ERR("Failed to load Vulkan ray tracing function pointers");
         return false;
     }
 
-    RayTracingDevice::SetCapabilities(
-        {.supported = true,
+    m_rayTracingCaps = RayTracingCapabilities{
+        .supported = true,
          .maxGeometryCount = m_rayTracingProperties.accelerationStructure.maxGeometryCount,
          .maxPrimitiveCount = m_rayTracingProperties.accelerationStructure.maxPrimitiveCount,
          .maxInstanceCount = m_rayTracingProperties.accelerationStructure.maxInstanceCount,
          .minScratchAlignment =
-             m_rayTracingProperties.accelerationStructure.minAccelerationStructureScratchOffsetAlignment});
+             m_rayTracingProperties.accelerationStructure.minAccelerationStructureScratchOffsetAlignment};
     PublishRTSupport(true);
     return true;
 }
@@ -796,7 +875,7 @@ bool RenderBackendImpl<Vulkan>::PickPhysicalDevice()
 
     if (m_physicalDevice != VK_NULL_HANDLE)
     {
-        DEBUG_ASSERT(g_pApplicationState != nullptr);
+        DEBUG_ASSERT(g_engine.TryGetApplicationState() != nullptr);
 
         VkPhysicalDeviceProperties deviceProperties;
         vkGetPhysicalDeviceProperties(m_physicalDevice, &deviceProperties);
@@ -804,10 +883,17 @@ bool RenderBackendImpl<Vulkan>::PickPhysicalDevice()
 
         VkPhysicalDeviceMemoryProperties memProperties;
         vkGetPhysicalDeviceMemoryProperties(m_physicalDevice, &memProperties);
-        VkGlobals::SetPhysicalDeviceMemoryProperties(memProperties);
+        m_deviceProperties = deviceProperties;
+        m_memoryProperties = memProperties;
+        m_totalVram = 0;
+        for (u32 i = 0; i < memProperties.memoryHeapCount; ++i)
+        {
+            if (memProperties.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)
+                m_totalVram += memProperties.memoryHeaps[i].size;
+        }
 
         stltype::string deviceName(deviceProperties.deviceName);
-        g_pApplicationState->RegisterUpdateFunction([deviceName](ApplicationState& state)
+        g_engine.GetApplicationState().RegisterUpdateFunction([deviceName](ApplicationState& state)
                                                     { state.renderState.physicalRenderDeviceName = deviceName; });
         return true;
     }
@@ -847,11 +933,7 @@ bool RenderBackendImpl<Vulkan>::IsDeviceSuitable(VkPhysicalDevice device)
     {
         VulkanRayTracingProperties rtProperties{};
         m_rayTracingSupported = QueryRayTracingSupport(device, &rtProperties);
-#ifdef __APPLE__
-        isSuitable = true;
-#else
-        isSuitable = m_rayTracingSupported;
-#endif
+        isSuitable = m_rayTracingSupported || !IsRayTracingRequired();
         if (m_rayTracingSupported)
         {
             m_rayTracingProperties = rtProperties;
@@ -870,7 +952,6 @@ bool RenderBackendImpl<Vulkan>::IsDeviceSuitable(VkPhysicalDevice device)
         return false;
     }
 
-    VkGlobals::SetPhysicalDeviceProperties(deviceProperties);
     return true;
 }
 
@@ -887,12 +968,12 @@ bool RenderBackendImpl<Vulkan>::AreExtensionsSupported(VkPhysicalDevice device)
     // BDA is provided via Vulkan 1.2 features in this renderer; don't require extension variants.
     requiredExtensions.erase(VK_EXT_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
     requiredExtensions.erase(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
-#ifdef __APPLE__
-    // RT extensions are optional on MoltenVK
-    requiredExtensions.erase(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
-    requiredExtensions.erase(VK_KHR_RAY_QUERY_EXTENSION_NAME);
-    requiredExtensions.erase("VK_KHR_ray_tracing_pipeline");
-#endif
+    if (!IsRayTracingRequired())
+    {
+        requiredExtensions.erase(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+        requiredExtensions.erase(VK_KHR_RAY_QUERY_EXTENSION_NAME);
+        requiredExtensions.erase("VK_KHR_ray_tracing_pipeline");
+    }
 
     for (const auto& extension : availableExtensions)
     {
@@ -976,10 +1057,10 @@ bool RenderBackendImpl<Vulkan>::DeviceSupportsDLSSRequirements(VkPhysicalDevice 
 
 void RenderBackendImpl<Vulkan>::PublishDLSSSupport(bool supported) const
 {
-    if (!g_pApplicationState)
+    if (!g_engine.TryGetApplicationState())
         return;
 
-    g_pApplicationState->RegisterUpdateFunction(
+    g_engine.GetApplicationState().RegisterUpdateFunction(
         [supported](ApplicationState& state)
         {
             state.renderState.dlssSupported = supported;
@@ -997,15 +1078,10 @@ void RenderBackendImpl<Vulkan>::PublishDLSSSupport(bool supported) const
 
 void RenderBackendImpl<Vulkan>::PublishRTSupport(bool supported) const
 {
-    if (!supported)
-    {
-        RayTracingDevice::SetCapabilities({});
-    }
-
-    if (!g_pApplicationState)
+    if (!g_engine.TryGetApplicationState())
         return;
 
-    g_pApplicationState->RegisterUpdateFunction(
+    g_engine.GetApplicationState().RegisterUpdateFunction(
         [supported](ApplicationState& state)
         {
             mathstl::setFlag(state.renderState.debugFlags, (u32)DebugFlags::RTEnabled, supported);
@@ -1046,7 +1122,7 @@ VkSurfaceFormatKHR RenderBackendImpl<Vulkan>::ChooseSwapSurfaceFormat(
     DEBUG_ASSERT(!availableFormats.empty());
 
     // Prefer common sRGB SDR swapchain formats with sRGB nonlinear presentation.
-    VkFormat preferredSrgbFormats[] = {Conv(g_swapChainFormat)};
+    VkFormat preferredSrgbFormats[] = {Conv(g_renderer.GetSwapchainFormat())};
 
     for (VkFormat preferredFormat : preferredSrgbFormats)
     {
@@ -1059,17 +1135,18 @@ VkSurfaceFormatKHR RenderBackendImpl<Vulkan>::ChooseSwapSurfaceFormat(
         }
     }
 
-#ifdef __APPLE__
-    // CAMetalLayer only offers BGRA 8-bit formats; switch the engine's swapchain format to match
-    for (const auto& availableFormat : availableFormats)
+    if (Engine::IsMacOS())
     {
-        if (availableFormat.format == VK_FORMAT_B8G8R8A8_UNORM && availableFormat.colorSpace == SWAPCHAINCOLORSPACE)
+        // CAMetalLayer only offers BGRA 8-bit formats; switch the engine's swapchain format to match
+        for (const auto& availableFormat : availableFormats)
         {
-            g_swapChainFormat = TexFormat::B8G8R8A8_UNORM;
-            return availableFormat;
+            if (availableFormat.format == VK_FORMAT_B8G8R8A8_UNORM && availableFormat.colorSpace == SWAPCHAINCOLORSPACE)
+            {
+                g_renderer.SetSwapchainFormat(TexFormat::B8G8R8A8_UNORM);
+                return availableFormat;
+            }
         }
     }
-#endif
 
     DEBUG_LOG_ERR("No supported sRGB swapchain format found on this surface.");
     return availableFormats[0];
@@ -1093,7 +1170,7 @@ DirectX::XMUINT2 RenderBackendImpl<Vulkan>::GetWindowFramebufferExtent() const
 {
     int width = 0;
     int height = 0;
-    glfwGetFramebufferSize(g_pWindowManager->GetWindow(), &width, &height);
+    glfwGetFramebufferSize(g_engine.GetWindowManager().GetWindow(), &width, &height);
     return {static_cast<uint32_t>(stltype::max(width, 1)), static_cast<uint32_t>(stltype::max(height, 1))};
 }
 
@@ -1175,7 +1252,7 @@ bool RenderBackendImpl<Vulkan>::CreateSwapChain(VkSwapchainKHR oldSwapchain)
     m_swapChainImages.resize(imageCount);
     swapchainFunctions.getSwapchainImages(m_logicalDevice, m_swapChain, &imageCount, m_swapChainImages.data());
 
-    FrameGlobals::SetSwapChainFormat(Conv(surfaceFormat.format));
+    g_renderer.SetSwapchainFormat(Conv(surfaceFormat.format));
     m_swapChainExtent = mathstl::Vector2(extent.x, extent.y);
     return true;
 }
@@ -1186,11 +1263,11 @@ void RenderBackendImpl<Vulkan>::CreateSwapChainImages()
     TextureInfoBase info{};
     info.extents = ex;
 
-    g_pTexManager->GetSwapChainTextures().clear();
+    g_renderer.GetTextureManager().GetSwapChainTextures().clear();
 
     for (auto& image : m_swapChainImages)
     {
-        g_pTexManager->CreateSwapchainTextures({Conv(SWAPCHAIN_FORMAT), image}, info);
+        g_renderer.GetTextureManager().CreateSwapchainTextures({Conv(g_renderer.GetSwapchainFormat()), image}, info);
     }
 }
 
@@ -1200,10 +1277,10 @@ bool RenderBackendImpl<Vulkan>::CreateSurface()
     Win32SurfaceCreateInfoKHR surfaceInfo{};
     surfaceInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
     surfaceInfo.hinstance = GetModuleHandle(nullptr);
-    surfaceInfo.hwnd = glfwGetWin32Window(g_pWindowManager->GetWindow());
+    surfaceInfo.hwnd = glfwGetWin32Window(g_engine.GetWindowManager().GetWindow());
     return vkCreateWin32SurfaceKHR(m_instance, &surfaceInfo, nullptr, &m_surface) == VK_SUCCESS;
 #else
-    return glfwCreateWindowSurface(m_instance, g_pWindowManager->GetWindow(), nullptr, &m_surface) == VK_SUCCESS;
+    return glfwCreateWindowSurface(m_instance, g_engine.GetWindowManager().GetWindow(), nullptr, &m_surface) == VK_SUCCESS;
 #endif
 }
 
@@ -1212,22 +1289,144 @@ bool RenderBackendImpl<Vulkan>::CreateGraphicsPipeline()
     return false;
 }
 
-void RenderBackendImpl<Vulkan>::UpdateGlobals() const
+void RenderBackendImpl<Vulkan>::InitImGui(const DescriptorPool& pool)
 {
-    FrameGlobals::SetSwapChainExtent(m_swapChainExtent);
-    VkGlobals::SetMainSwapChain(m_swapChain);
-    VkGlobals::SetPresentQueue(m_presentQueue);
-    VkGlobals::SetGraphicsQueue(m_graphicsQueue);
-    VkGlobals::SetQueueFamilyIndices(m_indices);
-    VkGlobals::SetAllQueues(Queues{m_graphicsQueue, m_presentQueue, m_transferQueue, m_computeQueue});
-    VkGlobals::SetPhysicalDevice(m_physicalDevice);
-    VulkanContext ctx;
-    ctx.Device = m_logicalDevice;
-    ctx.Instance = m_instance;
-    ctx.PhysicalDevice = m_physicalDevice;
-    ctx.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
-    VkGlobals::SetContext(ctx);
+    ImGui_ImplGlfw_InitForVulkan(g_engine.GetWindowManager().GetWindow(), true);
+
+    ImGui_ImplVulkan_InitInfo info{};
+    info.Instance = m_instance;
+    info.PhysicalDevice = m_physicalDevice;
+    info.Device = m_logicalDevice;
+    info.Queue = m_graphicsQueue;
+    info.QueueFamily = m_indices.graphicsFamily.value();
+    info.MinImageCount = FRAMES_IN_FLIGHT;
+    info.ImageCount = FRAMES_IN_FLIGHT;
+    info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+    info.DescriptorPool = pool.GetRef();
+    info.Allocator = VulkanAllocator();
+
+    // Fully dynamic rendering here
+    VkPipelineRenderingCreateInfo imguiRenderingInfo{};
+    imguiRenderingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+    imguiRenderingInfo.colorAttachmentCount = 1;
+    VkFormat swapchainVkFormat = Conv(g_renderer.GetSwapchainFormat());
+    imguiRenderingInfo.pColorAttachmentFormats = &swapchainVkFormat;
+    imguiRenderingInfo.depthAttachmentFormat = VK_FORMAT_UNDEFINED;
+    info.UseDynamicRendering = true;
+    info.PipelineRenderingCreateInfo = imguiRenderingInfo;
+
+    ImGui_ImplVulkan_Init(&info);
 }
+
+void RenderBackendImpl<Vulkan>::ImGuiNewFrame()
+{
+    ImGui_ImplVulkan_NewFrame();
+}
+
+void RenderBackendImpl<Vulkan>::ShutdownImGui()
+{
+    ImGui_ImplVulkan_Shutdown();
+}
+
+bool RenderBackendImpl<Vulkan>::IsDLSSSupported() const
+{
+    return VkVendor::IsDLSSSupported();
+}
+
+bool RenderBackendImpl<Vulkan>::IsDLSSRRSupported() const
+{
+    return VkVendor::IsDLSSRRSupported();
+}
+
+bool RenderBackendImpl<Vulkan>::IsXeSSSupported() const
+{
+    return VkVendor::IsXeSSSupported();
+}
+
+bool RenderBackendImpl<Vulkan>::IsDLSSDebugUIAvailable() const
+{
+    return VkVendor::IsDLSSDebugUIAvailable();
+}
+
+void RenderBackendImpl<Vulkan>::AddVendorUpscalerPasses(RenderPasses::PassManager& passManager)
+{
+    VkVendor::AddUpscalerPasses(passManager);
+}
+
+void RenderBackendImpl<Vulkan>::BeginFrame(u32 frameIdx)
+{
+    VkVendor::BeginFrame(frameIdx);
+}
+
+void RenderBackendImpl<Vulkan>::DrawVendorSettingsUI()
+{
+    VkVendor::DrawSettingsUI();
+}
+
+void RenderBackendImpl<Vulkan>::DrawVendorDiagnosticsUI(const RendererState& state)
+{
+    VkVendor::DrawDiagnosticsUI(state);
+}
+
+void RenderBackendImpl<Vulkan>::PublishSwapchainState() const
+{
+    g_renderer.SetSwapchainExtent(m_swapChainExtent);
+}
+
+// VkBackendAccess.h: device state read straight from the backend instance g_renderer owns
+namespace VkBackend
+{
+VkInstance Instance()
+{
+    return g_renderer.GetBackend().GetInstance();
+}
+VkPhysicalDevice PhysicalDevice()
+{
+    return g_renderer.GetBackend().GetPhysicalDevice();
+}
+VkDevice Device()
+{
+    const VkDevice device = g_renderer.GetBackend().GetLogicalDevice();
+    DEBUG_ASSERT(device != VK_NULL_HANDLE);
+    return device;
+}
+VkQueue GraphicsQueue()
+{
+    return g_renderer.GetBackend().GetGraphicsQueue();
+}
+VkQueue PresentQueue()
+{
+    return g_renderer.GetBackend().GetPresentQueue();
+}
+VulkanQueues Queues()
+{
+    return g_renderer.GetBackend().GetQueues();
+}
+VkSwapchainKHR Swapchain()
+{
+    return g_renderer.GetBackend().GetSwapchain();
+}
+QueueFamilyIndices QueueFamilies()
+{
+    return g_renderer.GetBackend().GetQueueFamilies();
+}
+const VkPhysicalDeviceProperties& DeviceProperties()
+{
+    return g_renderer.GetBackend().GetDeviceProperties();
+}
+const VkPhysicalDeviceMemoryProperties& MemoryProperties()
+{
+    return g_renderer.GetBackend().GetMemoryProperties();
+}
+VkProfiler* Profiler()
+{
+    return static_cast<VkProfiler*>(g_renderer.TryGetProfiler());
+}
+VkTracyGPUManager* TracyManager()
+{
+    return g_renderer.TryGetTracyGPUManager();
+}
+} // namespace VkBackend
 
 QueueFamilyIndices RenderBackendImpl<Vulkan>::FindQueueFamilies(VkPhysicalDevice device)
 {

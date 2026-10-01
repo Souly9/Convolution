@@ -7,7 +7,7 @@
 #include "Core/Rendering/Vulkan/XeSS/XeSSManager.h"
 #include "Core/Rendering/Vulkan/VkTexture.h"
 #include "Core/Rendering/Vulkan/VkTextureManager.h"
-#include "Core/Rendering/Vulkan/VkGlobals.h"
+#include "Core/Rendering/Vulkan/VkBackendAccess.h"
 #include "Core/Rendering/Vulkan/Utils/VkEnumHelpers.h"
 #include "Core/Rendering/Core/AntiAliasing.h"
 #include "Core/Rendering/Core/RenderGraph/RenderGraphBuilder.h"
@@ -73,10 +73,9 @@ void XeSSPass::RenderWithGraph(const MainPassData& data, const FrameRendererCont
     const xess_quality_settings_t xessQuality =
         ResolveXeSSQualityModeForRenderScale(data.renderState.renderResolution, data.renderState.swapchainResolution);
 
-    const auto& context = VkGlobals::GetContext();
-    if (!VulkanXeSS::XeSSManager::EnsureConfigured(context.Instance,
-                                                   context.PhysicalDevice,
-                                                   context.Device,
+    if (!VulkanXeSS::XeSSManager::EnsureConfigured(VkBackend::Instance(),
+                                                   VkBackend::PhysicalDevice(),
+                                                   VkBackend::Device(),
                                                    outputExtents.x,
                                                    outputExtents.y,
                                                    xessQuality))

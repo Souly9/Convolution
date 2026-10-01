@@ -8,9 +8,9 @@ void ECS::System::SDebugDisplay::Init(const SystemInitData& data)
     m_pPassManager = data.pPassManager;
     Material debugMaterial{};
     debugMaterial.baseColor = mathstl::Vector4(1.0f, 0.95f, 0.4f, 1.0f);
-    m_pDebugMaterial = g_pMaterialManager->AllocateMaterial("DebugLightProxy", debugMaterial);
+    m_pDebugMaterial = g_renderer.GetMaterialManager().AllocateMaterial("DebugLightProxy", debugMaterial);
 
-    g_pEventSystem->AddUpdateEventCallback(
+    g_engine.GetEventSystem().AddUpdateEventCallback(
         [this](const UpdateEventData& updateData)
         {
             bool prevState = m_renderDebugMeshes;
@@ -27,31 +27,31 @@ void ECS::System::SDebugDisplay::Process()
     if (!m_stateChanged && !shouldRender)
         return;
 
-    const auto& lightComps = g_pEntityManager->GetComponentVector<Components::Light>();
+    const auto& lightComps = g_engine.GetEntityManager().GetComponentVector<Components::Light>();
 
     for (const auto& lightHolder : lightComps)
     {
         const Entity entity = lightHolder.entity;
-        bool hasDebugComp = g_pEntityManager->HasComponent<Components::DebugRenderComponent>(entity);
+        bool hasDebugComp = g_engine.GetEntityManager().HasComponent<Components::DebugRenderComponent>(entity);
 
         if (shouldRender && !hasDebugComp)
         {
             Components::DebugRenderComponent lightDebugComp;
-            lightDebugComp.pMesh = g_pMeshManager->GetPrimitiveMesh(MeshManager::PrimitiveType::Cube);
+            lightDebugComp.pMesh = g_engine.GetMeshManager().GetPrimitiveMesh(MeshManager::PrimitiveType::Cube);
             lightDebugComp.pMaterial = m_pDebugMaterial;
-            g_pEntityManager->AddComponent(entity, lightDebugComp);
-            g_pEntityManager->MarkComponentDirty({}, ECS::ComponentID<ECS::Components::RenderComponent>::ID);
-            g_pEntityManager->MarkComponentDirty({}, ECS::ComponentID<ECS::Components::Transform>::ID);
+            g_engine.GetEntityManager().AddComponent(entity, lightDebugComp);
+            g_engine.GetEntityManager().MarkComponentDirty({}, ECS::ComponentID<ECS::Components::RenderComponent>::ID);
+            g_engine.GetEntityManager().MarkComponentDirty({}, ECS::ComponentID<ECS::Components::Transform>::ID);
         }
         else if (hasDebugComp)
         {
             auto* pDebugRenderComponent =
-                g_pEntityManager->GetComponentUnsafe<Components::DebugRenderComponent>(entity);
+                g_engine.GetEntityManager().GetComponentUnsafe<Components::DebugRenderComponent>(entity);
             if (pDebugRenderComponent->shouldRender != shouldRender)
             {
                 pDebugRenderComponent->shouldRender = shouldRender;
-                g_pEntityManager->MarkComponentDirty({}, ECS::ComponentID<ECS::Components::RenderComponent>::ID);
-                g_pEntityManager->MarkComponentDirty({}, ECS::ComponentID<ECS::Components::Transform>::ID);
+                g_engine.GetEntityManager().MarkComponentDirty({}, ECS::ComponentID<ECS::Components::RenderComponent>::ID);
+                g_engine.GetEntityManager().MarkComponentDirty({}, ECS::ComponentID<ECS::Components::Transform>::ID);
             }
         }
     }

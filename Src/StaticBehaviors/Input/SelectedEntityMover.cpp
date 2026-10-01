@@ -49,11 +49,11 @@ void InitializeOrientationFromTransform(const ECS::Components::Transform& transf
 
 void SelectedEntityMover::RegisterCallbacks()
 {
-    g_pEventSystem->AddUpdateEventCallback([](const auto& d) { OnUpdate(d); });
-    g_pEventSystem->AddKeyPressEventCallback([](const auto& d) { OnKeyPress(d); });
-    g_pEventSystem->AddKeyHoldEventCallback([](const auto& d) { OnKeyPress({d.key}); });
-    g_pEventSystem->AddScrollEventCallback([](const auto& d) { OnScroll(d); });
-    g_pEventSystem->AddRightMouseClickEventCallback([](const auto& d) { OnRightMouse(d); });
+    g_engine.GetEventSystem().AddUpdateEventCallback([](const auto& d) { OnUpdate(d); });
+    g_engine.GetEventSystem().AddKeyPressEventCallback([](const auto& d) { OnKeyPress(d); });
+    g_engine.GetEventSystem().AddKeyHoldEventCallback([](const auto& d) { OnKeyPress({d.key}); });
+    g_engine.GetEventSystem().AddScrollEventCallback([](const auto& d) { OnScroll(d); });
+    g_engine.GetEventSystem().AddRightMouseClickEventCallback([](const auto& d) { OnRightMouse(d); });
 }
 
 void SelectedEntityMover::OnKeyPress(const KeyPressEventData& data)
@@ -106,7 +106,7 @@ void SelectedEntityMover::OnUpdate(const UpdateEventData& data)
     const bool hasScroll = mathstl::abs(s_scrollVector.x) > FLOAT_TOLERANCE || mathstl::abs(s_scrollVector.y) > FLOAT_TOLERANCE;
     const bool hasRotate = mathstl::abs(s_mouseRotateDelta.x) > FLOAT_TOLERANCE || mathstl::abs(s_mouseRotateDelta.y) > FLOAT_TOLERANCE;
 
-    auto* pCamTransform = g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(data.state.mainCameraEntity);
+    auto* pCamTransform = g_engine.GetEntityManager().GetComponentUnsafe<ECS::Components::Transform>(data.state.mainCameraEntity);
     if (pCamTransform == nullptr)
         return;
 
@@ -147,8 +147,8 @@ void SelectedEntityMover::OnUpdate(const UpdateEventData& data)
 
     if (didUpdateTransform)
     {
-        g_pEntityManager->MarkComponentDirty(data.state.mainCameraEntity, C_ID(Transform));
-        g_pEntityManager->MarkComponentDirty(data.state.mainCameraEntity, C_ID(Camera));
+        g_engine.GetEntityManager().MarkComponentDirty(data.state.mainCameraEntity, C_ID(Transform));
+        g_engine.GetEntityManager().MarkComponentDirty(data.state.mainCameraEntity, C_ID(Camera));
     }
    
     // reset accumulators

@@ -1,6 +1,6 @@
 #pragma once
 #include "Core/Rendering/Core/RenderingTypeDefs.h"
-#include "Core/Rendering/Vulkan/VkGlobals.h"
+#include "Core/Rendering/Vulkan/VkBackendAccess.h"
 #include "Core/Rendering/Vulkan/VkDescriptorSetLayout.h"
 #include "Core/Rendering/Vulkan/Utils/VkEnumHelpers.h"
 
@@ -100,7 +100,7 @@ static inline DescriptorSetLayout CreateOneDescriptorSetForAll(
     }
 
     VkDescriptorSetLayout setLayout;
-    DEBUG_ASSERT(vkCreateDescriptorSetLayout(VK_LOGICAL_DEVICE, &descriptorLayout, VulkanAllocator(), &setLayout) ==
+    DEBUG_ASSERT(vkCreateDescriptorSetLayout(VkBackend::Device(), &descriptorLayout, VulkanAllocator(), &setLayout) ==
                  VK_SUCCESS);
     return {setLayout};
 }

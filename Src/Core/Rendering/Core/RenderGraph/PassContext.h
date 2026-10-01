@@ -30,7 +30,7 @@ namespace PassCtx
         static constexpr u32 setIndex = kBindlessSet;
         static DescriptorSet::Ptr Resolve(const RenderPasses::MainPassData& data, const RenderPasses::FrameRendererContext& ctx)
         {
-            return DescriptorSet::Cast(g_pTexManager->GetBindlessDescriptorSet());
+            return DescriptorSet::Cast(g_renderer.GetTextureManager().GetBindlessDescriptorSet());
         }
         static auto GetLayout() { return DescriptorPresets::Bindless(false); }
     };
@@ -40,7 +40,7 @@ namespace PassCtx
         static constexpr u32 setIndex = kBindlessSet;
         static DescriptorSet::Ptr Resolve(const RenderPasses::MainPassData& data, const RenderPasses::FrameRendererContext& ctx)
         {
-            return DescriptorSet::Cast(g_pTexManager->GetCombinedBindlessDescriptorSet());
+            return DescriptorSet::Cast(g_renderer.GetTextureManager().GetCombinedBindlessDescriptorSet());
         }
         static auto GetLayout() { return DescriptorPresets::Bindless(true); }
     };

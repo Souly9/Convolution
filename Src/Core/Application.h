@@ -4,9 +4,7 @@
 #include "Core/UI/ImGui/ImGuiManager.h"
 #include "Core/UI/ImGui/MainMenuBar.h"
 #include "RenderThread.h"
-#include "Rendering/RenderLayer.h"
 #include "TimeData.h"
-#include "Core/Rendering/Backend/BackendGlobals.h"
 
 class UI;
 class TimeData;
@@ -18,7 +16,7 @@ class PassManager;
 class Application
 {
 public:
-    Application(bool canRender, RenderLayer<RenderAPI>& m_layer);
+    Application();
 
     ~Application();
 
@@ -29,6 +27,12 @@ public:
 
     void WaitForRendererToFinish();
 
+    // False when the render device couldn't be created; Run() must not be called then
+    bool IsInitialized() const
+    {
+        return m_initialized;
+    }
+
 private:
     void CreateMainPSO();
 
@@ -36,7 +40,7 @@ private:
 
     RenderThread m_renderThread;
 
-    ApplicationStateManager m_applicationState{};
+    stltype::unique_ptr<MainMenuBar> m_pMainMenuBar;
 
-    stltype::unique_ptr<BackendProfiler> m_pProfiler;
+    bool m_initialized{false};
 };

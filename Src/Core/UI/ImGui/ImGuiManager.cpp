@@ -1,10 +1,7 @@
 #include "ImGuiManager.h"
 #include "Core/Global/Profiling.h"
-#include "Core/Rendering/Core/Nvidia/StreamlineManager.h"
+#include "Core/Global/GlobalVariables.h"
 #include <imgui/backends/imgui_impl_glfw.h>
-#ifdef USE_VULKAN
-#include <imgui/backends/imgui_impl_vulkan.h>
-#endif
 #include <imgui/imgui.h>
 #include <ImGuizmo/ImGuizmo.h>
 
@@ -14,18 +11,14 @@ bool ImGuiManager::s_streamlineOverlayInputMode = false;
 
 void ImGuiManager::CleanUp()
 {
-#ifdef USE_VULKAN
-    ImGui_ImplVulkan_Shutdown();
-#endif
+    g_renderer.ShutdownImGuiBackend();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
 }
 
 void ImGuiManager::BeginFrame()
 {
-#ifdef USE_VULKAN
-    ImGui_ImplVulkan_NewFrame();
-#endif
+    g_renderer.ImGuiNewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
     ImGuizmo::BeginFrame();
@@ -41,7 +34,7 @@ void ImGuiManager::RenderElements(f32 dt, ApplicationInfos& appInfos)
     ScopedZone("ImGuiManager::RenderElements (All UI Elements)");
 
     const ImGuiIO& io = ImGui::GetIO();
-    if (Nvidia::StreamlineManager::IsDLSSDebugUIAvailable() &&
+    if (g_renderer.IsDLSSDebugUIAvailable() &&
         io.KeyCtrl &&
         io.KeyShift &&
         ImGui::IsKeyPressed(ImGuiKey_Home, false))

@@ -26,13 +26,8 @@ static inline stltype::hash_map<BindlessType, u32> s_BindlessTypeToSlot = {
     {BindlessType::GlobalSampledTextures, s_globalBindlessSampledTextureBindingSlot},
     {BindlessType::GlobalSamplers, s_globalSamplerBindingSlot},
     {BindlessType::GlobalMatrices, s_globalBindlessViewMatricesBufferBindingSlot}};
-static inline stltype::hash_map<BindlessType, u32> s_BindlessTypeToCount = {
-    {BindlessType::GlobalTextures, MAX_BINDLESS_TEXTURES},
-    {BindlessType::GlobalArrayTextures, MAX_BINDLESS_TEXTURES},
-    {BindlessType::GlobalImages, MAX_BINDLESS_TEXTURES},
-    {BindlessType::GlobalSampledTextures, MAX_BINDLESS_TEXTURES},
-    {BindlessType::GlobalSamplers, GLOBAL_SAMPLER_COUNT},
-    {BindlessType::GlobalMatrices, 1}};
+// Descriptor count per bindless binding, owned by the Renderer (g_renderer.GetBindlessCapacity)
+u32 GetCount(BindlessType type);
 
 static inline DescriptorType ToDescriptorType(BindlessType type)
 {

@@ -15,9 +15,7 @@ struct TextureSamplerInfo
     TextureWrapMode wrapW{TextureWrapMode::REPEAT};
     TextureFilter minFilter{TextureFilter::LINEAR};
     TextureFilter magFilter{TextureFilter::LINEAR};
-#ifdef USE_VULKAN
-    VkBorderColor borderColor{VK_BORDER_COLOR_INT_OPAQUE_WHITE};
-#endif
+    TextureBorderColor borderColor{TextureBorderColor::OpaqueWhite};
 };
 
 enum class TextureSemantic : u8

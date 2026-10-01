@@ -67,6 +67,8 @@ public:
     // Stalls main thread through sleep until all requests are finished
     void FinishAllRequests();
     void CancelAllRequests();
+    // Joins the IO thread and pool; safe to call more than once
+    void Stop();
 
     void SubmitIORequest(const IORequest& request);
 

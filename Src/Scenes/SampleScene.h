@@ -17,57 +17,57 @@ public:
     virtual void Load() override
     {
         ECS::Components::RenderComponent comp{};
-        auto meshEnt = g_pEntityManager->CreateEntity(mathstl::Vector3(4, 0, 0));
-        comp.pMesh = g_pMeshManager->GetPrimitiveMesh(MeshManager::PrimitiveType::Cube);
-        comp.pMaterial = g_pMaterialManager->AllocateMaterial("DefaultConvolutionMaterial", Material{});
+        auto meshEnt = g_engine.GetEntityManager().CreateEntity(mathstl::Vector3(4, 0, 0));
+        comp.pMesh = g_engine.GetMeshManager().GetPrimitiveMesh(MeshManager::PrimitiveType::Cube);
+        comp.pMaterial = g_renderer.GetMaterialManager().AllocateMaterial("DefaultConvolutionMaterial", Material{});
         comp.pMaterial->baseColor = mathstl::Vector4{1, 1, 1, 1};
-        g_pEntityManager->AddComponent(meshEnt, comp);
+        g_engine.GetEntityManager().AddComponent(meshEnt, comp);
 
-        auto parentEnt = g_pEntityManager->CreateEntity(mathstl::Vector3(0, 1, 0));
-        comp.pMesh = g_pMeshManager->GetPrimitiveMesh(MeshManager::PrimitiveType::Cube);
-        g_pEntityManager->AddComponent(parentEnt, comp);
-        // g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(meshEnt)->parent
+        auto parentEnt = g_engine.GetEntityManager().CreateEntity(mathstl::Vector3(0, 1, 0));
+        comp.pMesh = g_engine.GetMeshManager().GetPrimitiveMesh(MeshManager::PrimitiveType::Cube);
+        g_engine.GetEntityManager().AddComponent(parentEnt, comp);
+        // g_engine.GetEntityManager().GetComponentUnsafe<ECS::Components::Transform>(meshEnt)->parent
         // = parentEnt;
 
-        auto camEnt = g_pEntityManager->CreateEntity(mathstl::Vector3(4, 0, 12));
-        auto* pTransform = g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(camEnt);
+        auto camEnt = g_engine.GetEntityManager().CreateEntity(mathstl::Vector3(4, 0, 12));
+        auto* pTransform = g_engine.GetEntityManager().GetComponentUnsafe<ECS::Components::Transform>(camEnt);
         pTransform->rotation.y = 0;
         ECS::Components::Camera compV{};
-        g_pEntityManager->AddComponent(camEnt, compV);
+        g_engine.GetEntityManager().AddComponent(camEnt, compV);
 
         {
-            auto lightEnt = g_pEntityManager->CreateEntity(mathstl::Vector3(0, 4, 0));
+            auto lightEnt = g_engine.GetEntityManager().CreateEntity(mathstl::Vector3(0, 4, 0));
             ECS::Components::Light compL{};
             compL.color = mathstl::Vector4(1, 1, 0, 1);
-            g_pEntityManager->AddComponent(lightEnt, compL);
+            g_engine.GetEntityManager().AddComponent(lightEnt, compL);
         }
         {
-            auto lightEnt = g_pEntityManager->CreateEntity(mathstl::Vector3(-1, -1, 0));
+            auto lightEnt = g_engine.GetEntityManager().CreateEntity(mathstl::Vector3(-1, -1, 0));
             ECS::Components::Light compL{};
             compL.color = mathstl::Vector4(1, 1, 0, 1);
-            g_pEntityManager->AddComponent(lightEnt, compL);
+            g_engine.GetEntityManager().AddComponent(lightEnt, compL);
         }
         {
-            auto lightEnt = g_pEntityManager->CreateEntity(mathstl::Vector3(1, -1, -1));
+            auto lightEnt = g_engine.GetEntityManager().CreateEntity(mathstl::Vector3(1, -1, -1));
             ECS::Components::Light compL{};
             compL.color = mathstl::Vector4(1, 1, 0, 1);
-            g_pEntityManager->AddComponent(lightEnt, compL);
+            g_engine.GetEntityManager().AddComponent(lightEnt, compL);
         }
-        auto dirLightEnt = g_pEntityManager->CreateEntity(mathstl::Vector3(11, 50, 0));
+        auto dirLightEnt = g_engine.GetEntityManager().CreateEntity(mathstl::Vector3(11, 50, 0));
         ECS::Components::Light dirLight{.direction = mathstl::Vector3(-0.5f, -1.0f, -0.5f),
                                         .color = mathstl::Vector4(1.0f, 1.0f, 0.9f, 1.0f),
                                         .type = ECS::Components::LightType::Directional,
                                         .isShadowCaster = true};
-        g_pEntityManager->AddComponent(dirLightEnt, dirLight);
-        g_pApplicationState->RegisterUpdateFunction(
+        g_engine.GetEntityManager().AddComponent(dirLightEnt, dirLight);
+        g_engine.GetApplicationState().RegisterUpdateFunction(
             [](ApplicationState& state)
             {
-                g_pEntityManager->MarkComponentDirty({}, ECS::ComponentID<ECS::Components::Transform>::ID);
-                g_pEntityManager->MarkComponentDirty({}, ECS::ComponentID<ECS::Components::RenderComponent>::ID);
-                g_pEntityManager->MarkComponentDirty({}, ECS::ComponentID<ECS::Components::Light>::ID);
-                g_pMaterialManager->MarkMaterialsDirty();
+                g_engine.GetEntityManager().MarkComponentDirty({}, ECS::ComponentID<ECS::Components::Transform>::ID);
+                g_engine.GetEntityManager().MarkComponentDirty({}, ECS::ComponentID<ECS::Components::RenderComponent>::ID);
+                g_engine.GetEntityManager().MarkComponentDirty({}, ECS::ComponentID<ECS::Components::Light>::ID);
+                g_renderer.GetMaterialManager().MarkMaterialsDirty();
             });
-        g_pApplicationState->RegisterUpdateFunction(
+        g_engine.GetApplicationState().RegisterUpdateFunction(
             [camEnt](ApplicationState& state)
             {
                 state.selectedEntities.push_back(camEnt);

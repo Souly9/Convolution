@@ -135,6 +135,14 @@ public:
     const stltype::vector<LoadedTexInfo>& GetLoadedTextureCache() const { return m_loadedTextureCache; }
     const stltype::vector<LoadedTexInfo>& GetPersistentLoadedTextureCache() const { return m_persistentLoadedTextureCache; }
 
+    // Texture views and ImGui registration, API-specific so shared code stays agnostic
+    TextureViewHandle CreateDepthLayerView(const Texture& texture, TexFormat format, u32 layer);
+    void DestroyTextureView(TextureViewHandle view);
+    bool CanRegisterImGuiTexture(const Texture& texture) const;
+    u64 RegisterImGuiTexture(const Texture& texture);
+    u64 RegisterImGuiTextureView(TextureViewHandle view, const Texture& samplerSource);
+    void UnregisterImGuiTexture(u64 id);
+
     static void SetLayoutBarrierMasks(ImageLayoutTransitionCmd& transitionCmd,
                                       const ImageLayout oldLayout,
                                       const ImageLayout newLayout);
@@ -188,7 +196,7 @@ protected:
 
     stltype::atomic<u32> m_baseHandle{0};
     u32 m_lastBindlessTextureWriteIdx{0};
-    u32 m_lastPersistentBindlessTextureWriteIdx{14000}; // Around 15% of 16536 reserved for persistent
+    u32 m_lastPersistentBindlessTextureWriteIdx{PERSISTENT_BINDLESS_REGION_START};
     
     stltype::atomic<bool> m_processingRequest{false};
 };

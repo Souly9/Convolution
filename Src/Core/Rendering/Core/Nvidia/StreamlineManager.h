@@ -1,25 +1,6 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
 
-#ifndef USE_VULKAN
-// Streamline/DLSS is Vulkan-only; this stub keeps shared code compiling on other backends
-namespace Nvidia
-{
-class StreamlineManager
-{
-public:
-    static bool EarlyInit() { return false; }
-    static bool Init() { return false; }
-    static void Shutdown() {}
-    static void AcquireNewFrameToken(u32 frameIdx) {}
-    static bool IsAvailable() { return false; }
-    static bool IsEarlyInitialized() { return false; }
-    static bool IsDLSSSupported() { return false; }
-    static bool IsDLSSRRSupported() { return false; }
-    static bool IsDLSSDebugUIAvailable() { return false; }
-};
-} // namespace Nvidia
-#else
 #ifndef VK_USE_PLATFORM_WIN32_KHR
 #define VK_USE_PLATFORM_WIN32_KHR
 #endif
@@ -181,4 +162,3 @@ private:
     static bool s_initialized;
 };
 } // namespace Nvidia
-#endif // USE_VULKAN

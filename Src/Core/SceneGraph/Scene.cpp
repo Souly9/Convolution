@@ -13,7 +13,7 @@ Scene::Scene() : Scene("Empty Scene")
 
 Scene::Scene(const stltype::string& name) : m_name{name}
 {
-    // g_pEntityManager->CreateEntity(mathstl::Vector3(0,0,0), "Root");
+    // g_engine.GetEntityManager().CreateEntity(mathstl::Vector3(0,0,0), "Root");
 }
 
 Scene::~Scene()
@@ -23,25 +23,25 @@ Scene::~Scene()
 
 void Scene::Unload()
 {
-    g_pEntityManager->UnloadAllEntities();
+    g_engine.GetEntityManager().UnloadAllEntities();
 }
 
 void Scene::FinishLoad(SceneNode root)
 {
     m_sceneRoot = root;
     m_isLoaded = true;
-    g_pApplicationState->RegisterUpdateFunction(
+    g_engine.GetApplicationState().RegisterUpdateFunction(
         [](ApplicationState&)
         {
-            g_pEventSystem->OnSceneLoaded({});
+            g_engine.GetEventSystem().OnSceneLoaded({});
         });
-    g_pApplicationState->RegisterUpdateFunction(
+    g_engine.GetApplicationState().RegisterUpdateFunction(
         [](ApplicationState& state)
         {
-            g_pEntityManager->MarkComponentDirty({}, ECS::ComponentID<ECS::Components::Transform>::ID);
-            g_pEntityManager->MarkComponentDirty({}, ECS::ComponentID<ECS::Components::RenderComponent>::ID);
-            g_pEntityManager->MarkComponentDirty({}, ECS::ComponentID<ECS::Components::Light>::ID);
-            g_pMaterialManager->MarkMaterialsDirty();
+            g_engine.GetEntityManager().MarkComponentDirty({}, ECS::ComponentID<ECS::Components::Transform>::ID);
+            g_engine.GetEntityManager().MarkComponentDirty({}, ECS::ComponentID<ECS::Components::RenderComponent>::ID);
+            g_engine.GetEntityManager().MarkComponentDirty({}, ECS::ComponentID<ECS::Components::Light>::ID);
+            g_renderer.GetMaterialManager().MarkMaterialsDirty();
         });
 }
 
@@ -87,7 +87,7 @@ void Scene::CreateTestLights(const mathstl::Vector3& centerPos, u32 gridSize, f3
                                           centerPos.y + y * spacing - offsetY + jitterY,
                                           centerPos.z + z * spacing - offsetZ + jitterZ);
 
-                auto lightEntity = g_pEntityManager->CreateEntity(lightPos);
+                auto lightEntity = g_engine.GetEntityManager().CreateEntity(lightPos);
 
                 ECS::Components::Light lightComp{};
                 lightComp.type = ECS::Components::LightType::Point;
@@ -106,11 +106,11 @@ void Scene::CreateTestLights(const mathstl::Vector3& centerPos, u32 gridSize, f3
 
                 lightComp.color = mathstl::Vector4(r, g, b, 1.0f);
 
-                g_pEntityManager->AddComponent(lightEntity, lightComp);
+                g_engine.GetEntityManager().AddComponent(lightEntity, lightComp);
 
                 if (parent.IsValid())
                 {
-                    auto* pTrans = g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(lightEntity);
+                    auto* pTrans = g_engine.GetEntityManager().GetComponentUnsafe<ECS::Components::Transform>(lightEntity);
                     pTrans->parent = parent;
                 }
 

@@ -101,6 +101,14 @@ public:
         return m_persistentLoadedTextureCache;
     }
 
+    // Texture views and ImGui registration, API-specific so shared code stays agnostic
+    TextureViewHandle CreateDepthLayerView(const Texture& texture, TexFormat format, u32 layer);
+    void DestroyTextureView(TextureViewHandle view);
+    bool CanRegisterImGuiTexture(const Texture& texture) const;
+    u64 RegisterImGuiTexture(const Texture& texture);
+    u64 RegisterImGuiTextureView(TextureViewHandle view, const Texture& samplerSource);
+    void UnregisterImGuiTexture(u64 id);
+
     // Metal tracks hazards itself, so layout transitions only keep the bookkeeping
     static void SetLayoutBarrierMasks(ImageLayoutTransitionCmd& transitionCmd,
                                       const ImageLayout oldLayout,

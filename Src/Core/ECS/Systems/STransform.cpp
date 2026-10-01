@@ -21,7 +21,7 @@ void ECS::System::STransform::RebuildHierarchy(
         if (holder.component.HasParent())
         {
             Components::Transform* pParent =
-                g_pEntityManager->GetComponentUnsafe<Components::Transform>(holder.component.parent);
+                g_engine.GetEntityManager().GetComponentUnsafe<Components::Transform>(holder.component.parent);
             if (pParent)
                 pParent->children.push_back(holder.entity);
         }
@@ -31,7 +31,7 @@ void ECS::System::STransform::RebuildHierarchy(
 void ECS::System::STransform::UpdateNode(Entity entity, const mathstl::Matrix& parentWorld, bool dirty)
 {
     ECS::Components::Transform* pTransform =
-        g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(entity);
+        g_engine.GetEntityManager().GetComponentUnsafe<ECS::Components::Transform>(entity);
     dirty = dirty | pTransform->isDirty;
 
     if (dirty)
@@ -49,7 +49,7 @@ void ECS::System::STransform::UpdateNode(Entity entity, const mathstl::Matrix& p
             sqrtf(world._31 * world._31 + world._32 * world._32 + world._33 * world._33));
 
         m_cachedDataMap.push_back({entity.ID, world});
-        g_pEntityManager->NotifyTransformUpdated(entity);
+        g_engine.GetEntityManager().NotifyTransformUpdated(entity);
         pTransform->isDirty = false;
     }
 
@@ -60,7 +60,7 @@ void ECS::System::STransform::UpdateNode(Entity entity, const mathstl::Matrix& p
 void ECS::System::STransform::Process()
 {
     ScopedZone("Transform System::Process");
-    auto& transComps = g_pEntityManager->GetComponentVector<Components::Transform>();
+    auto& transComps = g_engine.GetEntityManager().GetComponentVector<Components::Transform>();
 
     m_cachedDataMap.clear();
 
@@ -73,8 +73,8 @@ void ECS::System::STransform::Process()
     {
         ScopedZone("Update Transforms");
 
-        const auto& dirtyEntities = g_pEntityManager->GetDirtyEntities(C_ID(Transform));
-        const bool allDirty = g_pEntityManager->IsAllTransformsDirty() || dirtyEntities.empty();
+        const auto& dirtyEntities = g_engine.GetEntityManager().GetDirtyEntities(C_ID(Transform));
+        const bool allDirty = g_engine.GetEntityManager().IsAllTransformsDirty() || dirtyEntities.empty();
 
         if (allDirty)
         {
@@ -88,7 +88,7 @@ void ECS::System::STransform::Process()
         {
             for (const Entity& entity : dirtyEntities)
             {
-                auto* pTransform = g_pEntityManager->GetComponentUnsafe<Components::Transform>(entity);
+                auto* pTransform = g_engine.GetEntityManager().GetComponentUnsafe<Components::Transform>(entity);
                 if (!pTransform)
                     continue;
 
@@ -97,7 +97,7 @@ void ECS::System::STransform::Process()
                 mathstl::Matrix parentWorld = mathstl::Matrix::Identity;
                 if (pTransform->HasParent())
                 {
-                    auto* pParent = g_pEntityManager->GetComponentUnsafe<Components::Transform>(pTransform->parent);
+                    auto* pParent = g_engine.GetEntityManager().GetComponentUnsafe<Components::Transform>(pTransform->parent);
                     parentWorld = pParent->worldModelMatrix;
                 }
 

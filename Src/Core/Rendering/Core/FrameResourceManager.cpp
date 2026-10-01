@@ -28,7 +28,7 @@ void FrameResourceManager::BuildSharedDataForView(const RenderView& mainView,
                                                   UBO::SharedDataUBO& ubo) const
 {
     ScopedZone("BuildSharedDataForView");
-    const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+    const auto& renderState = g_engine.GetApplicationState().GetCurrentApplicationState().renderState;
     const AA::FrameConfig& aa = AA::Current();
     using namespace mathstl;
 
@@ -103,9 +103,9 @@ void FrameResourceManager::Init()
     m_cachedPrevTransformSSBO.resize(MAX_ENTITIES);
     m_cachedSceneAABBs.resize(MAX_ENTITIES);
 
-    m_skyboxTextureHandle = g_pTexManager->SubmitAsyncTextureCreation(
+    m_skyboxTextureHandle = g_renderer.GetTextureManager().SubmitAsyncTextureCreation(
         {"../../Resources/Skyboxes/mpumalanga_veld_puresky_4k.hdr", false, TextureSemantic::Auto, true});
-    m_skyboxBindlessHandle = g_pTexManager->MakeTextureBindless(m_skyboxTextureHandle, true);
+    m_skyboxBindlessHandle = g_renderer.GetTextureManager().MakeTextureBindless(m_skyboxTextureHandle, true);
 
 }
 
@@ -202,7 +202,7 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
                                                          u32 currentSwapChainIdx,
                                                          PassManager* pPassManager)
 {
-    const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+    const auto& renderState = g_engine.GetApplicationState().GetCurrentApplicationState().renderState;
     const auto& passManagerRenderState = pPassManager->GetRenderState();
     // Recreate shadow maps
     {
@@ -229,14 +229,14 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
         ctx.tileArraySSBODescriptor->WriteSSBOUpdate(m_lightClusterSSBO);
     }
 
-    if (g_pMaterialManager->IsBufferDirty())
+    if (g_renderer.GetMaterialManager().IsBufferDirty())
     {
-        g_pMaterialManager->RebuildBufferData();
-        pPassManager->GetResourceManager().UpdateGlobalMaterialBuffer(g_pMaterialManager->GetMaterialBuffer(),
+        g_renderer.GetMaterialManager().RebuildBufferData();
+        pPassManager->GetResourceManager().UpdateGlobalMaterialBuffer(g_renderer.GetMaterialManager().GetMaterialBuffer(),
                                                                       currentSwapChainIdx);
         m_needsToPropagateMainDataUpdate = true;
         m_frameIdxToPropagate = frameIdx;
-        g_pMaterialManager->MarkBufferUploaded();
+        g_renderer.GetMaterialManager().MarkBufferUploaded();
     }
 
     mathstl::Matrix frameViewProj{};
@@ -303,7 +303,7 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
         auto& passData = pPassManager->GetMainPassData(currentSwapChainIdx);
         passData.pViewData = &m_currentSharedDataUBO;
 
-        g_pApplicationState->RegisterUpdateFunction(
+        g_engine.GetApplicationState().RegisterUpdateFunction(
             [viewInv = m_currentSharedDataUBO.viewInverse,
              projInv = m_currentSharedDataUBO.projectionInverse,
              viewProj,
@@ -650,7 +650,7 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
         m_needsToPropagateMainDataUpdate = true;
         m_frameIdxToPropagate = currentSwapChainIdx;
         m_dataToBePreProcessed.Clear();
-        g_pQueueHandler->DispatchAllRequests();
+        g_renderer.GetQueueHandler().DispatchAllRequests();
     }
 
     m_frameRendererContexts[currentSwapChainIdx].numLights = m_lightCluster->numLights;
@@ -749,7 +749,7 @@ void FrameResourceManager::DispatchSSBOTransfer(void* data,
     transfer.pSSBO = pSSBO;
     transfer.dstBinding = dstBinding;
     transfer.frameIdx = frameIdx;
-    g_pQueueHandler->SubmitTransferCommandAsync(transfer);
+    g_renderer.GetQueueHandler().SubmitTransferCommandAsync(transfer);
 }
 
 void FrameResourceManager::ClearGeometryCaches()

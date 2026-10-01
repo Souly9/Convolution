@@ -72,7 +72,7 @@ bool ShaderManager::ReadAllSourceShaders()
                           .requestType = RequestType::Bytes
 
             };
-            g_pFileReader->SubmitIORequest(req);
+            g_engine.GetFileReader().SubmitIORequest(req);
         }
     }
     return CompileAllShaders();

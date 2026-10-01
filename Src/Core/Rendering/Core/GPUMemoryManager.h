@@ -11,12 +11,11 @@ enum class Allocator
     Convolution
 };
 
+// Declared only; backends specialize it
 IMPLEMENT_GRAPHICS_API
-class GPUMemManager
-{
-};
+class GPUMemManager;
 
-using GPUMemoryManager = GPUMemManager<RenderAPI>;
+#include "Core/Rendering/Backend/BackendForwardDecls.h"
 
 #ifdef USE_VULKAN
 #include "Core/Rendering/Vulkan/VkGPUMemoryManager.h"

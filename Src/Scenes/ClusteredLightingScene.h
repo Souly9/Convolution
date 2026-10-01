@@ -21,42 +21,42 @@ public:
     virtual void Load() override
     {
         // 0. Create Scene Hierarchy Roots
-        auto rootEnt = g_pEntityManager->CreateEntity(mathstl::Vector3(0, 0, 0), "SceneRoot");
-        auto cubesRootEnt = g_pEntityManager->CreateEntity(mathstl::Vector3(0, 0, 0), "CubesRoot");
-        auto lightsRootEnt = g_pEntityManager->CreateEntity(mathstl::Vector3(0, 0, 0), "LightsRoot");
-        auto envRootEnt = g_pEntityManager->CreateEntity(mathstl::Vector3(0, 0, 0), "EnvironmentRoot");
+        auto rootEnt = g_engine.GetEntityManager().CreateEntity(mathstl::Vector3(0, 0, 0), "SceneRoot");
+        auto cubesRootEnt = g_engine.GetEntityManager().CreateEntity(mathstl::Vector3(0, 0, 0), "CubesRoot");
+        auto lightsRootEnt = g_engine.GetEntityManager().CreateEntity(mathstl::Vector3(0, 0, 0), "LightsRoot");
+        auto envRootEnt = g_engine.GetEntityManager().CreateEntity(mathstl::Vector3(0, 0, 0), "EnvironmentRoot");
 
         // Hierarchy Setup
-        g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(rootEnt);
+        g_engine.GetEntityManager().GetComponentUnsafe<ECS::Components::Transform>(rootEnt);
         
         // Parent sub-roots to main root
         {
-            auto* pTrans = g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(cubesRootEnt);
+            auto* pTrans = g_engine.GetEntityManager().GetComponentUnsafe<ECS::Components::Transform>(cubesRootEnt);
             pTrans->parent = rootEnt;
         }
         {
-            auto* pTrans = g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(lightsRootEnt);
+            auto* pTrans = g_engine.GetEntityManager().GetComponentUnsafe<ECS::Components::Transform>(lightsRootEnt);
             pTrans->parent = rootEnt;
         }
         {
-            auto* pTrans = g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(envRootEnt);
+            auto* pTrans = g_engine.GetEntityManager().GetComponentUnsafe<ECS::Components::Transform>(envRootEnt);
             pTrans->parent = rootEnt;
         }
 
         // 1. Setup Camera
         // Create the camera entity explicitly
-        auto cameraEntity = g_pEntityManager->CreateEntity(mathstl::Vector3(0.0f, 5.0f, 20.0f), "MainCamera");
+        auto cameraEntity = g_engine.GetEntityManager().CreateEntity(mathstl::Vector3(0.0f, 5.0f, 20.0f), "MainCamera");
         ECS::Components::Camera camComp{};
         camComp.isMainCam = true;
-        g_pEntityManager->AddComponent(cameraEntity, camComp);
+        g_engine.GetEntityManager().AddComponent(cameraEntity, camComp);
 
         // Parent Camera to Root
         {
-            auto* pTrans = g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(cameraEntity);
+            auto* pTrans = g_engine.GetEntityManager().GetComponentUnsafe<ECS::Components::Transform>(cameraEntity);
             pTrans->parent = rootEnt;
         }
 
-        g_pApplicationState->RegisterUpdateFunction(
+        g_engine.GetApplicationState().RegisterUpdateFunction(
             [cameraEntity](ApplicationState& state)
             {
                 state.mainCameraEntity = cameraEntity;
@@ -65,9 +65,9 @@ public:
             });
 
         // 2. Create Cube Grid
-        Mesh* pCubeMesh = g_pMeshManager->GetPrimitiveMesh(MeshManager::PrimitiveType::Cube);
+        Mesh* pCubeMesh = g_engine.GetMeshManager().GetPrimitiveMesh(MeshManager::PrimitiveType::Cube);
         Material defaultMat{};
-        Material* pDefaultMaterial = g_pMaterialManager->AllocateMaterial("ClusteredLighting_Default", defaultMat);
+        Material* pDefaultMaterial = g_renderer.GetMaterialManager().AllocateMaterial("ClusteredLighting_Default", defaultMat);
 
         u32 gridDim = 5;
         f32 spacing = 4.0f;
@@ -83,20 +83,20 @@ public:
                                          y * spacing - offset + 5.0f, // Lift up a bit
                                          z * spacing - offset);
 
-                    auto ent = g_pEntityManager->CreateEntity(pos, "DebugCube");
+                    auto ent = g_engine.GetEntityManager().CreateEntity(pos, "DebugCube");
 
                     ECS::Components::RenderComponent renderComp{};
                     renderComp.pMesh = pCubeMesh;
                     renderComp.pMaterial = pDefaultMaterial;
 
-                    g_pEntityManager->AddComponent(ent, renderComp);
+                    g_engine.GetEntityManager().AddComponent(ent, renderComp);
 
                     // Add random rotation to make it interesting
-                    // g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(ent)->rotation =
+                    // g_engine.GetEntityManager().GetComponentUnsafe<ECS::Components::Transform>(ent)->rotation =
                     //     mathstl::Vector3(x * 15.0f, y * 15.0f, z * 15.0f);
                     
                     // Parent to CubesRoot
-                    auto* pTrans = g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(ent);
+                    auto* pTrans = g_engine.GetEntityManager().GetComponentUnsafe<ECS::Components::Transform>(ent);
                     pTrans->parent = cubesRootEnt;
                 }
             }
@@ -104,14 +104,14 @@ public:
 
         // 2.1 Create Floor Plane
         {
-            auto floorEnt = g_pEntityManager->CreateEntity(mathstl::Vector3(0.0f, -6.0f, 0.0f), "Floor");
+            auto floorEnt = g_engine.GetEntityManager().CreateEntity(mathstl::Vector3(0.0f, -6.0f, 0.0f), "Floor");
             ECS::Components::RenderComponent renderComp{};
             renderComp.pMesh = pCubeMesh; // Reuse cube mesh
             renderComp.pMaterial = pDefaultMaterial;
-            g_pEntityManager->AddComponent(floorEnt, renderComp);
+            g_engine.GetEntityManager().AddComponent(floorEnt, renderComp);
             
             // Scale it to be a large plane (100x1x100)
-            auto* pTransform = g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(floorEnt);
+            auto* pTransform = g_engine.GetEntityManager().GetComponentUnsafe<ECS::Components::Transform>(floorEnt);
             if (pTransform)
             {
                pTransform->scale = mathstl::Vector3(100.0f, 1.0f, 100.0f);
@@ -123,16 +123,16 @@ public:
 
         // 3. Create Lights
         // Create a dense grid of lights
-        auto dirLightEnt = g_pEntityManager->CreateEntity(mathstl::Vector3(2, 17, 1), "DirectionalLight");
+        auto dirLightEnt = g_engine.GetEntityManager().CreateEntity(mathstl::Vector3(2, 17, 1), "DirectionalLight");
         ECS::Components::Light dirLight{.direction = mathstl::Vector3(10, -2, -10),
                                         .color = mathstl::Vector4(1.0f, 1.0f, 0.9f, 1.0f),
                                         .type = ECS::Components::LightType::Directional,
                                         .isShadowCaster = true};
-        g_pEntityManager->AddComponent(dirLightEnt, dirLight);
+        g_engine.GetEntityManager().AddComponent(dirLightEnt, dirLight);
         
         // Parent DirLight to LightsRoot
         {
-             g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(dirLightEnt);
+             g_engine.GetEntityManager().GetComponentUnsafe<ECS::Components::Transform>(dirLightEnt);
             // pTrans->parent = lightsRootEnt;
         }
 

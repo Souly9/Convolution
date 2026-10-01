@@ -1,6 +1,6 @@
 #include "VkTextureManager.h"
+#include "Core/Rendering/Core/BindlessTexturesDefines.h"
 #include "BackendDefines.h"
-#include "Core/Global/FrameGlobals.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/IO/FileReader.h"
 #include "Core/Rendering/Core/MaterialManager.h"
@@ -10,12 +10,13 @@
 #include "Utils/DescriptorSetLayoutConverters.h"
 #include "Utils/VkEnumHelpers.h"
 #include "VkBuffer.h"
-#include "VkGlobals.h"
+#include "VkBackendAccess.h"
 
 #include "Core/Rendering/Core/Utils/DeleteQueue.h"
 #include <cctype>
 #include <tinyddsloader.h>
 #include <vulkan/vulkan.h>
+#include <imgui/backends/imgui_impl_vulkan.h>
 
 
 static constexpr u32 MAX_CACHE_BUFFERS = 512;
@@ -91,7 +92,7 @@ void VkTextureManager::Init()
 
     // Reserve slot 0 for placeholder / default sampling paths.
     m_lastBindlessTextureWriteIdx = 1;
-    m_lastPersistentBindlessTextureWriteIdx = 14000;
+    m_lastPersistentBindlessTextureWriteIdx = PERSISTENT_BINDLESS_REGION_START;
 }
 
 void VkTextureManager::SetPlaceholder(TextureHandle handle)
@@ -102,7 +103,7 @@ void VkTextureManager::SetPlaceholder(TextureHandle handle)
         return;
     }
 
-    for (u32 i = 0; i < MAX_BINDLESS_TEXTURES; ++i)
+    for (u32 i = 0; i < g_renderer.GetBindlessCapacity(Bindless::BindlessType::GlobalTextures); ++i)
     {
         WriteBindlessTexture(pTex, i);
     }
@@ -238,7 +239,7 @@ void VkTextureManager::PostRender()
 
         if (didWrite)
         {
-            g_pMaterialManager->MarkMaterialsDirty();
+            g_renderer.GetMaterialManager().MarkMaterialsDirty();
         }
     }
 }
@@ -466,7 +467,7 @@ TextureHandle VkTextureManager::SubmitAsyncTextureCreation(const TexCreateInfo& 
             m_loadedTextureCache.emplace_back(LoadedTexInfo{filePath, semantic, handle});
     }
 
-    g_pFileReader->SubmitIORequest(req);
+    g_engine.GetFileReader().SubmitIORequest(req);
     return handle;
 }
 
@@ -493,8 +494,8 @@ void VkTextureManager::CreateSamplerForTexture(TextureVulkan* pTex, bool useMipM
     samplerInfo.addressModeV = Conv(info.wrapV);
     samplerInfo.addressModeW = Conv(info.wrapW);
     samplerInfo.anisotropyEnable = VK_TRUE;
-    samplerInfo.maxAnisotropy = VkGlobals::GetPhysicalDeviceProperties().limits.maxSamplerAnisotropy;
-    samplerInfo.borderColor = (VkBorderColor)info.borderColor;
+    samplerInfo.maxAnisotropy = g_renderer.GetMaxSamplerAnisotropy();
+    samplerInfo.borderColor = Conv(info.borderColor);
     samplerInfo.unnormalizedCoordinates = VK_FALSE;
     samplerInfo.compareEnable = VK_FALSE;
     samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
@@ -515,7 +516,7 @@ void VkTextureManager::CreateSamplerForTexture(TextureVulkan* pTex, bool useMipM
     }
 
     VkSampler sampler = VK_NULL_HANDLE;
-    DEBUG_ASSERT(vkCreateSampler(VK_LOGICAL_DEVICE, &samplerInfo, VulkanAllocator(), &sampler) == VK_SUCCESS);
+    DEBUG_ASSERT(vkCreateSampler(VkBackend::Device(), &samplerInfo, VulkanAllocator(), &sampler) == VK_SUCCESS);
 
     pTex->SetSampler(sampler);
 }
@@ -539,10 +540,10 @@ void VkTextureManager::CreateImageViewForTexture(TextureVulkan* pTex, bool useMi
 
     // Verify image handle validity with the driver
     VkMemoryRequirements memReqs{};
-    vkGetImageMemoryRequirements(VK_LOGICAL_DEVICE, createInfo.image, &memReqs);
+    vkGetImageMemoryRequirements(VkBackend::Device(), createInfo.image, &memReqs);
 
     VkImageView imageView = VK_NULL_HANDLE;
-    DEBUG_ASSERT(vkCreateImageView(VK_LOGICAL_DEVICE, &createInfo, VulkanAllocator(), &imageView) == VK_SUCCESS);
+    DEBUG_ASSERT(vkCreateImageView(VkBackend::Device(), &createInfo, VulkanAllocator(), &imageView) == VK_SUCCESS);
     pTex->SetImageView(imageView);
 
     if (pTex->GetInfo().extents.z > 1)
@@ -551,7 +552,7 @@ void VkTextureManager::CreateImageViewForTexture(TextureVulkan* pTex, bool useMi
         createInfo2D.viewType = VK_IMAGE_VIEW_TYPE_2D;
         createInfo2D.subresourceRange.layerCount = 1;
         VkImageView imageView2D = VK_NULL_HANDLE;
-        if (vkCreateImageView(VK_LOGICAL_DEVICE, &createInfo2D, VulkanAllocator(), &imageView2D) == VK_SUCCESS)
+        if (vkCreateImageView(VkBackend::Device(), &createInfo2D, VulkanAllocator(), &imageView2D) == VK_SUCCESS)
         {
             pTex->SetImageView2D(imageView2D);
         }
@@ -636,14 +637,14 @@ void VkTextureManager::DispatchAsyncOps(stltype::string cbufferName)
 
         cmdBufferRequest.pBuffer = pBuffer;
         cmdBufferRequest.queueType = QueueType::Transfer;
-        cmdBufferRequest.frameIdx = FrameGlobals::GetFrameNumber();
+        cmdBufferRequest.frameIdx = g_engine.GetFrameNumber();
         m_inflightCommandBuffers.push_back(pBuffer);
         pBuffer->AddExecutionFinishedCallback(
             [this, pBuffer]()
             {
                 if (m_keepRunning == false)
                     return;
-                g_pDeleteQueue->RegisterDeleteForNextFrame(
+                g_renderer.GetDeleteQueue().RegisterDeleteForNextFrame(
                     [pBuffer, this]()
                     {
                         m_sharedDataMutex.lock();
@@ -670,7 +671,7 @@ void VkTextureManager::DispatchAsyncOps(stltype::string cbufferName)
 
     if (hasWork)
     {
-        g_pQueueHandler->SubmitCommandBufferThisFrame(cmdBufferRequest);
+        g_renderer.GetQueueHandler().SubmitCommandBufferThisFrame(cmdBufferRequest);
     }
 }
 TextureVulkan* VkTextureManager::GetTexture(TextureHandle handle)
@@ -698,7 +699,7 @@ void VkTextureManager::WaitFor(TextureHandle handle)
 {
     while (!IsReady(handle))
     {
-        g_pQueueHandler->DispatchAllRequests();
+        g_renderer.GetQueueHandler().DispatchAllRequests();
         threadstl::ThreadSleep(1);
     }
 }
@@ -715,13 +716,13 @@ BindlessTextureHandle VkTextureManager::MakeTextureBindless(TextureHandle handle
     BindlessTextureHandle bindlessHandle = 0;
     if (isPersistent)
     {
-        DEBUG_ASSERT(m_lastPersistentBindlessTextureWriteIdx < MAX_BINDLESS_TEXTURES);
+        DEBUG_ASSERT(m_lastPersistentBindlessTextureWriteIdx < g_renderer.GetBindlessCapacity(Bindless::BindlessType::GlobalTextures));
         bindlessHandle = m_lastPersistentBindlessTextureWriteIdx++;
         m_persistentTexturesToMakeBindless.push_back(handle);
     }
     else
     {
-        DEBUG_ASSERT(m_lastBindlessTextureWriteIdx < 14000);
+        DEBUG_ASSERT(m_lastBindlessTextureWriteIdx < PERSISTENT_BINDLESS_REGION_START);
         bindlessHandle = m_lastBindlessTextureWriteIdx++;
         m_texturesToMakeBindless.push_back(handle);
     }
@@ -783,7 +784,7 @@ VkTextureManager::~VkTextureManager()
     for (VkSampler sampler : m_globalSamplers)
     {
         if (sampler != VK_NULL_HANDLE)
-            vkDestroySampler(VK_LOGICAL_DEVICE, sampler, VulkanAllocator());
+            vkDestroySampler(VkBackend::Device(), sampler, VulkanAllocator());
     }
 }
 
@@ -887,7 +888,7 @@ void VkTextureManager::FinishAllRequests()
         if (!hasRequests && !processing)
             break;
 
-        g_pQueueHandler->DispatchAllRequests();
+        g_renderer.GetQueueHandler().DispatchAllRequests();
         threadstl::ThreadSleep(1);
     }
 }
@@ -900,7 +901,7 @@ void VkTextureManager::Flush()
     FinishAllRequests();
 
     DispatchAsyncOps();
-    g_pQueueHandler->DispatchAllRequests();
+    g_renderer.GetQueueHandler().DispatchAllRequests();
     SimpleScopedGuard<tracy::Lockable<CustomMutex>> lock(m_sharedDataMutex);
 
     for (auto it = m_textures.begin(); it != m_textures.end();)
@@ -914,7 +915,7 @@ void VkTextureManager::Flush()
     m_bindlessTextureHandleMap.clear();
     // Keep slot 0 reserved as invalid/placeholder for material paths that treat 0 specially.
     m_lastBindlessTextureWriteIdx = 1;
-    m_lastPersistentBindlessTextureWriteIdx = 14000;
+    m_lastPersistentBindlessTextureWriteIdx = PERSISTENT_BINDLESS_REGION_START;
 }
 
 void VkTextureManager::FreeTexture(TextureHandle handle)
@@ -1310,7 +1311,7 @@ VkImageCreateInfo VkTextureManager::FillImageCreateInfoFlat2D(const DynamicTextu
     imageInfo.usage = Conv(info.usage);
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
 
-    const auto& indices = VkGlobals::GetQueueFamilyIndices();
+    const auto& indices = VkBackend::QueueFamilies();
     static u32 families[3];
     u32 count = 0;
 
@@ -1347,7 +1348,7 @@ VkImageCreateInfo VkTextureManager::FillImageCreateInfoFlat2D(const DynamicTextu
 
 void VkTextureManager::CreateTransferCommandPool()
 {
-    m_transferCommandPool = CommandPoolVulkan::Create(VkGlobals::GetQueueFamilyIndices().transferFamily.value());
+    m_transferCommandPool = CommandPoolVulkan::Create(VkBackend::QueueFamilies().transferFamily.value());
     m_transferCommandPool.SetName("TextureManager Transfer Command Pool");
 }
 
@@ -1433,7 +1434,7 @@ void VkTextureManager::CreateGlobalSamplers()
         info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         info.maxLod = VK_LOD_CLAMP_NONE;
         VkSampler sampler = VK_NULL_HANDLE;
-        DEBUG_ASSERT(vkCreateSampler(VK_LOGICAL_DEVICE, &info, VulkanAllocator(), &sampler) == VK_SUCCESS);
+        DEBUG_ASSERT(vkCreateSampler(VkBackend::Device(), &info, VulkanAllocator(), &sampler) == VK_SUCCESS);
         return sampler;
     };
     m_globalSamplers[SAMPLER_LINEAR_CLAMP] = createSampler(VK_FILTER_LINEAR);
@@ -1461,4 +1462,54 @@ const VkTextureManager::LoadedTexInfo* VkTextureManager::IsAlreadyRequested(cons
         return &(*it);
     }
     return nullptr;
+}
+
+TextureViewHandle VkTextureManager::CreateDepthLayerView(const Texture& texture, TexFormat format, u32 layer)
+{
+    VkImageViewCreateInfo viewInfo{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+    viewInfo.image = texture.GetImage();
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = Conv(format);
+    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    viewInfo.subresourceRange.baseMipLevel = 0;
+    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.baseArrayLayer = layer;
+    viewInfo.subresourceRange.layerCount = 1;
+    VkImageView view = VK_NULL_HANDLE;
+    vkCreateImageView(VkBackend::Device(), &viewInfo, nullptr, &view);
+    return view;
+}
+
+void VkTextureManager::DestroyTextureView(TextureViewHandle view)
+{
+    if (view != VK_NULL_HANDLE)
+        vkDestroyImageView(VkBackend::Device(), view, nullptr);
+}
+
+bool VkTextureManager::CanRegisterImGuiTexture(const Texture& texture) const
+{
+    return texture.GetImageView() != VK_NULL_HANDLE && texture.GetSampler() != VK_NULL_HANDLE;
+}
+
+u64 VkTextureManager::RegisterImGuiTexture(const Texture& texture)
+{
+    if (!CanRegisterImGuiTexture(texture))
+        return 0;
+    VkDescriptorSet ds =
+        ImGui_ImplVulkan_AddTexture(texture.GetSampler(), texture.GetImageView2D(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    return reinterpret_cast<u64>(ds);
+}
+
+u64 VkTextureManager::RegisterImGuiTextureView(TextureViewHandle view, const Texture& samplerSource)
+{
+    if (view == VK_NULL_HANDLE)
+        return 0;
+    return reinterpret_cast<u64>(
+        ImGui_ImplVulkan_AddTexture(samplerSource.GetSampler(), view, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL));
+}
+
+void VkTextureManager::UnregisterImGuiTexture(u64 id)
+{
+    if (id != 0)
+        ImGui_ImplVulkan_RemoveTexture(reinterpret_cast<VkDescriptorSet>(id));
 }

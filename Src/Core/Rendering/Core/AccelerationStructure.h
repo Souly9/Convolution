@@ -1,4 +1,5 @@
 #pragma once
+#include "Core/Rendering/RenderCapabilities.h"
 #include "Core/Global/Utils/EnumHelpers.h"
 #include "Core/Rendering/Core/Buffer.h"
 
@@ -122,32 +123,6 @@ struct AccelerationStructureInstanceData
         shaderBindingOffsetAndFlags =
             (shaderBindingOffset & 0x00FFFFFFu) | ((static_cast<u32>(flags) & 0xFFu) << 24);
     }
-};
-
-struct RayTracingCapabilities
-{
-    bool supported{false};
-    u64 maxGeometryCount{0};
-    u64 maxPrimitiveCount{0};
-    u64 maxInstanceCount{0};
-    u64 minScratchAlignment{0};
-};
-
-class RayTracingDevice
-{
-public:
-    static void SetCapabilities(const RayTracingCapabilities& capabilities)
-    {
-        s_capabilities = capabilities;
-    }
-
-    static const RayTracingCapabilities& GetCapabilities()
-    {
-        return s_capabilities;
-    }
-
-private:
-    inline static RayTracingCapabilities s_capabilities{};
 };
 
 class AccelerationStructureBase : public TrackedResource

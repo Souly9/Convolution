@@ -78,7 +78,7 @@ void LightTransformComputePass::RenderWithGraph(const MainPassData& data, const 
 {
     ScopedZone("LightTransformComputePass::RenderWithGraph");
     StartRenderPassProfilingScope(execCtx.pCmdBuffer);
-    auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+    auto& renderState = g_engine.GetApplicationState().GetCurrentApplicationState().renderState;
 
     m_pushConstants.clusterCount = renderState.clusterCount;
     m_pushConstants.nearFar = mathstl::Vector4(execCtx.GetZNear(), execCtx.GetZFar(), 0.0f, 0.0f);

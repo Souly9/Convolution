@@ -7,9 +7,6 @@
 #include "Core/Rendering/Core/RenderGraph/RGResourceRegistry.h"
 
 #include <imgui.h>
-#ifdef USE_VULKAN
-#include <imgui/backends/imgui_impl_vulkan.h>
-#endif
 
 namespace
 {
@@ -24,21 +21,17 @@ void ReleaseImGuiIds(stltype::vector<u64>& ids)
         return;
     }
 
-    g_pDeleteQueue->RegisterDeleteForNextFrame(
+    g_renderer.GetDeleteQueue().RegisterDeleteForNextFrame(
         [oldIds = stltype::move(ids)]() mutable
         {
             if (ImGui::GetCurrentContext() == nullptr)
                 return;
 
+            auto* pTexManager = g_renderer.TryGetTextureManager();
+            if (pTexManager == nullptr)
+                return;
             for (const auto id : oldIds)
-            {
-#ifdef USE_VULKAN
-                if (id != 0)
-                {
-                    ImGui_ImplVulkan_RemoveTexture(reinterpret_cast<VkDescriptorSet>(id));
-                }
-#endif
-            }
+                pTexManager->UnregisterImGuiTexture(id);
         });
     ids.clear();
 }
@@ -68,23 +61,7 @@ u64 AddImGuiTex(Texture* pTex)
 {
     if (!pTex)
         return 0;
-#ifndef USE_VULKAN
-    // TODO(Metal): register with the ImGui Metal backend
-    return 0;
-#else
-    auto* pTexVk = static_cast<TextureVulkan*>(pTex);
-    if (!pTexVk || pTexVk->GetImageView() == VK_NULL_HANDLE || pTexVk->GetSampler() == VK_NULL_HANDLE)
-        return 0;
-
-    VkImageView view = pTexVk->GetImageView2D();
-    if (view == VK_NULL_HANDLE)
-        return 0;
-
-    VkDescriptorSet ds = ImGui_ImplVulkan_AddTexture(pTexVk->GetSampler(), view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    if (ds == VK_NULL_HANDLE)
-        return 0;
-    return reinterpret_cast<u64>(ds);
-#endif
+    return g_renderer.GetTextureManager().RegisterImGuiTexture(*pTex);
 }
 }
 
@@ -119,21 +96,18 @@ void RenderTextureImGuiRegistry::RegisterShadowMapTextures(const CascadedShadowM
     ReleaseShadowMapIdsForNextFrame();
     if (!shadowMap.pTexture || shadowMap.cascadeViews.empty())
     {
-        g_pApplicationState->RegisterUpdateFunction([](ApplicationState& state)
+        g_engine.GetApplicationState().RegisterUpdateFunction([](ApplicationState& state)
                                                      { state.renderState.csmCascadeImGuiIDs.clear(); });
         return;
     }
 
-#ifdef USE_VULKAN
     for (auto view : shadowMap.cascadeViews)
     {
-        if (view == VK_NULL_HANDLE)
+        if (view == nullptr)
             continue;
-        m_csmCascadeImGuiIDs.push_back(reinterpret_cast<u64>(ImGui_ImplVulkan_AddTexture(
-            shadowMap.pTexture->GetSampler(), view, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL)));
+        m_csmCascadeImGuiIDs.push_back(g_renderer.GetTextureManager().RegisterImGuiTextureView(view, *shadowMap.pTexture));
     }
-#endif
-    g_pApplicationState->RegisterUpdateFunction([ids = m_csmCascadeImGuiIDs](ApplicationState& state)
+    g_engine.GetApplicationState().RegisterUpdateFunction([ids = m_csmCascadeImGuiIDs](ApplicationState& state)
                                                  { state.renderState.csmCascadeImGuiIDs = ids; });
 }
 
@@ -237,12 +211,12 @@ void RenderTextureImGuiRegistry::RegisterGBufferTextures(RGResourceRegistry& reg
 
 void RenderTextureImGuiRegistry::RegisterMaterialTextures()
 {
-    if (g_pTexManager == nullptr)
+    if (g_renderer.TryGetTextureManager() == nullptr)
         return;
 
-    const auto& bindlessMap = g_pTexManager->GetBindlessTextureHandleMap();
-    const auto& loadedCache = g_pTexManager->GetLoadedTextureCache();
-    const auto& persistentCache = g_pTexManager->GetPersistentLoadedTextureCache();
+    const auto& bindlessMap = g_renderer.GetTextureManager().GetBindlessTextureHandleMap();
+    const auto& loadedCache = g_renderer.GetTextureManager().GetLoadedTextureCache();
+    const auto& persistentCache = g_renderer.GetTextureManager().GetPersistentLoadedTextureCache();
 
     stltype::hash_map<u32, stltype::string> handleToName;
     for (const auto& info : loadedCache)
@@ -270,12 +244,8 @@ void RenderTextureImGuiRegistry::RegisterMaterialTextures()
         {
             u32 handle = pair.first;
             Texture* pTex = pair.second.get();
-#ifdef USE_VULKAN
-            if (!pTex || pTex->GetImageView() == VK_NULL_HANDLE || pTex->GetSampler() == VK_NULL_HANDLE)
+            if (!pTex || !g_renderer.GetTextureManager().CanRegisterImGuiTexture(*pTex))
                 continue;
-#else
-            continue;
-#endif
 
             if ((u32)pTex->GetInfo().usage & (u32)Usage::ShadowMap)
                 continue;
@@ -319,12 +289,12 @@ void RenderTextureImGuiRegistry::RegisterMaterialTextures()
         }
     };
 
-    processTexMap(g_pTexManager->GetTextures());
-    processTexMap(g_pTexManager->GetPersistentTextures());
+    processTexMap(g_renderer.GetTextureManager().GetTextures());
+    processTexMap(g_renderer.GetTextureManager().GetPersistentTextures());
 
     if (newlyAdded)
     {
-        g_pApplicationState->RegisterUpdateFunction([items = m_textureViewerItems](ApplicationState& state) {
+        g_engine.GetApplicationState().RegisterUpdateFunction([items = m_textureViewerItems](ApplicationState& state) {
             state.renderState.textureViewerState.items = items;
         });
     }
@@ -342,7 +312,7 @@ void RenderTextureImGuiRegistry::PublishGBufferTextureState(RGResourceRegistry& 
         gbufferIDs[5] = colorSwapped ? m_historyColorIdB : m_historyColorIdA;
     }
 
-    g_pApplicationState->RegisterUpdateFunction(
+    g_engine.GetApplicationState().RegisterUpdateFunction(
         [csmIDs = m_csmCascadeImGuiIDs, gbufferIDs = stltype::move(gbufferIDs), items = m_textureViewerItems](ApplicationState& state) mutable
         {
             state.renderState.csmCascadeImGuiIDs = stltype::move(csmIDs);
@@ -358,14 +328,7 @@ void RenderTextureImGuiRegistry::RegisterRTTextures(const RGResourceRegistry& re
     auto addRT = [&](RGResourceID id)
     {
         const Texture* pTex = registry.ResolveByID(id);
-#ifdef USE_VULKAN
-        if (pTex != nullptr && pTex->GetImageView() != VK_NULL_HANDLE && pTex->GetSampler() != VK_NULL_HANDLE)
-        {
-            return reinterpret_cast<u64>(ImGui_ImplVulkan_AddTexture(
-                pTex->GetSampler(), pTex->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL));
-        }
-#endif
-        return static_cast<u64>(0);
+        return pTex != nullptr ? g_renderer.GetTextureManager().RegisterImGuiTexture(*pTex) : static_cast<u64>(0);
     };
 
     u64 debugViewID = addRT(RGResourceID::GBufferDebug);
@@ -381,6 +344,6 @@ void RenderTextureImGuiRegistry::RegisterRTTextures(const RGResourceRegistry& re
     if (rtaoID != 0) m_textureViewerItems.push_back(MakeItem("RT AO", "Ray Tracing", rtaoID, registry.ResolveByID(RGResourceID::RTAOOutput)));
 
     stltype::vector<u64> rtIDs = m_rtImGuiIDs;
-    g_pApplicationState->RegisterUpdateFunction([rtIDs](ApplicationState& state)
+    g_engine.GetApplicationState().RegisterUpdateFunction([rtIDs](ApplicationState& state)
                                                 { state.renderState.rtImGuiIDs = rtIDs; });
 }

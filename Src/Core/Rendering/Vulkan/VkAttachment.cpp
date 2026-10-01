@@ -1,7 +1,7 @@
 #include "VkAttachment.h"
 #include "Core/Global/GlobalDefines.h"
 #include "Utils/VkEnumHelpers.h"
-#include "VkGlobals.h"
+#include "VkBackendAccess.h"
 
 void AttachmentBaseVulkan::SetClearValue(const mathstl::Vector4& clearValue)
 {

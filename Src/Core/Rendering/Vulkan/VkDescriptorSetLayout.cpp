@@ -1,11 +1,11 @@
 #include "VkDescriptorSetLayout.h"
 #include "Core/Global/GlobalDefines.h"
-#include "VkGlobals.h"
+#include "VkBackendAccess.h"
 
 void DescriptorSetLayoutVulkan::CleanUp()
 {
     VK_FREE_IF(m_descriptorSetLayout,
-               vkDestroyDescriptorSetLayout(VK_LOGICAL_DEVICE, m_descriptorSetLayout, VulkanAllocator()));
+               vkDestroyDescriptorSetLayout(VkBackend::Device(), m_descriptorSetLayout, VulkanAllocator()));
 }
 
 void DescriptorSetLayoutVulkan::NamingCallBack(const stltype::string& name)
@@ -16,5 +16,5 @@ void DescriptorSetLayoutVulkan::NamingCallBack(const stltype::string& name)
     nameInfo.objectHandle = (uint64_t)GetRef();
     nameInfo.pObjectName = name.c_str();
 
-    vkSetDebugUtilsObjectName(VK_LOGICAL_DEVICE, &nameInfo);
+    vkSetDebugUtilsObjectName(VkBackend::Device(), &nameInfo);
 }

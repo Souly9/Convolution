@@ -5,7 +5,7 @@
 #include "Core/Rendering/Core/StaticFunctions.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
 #include "VkCommandBuffer.h"
-#include "VkGlobals.h"
+#include "VkBackendAccess.h"
 #include "VkSynchronization.h"
 #include "Core/Rendering/Core/Nvidia/StreamlineManager.h"
 #include <vulkan/vulkan_core.h>
@@ -163,11 +163,11 @@ inline void SubmitCommandBufferToQueue(const stltype::vector<CommandBuffer*>& co
 
     VkQueue submitQueue = VK_NULL_HANDLE;
     if (queue == QueueType::Transfer)
-        submitQueue = VkGlobals::GetAllQueues().transfer;
+        submitQueue = VkBackend::Queues().transfer;
     else if (queue == QueueType::Compute)
-        submitQueue = VkGlobals::GetAllQueues().compute;
+        submitQueue = VkBackend::Queues().compute;
     else if (queue == QueueType::Graphics)
-        submitQueue = VkGlobals::GetAllQueues().graphics;
+        submitQueue = VkBackend::Queues().graphics;
     else
         DEBUG_ASSERT(false);
 
@@ -185,8 +185,8 @@ inline SwapchainAcquireStatus QueryImageForPresentationFromMainSwapchain<Vulkan>
     while (true)
     {
         const VkResult rslt =
-            Nvidia::StreamlineManager::GetSwapchainFunctions().acquireNextImage(VkGlobals::GetLogicalDevice(),
-                                                                                VkGlobals::GetMainSwapChain(),
+            Nvidia::StreamlineManager::GetSwapchainFunctions().acquireNextImage(VkBackend::Device(),
+                                                                                VkBackend::Swapchain(),
                                                                                 timeout,
                                                                                 imageAvailableSemaphore.GetRef(),
                                                                                 imageAvailableFence.GetRef(),
@@ -215,7 +215,7 @@ inline SwapchainPresentStatus SubmitForPresentationToMainSwapchain<Vulkan>(Semap
         waitCount = 1;
     }
 
-    VkSwapchainKHR swapChains[] = {VkGlobals::GetMainSwapChain()};
+    VkSwapchainKHR swapChains[] = {VkBackend::Swapchain()};
 
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -227,7 +227,7 @@ inline SwapchainPresentStatus SubmitForPresentationToMainSwapchain<Vulkan>(Semap
     presentInfo.pResults = nullptr;
 
     const VkResult result =
-        Nvidia::StreamlineManager::GetSwapchainFunctions().queuePresent(VkGlobals::GetPresentQueue(), &presentInfo);
+        Nvidia::StreamlineManager::GetSwapchainFunctions().queuePresent(VkBackend::PresentQueue(), &presentInfo);
     if (result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR)
         return SwapchainPresentStatus::Presented;
     if (result == VK_ERROR_OUT_OF_DATE_KHR)
@@ -239,7 +239,7 @@ inline SwapchainPresentStatus SubmitForPresentationToMainSwapchain<Vulkan>(Semap
 template<>
 inline void WaitForDeviceIdle<Vulkan>()
 {
-    Nvidia::StreamlineManager::GetSwapchainFunctions().deviceWaitIdle(VK_LOGICAL_DEVICE);
+    Nvidia::StreamlineManager::GetSwapchainFunctions().deviceWaitIdle(VkBackend::Device());
 }
 
 } // namespace SRF

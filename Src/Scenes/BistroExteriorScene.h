@@ -16,29 +16,29 @@ public:
 
     virtual void Load() override
     {
-        g_pFileReader->SubmitIORequest(IORequest{
+        g_engine.GetFileReader().SubmitIORequest(IORequest{
             "Resources/Models/BistroExterior.fbx",
             [&](const ReadMeshInfo& info)
             {
                 auto ent = info.rootNode.root;
-                g_pApplicationState->RegisterUpdateFunction(
+                g_engine.GetApplicationState().RegisterUpdateFunction(
                     [ent](ApplicationState& state)
                     {
-                        if (g_pEntityManager->HasComponent<ECS::Components::Transform>(ent))
+                        if (g_engine.GetEntityManager().HasComponent<ECS::Components::Transform>(ent))
                         {
-                            auto pBistroTrans = g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(ent);
+                            auto pBistroTrans = g_engine.GetEntityManager().GetComponentUnsafe<ECS::Components::Transform>(ent);
                             pBistroTrans->position = mathstl::Vector3(0, 0, 0.0f);
                         }
                         auto cameraEnt = state.mainCameraEntity;
-                        if (cameraEnt.IsValid() && g_pEntityManager->HasComponent<ECS::Components::Transform>(cameraEnt))
+                        if (cameraEnt.IsValid() && g_engine.GetEntityManager().HasComponent<ECS::Components::Transform>(cameraEnt))
                         {
-                            auto pTrans = g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(cameraEnt);
+                            auto pTrans = g_engine.GetEntityManager().GetComponentUnsafe<ECS::Components::Transform>(cameraEnt);
                             pTrans->position = mathstl::Vector3(-15, 5, 5);
                             pTrans->rotation = mathstl::Vector3(0, -60, 0);
                         }
-                        if (cameraEnt.IsValid() && g_pEntityManager->HasComponent<ECS::Components::Camera>(cameraEnt))
+                        if (cameraEnt.IsValid() && g_engine.GetEntityManager().HasComponent<ECS::Components::Camera>(cameraEnt))
                         {
-                            auto pCamera = g_pEntityManager->GetComponentUnsafe<ECS::Components::Camera>(cameraEnt);
+                            auto pCamera = g_engine.GetEntityManager().GetComponentUnsafe<ECS::Components::Camera>(cameraEnt);
                             pCamera->zFar = 150.0f;
                         }
                     });
@@ -46,16 +46,16 @@ public:
             },
             RequestType::Mesh});
 
-        auto dirLightEnt = g_pEntityManager->CreateEntity(mathstl::Vector3(2, 17, 1), "Sun");
+        auto dirLightEnt = g_engine.GetEntityManager().CreateEntity(mathstl::Vector3(2, 17, 1), "Sun");
         ECS::Components::Light dirLight{.direction = mathstl::Vector3(-0.3f, -11, -6),
                                         .color = mathstl::Vector4(1.0f, 1.0f, 1.0f, 1.0f),
                                         .intensity = 1.5f,
                                         .type = ECS::Components::LightType::Directional,
                                         .isShadowCaster = true};
-        g_pEntityManager->AddComponent(dirLightEnt, dirLight);
+        g_engine.GetEntityManager().AddComponent(dirLightEnt, dirLight);
 
-        auto lightsRootEnt = g_pEntityManager->CreateEntity(mathstl::Vector3(-20, 40, -15), "LightsRoot");
-        auto pLightRootTrans = g_pEntityManager->GetComponentUnsafe<ECS::Components::Transform>(lightsRootEnt);
+        auto lightsRootEnt = g_engine.GetEntityManager().CreateEntity(mathstl::Vector3(-20, 40, -15), "LightsRoot");
+        auto pLightRootTrans = g_engine.GetEntityManager().GetComponentUnsafe<ECS::Components::Transform>(lightsRootEnt);
         pLightRootTrans->scale = mathstl::Vector3(2.5f, 0.2f, 2.5f);
         CreateTestLights(mathstl::Vector3(0, 0, 0), 12000, 15.0f, lightsRootEnt);
     }

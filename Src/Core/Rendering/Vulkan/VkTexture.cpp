@@ -1,9 +1,11 @@
 #include "VkTexture.h"
+#include "Core/Global/GlobalVariables.h"
+#include "Core/Rendering/Core/GPUMemoryManager.h"
 #include <utility>
 #include <type_traits>
 #include "Utils/VkEnumHelpers.h"
 #include "VkGPUMemoryManager.h"
-#include "VkGlobals.h"
+#include "VkBackendAccess.h"
 
 TextureVulkan::TextureVulkan()
 {
@@ -11,7 +13,7 @@ TextureVulkan::TextureVulkan()
 
 TextureVulkan::TextureVulkan(const VkImageCreateInfo& createInfo, const TextureInfo& info) : TextureBase(info)
 {
-    m_imageMemory = g_pGPUMemoryManager->AllocateImage(createInfo, m_image);
+    m_imageMemory = g_renderer.GetGPUMemoryManager().AllocateImage(createInfo, m_image);
 }
 
 TextureVulkan::TextureVulkan(const TextureInfo& info) : TextureBase(info)
@@ -25,28 +27,28 @@ TextureVulkan::~TextureVulkan()
 
 void TextureVulkan::CleanUp()
 {
-    VK_FREE_IF(m_imageMemory, g_pGPUMemoryManager->TryFreeMemory(m_imageMemory));
-    VK_FREE_IF(m_imageView2D, vkDestroyImageView(VK_LOGICAL_DEVICE, m_imageView2D, VulkanAllocator()));
-    VK_FREE_IF(m_imageView, vkDestroyImageView(VK_LOGICAL_DEVICE, m_imageView, VulkanAllocator()));
-    VK_FREE_IF(m_sampler, vkDestroySampler(VK_LOGICAL_DEVICE, m_sampler, VulkanAllocator()));
+    VK_FREE_IF(m_imageMemory, g_renderer.GetGPUMemoryManager().TryFreeMemory(m_imageMemory));
+    VK_FREE_IF(m_imageView2D, vkDestroyImageView(VkBackend::Device(), m_imageView2D, VulkanAllocator()));
+    VK_FREE_IF(m_imageView, vkDestroyImageView(VkBackend::Device(), m_imageView, VulkanAllocator()));
+    VK_FREE_IF(m_sampler, vkDestroySampler(VkBackend::Device(), m_sampler, VulkanAllocator()));
     m_image = VK_NULL_HANDLE;
 }
 
 void TextureVulkan::SetImageView(VkImageView view)
 {
-    VK_FREE_IF(m_imageView, vkDestroyImageView(VK_LOGICAL_DEVICE, m_imageView, VulkanAllocator()));
+    VK_FREE_IF(m_imageView, vkDestroyImageView(VkBackend::Device(), m_imageView, VulkanAllocator()));
     m_imageView = view;
 }
 
 void TextureVulkan::SetImageView2D(VkImageView view2D)
 {
-    VK_FREE_IF(m_imageView2D, vkDestroyImageView(VK_LOGICAL_DEVICE, m_imageView2D, VulkanAllocator()));
+    VK_FREE_IF(m_imageView2D, vkDestroyImageView(VkBackend::Device(), m_imageView2D, VulkanAllocator()));
     m_imageView2D = view2D;
 }
 
 void TextureVulkan::SetSampler(VkSampler sampler)
 {
-    VK_FREE_IF(m_sampler, vkDestroySampler(VK_LOGICAL_DEVICE, m_sampler, VulkanAllocator()));
+    VK_FREE_IF(m_sampler, vkDestroySampler(VkBackend::Device(), m_sampler, VulkanAllocator()));
     m_sampler = sampler;
 }
 
@@ -57,7 +59,7 @@ void TextureVulkan::NamingCallBack(const stltype::string& name)
     nameInfo.objectType = VK_OBJECT_TYPE_IMAGE;
     nameInfo.objectHandle = (uint64_t)GetImage();
     nameInfo.pObjectName = name.c_str();
-    vkSetDebugUtilsObjectName(VK_LOGICAL_DEVICE, &nameInfo);
+    vkSetDebugUtilsObjectName(VkBackend::Device(), &nameInfo);
 
     if (m_imageView != VK_NULL_HANDLE)
     {
@@ -67,7 +69,7 @@ void TextureVulkan::NamingCallBack(const stltype::string& name)
         viewNameInfo.objectHandle = (uint64_t)m_imageView;
         stltype::string viewName = name + "_View";
         viewNameInfo.pObjectName = viewName.c_str();
-        vkSetDebugUtilsObjectName(VK_LOGICAL_DEVICE, &viewNameInfo);
+        vkSetDebugUtilsObjectName(VkBackend::Device(), &viewNameInfo);
     }
 
     if (m_sampler != VK_NULL_HANDLE)
@@ -78,7 +80,7 @@ void TextureVulkan::NamingCallBack(const stltype::string& name)
         samplerNameInfo.objectHandle = (uint64_t)m_sampler;
         stltype::string samplerName = name + "_Sampler";
         samplerNameInfo.pObjectName = samplerName.c_str();
-        vkSetDebugUtilsObjectName(VK_LOGICAL_DEVICE, &samplerNameInfo);
+        vkSetDebugUtilsObjectName(VkBackend::Device(), &samplerNameInfo);
     }
 }
 

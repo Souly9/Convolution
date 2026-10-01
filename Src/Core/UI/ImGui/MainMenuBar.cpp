@@ -6,13 +6,13 @@
 #include <imgui/imgui.h>
 #include "Core/Global/Profiling.h"
 
-MainMenuBar::MainMenuBar() : SelfInstantiatingUIElement()
+MainMenuBar::MainMenuBar()
 {
     ImGuiManager::RegisterRenderFunction([this](f32 dt, ApplicationInfos& appInfos) { DrawMenuBar(dt, appInfos); });
     m_debugInfoWindow.SetOpen(false);
     m_debugInfoWindow.Clear();
     {
-        g_pEventSystem->AddUpdateEventCallback([this](const UpdateEventData& d) { OnUpdate(d); });
+        g_engine.GetEventSystem().AddUpdateEventCallback([this](const UpdateEventData& d) { OnUpdate(d); });
     }
 }
 
@@ -38,9 +38,9 @@ void MainMenuBar::DrawMenuBar(f32 dt, ApplicationInfos& appInfos)
         {
             if (ImGui::MenuItem("Reload Current Scene", ""))
             {
-                if (g_pApplicationState->GetCurrentScene() != nullptr)
+                if (g_engine.GetApplicationState().GetCurrentScene() != nullptr)
                 {
-                    g_pApplicationState->ReloadCurrentScene();
+                    g_engine.GetApplicationState().ReloadCurrentScene();
                 }
             }
 
@@ -50,26 +50,26 @@ void MainMenuBar::DrawMenuBar(f32 dt, ApplicationInfos& appInfos)
                                                                SponzaScene::GetSceneName(),
                                                                BistroExteriorScene::GetSceneName(),
                                                                ClusteredLightingScene::GetSceneName()};
-                const auto& currentSceneName = g_pApplicationState->GetCurrentScene()->GetName();
+                const auto& currentSceneName = g_engine.GetApplicationState().GetCurrentScene()->GetName();
                 for (auto& name : sceneNames)
                 {
                     if (ImGui::MenuItem(name.c_str(), "", false, name != currentSceneName))
                     {
                         if (name == SampleScene::GetSceneName())
                         {
-                            g_pApplicationState->SetCurrentScene(stltype::make_unique<SampleScene>());
+                            g_engine.GetApplicationState().SetCurrentScene(stltype::make_unique<SampleScene>());
                         }
                         else if (name == SponzaScene::GetSceneName())
                         {
-                            g_pApplicationState->SetCurrentScene(stltype::make_unique<SponzaScene>());
+                            g_engine.GetApplicationState().SetCurrentScene(stltype::make_unique<SponzaScene>());
                         }
                         else if (name == BistroExteriorScene::GetSceneName())
                         {
-                            g_pApplicationState->SetCurrentScene(stltype::make_unique<BistroExteriorScene>());
+                            g_engine.GetApplicationState().SetCurrentScene(stltype::make_unique<BistroExteriorScene>());
                         }
                         else if (name == ClusteredLightingScene::GetSceneName())
                         {
-                            g_pApplicationState->SetCurrentScene(stltype::make_unique<ClusteredLightingScene>());
+                            g_engine.GetApplicationState().SetCurrentScene(stltype::make_unique<ClusteredLightingScene>());
                         }
                         else
                         {

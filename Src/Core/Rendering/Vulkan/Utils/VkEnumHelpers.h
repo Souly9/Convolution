@@ -934,3 +934,17 @@ static inline VkAccessFlags2 Conv(RayTracingAccess access)
         vkAccess |= VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
     return vkAccess;
 }
+
+static inline VkBorderColor Conv(TextureBorderColor color)
+{
+    switch (color)
+    {
+        case TextureBorderColor::TransparentBlack:
+            return VK_BORDER_COLOR_INT_TRANSPARENT_BLACK;
+        case TextureBorderColor::OpaqueBlack:
+            return VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+        case TextureBorderColor::OpaqueWhite:
+        default:
+            return VK_BORDER_COLOR_INT_OPAQUE_WHITE;
+    }
+}

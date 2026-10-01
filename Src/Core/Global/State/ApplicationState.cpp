@@ -74,10 +74,10 @@ void ApplicationStateManager::ExecuteSceneSwitchOnRenderThread()
         return;
     }
 
-    g_pFileReader->CancelAllRequests();
-    g_pFileReader->FinishAllRequests();
+    g_engine.GetFileReader().CancelAllRequests();
+    g_engine.GetFileReader().FinishAllRequests();
 
-    g_pQueueHandler->FlushAllTransferCommands();
+    g_renderer.GetQueueHandler().FlushAllTransferCommands();
     SRF::WaitForDeviceIdle<RenderAPI>();
 
     if (m_pPassManager != nullptr)
@@ -99,9 +99,9 @@ void ApplicationStateManager::ExecuteSceneSwitchOnRenderThread()
         m_pCurrentScene.reset();
     }
 
-    g_pTexManager->Flush();
-    g_pMeshManager->Flush();
-    g_pMaterialManager->Flush();
+    g_renderer.GetTextureManager().Flush();
+    g_engine.GetMeshManager().Flush();
+    g_renderer.GetMaterialManager().Flush();
 
     if (m_pNextScene)
     {

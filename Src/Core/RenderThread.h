@@ -3,13 +3,12 @@
 #include "Core/Global/ThreadBase.h"
 #include "Core/Rendering/Passes/PassManager.h"
 #include "Core/UI/ImGui/ImGuiManager.h"
-#include "Rendering/RenderLayer.h"
 #include <atomic>
 
 class RenderThread : public ThreadBase
 {
 public:
-    RenderThread(ImGuiManager* pImGuiManager, RenderBackendImpl<RenderAPI>* pRenderBackend);
+    RenderThread(ImGuiManager* pImGuiManager);
     void Stop()
     {
         m_keepRunning = false;
@@ -25,6 +24,5 @@ public:
 
     stltype::unique_ptr<RenderPasses::PassManager> m_passManager;
     ImGuiManager* m_pImGuiManager{};
-    RenderBackendImpl<RenderAPI>* m_pRenderBackend{};
     std::atomic_bool m_swapchainRecreationRequested{false};
 };

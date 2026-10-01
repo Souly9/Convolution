@@ -13,8 +13,8 @@ public:
 
         if (data.state.pCurrentScene != nullptr && data.state.pCurrentScene->IsFullyLoaded())
         {
-            const auto& transforms = g_pEntityManager->GetComponentVector<ECS::Components::Transform>();
-            auto entityToTransform = g_pEntityManager->GetComponentPointerArray<ECS::Components::Transform>();
+            const auto& transforms = g_engine.GetEntityManager().GetComponentVector<ECS::Components::Transform>();
+            auto entityToTransform = g_engine.GetEntityManager().GetComponentPointerArray<ECS::Components::Transform>();
 
             struct NodeData
             {
@@ -97,7 +97,7 @@ private:
 
         if (ImGui::IsItemClicked())
         {
-            g_pApplicationState->RegisterUpdateFunction(
+            g_engine.GetApplicationState().RegisterUpdateFunction(
                 [ent](ApplicationState& state)
                 {
                     state.selectedEntities.clear();

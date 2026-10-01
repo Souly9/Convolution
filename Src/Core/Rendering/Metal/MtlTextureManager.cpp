@@ -141,3 +141,32 @@ bool MtlTextureManager::ShouldFlipNormalMap(const stltype::string& path) const
 {
     return false;
 }
+
+// TODO(Metal): MTL::Texture::newTextureView and the ImGui Metal backend
+TextureViewHandle MtlTextureManager::CreateDepthLayerView(const Texture& texture, TexFormat format, u32 layer)
+{
+    return nullptr;
+}
+
+void MtlTextureManager::DestroyTextureView(TextureViewHandle view)
+{
+}
+
+bool MtlTextureManager::CanRegisterImGuiTexture(const Texture& texture) const
+{
+    return false;
+}
+
+u64 MtlTextureManager::RegisterImGuiTexture(const Texture& texture)
+{
+    return 0;
+}
+
+u64 MtlTextureManager::RegisterImGuiTextureView(TextureViewHandle view, const Texture& samplerSource)
+{
+    return 0;
+}
+
+void MtlTextureManager::UnregisterImGuiTexture(u64 id)
+{
+}

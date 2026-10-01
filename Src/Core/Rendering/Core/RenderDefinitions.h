@@ -34,6 +34,13 @@ enum class TextureFilter
     LINEAR
 };
 
+enum class TextureBorderColor
+{
+    TransparentBlack,
+    OpaqueBlack,
+    OpaqueWhite
+};
+
 enum class TexFormat
 {
     UNDEFINED,

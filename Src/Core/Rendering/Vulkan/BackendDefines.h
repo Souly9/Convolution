@@ -3,9 +3,13 @@
 #include <vulkan/vulkan_core.h>
 
 static inline constexpr u64 MAX_TEXTURES = 4096;
+static inline constexpr u32 CONV_MIN_VULKAN_VERSION = VK_API_VERSION_1_4;
 
-#define VK_LOGICAL_DEVICE VkGlobals::GetLogicalDevice()
-#define VK_PHYS_DEVICE    VkGlobals::GetPhysicalDevice()
+inline VkAllocationCallbacks* VulkanAllocator()
+{
+    return nullptr;
+}
+
 #define VK_FREE_IF(res, freeFunc)                                                                                      \
     if (res != VK_NULL_HANDLE)                                                                                         \
     {                                                                                                                  \

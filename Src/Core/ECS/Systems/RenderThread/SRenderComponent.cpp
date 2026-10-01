@@ -18,9 +18,9 @@ void ECS::System::SRenderComponent::Process()
 void ECS::System::SRenderComponent::SyncData(u32 currentFrame)
 {
     ScopedZone("RenderComponent System::SyncData");
-    const auto& renderComps = g_pEntityManager->GetComponentVector<Components::RenderComponent>();
-    const auto& debugRenderComps = g_pEntityManager->GetComponentVector<Components::DebugRenderComponent>();
-    const auto& meshAABBs = g_pMeshManager->GetMeshAABBs();
+    const auto& renderComps = g_engine.GetEntityManager().GetComponentVector<Components::RenderComponent>();
+    const auto& debugRenderComps = g_engine.GetEntityManager().GetComponentVector<Components::DebugRenderComponent>();
+    const auto& meshAABBs = g_engine.GetMeshManager().GetMeshAABBs();
 
     RenderPasses::EntityMeshDataMap dataMap;
     dataMap.reserve(renderComps.size());

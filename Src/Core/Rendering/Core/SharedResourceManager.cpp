@@ -54,7 +54,7 @@ void SharedResourceManager::UploadDebugMesh(const Mesh& mesh, u32 thisFrame)
                          }
                      };
 
-    g_pQueueHandler->SubmitTransferCommandAsync(cmd);
+    g_renderer.GetQueueHandler().SubmitTransferCommandAsync(cmd);
 }
 
 void SharedResourceManager::Init()
@@ -207,7 +207,7 @@ void SharedResourceManager::UploadSceneGeometry(const stltype::vector<stltype::u
         }
     };
 
-    g_pQueueHandler->SubmitTransferCommandAsync(cmd);
+    g_renderer.GetQueueHandler().SubmitTransferCommandAsync(cmd);
 }
 
 void SharedResourceManager::ClearGeometryCaches()
@@ -282,8 +282,8 @@ void SharedResourceManager::FlushPendingMeshUploads(u32 frameIdx, u32 maxCount)
         transfer.frameIdx = frameIdx;
         DEBUG_LOGF("SharedResourceManager: Updated visibility for {} newly resident instances. Re-uploading SSBO size: {} bytes", 
                    (u32)newlyVisibleIndices.size(), transfer.size);
-        g_pQueueHandler->SubmitTransferCommandAsync(transfer);
-        g_pQueueHandler->DispatchAllRequests();
+        g_renderer.GetQueueHandler().SubmitTransferCommandAsync(transfer);
+        g_renderer.GetQueueHandler().DispatchAllRequests();
     }
 }
 
@@ -336,7 +336,7 @@ void SharedResourceManager::UpdateInstanceDataSSBO(stltype::vector<RenderPasses:
         data.drawData = handle;
         data.aabbCenterTransIdx = mathstl::Vector4(meshData.meshData.aabb.center);
         data.aabbExtentsMatIdx = mathstl::Vector4(meshData.meshData.aabb.extents);
-        data.SetMaterialIdx(g_pMaterialManager->GetMaterialIdx(meshData.meshData.pMaterial));
+        data.SetMaterialIdx(g_renderer.GetMaterialManager().GetMaterialIdx(meshData.meshData.pMaterial));
         data.SetTransformIdx(meshData.transformIdx);
         data.SetEntityID(static_cast<u32>(meshData.meshData.entityID));
 
@@ -364,8 +364,8 @@ void SharedResourceManager::UpdateInstanceDataSSBO(stltype::vector<RenderPasses:
     transfer.frameIdx = thisFrameNum;
     DEBUG_LOGF("SharedResourceManager: Updating instance data SSBO. Entry count: {}, Size: {} bytes", 
                (u32)m_currentFrameInstanceData.size(), transfer.size);
-    g_pQueueHandler->SubmitTransferCommandAsync(transfer);
-    g_pQueueHandler->DispatchAllRequests();
+    g_renderer.GetQueueHandler().SubmitTransferCommandAsync(transfer);
+    g_renderer.GetQueueHandler().DispatchAllRequests();
 }
 
 MeshHandle SharedResourceManager::UploadMesh(const Mesh& mesh)
@@ -412,7 +412,7 @@ void SharedResourceManager::UpdateTransformBuffer(const stltype::vector<DirectX:
     transfer.pSSBO = &m_transformBuffer;
     transfer.dstBinding = s_modelSSBOBindingSlot;
     transfer.frameIdx = thisFrame;
-    g_pQueueHandler->SubmitTransferCommandAsync(transfer);
+    g_renderer.GetQueueHandler().SubmitTransferCommandAsync(transfer);
 }
 
 void SharedResourceManager::UpdateTransformRange(const stltype::vector<DirectX::XMFLOAT4X4>& transformBuffer,
@@ -432,7 +432,7 @@ void SharedResourceManager::UpdateTransformRange(const stltype::vector<DirectX::
     transfer.pSSBO = &m_transformBuffer;
     transfer.dstBinding = s_modelSSBOBindingSlot;
     transfer.frameIdx = thisFrame;
-    g_pQueueHandler->SubmitTransferCommandAsync(transfer);
+    g_renderer.GetQueueHandler().SubmitTransferCommandAsync(transfer);
 }
 
 void SharedResourceManager::UpdatePrevTransformRange(const stltype::vector<DirectX::XMFLOAT4X4>& transformBuffer,
@@ -452,7 +452,7 @@ void SharedResourceManager::UpdatePrevTransformRange(const stltype::vector<Direc
     transfer.pSSBO = &m_prevTransformBuffer;
     transfer.dstBinding = s_prevModelSSBOBindingSlot;
     transfer.frameIdx = thisFrame;
-    g_pQueueHandler->SubmitTransferCommandAsync(transfer);
+    g_renderer.GetQueueHandler().SubmitTransferCommandAsync(transfer);
 }
 
 void SharedResourceManager::UpdateSceneAABBBuffer(const stltype::vector<AABB>& aabbBuffer, u32 thisFrame, u32 updateCount)
@@ -469,7 +469,7 @@ void SharedResourceManager::UpdateSceneAABBBuffer(const stltype::vector<AABB>& a
     transfer.pSSBO = &m_sceneAABBBuffer;
     transfer.dstBinding = s_sceneAABBsSSBOBindingSlot;
     transfer.frameIdx = thisFrame;
-    g_pQueueHandler->SubmitTransferCommandAsync(transfer);
+    g_renderer.GetQueueHandler().SubmitTransferCommandAsync(transfer);
 }
 
 void SharedResourceManager::UpdateSceneAABBRange(const stltype::vector<AABB>& aabbBuffer,
@@ -489,7 +489,7 @@ void SharedResourceManager::UpdateSceneAABBRange(const stltype::vector<AABB>& aa
     transfer.pSSBO = &m_sceneAABBBuffer;
     transfer.dstBinding = s_sceneAABBsSSBOBindingSlot;
     transfer.frameIdx = thisFrame;
-    g_pQueueHandler->SubmitTransferCommandAsync(transfer);
+    g_renderer.GetQueueHandler().SubmitTransferCommandAsync(transfer);
 }
 
 void SharedResourceManager::UpdateGlobalMaterialBuffer(const UBO::MaterialBuffer& materialBuffer, u32 thisFrame)
@@ -506,7 +506,7 @@ void SharedResourceManager::UpdateGlobalMaterialBuffer(const UBO::MaterialBuffer
     transfer.pSSBO = &m_materialBuffer;
     transfer.dstBinding = s_globalMaterialBufferSlot;
     transfer.frameIdx = thisFrame;
-    g_pQueueHandler->SubmitTransferCommandAsync(transfer);
+    g_renderer.GetQueueHandler().SubmitTransferCommandAsync(transfer);
 }
 
 stltype::vector<u32> SharedResourceManager::PopPendingVisibleInstanceIndices()
@@ -577,5 +577,5 @@ void SharedResourceManager::UploadInstanceDataSSBO(u32 frameIdx)
     transfer.pSSBO = &m_sceneInstanceBuffer;
     transfer.dstBinding = s_globalInstanceDataSSBOSlot;
     transfer.frameIdx = frameIdx;
-    g_pQueueHandler->SubmitTransferCommandAsync(transfer);
+    g_renderer.GetQueueHandler().SubmitTransferCommandAsync(transfer);
 }

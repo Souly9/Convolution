@@ -14,13 +14,13 @@ static inline bool Visualize(ECS::Components::RenderComponent* pRenderComp)
         {
             ImGui::Text(
                 "Materialname: %s",
-                g_pMaterialManager->GetMaterialName(pRenderComp->pMaterial).data()); // should always be null terminated
+                g_renderer.GetMaterialManager().GetMaterialName(pRenderComp->pMaterial).data()); // should always be null terminated
             
-            if (pRenderComp->pMaterial != nullptr && g_pApplicationState != nullptr)
+            if (pRenderComp->pMaterial != nullptr && g_engine.TryGetApplicationState() != nullptr)
             {
                 if (ImGui::TreeNodeEx("Material Textures", ImGuiTreeNodeFlags_DefaultOpen))
                 {
-                    const auto& appState = g_pApplicationState->GetCurrentApplicationState();
+                    const auto& appState = g_engine.GetApplicationState().GetCurrentApplicationState();
                     const auto& items = appState.renderState.textureViewerState.items;
 
                     struct SlotInfo
@@ -63,7 +63,7 @@ static inline bool Visualize(ECS::Components::RenderComponent* pRenderComp)
                         {
                             if (ImGui::ImageButton("##MatTexThumb", (ImTextureID)pItem->imguiDescriptorId, ImVec2(56.0f, 56.0f)))
                             {
-                                g_pApplicationState->RegisterUpdateFunction([handle](ApplicationState& state) {
+                                g_engine.GetApplicationState().RegisterUpdateFunction([handle](ApplicationState& state) {
                                     state.renderState.textureViewerState.requestedFocusHandle = static_cast<s32>(handle);
                                     state.renderState.textureViewerState.requestOpenWindow = true;
                                 });
@@ -129,7 +129,7 @@ static inline bool Visualize(ECS::Components::RenderComponent* pRenderComp)
             }
             if (needsUpdate)
             {
-                g_pMaterialManager->MarkMaterialsDirty();
+                g_renderer.GetMaterialManager().MarkMaterialsDirty();
             }
         }
     }

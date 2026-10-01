@@ -25,7 +25,7 @@ public:
 
         if (m_readShaderFiles > 0)
         {
-            g_pFileReader->FinishAllRequests();
+            g_engine.GetFileReader().FinishAllRequests();
         }
 
         stltype::string fileName = headerName;
@@ -75,7 +75,7 @@ public:
         ScopedZone("GlslangIncluder::ReadAllFiles");
         if (m_readShaderFiles > 0)
         {
-            g_pFileReader->FinishAllRequests();
+            g_engine.GetFileReader().FinishAllRequests();
             m_readShaderFiles = 0;
         }
 
@@ -110,7 +110,7 @@ public:
                               .requestType = RequestType::Bytes
 
                 };
-                g_pFileReader->SubmitIORequest(req);
+                g_engine.GetFileReader().SubmitIORequest(req);
             }
         }
     }

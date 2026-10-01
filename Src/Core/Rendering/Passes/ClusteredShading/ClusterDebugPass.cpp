@@ -112,7 +112,7 @@ void ClusterDebugPass::RenderWithGraph(const MainPassData& data,
 {
     ScopedZone("ClusterDebugPass::Render");
 
-    const auto& renderState = g_pApplicationState->GetCurrentApplicationState().renderState;
+    const auto& renderState = g_engine.GetApplicationState().GetCurrentApplicationState().renderState;
     if (!mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::ShowClusterAABBs))
         return;
 
@@ -152,6 +152,6 @@ void ClusterDebugPass::RenderWithGraph(const MainPassData& data,
 
 bool ClusterDebugPass::WantsToRender() const
 {
-    return mathstl::isFlagSet(g_pApplicationState->GetCurrentApplicationState().renderState.debugFlags,
+    return mathstl::isFlagSet(g_engine.GetApplicationState().GetCurrentApplicationState().renderState.debugFlags,
                               (u32)DebugFlags::ShowClusterAABBs);
 }

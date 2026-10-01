@@ -93,7 +93,7 @@ void CpuFrustumCulling::Execute(SharedResourceManager& resourceManager,
 
     if (viewIndex == 0)
     {
-        g_pApplicationState->RegisterUpdateFunction([totalCount, culledCount](ApplicationState& state) {
+        g_engine.GetApplicationState().RegisterUpdateFunction([totalCount, culledCount](ApplicationState& state) {
             state.renderState.totalInstanceCount = totalCount;
             state.renderState.culledInstanceCount = culledCount;
         });

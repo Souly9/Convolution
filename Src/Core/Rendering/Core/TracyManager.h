@@ -10,6 +10,8 @@ public:
     TracyManagerBase() = default;
     virtual ~TracyManagerBase() = default;
 
+    // Called once with a recording-ready setup command buffer; backends fetch their own device handles
+    virtual void Init(CommandBuffer* pSetupCmd) = 0;
     virtual void Destroy() = 0;
     virtual void StartZone(CommandBuffer* pCmdBuffer, const char* name, const mathstl::Vector4& color = {0.2f, 0.4f, 0.6f, 1.0f}) = 0;
     virtual void EndZone(CommandBuffer* pCmdBuffer) = 0;

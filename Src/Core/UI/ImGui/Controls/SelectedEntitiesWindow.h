@@ -32,7 +32,7 @@ public:
             const auto& selectedEntity = data.state.selectedEntities[0];
 
             ECS::Components::Transform* pTransform =
-                g_pEntityManager->GetComponent<ECS::Components::Transform>(selectedEntity);
+                g_engine.GetEntityManager().GetComponent<ECS::Components::Transform>(selectedEntity);
 
             if (pTransform == nullptr)
             {
@@ -71,7 +71,7 @@ public:
                 {
                     if (pTransform->HasParent())
                     {
-                        ECS::Components::Transform* pParent = g_pEntityManager->GetComponent<ECS::Components::Transform>(pTransform->parent);
+                        ECS::Components::Transform* pParent = g_engine.GetEntityManager().GetComponent<ECS::Components::Transform>(pTransform->parent);
                         if (pParent)
                         {
                             mathstl::Matrix parentInv;
@@ -87,23 +87,23 @@ public:
                     pTransform->rotation = mathstl::Vector3(rotation[0], rotation[1], rotation[2]);
                     pTransform->scale = mathstl::Vector3(scale[0], scale[1], scale[2]);
 
-                    g_pEntityManager->MarkComponentDirty(selectedEntity, ECS::ComponentID<ECS::Components::Transform>::ID);
+                    g_engine.GetEntityManager().MarkComponentDirty(selectedEntity, ECS::ComponentID<ECS::Components::Transform>::ID);
                 }
             }
 
-            ECS::Components::Camera* pCamera = g_pEntityManager->GetComponent<ECS::Components::Camera>(selectedEntity);
+            ECS::Components::Camera* pCamera = g_engine.GetEntityManager().GetComponent<ECS::Components::Camera>(selectedEntity);
             Visualize(pCamera);
 
-            auto* pLight = g_pEntityManager->GetComponent<ECS::Components::Light>(selectedEntity);
+            auto* pLight = g_engine.GetEntityManager().GetComponent<ECS::Components::Light>(selectedEntity);
             const bool isLightDirty = Visualize(pLight);
 
-            auto* pRender = g_pEntityManager->GetComponent<ECS::Components::RenderComponent>(selectedEntity);
+            auto* pRender = g_engine.GetEntityManager().GetComponent<ECS::Components::RenderComponent>(selectedEntity);
             Visualize(pRender);
 
             if (isTransformDirty)
-                g_pEntityManager->MarkComponentDirty(selectedEntity, ECS::ComponentID<ECS::Components::Transform>::ID);
+                g_engine.GetEntityManager().MarkComponentDirty(selectedEntity, ECS::ComponentID<ECS::Components::Transform>::ID);
             if (isLightDirty)
-                g_pEntityManager->MarkComponentDirty(selectedEntity, ECS::ComponentID<ECS::Components::Light>::ID);
+                g_engine.GetEntityManager().MarkComponentDirty(selectedEntity, ECS::ComponentID<ECS::Components::Light>::ID);
         }
         ImGui::End();
     }

@@ -62,7 +62,7 @@ public:
         m_imageAvailableSemaphores.resize(SWAPCHAIN_IMAGES);
         m_imageAvailableFences.resize(SWAPCHAIN_IMAGES);
         m_renderFinishedFences.resize(SWAPCHAIN_IMAGES);
-        g_pEventSystem->AddBaseInitEventCallback([&](const auto&) { Init(); });
+        g_engine.GetEventSystem().AddBaseInitEventCallback([&](const auto&) { Init(); });
     }
     ~PassManager();
 
