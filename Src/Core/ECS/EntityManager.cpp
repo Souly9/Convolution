@@ -50,6 +50,7 @@ void EntityManager::ClearCompIdx(EntityID id)
 
 void EntityManager::UnloadAllEntities()
 {
+    ++m_unloadCount;
     m_entities.clear();
     m_entityComponentMap.clear();
     m_transformComponents.clear();

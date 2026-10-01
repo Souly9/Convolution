@@ -26,7 +26,7 @@ class Scene
 public:
     Scene();
     Scene(const stltype::string& name);
-    virtual ~Scene();
+    virtual ~Scene() = default;
 
     const stltype::string& GetName() const
     {

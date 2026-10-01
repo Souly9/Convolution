@@ -1,12 +1,13 @@
 #include "ApplicationState.h"
+#include <chrono>
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Rendering/Core/MaterialManager.h"
 #include "Core/Rendering/Core/TextureManager.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
-#include "Core/Rendering/Passes/PassManager.h"
 #include "Core/SceneGraph/Mesh.h"
 #include "Core/IO/FileReader.h"
 #include "Core/SceneGraph/Scene.h"
+#include "Core/SceneGraph/SceneStreamer.h"
 #include "Core/Rendering/Core/StaticFunctions.h"
 
 void ApplicationStateManager::ProcessStateUpdates()
@@ -64,61 +65,59 @@ void ApplicationStateManager::ReloadCurrentScene()
     m_sceneSwitchPending.store(true, stltype::memory_order_release);
 }
 
-void ApplicationStateManager::ExecuteSceneSwitchOnRenderThread()
+bool ApplicationStateManager::ExecuteSceneSwitchOnRenderThread()
 {
+    ScopedZone("ApplicationStateManager::ExecuteSceneSwitch");
     SimpleScopedGuard<CustomMutex> lock(m_updateStateFutex);
 
     if (!m_pNextScene && !m_reloadRequested.load(stltype::memory_order_relaxed))
     {
         m_sceneSwitchPending.store(false, stltype::memory_order_release);
-        return;
+        return false;
     }
 
-    g_engine.GetFileReader().CancelAllRequests();
-    g_engine.GetFileReader().FinishAllRequests();
+    // Whatever is still streaming or decoding for the old scene is dropped when it is delivered
+    g_engine.GetSceneStreamer().Cancel();
+    g_engine.GetFileReader().BumpGeneration();
 
-    g_renderer.GetQueueHandler().FlushAllTransferCommands();
+    // The one wait of a switch, nothing produces GPU work until the new scene loads
+    const auto idleStart = std::chrono::steady_clock::now();
     SRF::WaitForDeviceIdle<RenderAPI>();
-
-    if (m_pPassManager != nullptr)
-    {
-        m_pPassManager->ResetSceneState();
-    }
+    g_renderer.GetQueueHandler().WaitForFences(~0u);
+    const auto destroyStart = std::chrono::steady_clock::now();
 
     if (m_pCurrentScene)
     {
         m_pCurrentScene->Unload();
-        if (!m_pNextScene && m_reloadRequested.load(stltype::memory_order_relaxed))
-        {
-            DEBUG_LOGF("Reloading current scene: {}", m_pCurrentScene->GetName().c_str());
-            m_pCurrentScene->Load();
-            m_reloadRequested.store(false, stltype::memory_order_release);
-            m_sceneSwitchPending.store(false, stltype::memory_order_release);
-            return;
-        }
-        m_pCurrentScene.reset();
+    }
+    if (m_pNextScene)
+    {
+        m_pRetiredScene = std::move(m_pCurrentScene);
+        m_pCurrentScene = std::move(m_pNextScene);
     }
 
     g_renderer.GetTextureManager().Flush();
     g_engine.GetMeshManager().Flush();
     g_renderer.GetMaterialManager().Flush();
 
-    if (m_pNextScene)
-    {
-        DEBUG_LOGF("Setting current scene to: {}", m_pNextScene->GetName().c_str());
-        m_pNextScene->Load();
-        m_pCurrentScene = std::move(m_pNextScene);
-        DEBUG_LOGF("Loaded scene: {}", m_pCurrentScene->GetName().c_str());
-    }
+    const auto destroyEnd = std::chrono::steady_clock::now();
+    DEBUG_LOGF("Scene switch: {} ms waiting for the device, {} ms destroying the old scene",
+               std::chrono::duration<f32, std::milli>(destroyStart - idleStart).count(),
+               std::chrono::duration<f32, std::milli>(destroyEnd - destroyStart).count());
 
-    m_reloadRequested.store(false, stltype::memory_order_release);
-    m_sceneSwitchPending.store(false, stltype::memory_order_release);
-
+    // Before Load, scenes that set the camera themselves register their update function after this one
     m_updateFunctions.push_back([](ApplicationState& state)
     {
         state.selectedEntities.clear();
         state.mainCameraEntity = {};
     });
+
+    DEBUG_LOGF("Loading scene: {}", m_pCurrentScene->GetName().c_str());
+    m_pCurrentScene->Load();
+
+    m_reloadRequested.store(false, stltype::memory_order_release);
+    m_sceneSwitchPending.store(false, stltype::memory_order_release);
+    return true;
 }
 
 void ApplicationStateManager::UnloadCurrentScene()

@@ -399,20 +399,14 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
 
         if (m_dataToBePreProcessed.entityMeshData.empty() == false)
         {
-            stltype::hash_map<u64, u32> entityToMeshIdx;
-            entityToMeshIdx.reserve(m_dataToBePreProcessed.entityMeshData.size());
-            u32 meshIdx = 0;
-
+            // Slots stay with their entity so streamed-in entities don't move old ones; reset with the scene
             for (const auto& data : m_dataToBePreProcessed.entityMeshData)
             {
-                const auto& entityID = data.first;
-                DEBUG_ASSERT(entityToMeshIdx.find(entityID) == entityToMeshIdx.end());
-                entityToMeshIdx.insert({entityID, meshIdx});
-                ++meshIdx;
+                if (m_entityToTransformUBOIdx.find(data.first) == m_entityToTransformUBOIdx.end())
+                    m_entityToTransformUBOIdx.emplace(data.first, static_cast<u32>(m_entityToTransformUBOIdx.size()));
             }
 
             passData.staticMeshPassData.reserve(m_dataToBePreProcessed.entityMeshData.size());
-            m_entityToTransformUBOIdx = entityToMeshIdx;
             for (const auto& meshDataVecPair : m_dataToBePreProcessed.entityMeshData)
             {
                 const auto& entityID = meshDataVecPair.first;
@@ -477,8 +471,11 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
                 continue;
 
             const u32 ssboIdx = uboIt->second;
+            // A fresh slot has no previous matrix, zeros would give NaN velocity
             m_cachedPrevTransformSSBO[ssboIdx] = m_cachedTransformSSBO[ssboIdx];
             m_cachedTransformSSBO[ssboIdx] = data.second;
+            if (ssboIdx >= m_firstNewTransformSlot)
+                m_cachedPrevTransformSSBO[ssboIdx] = data.second;
             m_transformsToPropagateToPrev.push_back(ssboIdx);
             m_transformsPendingPrevCatchup.push_back(ssboIdx);
 
@@ -494,6 +491,8 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
             dirtyMin = (stltype::min)(dirtyMin, ssboIdx);
             dirtyMax = (stltype::max)(dirtyMax, ssboIdx);
         }
+
+        m_firstNewTransformSlot = static_cast<u32>(m_entityToTransformUBOIdx.size());
 
         for (u32 ssboIdx : m_transformsToPropagateToPrev)
         {
@@ -538,7 +537,7 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
                 lightClusterHost.dirLight.color =
                     mathstl::Vector4(dirLight.color.x, dirLight.color.y, dirLight.color.z, dirLight.color.w);
             }
-            UpdateLightClusterSSBO(lightClusterHost, lightClusterHost.numLights, currentSwapChainIdx);
+            UpdateLightClusterSSBO(lightClusterHost, lightClusterHost.numLights);
         }
         else if (!m_dataToBePreProcessed.lightDeltaUpdates.empty() || m_dataToBePreProcessed.dirLightUpdated)
         {
@@ -570,13 +569,7 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
             if (m_dataToBePreProcessed.dirLightUpdated && m_dataToBePreProcessed.lightDeltaUpdates.empty())
             {
                 // Transfer header only (dirLight + numLights + padding)
-                DispatchSSBOTransfer((void*)m_lightCluster.get(),
-                                     nullptr,
-                                     (u32)UBO::LightClusterHeaderSize,
-                                     &m_lightClusterSSBO,
-                                     0,
-                                     s_tileArrayBindingSlot,
-                                     currentSwapChainIdx);
+                DispatchSSBOTransfer(m_lightCluster.get(), (u32)UBO::LightClusterHeaderSize, &m_lightClusterSSBO);
             }
             else if (dirtyMin <= dirtyMax)
             {
@@ -590,33 +583,19 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
                 if (m_dataToBePreProcessed.dirLightUpdated)
                 {
                     // Transfer header + up to the last dirty light
-                    DispatchSSBOTransfer((void*)m_lightCluster.get(),
-                                         nullptr,
-                                         headerSize,
-                                         &m_lightClusterSSBO,
-                                         0,
-                                         s_tileArrayBindingSlot,
-                                         currentSwapChainIdx);
+                    DispatchSSBOTransfer(m_lightCluster.get(), headerSize, &m_lightClusterSSBO);
 
                     const u32 totalLightsSize = (dirtyMax + 1) * sizeof(RenderLight);
-                    DispatchSSBOTransfer((void*)m_lightCluster->lights.data(),
-                                         nullptr,
-                                         totalLightsSize,
-                                         &m_lightClusterSSBO,
-                                         lightsOffsetInSSBO,
-                                         s_tileArrayBindingSlot,
-                                         currentSwapChainIdx);
+                    DispatchSSBOTransfer(
+                        m_lightCluster->lights.data(), totalLightsSize, &m_lightClusterSSBO, lightsOffsetInSSBO);
                 }
                 else
                 {
                     // Transfer just the dirty range of lights
-                    DispatchSSBOTransfer((void*)(m_lightCluster->lights.data() + dirtyMin),
-                                         nullptr,
+                    DispatchSSBOTransfer(m_lightCluster->lights.data() + dirtyMin,
                                          byteSizeRequested,
                                          &m_lightClusterSSBO,
-                                         lightsOffsetInSSBO + byteOffsetInLights,
-                                         s_tileArrayBindingSlot,
-                                         currentSwapChainIdx);
+                                         lightsOffsetInSSBO + byteOffsetInLights);
                 }
             }
         }
@@ -650,7 +629,6 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
         m_needsToPropagateMainDataUpdate = true;
         m_frameIdxToPropagate = currentSwapChainIdx;
         m_dataToBePreProcessed.Clear();
-        g_renderer.GetQueueHandler().DispatchAllRequests();
     }
 
     m_frameRendererContexts[currentSwapChainIdx].numLights = m_lightCluster->numLights;
@@ -667,7 +645,9 @@ void FrameResourceManager::SetEntityMeshDataForFrame(EntityMeshDataMap&& data, u
 void FrameResourceManager::SetEntityTransformDataForFrame(TransformSystemData&& data, u32 frameIdx)
 {
     m_passDataMutex.lock();
-    m_dataToBePreProcessed.entityTransformData = std::move(data);
+    // A skipped frame leaves the previous batch unprocessed, entries that come later win for the same entity
+    auto& pending = m_dataToBePreProcessed.entityTransformData;
+    pending.insert(pending.end(), data.begin(), data.end());
     m_dataToBePreProcessed.frameIdx = frameIdx;
     m_passDataMutex.unlock();
 }
@@ -708,47 +688,29 @@ void FrameResourceManager::SetSharedData(RenderView&& mainView, u32 frameIdx)
     m_passDataMutex.unlock();
 }
 
-void FrameResourceManager::UpdateLightClusterSSBO(const UBO::LightClusterSSBO& data, u32 numLights, u32 frameIdx)
+void FrameResourceManager::UpdateLightClusterSSBO(const UBO::LightClusterSSBO& data, u32 numLights)
 {
     // Memory mapping is handled at Init
     // Transfer header
-    DispatchSSBOTransfer((void*)&data,
-                         nullptr,
-                         (u32)UBO::LightClusterHeaderSize,
-                         &m_lightClusterSSBO,
-                         0,
-                         s_tileArrayBindingSlot,
-                         frameIdx);
+    DispatchSSBOTransfer(&data, (u32)UBO::LightClusterHeaderSize, &m_lightClusterSSBO);
 
     // Transfer active lights data directly from the vector's data pointer
     if (numLights > 0)
     {
-        DispatchSSBOTransfer((void*)data.lights.data(),
-                             nullptr,
+        DispatchSSBOTransfer(data.lights.data(),
                              (u32)numLights * sizeof(RenderLight),
                              &m_lightClusterSSBO,
-                             (u32)UBO::LightClusterLightsOffset,
-                             s_tileArrayBindingSlot,
-                             frameIdx);
+                             (u32)UBO::LightClusterLightsOffset);
     }
 }
 
-void FrameResourceManager::DispatchSSBOTransfer(void* data,
-                                                DescriptorSet::Ptr pDescriptor,
-                                                u32 size,
-                                                StorageBuffer* pSSBO,
-                                                u32 offset,
-                                                u32 dstBinding,
-                                                u32 frameIdx)
+void FrameResourceManager::DispatchSSBOTransfer(const void* data, u32 size, StorageBuffer* pSSBO, u32 offset)
 {
     AsyncQueueHandler::SSBOTransfer transfer;
     transfer.pData = data;
     transfer.size = size;
     transfer.offset = offset;
-    transfer.pDescriptor = nullptr;
     transfer.pSSBO = pSSBO;
-    transfer.dstBinding = dstBinding;
-    transfer.frameIdx = frameIdx;
     g_renderer.GetQueueHandler().SubmitTransferCommandAsync(transfer);
 }
 
@@ -759,10 +721,12 @@ void FrameResourceManager::ClearGeometryCaches()
     m_dataToBePreProcessed.Clear();
     m_cachedMainView = RenderView{};
     m_entityToTransformUBOIdx.clear();
+    m_firstNewTransformSlot = 0;
     m_entityToObjectDataIdx.clear();
-    m_cachedTransformSSBO.clear();
-    m_cachedPrevTransformSSBO.clear();
-    m_cachedSceneAABBs.clear();
+    // Indexed by SSBO slot, so they must keep MAX_ENTITIES entries
+    m_cachedTransformSSBO.assign(MAX_ENTITIES, DirectX::XMFLOAT4X4{});
+    m_cachedPrevTransformSSBO.assign(MAX_ENTITIES, DirectX::XMFLOAT4X4{});
+    m_cachedSceneAABBs.assign(MAX_ENTITIES, AABB{});
     m_transformsToPropagateToPrev.clear();
     m_transformsPendingPrevCatchup.clear();
     m_cachedDirLights.clear();

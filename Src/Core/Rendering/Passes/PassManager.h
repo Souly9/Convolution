@@ -88,11 +88,6 @@ public:
 
     void RegisterDebugCallbacks();
 
-    // Delegates down to FrameResourceManager
-    void UpdateLightClusterSSBO(const UBO::LightClusterSSBO& data, u32 frameIdx);
-
-    void DispatchSSBOTransfer(
-        void* data, DescriptorSet::Ptr pDescriptor, u32 size, StorageBuffer* pSSBO, u32 offset = 0, u32 dstBinding = 0);
     bool BlockUntilPassesFinished(u32 frameIdx);
 
     MainPassData& GetMainPassData(u32 idx) { return m_mainPassData[idx]; }
@@ -119,6 +114,8 @@ public:
 
 protected:
     void PreProcessMeshData(const stltype::vector<PassMeshData>& meshes, u32 lastFrame, u32 curFrame);
+    // Back to the primitives only, they stay resident because fullscreen passes draw them from the scene buffers
+    void ResetSceneGeometry();
 
     void RecreateShadowMaps(u32 cascades, const mathstl::Vector2& extents);
     // Helpers to split large Init / ExecutePasses

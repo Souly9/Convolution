@@ -51,6 +51,8 @@ constexpr static inline u32 SWAPCHAIN_IMAGES = 2u;
 constexpr static inline u32 CSM_INITIAL_CASCADES = 3u;
 constexpr static inline mathstl::Vector2 CSM_DEFAULT_RES = mathstl::Vector2(2048.0f, 2048.0f);
 constexpr static inline u32 MAX_BINDLESS_TEXTURES = 16536;
+// Bindless slot 0 is the placeholder, scene textures start after it
+constexpr static inline u32 FIRST_SCENE_BINDLESS_SLOT = 1;
 // Bindless texture slots from here up hold persistent (render target) textures
 constexpr static inline u32 PERSISTENT_BINDLESS_REGION_START = 14000;
 constexpr static inline u32 MAX_MESHES = 8192;

@@ -9,15 +9,20 @@ class RGResourceRegistry;
 class RenderTextureImGuiRegistry
 {
 public:
+    static constexpr const char* MATERIAL_TEXTURES_CATEGORY = "Material Textures";
+
     void ReleaseGBufferIdsForNextFrame();
     void ReleaseShadowMapIdsForNextFrame();
     void RegisterShadowMapTextures(const CascadedShadowMap& shadowMap);
     void RegisterGBufferTextures(RGResourceRegistry& registry);
     void RegisterRTTextures(const class RGResourceRegistry& registry);
     void RegisterMaterialTextures();
+    void ReleaseMaterialTextures();
     void PublishGBufferTextureState(RGResourceRegistry& registry);
 
 private:
+    void PublishTextureViewerItems();
+
     stltype::vector<RendererState::TextureViewerItem> m_textureViewerItems{};
     stltype::vector<u64> m_csmCascadeImGuiIDs{};
     stltype::vector<u64> m_gbufferImGuiIDs{};

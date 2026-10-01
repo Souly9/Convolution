@@ -55,7 +55,7 @@ void SMAAPass::Init(const SharedResourceManager& resourceManager)
     areaReq.format = TexFormat::R8G8_UNORM;
     areaReq.semantic = TextureSemantic::Data;
 
-    g_renderer.GetTextureManager().SubmitTextureRequest(areaReq);
+    g_renderer.GetTextureManager().CreateTexture(areaReq);
 
     m_searchTexBindless = g_renderer.GetTextureManager().MakeTextureBindless(searchHandle, true);
     m_areaTexBindless = g_renderer.GetTextureManager().MakeTextureBindless(areaReq.handle, true);

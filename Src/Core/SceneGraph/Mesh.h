@@ -25,16 +25,17 @@ public:
 class MeshManager
 {
 public:
+    // The first meshes of the manager, they outlive scenes
+    static constexpr u32 PRIMITIVE_MESH_COUNT = 3;
+
     MeshManager();
     ~MeshManager() = default;
 
-    Mesh* AllocateMesh(u32 vertexCount, u32 indexCount)
+    Mesh* AddMesh(Mesh&& mesh)
     {
-        m_meshes.push_back(stltype::make_unique<Mesh>());
+        m_meshes.push_back(stltype::make_unique<Mesh>(stltype::move(mesh)));
         auto* pMesh = m_meshes.back().get();
         AllocateRTMeshIdentity(*pMesh);
-        pMesh->vertices.reserve(vertexCount);
-        pMesh->indices.reserve(indexCount);
         return pMesh;
     }
 
@@ -53,6 +54,22 @@ public:
     const stltype::hash_map<const Mesh*, AABB>& GetMeshAABBs() const
     {
         return m_meshAABBs;
+    }
+
+    // Total size of a scene's meshes before they exist, the render side sizes its geometry buffers from it
+    struct GeometryReservation
+    {
+        u64 vertexBytes{0};
+        u64 indexBytes{0};
+        u32 generation{0};
+    };
+    void ReserveSceneGeometry(u64 vertexBytes, u64 indexBytes)
+    {
+        m_geometryReservation = {vertexBytes, indexBytes, m_geometryReservation.generation + 1};
+    }
+    const GeometryReservation& GetSceneGeometryReservation() const
+    {
+        return m_geometryReservation;
     }
 
     void Flush();
@@ -76,6 +93,7 @@ private:
 
     stltype::vector<stltype::unique_ptr<Mesh>> m_meshes;
     stltype::hash_map<const Mesh*, AABB> m_meshAABBs;
+    GeometryReservation m_geometryReservation;
     Mesh* m_pPlanePrimitive;
     Mesh* m_pCubePrimitive;
     Mesh* m_pFullscreenTrianglePrimitive;

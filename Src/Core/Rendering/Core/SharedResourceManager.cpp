@@ -9,52 +9,34 @@
 #include "Core/Rendering/Passes/PassManager.h"
 #include "Defines/GlobalBuffers.h"
 #include "Core/Rendering/Core/DescriptorUtils/DescriptorLayoutUtils.h"
-#include "Utils/GeometryBufferBuildUtils.h"
 
-void SharedResourceManager::UploadDebugMesh(const Mesh& mesh, u32 thisFrame)
+MeshHandle SharedResourceManager::AppendMesh(const Mesh& mesh,
+                                             BufferData& buffers,
+                                             BufferStats& offsets,
+                                             stltype::hash_map<const Mesh*, MeshHandle>& handles)
 {
-    ScopedZone("SharedResourceManager::UploadDebugMesh");
-    DEBUG_LOGF("SharedResourceManager: Uploading debug mesh. Vertices: {}, Indices: {}", (u32)mesh.vertices.size(), (u32)mesh.indices.size());
-    AsyncQueueHandler::MeshTransfer cmd{};
-    cmd.vertices.reserve(mesh.vertices.size());
-    cmd.indices.reserve(mesh.indices.size());
-    cmd.pBuffersToFill = &m_debugGeometryBuffers;
+    AsyncQueueHandler::MeshTransfer transfer{};
+    transfer.pVertices = mesh.vertices.data();
+    transfer.vertexCount = (u32)mesh.vertices.size();
+    transfer.pIndices = mesh.indices.data();
+    transfer.indexCount = (u32)mesh.indices.size();
+    transfer.pBuffersToFill = &buffers;
+    transfer.vertexOffset = offsets.vertBufferOffset * sizeof(CompleteVertex);
+    transfer.indexOffset = offsets.indexBufferOffset * sizeof(u32);
+    DEBUG_ASSERT(transfer.vertexOffset + mesh.vertices.size() * sizeof(CompleteVertex) <=
+                 buffers.GetVertexBuffer().GetInfo().size);
+    DEBUG_ASSERT(transfer.indexOffset + mesh.indices.size() * sizeof(u32) <= buffers.GetIndexBuffer().GetInfo().size);
+    g_renderer.GetQueueHandler().SubmitTransferCommandAsync(transfer);
 
-    u64 vertexBaseOffset = 0;
-
-    {
-        SimpleScopedGuard lock(m_geometryStateMutex);
-
-        vertexBaseOffset = m_debugBufferOffsetData.vertBufferOffset;
-        cmd.vertexOffset = m_debugBufferOffsetData.vertBufferOffset * sizeof(CompleteVertex);
-        cmd.indexOffset = m_debugBufferOffsetData.indexBufferOffset * sizeof(u32);
-
-        MeshResourceData meshData{};
-        meshData.indexBufferOffset = m_debugBufferOffsetData.indexBufferOffset;
-        meshData.vertBufferOffset = m_debugBufferOffsetData.vertBufferOffset;
-        meshData.indexCount = mesh.indices.size();
-        meshData.vertCount = mesh.vertices.size();
-
-        m_debugBufferOffsetData.indexBufferOffset += mesh.indices.size();
-        m_debugBufferOffsetData.vertBufferOffset += mesh.vertices.size();
-
-        m_debugMeshHandles[&mesh] = meshData;
-    }
-    Utils::GenerateDrawCommandForMesh(mesh, vertexBaseOffset, cmd.vertices, cmd.indices);
-    cmd.frameIdx = thisFrame;
-
-    const Mesh* pMeshPtr = &mesh;
-    cmd.onComplete = [this, pMeshPtr]()
-                     {
-                         DEBUG_LOG("SharedResourceManager: Debug mesh transfer completed. Marking resident.");
-                         SimpleScopedGuard lock(m_residencyStateMutex);
-                         if (m_residentMeshes.insert(pMeshPtr).second)
-                         {
-                             m_pendingVisibleMeshes.push_back(pMeshPtr);
-                         }
-                     };
-
-    g_renderer.GetQueueHandler().SubmitTransferCommandAsync(cmd);
+    MeshResourceData meshData{};
+    meshData.indexBufferOffset = offsets.indexBufferOffset;
+    meshData.vertBufferOffset = offsets.vertBufferOffset;
+    meshData.indexCount = mesh.indices.size();
+    meshData.vertCount = mesh.vertices.size();
+    offsets.indexBufferOffset += mesh.indices.size();
+    offsets.vertBufferOffset += mesh.vertices.size();
+    handles[&mesh] = meshData;
+    return meshData;
 }
 
 void SharedResourceManager::Init()
@@ -65,8 +47,9 @@ void SharedResourceManager::Init()
     info.enableStorageBufferDescriptors = true;
     m_descriptorPool.Create(info);
 
-    m_debugBufferOffsetData.vertBufferOffset = 0;
-    m_debugBufferOffsetData.indexBufferOffset = 0;
+    // Debug meshes are copied into fixed buffers at their own offsets
+    m_debugGeometryBuffers.SetVertexBuffer(VertexBuffer(s_debugGeometryVertexCapacity * sizeof(CompleteVertex)));
+    m_debugGeometryBuffers.SetIndexBuffer(IndexBuffer(s_debugGeometryIndexCapacity * sizeof(u32)));
 
     u64 transBufferSize = UBO::GlobalTransformSSBOSize;
 
@@ -128,163 +111,47 @@ void SharedResourceManager::Init()
     }
 }
 
-void SharedResourceManager::UploadSceneGeometry(const stltype::vector<stltype::unique_ptr<Mesh>>& meshes)
+void SharedResourceManager::BeginSceneGeometry(u64 sceneVertexBytes, u64 sceneIndexBytes)
 {
-    ScopedZone("SharedResourceManager::UploadSceneGeometry");
+    ScopedZone("SharedResourceManager::BeginSceneGeometry");
+
+    // The primitives always sit at the start, fullscreen passes draw them from these buffers
+    const auto& meshes = g_engine.GetMeshManager().GetMeshes();
+    u64 vertexBytes = sceneVertexBytes;
+    u64 indexBytes = sceneIndexBytes;
+    for (u32 i = 0; i < MeshManager::PRIMITIVE_MESH_COUNT; ++i)
     {
-        SimpleScopedGuard lock(m_residencyStateMutex);
-        m_residentMeshes.clear();
-        m_pendingVisibleMeshes.clear();
-        m_pendingRayTracingMeshes.clear();
-        m_meshToInstanceIdx.clear();
+        vertexBytes += meshes[i]->vertices.size() * sizeof(CompleteVertex);
+        indexBytes += meshes[i]->indices.size() * sizeof(u32);
     }
-    {
-        SimpleScopedGuard lock(m_pendingUploadMutex);
-        m_pendingMeshUploads.clear();
-    }
+    DEBUG_LOGF("SharedResourceManager: Scene geometry buffers. Vertex bytes: {}, Index bytes: {}",
+               (u32)vertexBytes,
+               (u32)indexBytes);
 
-    u64 vertexCount = 0;
-    u64 indexCount = 0;
-    for (const auto& pMesh : meshes)
-    {
-        vertexCount += pMesh->vertices.size();
-        indexCount += pMesh->indices.size();
-    }
-    DEBUG_LOGF("SharedResourceManager: Uploading scene geometry. Total vertices: {}, Total indices: {}, Mesh count: {}",
-               (u32)vertexCount, (u32)indexCount, (u32)meshes.size());
+    // BufferData frees the old buffers once the frames in flight are done with them
+    m_sceneGeometryBuffers.SetVertexBuffer(VertexBuffer(vertexBytes));
+    m_sceneGeometryBuffers.SetIndexBuffer(IndexBuffer(indexBytes));
 
-    AsyncQueueHandler::MeshTransfer cmd{};
-    cmd.vertices.reserve(vertexCount);
-    cmd.indices.reserve(indexCount);
-    cmd.pBuffersToFill = &m_sceneGeometryBuffers;
-
-    stltype::vector<const Mesh*> meshPtrs;
-    meshPtrs.reserve(meshes.size());
-    {
-        SimpleScopedGuard lock(m_geometryStateMutex);
-
-        m_bufferOffsetData.vertexCount = vertexCount;
-        m_bufferOffsetData.indexCount = indexCount;
-        m_bufferOffsetData.vertBufferOffset = 0;
-        m_bufferOffsetData.indexBufferOffset = 0;
-        m_meshHandles.clear();
-        m_meshHandles.reserve(meshes.size());
-
-        for (const auto& pMesh : meshes)
-        {
-            if (m_meshHandles.find(pMesh.get()) != m_meshHandles.end())
-                continue;
-
-            MeshResourceData meshData{};
-            meshData.indexBufferOffset = m_bufferOffsetData.indexBufferOffset;
-            meshData.vertBufferOffset = m_bufferOffsetData.vertBufferOffset;
-            meshData.indexCount = pMesh->indices.size();
-            meshData.vertCount = pMesh->vertices.size();
-
-            Utils::GenerateDrawCommandForMesh(*pMesh.get(), m_bufferOffsetData.vertBufferOffset, cmd.vertices, cmd.indices);
-            m_bufferOffsetData.indexBufferOffset += pMesh->indices.size();
-            m_bufferOffsetData.vertBufferOffset += pMesh->vertices.size();
-
-            m_meshHandles[pMesh.get()] = meshData;
-            meshPtrs.push_back(pMesh.get());
-        }
-    }
-    cmd.frameIdx = 0;
-
-    cmd.onComplete = [this, meshPtrs = stltype::move(meshPtrs)]()
-    {
-        // RT gets all meshes immediately so BLAS builds can start as GPU data is ready
-        {
-            SimpleScopedGuard lock(m_residencyStateMutex);
-            for (const auto* pMesh : meshPtrs)
-                m_pendingRayTracingMeshes.push_back(pMesh);
-        }
-        // Rendering visibility is streamed via FlushPendingMeshUploads
-        {
-            SimpleScopedGuard lock(m_pendingUploadMutex);
-            for (const auto* pMesh : meshPtrs)
-                m_pendingMeshUploads.push_back({pMesh});
-        }
-    };
-
-    g_renderer.GetQueueHandler().SubmitTransferCommandAsync(cmd);
+    SimpleScopedGuard lock(m_geometryStateMutex);
+    m_bufferOffsetData = {};
+    m_meshHandles.clear();
+    for (u32 i = 0; i < MeshManager::PRIMITIVE_MESH_COUNT; ++i)
+        AppendMesh(*meshes[i], m_sceneGeometryBuffers, m_bufferOffsetData, m_meshHandles);
 }
 
 void SharedResourceManager::ClearGeometryCaches()
 {
-    {
-        SimpleScopedGuard lock(m_residencyStateMutex);
-        m_residentMeshes.clear();
-        m_pendingVisibleMeshes.clear();
-        m_pendingRayTracingMeshes.clear();
-        m_meshToInstanceIdx.clear();
-    }
-    {
-        SimpleScopedGuard lock(m_pendingUploadMutex);
-        m_pendingMeshUploads.clear();
-    }
+    // Back to the primitives only, the old scene's meshes are about to be destroyed
+    BeginSceneGeometry(0, 0);
     {
         SimpleScopedGuard lock(m_geometryStateMutex);
-        m_meshHandles.clear();
+        m_debugMeshHandles.clear();
+        m_debugBufferOffsetData = {};
     }
-}
-
-void SharedResourceManager::FlushPendingMeshUploads(u32 frameIdx, u32 maxCount)
-{
-    ScopedZone("SharedResourceManager::FlushPendingMeshUploads");
-
-    stltype::vector<const Mesh*> batch;
-    batch.reserve(maxCount);
-    {
-        SimpleScopedGuard lock(m_pendingUploadMutex);
-        const u32 count = (stltype::min)(maxCount, (u32)m_pendingMeshUploads.size());
-        for (u32 i = 0; i < count; ++i)
-        {
-            batch.push_back(m_pendingMeshUploads.front().pMesh);
-            m_pendingMeshUploads.pop_front();
-        }
-    }
-
-    if (batch.empty())
-        return;
-
-    {
-        SimpleScopedGuard lock(m_residencyStateMutex);
-        for (const Mesh* pMesh : batch)
-        {
-            if (m_residentMeshes.insert(pMesh).second)
-                m_pendingVisibleMeshes.push_back(pMesh);
-        }
-    }
-
-    auto newlyVisibleIndices = PopPendingVisibleInstanceIndices();
-    if (!newlyVisibleIndices.empty())
-    {
-        for (u32 instanceIdx : newlyVisibleIndices)
-        {
-            if (instanceIdx < m_currentFrameInstanceData.size())
-            {
-                m_currentFrameInstanceData[instanceIdx].SetVisible(true);
-            }
-            if (instanceIdx < m_masterInstanceVisibility.size())
-            {
-                m_masterInstanceVisibility[instanceIdx] = 1u;
-            }
-        }
-
-        AsyncQueueHandler::SSBOTransfer transfer;
-        transfer.pData = m_currentFrameInstanceData.data();
-        transfer.size = static_cast<u32>(m_currentFrameInstanceData.size() * sizeof(m_currentFrameInstanceData[0]));
-        transfer.offset = 0;
-        transfer.pDescriptor = nullptr;
-        transfer.pSSBO = &m_sceneInstanceBuffer;
-        transfer.dstBinding = s_globalInstanceDataSSBOSlot;
-        transfer.frameIdx = frameIdx;
-        DEBUG_LOGF("SharedResourceManager: Updated visibility for {} newly resident instances. Re-uploading SSBO size: {} bytes", 
-                   (u32)newlyVisibleIndices.size(), transfer.size);
-        g_renderer.GetQueueHandler().SubmitTransferCommandAsync(transfer);
-        g_renderer.GetQueueHandler().DispatchAllRequests();
-    }
+    // A reservation made before the switch belongs to the old scene
+    m_reservationGeneration = g_engine.GetMeshManager().GetSceneGeometryReservation().generation;
+    m_currentFrameInstanceData.clear();
+    m_masterInstanceVisibility.clear();
 }
 
 void SharedResourceManager::UpdateInstanceDataSSBO(stltype::vector<RenderPasses::PassMeshData>& meshes,
@@ -298,39 +165,31 @@ void SharedResourceManager::UpdateInstanceDataSSBO(stltype::vector<RenderPasses:
     m_masterInstanceVisibility.clear();
     m_masterInstanceVisibility.reserve(meshes.size());
 
+    // A new scene reserved its geometry, size the buffers before its first mesh is appended
+    const auto& reservation = g_engine.GetMeshManager().GetSceneGeometryReservation();
+    if (reservation.generation != m_reservationGeneration)
     {
-        SimpleScopedGuard lock(m_residencyStateMutex);
-        m_meshToInstanceIdx.clear();
+        m_reservationGeneration = reservation.generation;
+        BeginSceneGeometry(reservation.vertexBytes, reservation.indexBytes);
     }
 
     for (auto& meshData : meshes)
     {
         auto& data = instanceData.emplace_back();
+        const Mesh* pMesh = meshData.meshData.pMesh;
         MeshHandle handle;
-
-        if (meshData.meshData.IsDebugMesh())
         {
-            bool hasHandle = false;
-            {
-                SimpleScopedGuard lock(m_geometryStateMutex);
-                if (const auto& it = m_debugMeshHandles.find(meshData.meshData.pMesh); it != m_debugMeshHandles.end())
-                {
-                    handle = it->second;
-                    hasHandle = true;
-                }
-            }
-
-            if (!hasHandle)
-            {
-                UploadDebugMesh(*meshData.meshData.pMesh, thisFrameNum);
-                SimpleScopedGuard lock(m_geometryStateMutex);
-                handle = m_debugMeshHandles.at(meshData.meshData.pMesh);
-            }
-        }
-        else
-        {
+            // Meshes are uploaded the first time they show up
+            const bool isDebug = meshData.meshData.IsDebugMesh();
+            auto& handles = isDebug ? m_debugMeshHandles : m_meshHandles;
             SimpleScopedGuard lock(m_geometryStateMutex);
-            handle = m_meshHandles.at(meshData.meshData.pMesh); // If this fails we have a problem either way
+            if (auto it = handles.find(pMesh); it != handles.end())
+                handle = it->second;
+            else
+                handle = AppendMesh(*pMesh,
+                                    isDebug ? m_debugGeometryBuffers : m_sceneGeometryBuffers,
+                                    isDebug ? m_debugBufferOffsetData : m_bufferOffsetData,
+                                    handles);
         }
 
         data.drawData = handle;
@@ -343,34 +202,17 @@ void SharedResourceManager::UpdateInstanceDataSSBO(stltype::vector<RenderPasses:
         meshData.meshData.meshResourceHandle = data.drawData;
         meshData.meshData.instanceDataIdx = (u32)instanceData.size() - 1;
 
-        // Visibility set from residency
-        {
-            SimpleScopedGuard lock(m_residencyStateMutex);
-            const bool isResident = m_residentMeshes.count(meshData.meshData.pMesh) > 0;
-            const bool isMeshUploaded = meshData.meshData.pMesh != nullptr;
-            const bool isMasterVisible = isResident || isMeshUploaded;
-            data.SetVisible(isMasterVisible);
-            m_masterInstanceVisibility.push_back(isMasterVisible ? 1u : 0u);
-            m_meshToInstanceIdx[meshData.meshData.pMesh].push_back(meshData.meshData.instanceDataIdx);
-        }
+        data.SetVisible(true);
+        m_masterInstanceVisibility.push_back(1u);
     }
     AsyncQueueHandler::SSBOTransfer transfer;
     transfer.pData = m_currentFrameInstanceData.data();
     transfer.size = static_cast<u32>(m_currentFrameInstanceData.size() * sizeof(m_currentFrameInstanceData[0]));
     transfer.offset = 0;
-    transfer.pDescriptor = nullptr;
     transfer.pSSBO = &m_sceneInstanceBuffer;
-    transfer.dstBinding = s_globalInstanceDataSSBOSlot;
-    transfer.frameIdx = thisFrameNum;
     DEBUG_LOGF("SharedResourceManager: Updating instance data SSBO. Entry count: {}, Size: {} bytes", 
                (u32)m_currentFrameInstanceData.size(), transfer.size);
     g_renderer.GetQueueHandler().SubmitTransferCommandAsync(transfer);
-    g_renderer.GetQueueHandler().DispatchAllRequests();
-}
-
-MeshHandle SharedResourceManager::UploadMesh(const Mesh& mesh)
-{
-    return {};
 }
 
 MeshHandle SharedResourceManager::GetMeshHandle(const Mesh* pMesh) const
@@ -405,13 +247,10 @@ void SharedResourceManager::UpdateTransformBuffer(const stltype::vector<DirectX:
     if (transferSize == 0) return;
     
     AsyncQueueHandler::SSBOTransfer transfer;
-    transfer.pData = (void*)transformBuffer.data();
+    transfer.pData = transformBuffer.data();
     transfer.size = static_cast<u32>(transferSize);
     transfer.offset = 0;
-    transfer.pDescriptor = nullptr;
     transfer.pSSBO = &m_transformBuffer;
-    transfer.dstBinding = s_modelSSBOBindingSlot;
-    transfer.frameIdx = thisFrame;
     g_renderer.GetQueueHandler().SubmitTransferCommandAsync(transfer);
 }
 
@@ -425,13 +264,10 @@ void SharedResourceManager::UpdateTransformRange(const stltype::vector<DirectX::
     const u64 offset = startIdx * sizeof(DirectX::XMFLOAT4X4);
     const u64 transferSize = count * sizeof(DirectX::XMFLOAT4X4);
     AsyncQueueHandler::SSBOTransfer transfer;
-    transfer.pData = (void*)&transformBuffer[startIdx];
+    transfer.pData = &transformBuffer[startIdx];
     transfer.size = static_cast<u32>(transferSize);
     transfer.offset = offset;
-    transfer.pDescriptor = nullptr;
     transfer.pSSBO = &m_transformBuffer;
-    transfer.dstBinding = s_modelSSBOBindingSlot;
-    transfer.frameIdx = thisFrame;
     g_renderer.GetQueueHandler().SubmitTransferCommandAsync(transfer);
 }
 
@@ -445,13 +281,10 @@ void SharedResourceManager::UpdatePrevTransformRange(const stltype::vector<Direc
     const u64 offset = startIdx * sizeof(DirectX::XMFLOAT4X4);
     const u64 transferSize = count * sizeof(DirectX::XMFLOAT4X4);
     AsyncQueueHandler::SSBOTransfer transfer;
-    transfer.pData = (void*)&transformBuffer[startIdx];
+    transfer.pData = &transformBuffer[startIdx];
     transfer.size = static_cast<u32>(transferSize);
     transfer.offset = offset;
-    transfer.pDescriptor = nullptr;
     transfer.pSSBO = &m_prevTransformBuffer;
-    transfer.dstBinding = s_prevModelSSBOBindingSlot;
-    transfer.frameIdx = thisFrame;
     g_renderer.GetQueueHandler().SubmitTransferCommandAsync(transfer);
 }
 
@@ -462,13 +295,10 @@ void SharedResourceManager::UpdateSceneAABBBuffer(const stltype::vector<AABB>& a
     if (transferSize == 0) return;
 
     AsyncQueueHandler::SSBOTransfer transfer;
-    transfer.pData = (void*)aabbBuffer.data();
+    transfer.pData = aabbBuffer.data();
     transfer.size = static_cast<u32>(transferSize);
     transfer.offset = 0;
-    transfer.pDescriptor = nullptr;
     transfer.pSSBO = &m_sceneAABBBuffer;
-    transfer.dstBinding = s_sceneAABBsSSBOBindingSlot;
-    transfer.frameIdx = thisFrame;
     g_renderer.GetQueueHandler().SubmitTransferCommandAsync(transfer);
 }
 
@@ -482,13 +312,10 @@ void SharedResourceManager::UpdateSceneAABBRange(const stltype::vector<AABB>& aa
     const u64 offset = startIdx * sizeof(AABB);
     const u64 transferSize = count * sizeof(AABB);
     AsyncQueueHandler::SSBOTransfer transfer;
-    transfer.pData = (void*)&aabbBuffer[startIdx];
+    transfer.pData = &aabbBuffer[startIdx];
     transfer.size = static_cast<u32>(transferSize);
     transfer.offset = offset;
-    transfer.pDescriptor = nullptr;
     transfer.pSSBO = &m_sceneAABBBuffer;
-    transfer.dstBinding = s_sceneAABBsSSBOBindingSlot;
-    transfer.frameIdx = thisFrame;
     g_renderer.GetQueueHandler().SubmitTransferCommandAsync(transfer);
 }
 
@@ -499,65 +326,11 @@ void SharedResourceManager::UpdateGlobalMaterialBuffer(const UBO::MaterialBuffer
     u32 byteSize = materialCount * sizeof(Material);
     
     AsyncQueueHandler::SSBOTransfer transfer;
-    transfer.pData = (void*)materialBuffer.data();
+    transfer.pData = materialBuffer.data();
     transfer.size = byteSize;
     transfer.offset = 0;
-    transfer.pDescriptor = nullptr;
     transfer.pSSBO = &m_materialBuffer;
-    transfer.dstBinding = s_globalMaterialBufferSlot;
-    transfer.frameIdx = thisFrame;
     g_renderer.GetQueueHandler().SubmitTransferCommandAsync(transfer);
-}
-
-stltype::vector<u32> SharedResourceManager::PopPendingVisibleInstanceIndices()
-{
-    ScopedZone("SharedResourceManager::PopPendingVisibleInstanceIndices");
-    stltype::vector<u32> indices;
-    stltype::hash_set<u32> seenInstanceIndices;
-    SimpleScopedGuard lock(m_residencyStateMutex);
-    stltype::vector<const Mesh*> remainingUnmapped;
-    for (const auto* pMesh : m_pendingVisibleMeshes)
-    {
-        auto it = m_meshToInstanceIdx.find(pMesh);
-        if (it != m_meshToInstanceIdx.end())
-        {
-            for (u32 instanceIdx : it->second)
-            {
-                if (seenInstanceIndices.insert(instanceIdx).second)
-                {
-                    indices.push_back(instanceIdx);
-                }
-            }
-        }
-        else
-        {
-            remainingUnmapped.push_back(pMesh);
-        }
-    }
-    m_pendingVisibleMeshes = stltype::move(remainingUnmapped);
-    return indices;
-}
-
-stltype::vector<const Mesh*> SharedResourceManager::PopPendingResidentMeshesForRayTracing()
-{
-    ScopedZone("SharedResourceManager::PopPendingResidentMeshesForRayTracing");
-    SimpleScopedGuard lock(m_residencyStateMutex);
-    stltype::vector<const Mesh*> meshes;
-    meshes.reserve(m_pendingRayTracingMeshes.size());
-
-    {
-        SimpleScopedGuard geoLock(m_geometryStateMutex);
-        for (const Mesh* pMesh : m_pendingRayTracingMeshes)
-        {
-            if (pMesh != nullptr && m_meshHandles.find(pMesh) != m_meshHandles.end())
-            {
-                meshes.push_back(pMesh);
-            }
-        }
-    }
-
-    m_pendingRayTracingMeshes.clear();
-    return meshes;
 }
 
 void SharedResourceManager::UploadInstanceDataSSBO(u32 frameIdx)
@@ -573,9 +346,6 @@ void SharedResourceManager::UploadInstanceDataSSBO(u32 frameIdx)
     transfer.pData = m_currentFrameInstanceData.data();
     transfer.size = static_cast<u32>(m_currentFrameInstanceData.size() * sizeof(m_currentFrameInstanceData[0]));
     transfer.offset = 0;
-    transfer.pDescriptor = nullptr;
     transfer.pSSBO = &m_sceneInstanceBuffer;
-    transfer.dstBinding = s_globalInstanceDataSSBOSlot;
-    transfer.frameIdx = frameIdx;
     g_renderer.GetQueueHandler().SubmitTransferCommandAsync(transfer);
 }

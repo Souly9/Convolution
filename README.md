@@ -62,10 +62,11 @@ The pipeline is driven by a compiled, declarative **RenderGraph**:
 ## ECS & Async Asset Pipeline
 
 * **Entity Component System (ECS):** Managed by [`EntityManager`](Src/Core/ECS/EntityManager.h). Entities compose modular components (`Transform`, `RenderComponent`, `Light`) and update on the main thread via decoupled systems (`STransform`, `SLight`, `SView`, `SDebugDisplay`).
-* **Mesh Pipeline:** File formats are parsed via [`MeshConverter`](Src/Core/IO/MeshConverter.h), mapped onto ECS entities, and staged for GPU upload through [`SharedResourceManager`](Src/Core/Rendering/Core/SharedResourceManager.h).
-* **Asynchronous I/O & File Loading:** [`FileReader`](Src/Core/IO/FileReader.h) manages a dedicated I/O thread and thread pool to load raw bytes, DDS/image textures, and mesh data asynchronously with completion callbacks.
-* **Bindless Texture Streaming:** [`VkTextureManager`](Src/Core/Rendering/Vulkan/VkTextureManager.h) streams textures on a dedicated worker thread directly into GPU bindless arrays, using placeholder textures to keep rendering unblocked during loads.
-* **Async Transfers:** [`TransferQueueHandler`](Src/Core/Rendering/Core/TransferUtils/TransferQueueHandler.h) delegates GPU buffer copying and staging submissions to a background thread pool.
+* **Mesh Pipeline:** Scene files are imported and converted to plain data ([`MeshDecoder`](Src/Core/IO/MeshDecoder.h), [`DecodedScene`](Src/Core/IO/DecodedScene.h)) on a worker. [`SceneStreamer`](Src/Core/SceneGraph/SceneStreamer.h) turns that into ECS entities, meshes and materials over several frames under the streaming budgets, so the camera can move while a scene loads.
+* **Asynchronous I/O & File Loading:** [`FileReader`](Src/Core/IO/FileReader.h) decodes bytes, DDS/image textures and meshes on a thread pool. Image and mesh results are queued and delivered on the render thread (`DeliverCompleted`), so load callbacks never race with the ECS or the GPU. A generation counter drops results of a previous scene.
+* **Bindless Texture Streaming:** [`TextureManagerBase`](Src/Core/Rendering/Core/TextureManagerBase.h) (shared) and [`VkTextureManager`](Src/Core/Rendering/Vulkan/VkTextureManager.h) create each texture in the frame its decode arrives and write it into the bindless arrays; a slot shows the placeholder until then.
+* **Uploads:** [`AsyncQueueHandler`](Src/Core/Rendering/Core/TransferUtils/TransferQueueHandler.h) records all uploads of a frame (SSBO updates, streamed geometry, textures) into one command buffer on the graphics queue, staged through a per-frame arena.
+* **Engine Settings:** the *Debug > Engine Settings* window edits the streaming budgets at runtime and shows streaming statistics.
 
 ---
 

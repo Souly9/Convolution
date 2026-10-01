@@ -129,22 +129,6 @@ void RTSceneManager::Reset()
     PublishDebugState();
 }
 
-void RTSceneManager::RegisterSceneMeshes(const stltype::vector<stltype::unique_ptr<Mesh>>& meshes)
-{
-    if (m_pResourceManager == nullptr)
-        return;
-
-    for (const auto& pMesh : meshes)
-    {
-        if (!pMesh)
-            continue;
-
-        m_blasBuilder.RegisterMesh(*pMesh, m_pResourceManager->GetMeshHandle(pMesh.get()));
-    }
-
-    PublishDebugState();
-}
-
 void RTSceneManager::UpdateTLASDescriptorSet(u32 frameSlot, const TLASFrameData& frameData)
 {
     if (m_pResourceManager == nullptr || !frameData.accelerationStructure || !frameData.hitDataBuffer.IsCreated())
@@ -169,14 +153,6 @@ bool RTSceneManager::Update(u32 frameIdx,
 {
     if (m_pResourceManager == nullptr)
         return false;
-
-    for (const Mesh* pMesh : m_pResourceManager->PopPendingResidentMeshesForRayTracing())
-    {
-        if (pMesh != nullptr)
-        {
-            m_blasBuilder.NotifyRasterBuffersResident(*pMesh);
-        }
-    }
 
     m_blasBuilder.ProcessBuildQueue(*m_pResourceManager, frameIdx);
     BuildCurrentInstanceList(frameResourceManager);
@@ -239,7 +215,13 @@ void RTSceneManager::BuildCurrentInstanceList(const RenderPasses::FrameResourceM
             continue;
 
         const BLASRecord* pBLASRecord = m_blasBuilder.GetRecord(meshData.pMesh->rtMeshId);
-        if (pBLASRecord == nullptr || pBLASRecord->state != BLASState::Ready || pBLASRecord->deviceAddress == 0)
+        // New meshes get their BLAS queued the first time they show up in the scene geometry
+        if (pBLASRecord == nullptr || pBLASRecord->state == BLASState::Uninitialized)
+        {
+            m_blasBuilder.RegisterMesh(*meshData.pMesh, m_pResourceManager->GetMeshHandle(meshData.pMesh));
+            continue;
+        }
+        if (pBLASRecord->state != BLASState::Ready || pBLASRecord->deviceAddress == 0)
             continue;
 
         RTInstanceRecord instanceRecord{};

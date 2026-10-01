@@ -150,11 +150,11 @@ void TimelineSemaphoreVulkan::Wait(u64 value, u64 timeout) const
     const VkResult result = vkWaitSemaphores(VkBackend::Device(), &waitInfo, timeout);
     if (timeout > 0)
     {
-        DEBUG_ASSERT(result == VK_SUCCESS || result == VK_ERROR_DEVICE_LOST);
+        DEBUG_ASSERT(result == VK_SUCCESS);
     }
     else
     {
-        DEBUG_ASSERT(result == VK_SUCCESS || result == VK_TIMEOUT || result == VK_ERROR_DEVICE_LOST);
+        DEBUG_ASSERT(result == VK_SUCCESS || result == VK_TIMEOUT);
     }
 }
 

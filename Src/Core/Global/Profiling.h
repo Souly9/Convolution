@@ -9,9 +9,11 @@
 #include <cstdint>
 
 #define ScopedZone(name)             ZoneScopedN(name)
+#define ProfilePlot(name, value)     TracyPlot(name, static_cast<int64_t>(value))
 #define ProfiledLockable(type, name) TracyLockable(type, name)
 #define ProfiledLockableType(type)   LockableBase(type)
 #else
 #define ScopedZone(name)
+#define ProfilePlot(name, value)
 #define ProfiledLockable(type, name) type name
 #endif

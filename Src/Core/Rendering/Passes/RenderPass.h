@@ -5,7 +5,6 @@
 #include "Core/Rendering/Core/Texture.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
 #include "Core/Rendering/Core/Synchronization.h"
-#include "Core/Rendering/Core/TransferUtils/TransferDefines.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
 #include "Core/Rendering/Core/Shader.h"
 #include "Core/Rendering/Core/ProfilingUtils.h"

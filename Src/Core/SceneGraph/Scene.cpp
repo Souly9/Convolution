@@ -2,7 +2,7 @@
 #include "Core/Global/Utils/MathFunctions.h"
 #include "Core/ECS/Components/Light.h"
 #include "Core/ECS/EntityManager.h"
-#include "Core/Events/EventSystem.h"
+#include "Core/Global/State/ApplicationState.h"
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Rendering/Core/MaterialManager.h"
@@ -16,11 +16,6 @@ Scene::Scene(const stltype::string& name) : m_name{name}
     // g_engine.GetEntityManager().CreateEntity(mathstl::Vector3(0,0,0), "Root");
 }
 
-Scene::~Scene()
-{
-    Unload();
-}
-
 void Scene::Unload()
 {
     g_engine.GetEntityManager().UnloadAllEntities();
@@ -31,16 +26,11 @@ void Scene::FinishLoad(SceneNode root)
     m_sceneRoot = root;
     m_isLoaded = true;
     g_engine.GetApplicationState().RegisterUpdateFunction(
-        [](ApplicationState&)
-        {
-            g_engine.GetEventSystem().OnSceneLoaded({});
-        });
-    g_engine.GetApplicationState().RegisterUpdateFunction(
         [](ApplicationState& state)
         {
-            g_engine.GetEntityManager().MarkComponentDirty({}, ECS::ComponentID<ECS::Components::Transform>::ID);
-            g_engine.GetEntityManager().MarkComponentDirty({}, ECS::ComponentID<ECS::Components::RenderComponent>::ID);
-            g_engine.GetEntityManager().MarkComponentDirty({}, ECS::ComponentID<ECS::Components::Light>::ID);
+            g_engine.GetEntityManager().MarkComponentDirty({}, C_ID(Transform));
+            g_engine.GetEntityManager().MarkComponentDirty({}, C_ID(RenderComponent));
+            g_engine.GetEntityManager().MarkComponentDirty({}, C_ID(Light));
             g_renderer.GetMaterialManager().MarkMaterialsDirty();
         });
 }

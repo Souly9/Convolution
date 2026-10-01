@@ -19,7 +19,6 @@ class RTSceneManager
 public:
     void Init(SharedResourceManager* pResourceManager, u32 graphicsQueueFamilyIdx);
     void Reset();
-    void RegisterSceneMeshes(const stltype::vector<stltype::unique_ptr<Mesh>>& meshes);
     bool Update(u32 frameIdx,
                 u32 frameSlot,
                 const RenderPasses::FrameResourceManager& frameResourceManager,

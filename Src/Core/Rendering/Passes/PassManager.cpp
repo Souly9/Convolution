@@ -62,21 +62,7 @@ void PassManager::InitResourceManagerAndCallbacks()
 {
     m_resourceManager.Init();
     m_rtSceneManager.Init(&m_resourceManager, g_renderer.GetQueueFamilyIndices().graphicsFamily.value());
-    auto registerSceneGeometry = [this]()
-    {
-        m_rtSceneManager.Reset();
-        m_resourceManager.UploadSceneGeometry(g_engine.GetMeshManager().GetMeshes());
-        m_rtSceneManager.RegisterSceneMeshes(g_engine.GetMeshManager().GetMeshes());
-    };
-
-    g_engine.GetEventSystem().AddSceneLoadedEventCallback([registerSceneGeometry](const SceneLoadedEventData&)
-                                                { registerSceneGeometry(); });
-
-    const Scene* pCurrentScene = g_engine.GetApplicationState().GetCurrentScene();
-    if (pCurrentScene != nullptr && pCurrentScene->IsFullyLoaded())
-    {
-        registerSceneGeometry();
-    }
+    ResetSceneGeometry();
 
     g_engine.GetEventSystem().AddShaderHotReloadEventCallback([this](const auto&) { RebuildPipelinesForAllPasses(); });
 
@@ -478,10 +464,8 @@ void PassManager::ExecutePasses(u32 frameIdx)
     ctx.currentFrame = frameIdx;
     ctx.pCurrentSwapchainTexture = Texture::Cast(&g_renderer.GetTextureManager().GetSwapChainTextures().at(m_currentSwapChainIdx));
 
-    g_renderer.GetQueueHandler().DispatchAllRequests();
-    m_resourceManager.FlushPendingMeshUploads(frameIdx, 256);
+    g_renderer.GetQueueHandler().SubmitUploads(frameIdx);
     m_rtSceneManager.Update(frameIdx, m_currentSwapChainIdx, m_frameResourceManager);
-    g_renderer.GetQueueHandler().DispatchAllRequests();
     PrepareMainPassDataForFrame(mainPassData, ctx, frameIdx);
     SetupRenderGraph(mainPassData, ctx);
     CompileAndExecuteRenderGraph(mainPassData, ctx, imageAvailableSemaphore);
@@ -610,11 +594,19 @@ void PassManager::PreProcessDataForCurrentFrame(u32 frameIdx, u64 jitterFrameNum
     m_frameResourceManager.PreProcessDataForCurrentFrame(frameIdx, jitterFrameNumber, m_currentSwapChainIdx, this);
 }
 
+void PassManager::ResetSceneGeometry()
+{
+    m_resourceManager.ClearGeometryCaches();
+    m_rtSceneManager.Reset();
+}
+
 void PassManager::ResetSceneState()
 {
     m_frameResourceManager.ClearGeometryCaches();
-    m_resourceManager.ClearGeometryCaches();
-    m_rtSceneManager.Reset();
+    m_imguiRegistry.ReleaseMaterialTextures();
+    ResetSceneGeometry();
+    // Passes keep drawing the old scene's indirect commands until they are rebuilt empty
+    PreProcessMeshData({}, 0, 0);
 
     g_engine.GetApplicationState().RegisterUpdateFunction(
         [](ApplicationState& state)

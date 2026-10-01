@@ -33,6 +33,7 @@ public:
     EntityManager();
 
     void UnloadAllEntities();
+    u32 GetUnloadCount() const { return m_unloadCount; }
 
     Entity CreateEntity(const mathstl::Vector3& position = mathstl::Vector3(0, 0, 0),
                         const stltype::string& name = "Entity");
@@ -136,6 +137,7 @@ private:
     stltype::vector<Entity> m_dirtyLightEntities{};
     stltype::vector<Entity> m_transformsUpdatedThisFrame{};
     bool m_allTransformsDirty{false};
+    u32 m_unloadCount{0};
 
     stltype::atomic<u64> m_baseEntityID = 1;
 };

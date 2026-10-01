@@ -14,7 +14,6 @@ public:
                                         const stltype::fixed_vector<const Texture*, 16>& allGbufferAndSwapchain,
                                         Texture* pMainDepthTexture,
                                         Texture* pShadowMapTexture);
-    void RecordPendingTextureUploadTransitions(CommandBuffer* pCmdBuffer);
     void RecordGBufferToShaderRead(CommandBuffer* pCmdBuffer,
                                    const stltype::fixed_vector<const Texture*, 8>& gbufferTextures,
                                    Texture* pShadowMapTexture);

@@ -4,7 +4,6 @@
 #include "Core/Rendering/Core/DescriptorSetLayout.h"
 #include "Core/Rendering/Core/FrameResourceManager.h"
 #include "Core/Rendering/Core/RenderDefinitions.h"
-#include "Core/Rendering/Core/TransferUtils/TransferDefines.h"
 #include "RGExecutionContext.h"
 namespace RenderPasses
 {

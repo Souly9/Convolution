@@ -67,6 +67,11 @@ public:
             ImGui::Text("Total Lights: %u", m_lightCount);
             ImGui::Text("Lights Evaluated: %u", m_lastState.numLightsEvaluated);
             ImGui::Text("Lights in Frustum: %u", m_lastState.numLightsInFrustum);
+            const auto& streamingStats =
+                g_engine.GetApplicationState().GetCurrentApplicationState().engineState.streamingStats;
+            ImGui::Text("Streaming: %s, %u meshes pending",
+                        streamingStats.active ? "active" : "idle",
+                        streamingStats.pendingMeshes);
         }
 
         // Frustum Culling

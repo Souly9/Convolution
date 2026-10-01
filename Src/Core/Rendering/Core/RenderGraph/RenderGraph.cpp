@@ -733,6 +733,14 @@ void RenderGraph::Execute(const RenderPasses::MainPassData& data,
         else if (batch.queueType == QueueType::Compute && isFirstComputeBatch)
         {
             isFirstComputeBatch = false;
+            // Compute runs on another queue, so the frame's uploads are not ordered before it by the barriers
+            auto& queueHandler = g_renderer.GetQueueHandler();
+            if (queueHandler.GetLastUploadSignalValue() != 0)
+            {
+                pCmdBuffer->AddTimelineWait(queueHandler.GetTimelineSemaphore(QueueType::Graphics),
+                                            queueHandler.GetLastUploadSignalValue());
+                pCmdBuffer->SetWaitStages(SyncStages::ALL_COMMANDS);
+            }
         }
 
         for (const auto& wait : batch.waits)

@@ -200,6 +200,16 @@ public:
     }
     QueueFamilyIndices GetQueueFamilyIndices() const;
 
+    // Frame slot the render owner thread records its uploads into, slot 0 until the render thread runs
+    u32 GetRecordingFrameIndex() const
+    {
+        return m_recordingFrameIndex;
+    }
+    void SetRecordingFrameIndex(u32 frameIdx)
+    {
+        m_recordingFrameIndex = frameIdx;
+    }
+
     // ImGui renderer backend (the GLFW platform side stays in ImGuiManager)
     void InitImGuiBackend(const DescriptorPool& pool);
     void ImGuiNewFrame();
@@ -229,6 +239,7 @@ private:
     stltype::unique_ptr<RenderBackend> m_pBackend;
     RenderCapabilities m_caps{};
     bool m_capsValid{false};
+    u32 m_recordingFrameIndex{0};
     // Packed so readers on other threads never see a torn width/height
     std::atomic<u64> m_swapchainExtent{0};
     // Preferred format until the swapchain exists, then the real one

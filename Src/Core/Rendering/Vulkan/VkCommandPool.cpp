@@ -125,8 +125,3 @@ stltype::vector<CommandBuffer*> CommandPoolVulkan::CreateCommandBuffers(const Co
 
     return rsltBuffers;
 }
-
-TransferCommandPoolVulkan TransferCommandPoolVulkan::Create()
-{
-    return {VkBackend::QueueFamilies().transferFamily.value()};
-}

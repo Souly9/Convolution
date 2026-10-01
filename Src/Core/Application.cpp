@@ -46,12 +46,13 @@ Application::Application() : m_renderThread(&m_imGuiManager)
     g_engine.GetApplicationState().ProcessStateUpdates();
 
     auto pRenderer = m_renderThread.Start();
-    g_engine.GetApplicationState().SetPassManager(pRenderer);
     g_engine.GetEventSystem().OnAppInit({pRenderer});
     StaticBehaviorCollection::RegisterAllBehaviors();
     m_initialized = true;
 
     g_engine.GetApplicationState().ProcessStateUpdates();
+    // Init-time uploads would otherwise sit unsubmitted until the first frame reuses the slot
+    g_renderer.GetQueueHandler().SubmitUploads(g_renderer.GetRecordingFrameIndex());
     g_renderer.GetQueueHandler().WaitForFences(~0u);
     Update(0);
     Update(1);

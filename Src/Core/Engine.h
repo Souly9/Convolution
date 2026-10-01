@@ -11,6 +11,7 @@ class FileReader;
 class EventSystem;
 class ApplicationStateManager;
 class MeshManager;
+class SceneStreamer;
 namespace ECS
 {
 class EntityManager;
@@ -110,6 +111,11 @@ public:
         DEBUG_ASSERT(m_pMeshManager);
         return *m_pMeshManager;
     }
+    SceneStreamer& GetSceneStreamer()
+    {
+        DEBUG_ASSERT(m_pSceneStreamer);
+        return *m_pSceneStreamer;
+    }
 
     FrameSyncSemaphores& GetFrameSync()
     {
@@ -124,7 +130,7 @@ public:
         return m_time.GetDeltaTime();
     }
 
-    // Written on the main thread, read on render/texture/IO threads
+    // Written on the main thread, read on the render thread
     u32 GetFrameNumber() const
     {
         return m_frameNumber.load(std::memory_order_relaxed);
@@ -145,6 +151,7 @@ private:
     stltype::unique_ptr<ApplicationStateManager> m_pApplicationState;
     stltype::unique_ptr<ECS::EntityManager> m_pEntityManager;
     stltype::unique_ptr<MeshManager> m_pMeshManager;
+    stltype::unique_ptr<SceneStreamer> m_pSceneStreamer;
     stltype::unique_ptr<WindowManager> m_pWindowManager;
     FrameSyncSemaphores m_frameSync;
     TimeData m_time;

@@ -14,14 +14,20 @@
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Global/Profiling.h"
 #include "FileReader.h"
-#include "MeshConverter.h"
+#include "MeshDecoder.h"
+#include "Core/SceneGraph/SceneStreamer.h"
 
 using namespace threadstl;
 
+void FileReader::FreeTextureInfo(const ReadTextureInfo& info)
+{
+    FileReader::FreeImageData(info.pixels);
+    for (const auto& mip : info.mipmapPixels)
+        FileReader::FreeImageData(mip.pData);
+}
+
 FileReader::FileReader() : m_threadPool(CORE_COUNT_AVAILABLE)
 {
-    m_ioThread = MakeThread([this]() { CheckIORequests(); });
-    m_ioThread.SetName("Convolution_IO");
 }
 
 FileReader::~FileReader()
@@ -31,83 +37,96 @@ FileReader::~FileReader()
 
 void FileReader::Stop()
 {
-    m_keepRunning = false;
-    m_ioThread.WaitForEnd();
     m_threadPool.WaitAll();
+    for (const auto& done : m_completedImages)
+        FreeTextureInfo(done.info);
+    m_completedImages.clear();
+    m_completedMeshes.clear();
 }
 
 void FileReader::FinishAllRequests()
 {
-    while (m_requests.empty() == false)
-    {
-        threadstl::ThreadSleep(1);
-    }
     m_threadPool.WaitAll();
 }
 
-void FileReader::CancelAllRequests()
+bool FileReader::IsStale(const IORequest& request) const
 {
-    SimpleScopedGuard<CustomMutex> lock(m_requestSubmitMutex);
-    while (!m_requests.empty())
-        m_requests.pop();
+    return !request.isPersistent && request.generation != m_generation;
 }
 
 void FileReader::SubmitIORequest(const IORequest& request)
 {
-    SimpleScopedGuard<CustomMutex> lock(m_requestSubmitMutex);
-    if (Engine::IsWindows())
+    IORequest submitted = request;
+    submitted.generation = m_generation;
+    if (!Engine::IsWindows())
     {
-        m_requests.push(request);
-        return;
+        // Some asset paths are written with Windows separators
+        for (auto& c : submitted.filePath)
+            if (c == '\\')
+                c = '/';
     }
-    // Some asset paths are written with Windows separators
-    IORequest normalized = request;
-    for (auto& c : normalized.filePath)
-        if (c == '\\')
-            c = '/';
-    m_requests.push(normalized);
+
+    switch (submitted.requestType)
+    {
+        case RequestType::Bytes:
+        {
+            m_threadPool.Submit([this, submitted]() { ReadFileAsGenericBytes(submitted); });
+            break;
+        }
+        case RequestType::Image:
+        {
+            m_threadPool.Submit([this, submitted]() { ReadImageFile(submitted); });
+            break;
+        }
+        case RequestType::Mesh:
+        {
+            m_threadPool.Submit([this, submitted]() { ReadMeshFile(submitted); });
+            break;
+        }
+    }
 }
 
-void FileReader::CheckIORequests()
+void FileReader::DeliverCompleted(u32 maxImages)
 {
-    while (m_keepRunning)
+    ScopedZone("FileReader::DeliverCompleted");
+
+    stltype::deque<CompletedMesh> meshes;
+    stltype::deque<CompletedImage> images;
+    stltype::deque<CompletedImage> staleImages;
     {
-        if (m_requests.empty())
+        SimpleScopedGuard<CustomMutex> lock(m_completedMutex);
+        meshes.swap(m_completedMeshes);
+        // Results of an older scene are dropped without using up the frame's image budget
+        while (!m_completedImages.empty() && images.size() < maxImages)
         {
-            threadstl::ThreadSleep(50);
+            auto& front = m_completedImages.front();
+            (IsStale(front.request) ? staleImages : images).push_back(stltype::move(front));
+            m_completedImages.pop_front();
+        }
+    }
+    m_lastDeliveredImages = (u32)images.size();
+
+    for (const auto& done : staleImages)
+        FreeTextureInfo(done.info);
+    if (!staleImages.empty())
+        DEBUG_LOGF("[FileReader] Dropped {} stale image results", (u32)staleImages.size());
+
+    for (auto& done : meshes)
+    {
+        if (IsStale(done.request))
+        {
+            DEBUG_LOGF("[FileReader] Dropping stale mesh result: {}", done.request.filePath.c_str());
             continue;
         }
 
-        // Copy and pop request while holding lock, then release before processing
-        // This avoids deadlock when mesh loading triggers texture IO requests
-        IORequest request;
-        {
-            SimpleScopedGuard<CustomMutex> lock(m_requestSubmitMutex);
-            request = m_requests.front();
-            m_requests.pop();
-        }
+        if (const auto* callback = stltype::get_if<IOMeshReadCallback>(&done.request.callback))
+            g_engine.GetSceneStreamer().Begin(stltype::move(done.pScene), *callback);
+    }
 
-        switch (request.requestType)
-        {
-            case RequestType::Bytes:
-            {
-                m_threadPool.Submit([this, request]() { ReadFileAsGenericBytes(request); });
-                break;
-            }
-            case RequestType::Image:
-            {
-                m_threadPool.Submit([this, request]() { ReadImageFile(request); });
-                break;
-            }
-            case RequestType::Mesh:
-            {
-                m_threadPool.Submit([this, request]() { ReadMeshFile(request); });
-                break;
-            }
-            default:
-                DEBUG_ASSERT(false);
-                break;
-        }
+    for (auto& done : images)
+    {
+        if (const auto* callback = stltype::get_if<IOImageReadCallback>(&done.request.callback))
+            (*callback)(done.info);
     }
 }
 
@@ -255,12 +274,14 @@ void FileReader::ReadImageFile(const IORequest& request)
     }
 
 
-    const IOImageReadCallback* callback = stltype::get_if<IOImageReadCallback>(&request.callback);
-    if (callback)
-    {
-        SimpleScopedGuard<CustomMutex> lock(m_callbackMutex);
-        (*callback)(info);
-    }
+    SimpleScopedGuard<CustomMutex> lock(m_completedMutex);
+    m_completedImages.push_back({request, info});
+}
+
+u32 FileReader::GetPendingImageCount()
+{
+    SimpleScopedGuard<CustomMutex> lock(m_completedMutex);
+    return (u32)m_completedImages.size();
 }
 
 void FileReader::FreeImageData(const unsigned char* pixels)
@@ -278,7 +299,7 @@ void FileReader::ReadMeshFile(const IORequest& request)
     const auto ext = path.substr(path.find_last_of('.'));
     DEBUG_ASSERT(importer.IsExtensionSupported(ext.data()));
 
-    importer.SetPropertyInteger(AI_CONFIG_PP_RVC_FLAGS, 
+    importer.SetPropertyInteger(AI_CONFIG_PP_RVC_FLAGS,
         aiComponent_ANIMATIONS | aiComponent_BONEWEIGHTS | aiComponent_COLORS | aiComponent_TEXTURES);
 
     const aiScene* pMeshScene = importer.ReadFile(
@@ -288,12 +309,8 @@ void FileReader::ReadMeshFile(const IORequest& request)
             aiProcess_GenSmoothNormals | aiProcess_CalcTangentSpace);
 
     DEBUG_ASSERT(pMeshScene);
-    auto scene = MeshConversion::Convert(pMeshScene);
+    auto pScene = stltype::make_unique<DecodedScene>(MeshDecoder::Decode(pMeshScene));
 
-    const IOMeshReadCallback* callback = stltype::get_if<IOMeshReadCallback>(&request.callback);
-    if (callback)
-    {
-        SimpleScopedGuard<CustomMutex> lock(m_callbackMutex);
-        (*callback)({scene});
-    }
+    SimpleScopedGuard<CustomMutex> lock(m_completedMutex);
+    m_completedMeshes.push_back({request, stltype::move(pScene)});
 }

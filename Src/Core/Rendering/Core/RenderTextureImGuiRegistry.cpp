@@ -116,15 +116,8 @@ void RenderTextureImGuiRegistry::RegisterGBufferTextures(RGResourceRegistry& reg
     ReleaseGBufferIdsForNextFrame();
 
     // Preserve existing Material Textures items, clear only render-target / gbuffer / shadowmap items
-    stltype::vector<RendererState::TextureViewerItem> retainedItems;
-    for (const auto& item : m_textureViewerItems)
-    {
-        if (item.category == "Material Textures")
-        {
-            retainedItems.push_back(item);
-        }
-    }
-    m_textureViewerItems = stltype::move(retainedItems);
+    stltype::erase_if(m_textureViewerItems,
+                      [](const auto& item) { return item.category != MATERIAL_TEXTURES_CATEGORY; });
 
     auto addTexByID = [&](RGResourceID id)
     {
@@ -209,6 +202,22 @@ void RenderTextureImGuiRegistry::RegisterGBufferTextures(RGResourceRegistry& reg
     PublishGBufferTextureState(registry);
 }
 
+void RenderTextureImGuiRegistry::PublishTextureViewerItems()
+{
+    // The viewer draws the published list, which is applied before the next ImGui frame
+    g_engine.GetApplicationState().RegisterUpdateFunction([items = m_textureViewerItems](ApplicationState& state)
+                                                          { state.renderState.textureViewerState.items = items; });
+}
+
+void RenderTextureImGuiRegistry::ReleaseMaterialTextures()
+{
+    // The scene's textures are about to be destroyed, the viewer entries would point at dead views
+    ReleaseImGuiIds(m_materialImGuiIDs);
+    stltype::erase_if(m_textureViewerItems,
+                      [](const auto& item) { return item.category == MATERIAL_TEXTURES_CATEGORY; });
+    PublishTextureViewerItems();
+}
+
 void RenderTextureImGuiRegistry::RegisterMaterialTextures()
 {
     if (g_renderer.TryGetTextureManager() == nullptr)
@@ -247,13 +256,13 @@ void RenderTextureImGuiRegistry::RegisterMaterialTextures()
             if (!pTex || !g_renderer.GetTextureManager().CanRegisterImGuiTexture(*pTex))
                 continue;
 
-            if ((u32)pTex->GetInfo().usage & (u32)Usage::ShadowMap)
+            if ((pTex->GetInfo().usage & Usage::ShadowMap) != Usage::None)
                 continue;
 
             bool existsInList = false;
             for (const auto& existingItem : m_textureViewerItems)
             {
-                if (existingItem.textureHandle == handle && existingItem.category == "Material Textures")
+                if (existingItem.textureHandle == handle && existingItem.category == MATERIAL_TEXTURES_CATEGORY)
                 {
                     existsInList = true;
                     break;
@@ -281,7 +290,7 @@ void RenderTextureImGuiRegistry::RegisterMaterialTextures()
             if (bIt != bindlessMap.end())
                 bindlessHandle = bIt->second;
 
-            auto item = MakeItem(displayName, "Material Textures", imguiID, pTex);
+            auto item = MakeItem(displayName, MATERIAL_TEXTURES_CATEGORY, imguiID, pTex);
             item.textureHandle = handle;
             item.bindlessHandle = bindlessHandle;
             m_textureViewerItems.push_back(item);
@@ -293,11 +302,7 @@ void RenderTextureImGuiRegistry::RegisterMaterialTextures()
     processTexMap(g_renderer.GetTextureManager().GetPersistentTextures());
 
     if (newlyAdded)
-    {
-        g_engine.GetApplicationState().RegisterUpdateFunction([items = m_textureViewerItems](ApplicationState& state) {
-            state.renderState.textureViewerState.items = items;
-        });
-    }
+        PublishTextureViewerItems();
 }
 
 void RenderTextureImGuiRegistry::PublishGBufferTextureState(RGResourceRegistry& registry)

@@ -1,12 +1,13 @@
 #pragma once
 struct ReadTextureInfo;
 struct SceneNode;
+struct DecodedScene;
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Global/ThreadBase.h"
 #include "Core/Global/ThreadPool.h"
 #include "Core/SceneGraph/Scene.h"
+#include <EASTL/deque.h>
 #include <EASTL/fixed_function.h>
-#include <EASTL/queue.h>
 
 struct ReadMipmapInfo
 {
@@ -56,38 +57,71 @@ struct IORequest
     stltype::string filePath;
     IOCallback callback;
     RequestType requestType;
+    // Stamped at submit, results of an older generation are dropped at delivery
+    u32 generation{0};
+    // Survives BumpGeneration, for textures that outlive a scene
+    bool isPersistent{false};
 };
 
+// Image and mesh results are queued and run through their callbacks by DeliverCompleted on the caller's thread
 class FileReader
 {
 public:
     FileReader();
     ~FileReader();
 
-    // Stalls main thread through sleep until all requests are finished
+    // Blocks until the pool is idle
     void FinishAllRequests();
-    void CancelAllRequests();
-    // Joins the IO thread and pool; safe to call more than once
+    // Joins the pool and frees results nobody picked up
     void Stop();
 
     void SubmitIORequest(const IORequest& request);
 
-    void CheckIORequests();
+    // Runs the callbacks of finished requests, all meshes but at most maxImages images
+    void DeliverCompleted(u32 maxImages);
+    // Results of requests submitted before this call are dropped at delivery
+    void BumpGeneration()
+    {
+        ++m_generation;
+    }
+
+    // Decoded images that wait for their frame
+    u32 GetPendingImageCount();
+    u32 GetImagesDeliveredLastCall() const
+    {
+        return m_lastDeliveredImages;
+    }
 
     static void FreeImageData(const unsigned char* pixels);
-
-    void ReadImageFile(const IORequest& request);
+    // Frees the pixels and every mip
+    static void FreeTextureInfo(const ReadTextureInfo& info);
 
 protected:
+    void ReadImageFile(const IORequest& request);
+    struct CompletedImage
+    {
+        IORequest request;
+        ReadTextureInfo info;
+    };
+    struct CompletedMesh
+    {
+        IORequest request;
+        stltype::unique_ptr<DecodedScene> pScene;
+    };
+
     void ReadFileAsGenericBytes(const IORequest& request);
     stltype::vector<char> ReadFileAsGenericBytes(const char* filePath);
 
     void ReadMeshFile(const IORequest& request);
+    bool IsStale(const IORequest& request) const;
 
-    threadstl::Thread m_ioThread;
-    CustomMutex m_requestSubmitMutex{};
+    // Byte callbacks fill shared shader containers, so they run one at a time
     CustomMutex m_callbackMutex{};
-    stltype::queue<IORequest> m_requests{}; // Pending requests, read by iothread
-    bool m_keepRunning{true};
+    CustomMutex m_completedMutex{};
+    stltype::deque<CompletedImage> m_completedImages;
+    stltype::deque<CompletedMesh> m_completedMeshes;
+    stltype::atomic<u32> m_generation{0};
+    u32 m_lastDeliveredImages{0};
+    // Last member: its destructor drains the queue into the members above
     ThreadPool m_threadPool;
 };

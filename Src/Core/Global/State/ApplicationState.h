@@ -4,11 +4,6 @@
 #include "Core/SceneGraph/Scene.h"
 #include "States.h"
 
-namespace RenderPasses
-{
-class PassManager;
-}
-
 struct ApplicationState;
 
 // Classes can register functions that recieve writeable application state and
@@ -25,11 +20,6 @@ public:
     const ApplicationState& GetCurrentApplicationState()
     {
         return m_appStates[m_currentState.load(stltype::memory_order_acquire)];
-    }
-
-    void SetPassManager(RenderPasses::PassManager* pPassManager)
-    {
-        m_pPassManager = pPassManager;
     }
 
     void RegisterUpdateFunction(ApplicationStateUpdateFunction&& updateFunction);
@@ -52,7 +42,8 @@ public:
         m_isRenderThreadRunning.store(running, stltype::memory_order_release);
     }
 
-    void ExecuteSceneSwitchOnRenderThread();
+    // Returns true when a scene was switched or reloaded
+    bool ExecuteSceneSwitchOnRenderThread();
 
     // Can't be called from multiple threads! Updates all states with the
     // registered functions
@@ -74,5 +65,6 @@ private:
     // Scene switching has to be synchronized a bit differently as my design is
     // just too wonky
     stltype::unique_ptr<Scene> m_pNextScene{nullptr};
-    RenderPasses::PassManager* m_pPassManager{nullptr};
+    // The UI may still hold the previous state's Scene*, so a replaced scene lives until the next switch
+    stltype::unique_ptr<Scene> m_pRetiredScene{nullptr};
 };

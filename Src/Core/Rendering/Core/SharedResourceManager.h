@@ -1,10 +1,9 @@
 #pragma once
-#include <EASTL/deque.h>
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Global/Profiling.h"
-#include "Core/Global/ThreadBase.h"
 #include "Core/Rendering/Core/Defines/GlobalBuffers.h"
-#include "Core/Rendering/Core/TransferUtils/TransferDefines.h"
+#include "Core/Rendering/Core/Buffer.h"
+#include "Core/Rendering/Core/RenderingData.h"
 #include "Core/SceneGraph/Mesh.h"
 #include "Core/Rendering/Core/DescriptorSetLayout.h"
 #include "Core/Rendering/Core/DescriptorPool.h"
@@ -24,17 +23,12 @@ struct PassMeshData;
 class SharedResourceManager
 {
 public:
-    struct PendingMeshUpload
-    {
-        const Mesh* pMesh;
-    };
+    // Debug meshes live in fixed buffers
+    static constexpr u32 s_debugGeometryVertexCapacity = 256 * 1024;
+    static constexpr u32 s_debugGeometryIndexCapacity = 1024 * 1024;
 
     void Init();
-    void FlushPendingMeshUploads(u32 frameIdx, u32 maxCount);
 
-    // Mainly for batch uploading all the scene geometry at scene load time, no
-    // debug geometry
-    void UploadSceneGeometry(const stltype::vector<stltype::unique_ptr<Mesh>>& meshes);
     void ClearGeometryCaches();
 
     // Whenever the scene is updated we need to update the instance data
@@ -48,10 +42,7 @@ public:
     const stltype::vector<UBO::InstanceData>& GetInstanceData() const { return m_currentFrameInstanceData; }
     const stltype::vector<u8>& GetMasterInstanceVisibility() const { return m_masterInstanceVisibility; }
 
-    MeshHandle UploadMesh(const Mesh& mesh);
     MeshHandle GetMeshHandle(const Mesh* pMesh) const;
-
-    void UploadDebugMesh(const Mesh& mesh, u32 thisFrame);
 
     void WriteInstanceSSBODescriptorUpdate(u32 targetFrame);
 
@@ -111,18 +102,16 @@ public:
     {
         u64 vertBufferOffset{0};
         u64 indexBufferOffset{0};
-        u64 vertexCount{0};
-        u64 indexCount{0};
     };
 
-    const BufferStats& GetBufferOffsetData() const
-    {
-        return m_bufferOffsetData;
-    }
-
 private:
-    void UpdateInstanceBuffer(const Mesh& mesh);
-    void UpdateSceneGeometryBuffer(const Mesh& mesh);
+    // Allocates the scene geometry buffers (the primitives are added on top) and starts a new set of mesh handles
+    void BeginSceneGeometry(u64 sceneVertexBytes, u64 sceneIndexBytes);
+    // Queues the mesh for upload at the next offset of the buffers, caller holds m_geometryStateMutex
+    MeshHandle AppendMesh(const Mesh& mesh,
+                          BufferData& buffers,
+                          BufferStats& offsets,
+                          stltype::hash_map<const Mesh*, MeshHandle>& handles);
 
     BufferData m_sceneGeometryBuffers;
     // Seperating the debug stuff to update it easier and so on, not sure about it
@@ -150,6 +139,7 @@ private:
     
     BufferStats m_bufferOffsetData;
     BufferStats m_debugBufferOffsetData;
+    u32 m_reservationGeneration{0};
 
     // Duplicating it on cpu side for more efficient processing
     stltype::vector<UBO::InstanceData> m_currentFrameInstanceData;
@@ -158,22 +148,8 @@ private:
     stltype::hash_map<const Mesh*, MeshHandle> m_meshHandles;
     stltype::hash_map<const Mesh*, MeshHandle> m_debugMeshHandles;
 
-    stltype::hash_set<const Mesh*> m_residentMeshes;
-    stltype::vector<const Mesh*> m_pendingVisibleMeshes;
-    stltype::hash_map<const Mesh*, stltype::vector<u32>> m_meshToInstanceIdx;
-
-    stltype::vector<u32> m_pendingVisibleInstanceIndices;
     mutable ProfiledLockable(CustomMutex, m_geometryStateMutex);
-    mutable ProfiledLockable(CustomMutex, m_residencyStateMutex);
-
-    stltype::deque<PendingMeshUpload> m_pendingMeshUploads;
-    mutable ProfiledLockable(CustomMutex, m_pendingUploadMutex);
 
 public:
-    stltype::vector<u32> PopPendingVisibleInstanceIndices();
-    stltype::vector<const Mesh*> PopPendingResidentMeshesForRayTracing();
     StorageBuffer& GetInstanceBuffer() { return m_sceneInstanceBuffer; }
-
-private:
-    stltype::vector<const Mesh*> m_pendingRayTracingMeshes;
 };

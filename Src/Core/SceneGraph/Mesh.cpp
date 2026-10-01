@@ -143,13 +143,13 @@ void MeshManager::Flush()
 {
     DEBUG_LOGF("[MeshManager] Flushing meshes, keeping standard primitives");
 
-    for (size_t i = 3; i < m_meshes.size(); ++i)
+    for (size_t i = PRIMITIVE_MESH_COUNT; i < m_meshes.size(); ++i)
     {
         ReleaseRTMeshIdentity(*m_meshes[i]);
     }
     
-    // Keep only the first three (Triangle, Plane and Cube primitives)
-    m_meshes.erase(m_meshes.begin() + 3, m_meshes.end());
+    // Keep only the primitives (Triangle, Plane and Cube)
+    m_meshes.erase(m_meshes.begin() + PRIMITIVE_MESH_COUNT, m_meshes.end());
 
     // Clear AABBs but re-add primitives
     m_meshAABBs.clear();

@@ -126,5 +126,5 @@ protected:
     stltype::hash_map<TextureHandle, stltype::unique_ptr<Texture>> m_textures;
     stltype::hash_map<TextureHandle, stltype::unique_ptr<Texture>> m_persistentTextures;
     stltype::vector<TextureMetal> m_swapChainTextures;
-    stltype::atomic<u32> m_baseHandle{0};
+    stltype::atomic<u32> m_baseHandle{1};
 };

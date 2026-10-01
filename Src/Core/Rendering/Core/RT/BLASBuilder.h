@@ -13,7 +13,6 @@ public:
     void Reset();
 
     void RegisterMesh(const Mesh& mesh, const MeshHandle& rasterHandle);
-    void NotifyRasterBuffersResident(const Mesh& mesh);
     void ProcessBuildQueue(SharedResourceManager& resourceManager, u32 frameIdx);
 
     const BLASRecord* GetRecord(u32 meshId) const;

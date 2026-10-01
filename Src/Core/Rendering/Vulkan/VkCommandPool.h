@@ -51,20 +51,3 @@ protected:
     stltype::vector<CommandBuffer*> m_freeCommandBuffers{};
     u32 m_queueFamilyIndex{~0u};
 };
-
-class TransferCommandPoolVulkan : public CommandPoolVulkan
-{
-public:
-    TransferCommandPoolVulkan()
-    {
-    }
-    static TransferCommandPoolVulkan Create();
-
-protected:
-    TransferCommandPoolVulkan(u32 transferFamilyIdx)
-        : CommandPoolVulkan(transferFamilyIdx, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT)
-    {
-    }
-};
-
-using TransferCommandPool = TransferCommandPoolVulkan;

@@ -71,7 +71,6 @@ BLASRecord& BLASBuilder::EnsureRecord(const Mesh& mesh)
         record.meshId = mesh.rtMeshId;
         record.generation = mesh.rtMeshGeneration;
         record.pMesh = &mesh;
-        record.state = BLASState::WaitingForRasterBuffers;
     }
 
     return record;
@@ -93,14 +92,7 @@ void BLASBuilder::RegisterMesh(const Mesh& mesh, const MeshHandle& rasterHandle)
 
     record.primitiveCount = CalculatePrimitiveCount(mesh);
     record.buildFlags = AccelerationStructureBuildFlags::PreferFastTrace;
-}
-
-void BLASBuilder::NotifyRasterBuffersResident(const Mesh& mesh)
-{
-    BLASRecord& record = EnsureRecord(mesh);
-    if (record.state == BLASState::Failed || record.state == BLASState::Ready || record.state == BLASState::Building)
-        return;
-
+    // The geometry upload is queued ahead of the build on the same queue
     record.state = BLASState::QueuedForBuild;
 }
 
@@ -287,8 +279,7 @@ u32 BLASBuilder::GetPendingCount() const
     u32 count = 0;
     for (const auto& record : m_records)
     {
-        if (record.state == BLASState::WaitingForRasterBuffers || record.state == BLASState::QueuedForBuild ||
-            record.state == BLASState::Building)
+        if (record.state == BLASState::QueuedForBuild || record.state == BLASState::Building)
         {
             ++count;
         }

@@ -20,13 +20,6 @@ struct TextureInfo : TextureInfoBase
     TexFormat format;
 };
 
-enum class TextureStatus : u8
-{
-    Loading,
-    Created,
-    Ready,
-    Failed
-};
 
 // Base class for agnostic data and interfaces
 class TextureBase : public TrackedResource
@@ -48,19 +41,9 @@ public:
     {
         return m_info;
     }
-    void SetStatus(TextureStatus status)
-    {
-        m_status = status;
-    }
-
-    TextureStatus GetStatus() const
-    {
-        return m_status;
-    }
 
 protected:
     TextureInfo m_info;
-    TextureStatus m_status{TextureStatus::Loading};
 };
 
 

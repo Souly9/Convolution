@@ -8,6 +8,17 @@
 #include "Core/Global/LogDefines.h"
 #include "Core/Global/Profiling.h"
 
+static constexpr f32 EMISSIVE_THRESHOLD = 0.05f;
+
+static bool IsEmissive(const Material* pMaterial)
+{
+    if (!pMaterial)
+        return false;
+    const auto& e = pMaterial->emissive;
+    return IsMaterialFlagSet(pMaterial->flags, MATERIAL_FLAG_EMISSIVE_BIT) || e.x > EMISSIVE_THRESHOLD ||
+           e.y > EMISSIVE_THRESHOLD || e.z > EMISSIVE_THRESHOLD;
+}
+
 void ECS::System::SLight::Init(const SystemInitData& data)
 {
     m_pPassManager = data.pPassManager;
@@ -18,8 +29,17 @@ void ECS::System::SLight::Process()
     ScopedZone("Light System::Process");
 
     const auto& lightComps = g_engine.GetEntityManager().GetComponentVector<Components::Light>();
-    const bool countChanged = lightComps.size() != m_lastLightCount;
+    const auto& renderComps = g_engine.GetEntityManager().GetComponentVector<Components::RenderComponent>();
+    // Emissive meshes inject lights; a scene switch can refill the vectors in one frame, so use the unload count
+    const u32 unloadCount = g_engine.GetEntityManager().GetUnloadCount();
+    const bool switched = unloadCount != m_lastUnloadCount;
+    m_lastUnloadCount = unloadCount;
+    bool emissiveAdded = switched || renderComps.size() < m_lastRenderCompCount;
+    for (size_t i = m_lastRenderCompCount; i < renderComps.size() && !emissiveAdded; ++i)
+        emissiveAdded = IsEmissive(renderComps[i].component.pMaterial);
+    const bool countChanged = lightComps.size() != m_lastLightCount || emissiveAdded;
     m_lastLightCount = lightComps.size();
+    m_lastRenderCompCount = renderComps.size();
 
     if (countChanged)
     {
@@ -50,44 +70,26 @@ void ECS::System::SLight::Process()
                 m_cachedPointLights.push_back(ConvertToRenderLight(pLight, pTransform));
             }
         }
-        // Emissive mesh point light injection
-        const auto& renderComps = g_engine.GetEntityManager().GetComponentVector<Components::RenderComponent>();
+        // Emissive meshes get a point light tinted by their emissive color
         for (const auto& holder : renderComps)
         {
-            const auto* pRenderComp = &holder.component;
-            if (!pRenderComp || !pRenderComp->pMaterial)
+            const Material* pMaterial = holder.component.pMaterial;
+            if (!IsEmissive(pMaterial))
                 continue;
 
-            const auto* pMaterial = pRenderComp->pMaterial;
-            bool hasEmissiveFlag = (pMaterial->flags & (1u << 4)) != 0; // MATERIAL_FLAG_EMISSIVE_BIT
-            bool hasEmissiveColor = (pMaterial->emissive.x > 0.05f || pMaterial->emissive.y > 0.05f || pMaterial->emissive.z > 0.05f);
-            
-            if (hasEmissiveFlag || hasEmissiveColor)
-            {
-                const auto* pTransform = g_engine.GetEntityManager().GetComponentUnsafe<Components::Transform>(holder.entity);
-                if (!pTransform)
-                    continue;
+            const auto& e = pMaterial->emissive;
+            f32 strength = stltype::max(e.x, stltype::max(e.y, e.z));
+            // Flag-only materials keep their faint color at full strength
+            if (strength <= EMISSIVE_THRESHOLD)
+                strength = 1.0f;
 
-                float r = pMaterial->emissive.x;
-                float g = pMaterial->emissive.y;
-                float b = pMaterial->emissive.z;
-                float maxVal = stltype::max(r, stltype::max(g, b));
-                if (maxVal <= 0.05f)
-                    maxVal = 1.0f; // Default fallback
-
-                float intensity = maxVal * 8.0f;
-                float range = stltype::max(5.0f, stltype::min(25.0f, 10.0f * maxVal));
-                
-                mathstl::Vector3 lightColor = maxVal > 0.0001f ? mathstl::Vector3(r / maxVal, g / maxVal, b / maxVal) : mathstl::Vector3(1.f, 1.f, 1.f);
-
-                RenderLight emissiveLight;
-                emissiveLight.position = mathstl::Vector4(pTransform->worldPosition.x, pTransform->worldPosition.y, pTransform->worldPosition.z, 0.0f); // 0.0f = Point light
-                emissiveLight.direction = mathstl::Vector4(0.0f, -1.0f, 0.0f, range);
-                emissiveLight.color = mathstl::Vector4(lightColor.x, lightColor.y, lightColor.z, intensity);
-                emissiveLight.cutoff = mathstl::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
-
-                m_cachedPointLights.push_back(emissiveLight);
-            }
+            Components::Light light{};
+            light.type = Components::LightType::Point;
+            light.color = mathstl::Vector4(e.x / strength, e.y / strength, e.z / strength, 1.0f);
+            light.intensity = strength * 8.0f;
+            light.range = mathstl::clamp(10.0f * strength, 5.0f, 25.0f);
+            m_cachedPointLights.push_back(ConvertToRenderLight(
+                &light, g_engine.GetEntityManager().GetComponentUnsafe<Components::Transform>(holder.entity)));
         }
 
         m_lightDataDirty = true;

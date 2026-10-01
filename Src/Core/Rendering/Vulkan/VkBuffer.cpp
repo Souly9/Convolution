@@ -23,14 +23,7 @@ void GenBufferVulkan::Create(BufferCreateInfo& info)
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufferInfo.size = size;
     bufferInfo.usage = Conv(info.usage);
-    bufferInfo.sharingMode = info.isExclusive ? VK_SHARING_MODE_EXCLUSIVE : VK_SHARING_MODE_CONCURRENT;
-    if (info.isExclusive)
-    {
-        bufferInfo.queueFamilyIndexCount = info.isExclusive ? 0 : 2;
-        const auto& queues = VkBackend::QueueFamilies();
-        u32 families[] = {queues.graphicsFamily.value(), queues.transferFamily.value()};
-        bufferInfo.pQueueFamilyIndices = families;
-    }
+    VkBackend::SetSharedQueueFamilies(bufferInfo);
     m_allocatedMemory = g_renderer.GetGPUMemoryManager().AllocateBuffer(info.usage, bufferInfo, m_buffer);
     m_info.size = size;
     m_info.usage = info.usage;

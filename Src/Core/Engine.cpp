@@ -5,6 +5,7 @@
 #include "Core/Global/State/ApplicationState.h"
 #include "Core/IO/FileReader.h"
 #include "Core/SceneGraph/Mesh.h"
+#include "Core/SceneGraph/SceneStreamer.h"
 #include "Core/WindowManager.h"
 
 Engine::Engine() = default;
@@ -19,6 +20,7 @@ void Engine::Init()
     m_pApplicationState = stltype::make_unique<ApplicationStateManager>();
     m_pEntityManager = stltype::make_unique<ECS::EntityManager>();
     m_pMeshManager = stltype::make_unique<MeshManager>();
+    m_pSceneStreamer = stltype::make_unique<SceneStreamer>();
 }
 
 void Engine::CreateMainWindow(u32 width, u32 height, stltype::string_view title)
@@ -28,11 +30,9 @@ void Engine::CreateMainWindow(u32 width, u32 height, stltype::string_view title)
 
 void Engine::StopIO()
 {
-    // Load callbacks create entities, meshes and textures, so the IO threads must be joined first
+    // Undelivered results are freed here, their callbacks would create entities, meshes and textures
     if (m_pFileReader)
     {
-        m_pFileReader->CancelAllRequests();
-        // Join while the pointer is still valid: in-flight loads may still submit follow-up requests
         m_pFileReader->Stop();
         m_pFileReader.reset();
     }
@@ -40,12 +40,12 @@ void Engine::StopIO()
 
 void Engine::DestroyApplicationState()
 {
-    // ~Scene unloads its entities, so this runs while the EntityManager is still alive
     m_pApplicationState.reset();
 }
 
 void Engine::ShutdownWorld()
 {
+    m_pSceneStreamer.reset();
     m_pEntityManager.reset();
     m_pMeshManager.reset();
 }

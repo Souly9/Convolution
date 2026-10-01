@@ -1410,6 +1410,15 @@ QueueFamilyIndices QueueFamilies()
 {
     return g_renderer.GetBackend().GetQueueFamilies();
 }
+const uint32_t* SharedQueueFamilies(uint32_t& count)
+{
+    static uint32_t families[2];
+    const auto indices = QueueFamilies();
+    families[0] = indices.graphicsFamily.value();
+    families[1] = indices.computeFamily.value();
+    count = families[0] != families[1] ? 2 : 1;
+    return families;
+}
 const VkPhysicalDeviceProperties& DeviceProperties()
 {
     return g_renderer.GetBackend().GetDeviceProperties();

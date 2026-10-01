@@ -28,6 +28,8 @@ protected:
     stltype::vector<RenderPasses::LightDeltaUpdate> m_lightDeltas{};
     stltype::hash_map<u32, u32> m_lightEntityToIdx{};
     size_t m_lastLightCount{0};
+    size_t m_lastRenderCompCount{0};
+    u32 m_lastUnloadCount{0};
     bool m_lightDataDirty{true};
     bool m_rebuilt{true};
     bool m_dirLightDirty{true};

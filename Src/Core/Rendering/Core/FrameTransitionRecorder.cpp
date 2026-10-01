@@ -132,24 +132,6 @@ void FrameTransitionRecorder::RecordInitialLayoutTransitions(
     }
 }
 
-void FrameTransitionRecorder::RecordPendingTextureUploadTransitions(CommandBuffer* pCmdBuffer)
-{
-    const auto pendingTextures = g_renderer.GetTextureManager().PopPendingGraphicsShaderReadTransitions();
-    if (pendingTextures.empty())
-        return;
-
-    stltype::vector<const Texture*> textures;
-    textures.reserve(pendingTextures.size());
-    for (const auto* pTexture : pendingTextures)
-        textures.push_back(pTexture);
-
-    ImageLayoutTransitionCmd cmd(textures);
-    cmd.oldLayout = ImageLayout::TRANSFER_DST_OPTIMAL;
-    cmd.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-    TextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::TRANSFER_DST_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-    pCmdBuffer->RecordCommand(cmd);
-}
-
 void FrameTransitionRecorder::RecordGBufferToShaderRead(
     CommandBuffer* pCmdBuffer,
     const stltype::fixed_vector<const Texture*, 8>& gbufferTextures,

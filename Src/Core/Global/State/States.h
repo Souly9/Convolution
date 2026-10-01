@@ -244,11 +244,45 @@ struct RendererState
     mathstl::Matrix invMainCamViewMatrix{mathstl::Matrix::Identity};
 };
 
+// Engine side settings and stats that are not about rendering
+struct EngineState
+{
+    struct StreamingSettings
+    {
+        // Vertex and index bytes applied per frame
+        u32 geometryBytesPerFrame{32u * 1024u * 1024u};
+        // Nodes and mesh entities created per frame
+        u32 entitiesPerFrame{512};
+        // Decoded textures turned into GPU textures per frame
+        u32 texturesPerFrame{4};
+        // Per frame slot, extra staging chunks are freed above this
+        u32 stagingBudgetBytes{64u * 1024u * 1024u};
+        bool paused{false};
+    } streaming;
+
+    struct StreamingStats
+    {
+        bool active{false};
+        u32 pendingNodes{0};
+        u32 pendingMeshes{0};
+        u64 pendingGeometryBytes{0};
+        // Decoded and waiting for their frame
+        u32 pendingTextures{0};
+        u32 meshesAppliedLastFrame{0};
+        u64 bytesAppliedLastFrame{0};
+        u32 texturesAppliedLastFrame{0};
+        f32 tickMs{0.f};
+        // Worker time of the last scene decode
+        f32 decodeMs{0.f};
+    } streamingStats;
+};
+
 struct ApplicationState
 {
     stltype::vector<ECS::Entity> selectedEntities{};
     GUIState guiState{};
     RendererState renderState{};
+    EngineState engineState{};
 
     // We only support one scene at a time for now
     Scene* pCurrentScene;

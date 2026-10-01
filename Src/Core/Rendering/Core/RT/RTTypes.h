@@ -11,7 +11,6 @@ namespace RT
 enum class BLASState : u8
 {
     Uninitialized = 0,
-    WaitingForRasterBuffers,
     QueuedForBuild,
     Building,
     Ready,

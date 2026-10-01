@@ -3,7 +3,6 @@
 #include "BackendDefines.h"
 #include "Core/Global/GlobalVariables.h"
 #include "Core/IO/FileReader.h"
-#include "Core/Rendering/Core/MaterialManager.h"
 #include "Core/Rendering/Core/Defines/DescriptorLayoutPresets.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
 #include "Core/Rendering/Vulkan/Utils/VkDescriptorLayoutUtils.h"
@@ -13,13 +12,9 @@
 #include "VkBackendAccess.h"
 
 #include "Core/Rendering/Core/Utils/DeleteQueue.h"
-#include <cctype>
 #include <tinyddsloader.h>
 #include <vulkan/vulkan.h>
 #include <imgui/backends/imgui_impl_vulkan.h>
-
-
-static constexpr u32 MAX_CACHE_BUFFERS = 512;
 
 static TextureInfo RequestToTexInfo(const DynamicTextureRequest& info)
 {
@@ -76,42 +71,17 @@ static TexFormat ApplySemanticColorSpace(TexFormat format, TextureSemantic seman
 
 VkTextureManager::VkTextureManager()
 {
-    m_textures.reserve(MAX_TEXTURES);
     m_swapChainTextures.reserve(SWAPCHAIN_IMAGES);
-    m_availableCommandBuffers.reserve(MAX_CACHE_BUFFERS);
 }
 
 void VkTextureManager::Init()
 {
     ScopedZone("VkTextureManager::Init");
 
-    m_keepRunning = true;
-    m_thread = threadstl::MakeThread([this] { CheckRequests(); });
-    InitializeThread("Convolution_TextureManager");
     CreateBindlessDescriptorSet();
-
-    // Reserve slot 0 for placeholder / default sampling paths.
-    m_lastBindlessTextureWriteIdx = 1;
-    m_lastPersistentBindlessTextureWriteIdx = PERSISTENT_BINDLESS_REGION_START;
 }
 
-void VkTextureManager::SetPlaceholder(TextureHandle handle)
-{
-    TextureVulkan* pTex = GetTexture(handle);
-    if (!pTex || pTex->GetImageView() == VK_NULL_HANDLE)
-    {
-        return;
-    }
-
-    for (u32 i = 0; i < g_renderer.GetBindlessCapacity(Bindless::BindlessType::GlobalTextures); ++i)
-    {
-        WriteBindlessTexture(pTex, i);
-    }
-
-    m_lastBindlessTextureWriteIdx = 1;
-}
-
-void VkTextureManager::WriteBindlessTexture(TextureVulkan* pTex, u32 idx)
+void VkTextureManager::WriteBindlessTexture(Texture* pTex, u32 idx)
 {
     if (pTex->GetInfo().extents.z > 1)
     {
@@ -129,118 +99,10 @@ void VkTextureManager::WriteBindlessTexture(TextureVulkan* pTex, u32 idx)
             pTex, idx, s_globalBindlessSampledTextureBindingSlot);
     }
 
-    if ((u32)pTex->GetInfo().usage & (u32)Usage::Storage)
+    if ((pTex->GetInfo().usage & Usage::Storage) != Usage::None)
     {
         m_bindlessImageDescriptorSet->WriteBindlessImageUpdate(pTex, idx, s_globalBindlessImageBufferBindingSlot);
         m_combinedBindlessDescriptorSet->WriteBindlessImageUpdate(pTex, idx, s_globalBindlessImageBufferBindingSlot);
-    }
-}
-
-void VkTextureManager::CheckRequests()
-{
-    while (m_keepRunning)
-    {
-        bool hasRequests = false;
-        {
-            m_sharedDataMutex.lock();
-            hasRequests = !m_requests.empty();
-            m_sharedDataMutex.unlock();
-        }
-
-        if (hasRequests)
-        {
-            while (true)
-            {
-                m_sharedDataMutex.lock();
-                if (m_requests.empty())
-                {
-                    m_sharedDataMutex.unlock();
-                    break;
-                }
-                m_processingRequest = true;
-                const auto req = m_requests.front();
-                m_requests.pop();
-                m_sharedDataMutex.unlock();
-
-                const auto idx = req.index();
-                if (idx == 0)
-                    CreateTexture(stltype::get<FileTextureRequest>(req));
-                else if (idx == 1)
-                    CreateDynamicTexture(stltype::get<DynamicTextureRequest>(req));
-                else if (idx == 2)
-                    EnqueueAsyncImageLayoutTransition(stltype::get<AsyncLayoutTransitionRequest>(req));
-
-                m_sharedDataMutex.lock();
-                m_processingRequest = false;
-                m_sharedDataMutex.unlock();
-            }
-        }
-        DispatchAsyncOps();
-        Suspend();
-    }
-}
-
-void VkTextureManager::PostRender()
-{
-    ScopedZone("VkTextureManager::PostRender");
-
-    SimpleScopedGuard<tracy::Lockable<CustomMutex>> lock(m_sharedDataMutex);
-
-    if (m_texturesToMakeBindless.empty() && m_persistentTexturesToMakeBindless.empty())
-        return;
-
-    auto processTextures = [this](stltype::vector<TextureHandle>& handles) -> bool
-    {
-        bool wroteAny = false;
-        for (auto it = handles.begin(); it != handles.end();)
-        {
-            TextureVulkan* pTex = nullptr;
-            if (auto mapIt = m_textures.find(*it); mapIt != m_textures.end())
-            {
-                pTex = mapIt->second.get();
-            }
-            else if (auto persistentIt = m_persistentTextures.find(*it); persistentIt != m_persistentTextures.end())
-            {
-                pTex = persistentIt->second.get();
-            }
-            if (pTex == nullptr || pTex->GetImageView() == VK_NULL_HANDLE || pTex->GetSampler() == VK_NULL_HANDLE)
-            {
-                ++it;
-                continue;
-            }
-
-            const auto mappedIt = m_bindlessTextureHandleMap.find(*it);
-            DEBUG_ASSERT(mappedIt != m_bindlessTextureHandleMap.end());
-            if (mappedIt == m_bindlessTextureHandleMap.end())
-            {
-                ++it;
-                continue;
-            }
-
-            WriteBindlessTexture(pTex, mappedIt->second);
-
-            pTex->SetStatus(TextureStatus::Ready);
-            wroteAny = true;
-
-            it = handles.erase(it);
-        }
-        return wroteAny;
-    };
-
-    if (!m_texturesToMakeBindless.empty() || !m_persistentTexturesToMakeBindless.empty())
-    {
-        bool didWrite = false;
-
-        if (!m_texturesToMakeBindless.empty())
-            didWrite |= processTextures(m_texturesToMakeBindless);
-
-        if (!m_persistentTexturesToMakeBindless.empty())
-            didWrite |= processTextures(m_persistentTexturesToMakeBindless);
-
-        if (didWrite)
-        {
-            g_renderer.GetMaterialManager().MarkMaterialsDirty();
-        }
     }
 }
 
@@ -261,39 +123,11 @@ void VkTextureManager::CreateSwapchainTextures(const TextureCreationInfoVulkanIm
 
 void VkTextureManager::CreateTexture(const FileTextureRequest& req)
 {
-    auto readInfo = req.ioInfo;
-    u32 mips = req.ioInfo.mipmapPixels.size();
-    u64 imageSize = readInfo.dataSize > 0 ? readInfo.dataSize : (u64)readInfo.extents.x * readInfo.extents.y * 4;
+    ScopedZone("VkTextureManager::CreateTexture");
 
-    m_sharedDataMutex.lock();
-
-    StagingBufferVulkan& pStgBuffer = m_stagingBufferInUse.emplace_back(imageSize);
-    if (mips != 0)
-    {
-        u64 offset = 0;
-        for (auto& mipPixels : readInfo.mipmapPixels)
-        {
-            pStgBuffer.FillImmediate(mipPixels.pData, mipPixels.size, offset);
-            offset = offset + mipPixels.size;
-        }
-    }
-    else
-    {
-        ASSERT(readInfo.pixels);
-        pStgBuffer.FillImmediate(readInfo.pixels);
-    }
-
-    pStgBuffer.SetName(readInfo.filePath + "_StagingBuffer");
-    m_sharedDataMutex.unlock();
-
-    if (readInfo.autoFree)
-    {
-        FileReader::FreeImageData(readInfo.pixels);
-        for (auto& mipmap : readInfo.mipmapPixels)
-        {
-            FileReader::FreeImageData(mipmap.pData);
-        }
-    }
+    const auto& readInfo = req.ioInfo;
+    const u32 mips = (u32)readInfo.mipmapPixels.size();
+    const u64 imageSize = readInfo.dataSize;
 
     DynamicTextureRequest info{};
     info.extents.x = readInfo.extents.x;
@@ -319,44 +153,67 @@ void VkTextureManager::CreateTexture(const FileTextureRequest& req)
     info.hasMipMaps = mips != 0;
     info.mipLevels = mips > 0 ? mips : 1;
 
-    Texture* pTex = CreateTextureImmediate(info);
-
-    pTex->SetName(readInfo.filePath);
-
-    EnqueueAsyncImageLayoutTransition(
-        static_cast<Texture*>(pTex), ImageLayout::UNDEFINED, ImageLayout::TRANSFER_DST_OPTIMAL);
-    
-    stltype::vector<u32> mipLevels;
-    stltype::vector<u64> mipOffsets;
-    u64 currentOffset = 0;
-    if (mips > 0)
-    {
-        for (u32 i = 0; i < mips; ++i)
-        {
-            mipLevels.push_back(i);
-            mipOffsets.push_back(currentOffset);
-            currentOffset += readInfo.mipmapPixels[i].size;
-        }
-    }
-    else
-    {
-        mipLevels.push_back(0);
-        mipOffsets.push_back(0);
-    }
-
-    EnqueueAsyncTextureTransfer(&pStgBuffer, static_cast<Texture*>(pTex), VK_IMAGE_ASPECT_COLOR_BIT, mipLevels, mipOffsets);
-
-    // Note: ImageView and Sampler are already created by CreateTextureImmediate
-
+    // Reserved before the texture exists so the descriptor is written once, below
     if (req.makeBindless)
         MakeTextureBindless(req.handle, req.isPersistent);
-    else
-        pTex->SetStatus(TextureStatus::Ready);
+
+    Texture* pTex = CreateTextureImmediate(info);
+    pTex->SetName(readInfo.filePath);
+
+    // The mips are packed back to back in one staging allocation
+    auto& queueHandler = g_renderer.GetQueueHandler();
+    const u32 frameIdx = g_renderer.GetRecordingFrameIndex();
+    u64 stagingOffset = 0;
+    StagingBuffer& staging = queueHandler.AllocateStaging(frameIdx, imageSize, stagingOffset);
+    CommandBuffer* pCmdBuffer = queueHandler.GetUploadCommandBuffer(frameIdx);
+
+    ImageLayoutTransitionCmd toTransferDst(pTex);
+    toTransferDst.oldLayout = ImageLayout::UNDEFINED;
+    toTransferDst.newLayout = ImageLayout::TRANSFER_DST_OPTIMAL;
+    SetLayoutBarrierMasks(toTransferDst, toTransferDst.oldLayout, toTransferDst.newLayout);
+    pCmdBuffer->RecordCommand(toTransferDst);
+
+    u64 mipOffset = stagingOffset;
+    for (u32 mip = 0; mip < info.mipLevels; ++mip)
+    {
+        const void* pData = mips != 0 ? readInfo.mipmapPixels[mip].pData : readInfo.pixels;
+        const u64 size = mips != 0 ? readInfo.mipmapPixels[mip].size : imageSize;
+        staging.CopyToMapped(pData, size, mipOffset);
+
+        ImageBufferCopyCmd copy{&staging, pTex};
+        copy.srcOffset = mipOffset;
+        copy.mipLevel = mip;
+        copy.imageExtent = {(stltype::max)(static_cast<u32>(readInfo.extents.x) >> mip, 1u),
+                            (stltype::max)(static_cast<u32>(readInfo.extents.y) >> mip, 1u),
+                            1u};
+        pCmdBuffer->RecordCommand(copy);
+        mipOffset += size;
+    }
+
+    ImageLayoutTransitionCmd toShaderRead(pTex);
+    toShaderRead.oldLayout = ImageLayout::TRANSFER_DST_OPTIMAL;
+    toShaderRead.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
+    SetLayoutBarrierMasks(toShaderRead, toShaderRead.oldLayout, toShaderRead.newLayout);
+    pCmdBuffer->RecordCommand(toShaderRead);
+
+    if (readInfo.autoFree)
+        FileReader::FreeTextureInfo(readInfo);
+
+    // Callers may have reserved a slot when they requested the file
+    if (const auto slotIt = m_bindlessTextureHandleMap.find(req.handle); slotIt != m_bindlessTextureHandleMap.end())
+        WriteBindlessTexture(pTex, slotIt->second);
 }
 
-Texture* VkTextureManager::CreateDynamicTexture(const DynamicTextureRequest& req)
+void VkTextureManager::DestroyTextureDeferred(stltype::unique_ptr<Texture> pTexture)
 {
-    return CreateTextureImmediate(req);
+    // The delete queue wants copyable functions, so the texture travels as a raw pointer
+    Texture* pRaw = pTexture.release();
+    g_renderer.GetDeleteQueue().RegisterDeleteForNextFrame(
+        [pRaw]()
+        {
+            pRaw->CleanUp();
+            delete pRaw;
+        });
 }
 
 Texture* VkTextureManager::CreateTextureImmediate(const DynamicTextureRequest& req)
@@ -367,21 +224,9 @@ Texture* VkTextureManager::CreateTextureImmediate(const DynamicTextureRequest& r
 
     TextureInfo genericInfo = RequestToTexInfo(req);
 
-    m_sharedDataMutex.lock();
-    Texture* pTex = nullptr;
-    if (req.isPersistent)
-    {
-        auto mapEntry = stltype::make_unique<Texture>(vulkanTexCreateInfo, genericInfo);
-        pTex = static_cast<Texture*>(mapEntry.get());
-        m_persistentTextures.emplace(req.handle, std::move(mapEntry));
-    }
-    else
-    {
-        auto mapEntry = stltype::make_unique<Texture>(vulkanTexCreateInfo, genericInfo);
-        pTex = static_cast<Texture*>(mapEntry.get());
-        m_textures.emplace(req.handle, std::move(mapEntry));
-    }
-    m_sharedDataMutex.unlock();
+    auto mapEntry = stltype::make_unique<Texture>(vulkanTexCreateInfo, genericInfo);
+    Texture* pTex = mapEntry.get();
+    (req.isPersistent ? m_persistentTextures : m_textures).emplace(req.handle, std::move(mapEntry));
 
     pTex->SetName(req.GetName());
 
@@ -392,90 +237,6 @@ Texture* VkTextureManager::CreateTextureImmediate(const DynamicTextureRequest& r
     }
 
     return pTex;
-}
-
-void VkTextureManager::SubmitTextureRequest(const TextureRequest& req)
-{
-    m_sharedDataMutex.lock();
-    m_requests.push(req);
-    m_sharedDataMutex.unlock();
-}
-
-TextureHandle VkTextureManager::SubmitAsyncTextureCreation(const TexCreateInfo& createInfo)
-{
-    ScopedZone("VkTextureManager::Submit Async Texture Creation");
-
-    // Process filepath and see if we are already loading it
-    stltype::string filePath = createInfo.filePath;
-
-    // Handle relative paths starting with ./ or .\ (convert to ../)
-    if (filePath.size() >= 2 && filePath[0] == '.' && (filePath[1] == '/' || filePath[1] == '\\'))
-    {
-        filePath.replace(0, 1, "..");
-    }
-
-    // Handle Resources/Models/textures relocation
-    static const stltype::string searchTargets[] = {"Resources\\Models\\textures",
-                                                    "Resources\\Models\\Textures",
-                                                    "Resources/Models/textures",
-                                                    "Resources/Models/Textures"};
-
-    for (const auto& target : searchTargets)
-    {
-        if (auto pos = filePath.find(target); pos != stltype::string::npos)
-        {
-            filePath.replace(pos, target.length() + 1, "Resources\\Textures\\");
-            break;
-        }
-    }
-    if (filePath.find('.') == stltype::string::npos)
-    {
-        // We don't support loading files without an extension
-        DEBUG_LOGF("[TextureManager] Tried to load texture without an extension: {}", filePath.c_str());
-        return 0;
-    }
-
-    if (auto* pCachedData = IsAlreadyRequested(filePath, createInfo.semantic); pCachedData != nullptr)
-    {
-        return pCachedData->handle;
-    }
-
-    IORequest req{};
-    const auto handle = GenerateHandle();
-    bool makeBindless = createInfo.makeBindless;
-    TextureSemantic semantic = createInfo.semantic;
-    bool isPersistent = createInfo.isPersistent;
-
-    req.filePath = filePath;
-    req.requestType = RequestType::Image;
-    req.callback = [this, handle, makeBindless, semantic, isPersistent](const ReadTextureInfo& result)
-    {
-        FileTextureRequest texReq{};
-        texReq.ioInfo = result;
-
-        texReq.handle = handle;
-        texReq.makeBindless = makeBindless;
-        texReq.semantic = semantic;
-        texReq.isPersistent = isPersistent;
-        SubmitTextureRequest(texReq);
-    };
-    {
-        SimpleScopedGuard<tracy::Lockable<CustomMutex>> lock(m_sharedDataMutex);
-        if (isPersistent)
-            m_persistentLoadedTextureCache.emplace_back(LoadedTexInfo{filePath, semantic, handle});
-        else
-            m_loadedTextureCache.emplace_back(LoadedTexInfo{filePath, semantic, handle});
-    }
-
-    g_engine.GetFileReader().SubmitIORequest(req);
-    return handle;
-}
-
-TextureHandle VkTextureManager::SubmitAsyncDynamicTextureCreation(const DynamicTextureRequest& info)
-{
-    const auto handle = GenerateHandle();
-    SubmitTextureRequest(info);
-    return handle;
 }
 
 void VkTextureManager::CreateSamplerForTexture(TextureHandle handle, bool useMipMaps, TextureSamplerInfo samplerInfo)
@@ -559,217 +320,8 @@ void VkTextureManager::CreateImageViewForTexture(TextureVulkan* pTex, bool useMi
     }
 }
 
-void VkTextureManager::EnqueueAsyncImageLayoutTransition(const TextureHandle handle,
-                                                         const ImageLayout oldLayout,
-                                                         const ImageLayout newLayout)
-{
-    EnqueueAsyncImageLayoutTransition(static_cast<Texture*>(GetTexture(handle)), oldLayout, newLayout);
-}
-
-void VkTextureManager::EnqueueAsyncImageLayoutTransition(Texture* pTex,
-                                                         const ImageLayout oldLayout,
-                                                         const ImageLayout newLayout)
-{
-    EnqueueAsyncImageLayoutTransition(AsyncLayoutTransitionRequest{{pTex}, oldLayout, newLayout});
-}
-
-stltype::vector<Texture*> VkTextureManager::PopPendingGraphicsShaderReadTransitions()
-{
-    SimpleScopedGuard<tracy::Lockable<CustomMutex>> lock(m_sharedDataMutex);
-    stltype::vector<Texture*> pending = stltype::move(m_pendingGraphicsShaderReadTransitions);
-    m_pendingGraphicsShaderReadTransitions.clear();
-    return pending;
-}
-
-void VkTextureManager::EnqueueAsyncImageLayoutTransition(const AsyncLayoutTransitionRequest& request)
-{
-    m_sharedDataMutex.lock();
-    CreateTransferCommandBuffer();
-
-    ImageLayoutTransitionCmd cmd(request.textures);
-    cmd.oldLayout = request.oldLayout;
-    cmd.newLayout = request.newLayout;
-    cmd.mipLevel = 0;
-    
-
-    SetLayoutBarrierMasks(cmd, request.oldLayout, request.newLayout);
-
-    m_transferCommandBuffer->RecordCommand(cmd);
-
-    if (request.pWaitSemaphore)
-    {
-        m_transferCommandBuffer->AddWaitSemaphore(request.pWaitSemaphore);
-    }
-    if (request.pSignalSemaphore)
-    {
-        m_transferCommandBuffer->AddSignalSemaphore(request.pSignalSemaphore);
-    }
-    if (request.pTimelineWaitSemaphore)
-    {
-        m_transferCommandBuffer->AddTimelineWait(request.pTimelineWaitSemaphore, request.timelineWaitValue);
-    }
-    if (request.pTimelineSignalSemaphore)
-    {
-        m_transferCommandBuffer->AddTimelineSignal(request.pTimelineSignalSemaphore, request.timelineSignalValue);
-    }
-    m_sharedDataMutex.unlock();
-}
-
-void VkTextureManager::DispatchAsyncOps(stltype::string cbufferName)
-{
-    ScopedZone("TextureManager::Dispatch Async Ops");
-
-    AsyncQueueHandler::CommandBufferRequest cmdBufferRequest{};
-    bool hasWork = false;
-    {
-        SimpleScopedGuard<tracy::Lockable<CustomMutex>> lock(m_sharedDataMutex);
-        if (m_transferCommandBuffer == nullptr)
-        {
-            return;
-        }
-        const auto pBuffer = m_transferCommandBuffer;
-
-        DEBUG_ASSERT(pBuffer->GetRef() != VK_NULL_HANDLE);
-        pBuffer->SetName(cbufferName);
-        pBuffer->Bake();
-
-        pBuffer->SetWaitStages(SyncStages::TOP_OF_PIPE);
-
-        cmdBufferRequest.pBuffer = pBuffer;
-        cmdBufferRequest.queueType = QueueType::Transfer;
-        cmdBufferRequest.frameIdx = g_engine.GetFrameNumber();
-        m_inflightCommandBuffers.push_back(pBuffer);
-        pBuffer->AddExecutionFinishedCallback(
-            [this, pBuffer]()
-            {
-                if (m_keepRunning == false)
-                    return;
-                g_renderer.GetDeleteQueue().RegisterDeleteForNextFrame(
-                    [pBuffer, this]()
-                    {
-                        m_sharedDataMutex.lock();
-                        pBuffer->ResetBuffer();
-                        m_availableCommandBuffers.push_back(pBuffer);
-                        // If this throws there is a problem with the command buffers in general
-                        auto it =
-                            stltype::find_if(m_inflightCommandBuffers.begin(),
-                                             m_inflightCommandBuffers.end(),
-                                             [pBuffer](const auto& pB) { return pB->GetRef() == pBuffer->GetRef(); });
-                        if (it != m_inflightCommandBuffers.end())
-                            m_inflightCommandBuffers.erase(it);
-                        m_sharedDataMutex.unlock();
-
-                        // m_sharedDataMutex.lock();
-                        // m_transferCommandPool.ReturnCommandBuffer(pBuffer);
-                        // m_sharedDataMutex.unlock();
-                    });
-            });
-
-        m_transferCommandBuffer = nullptr;
-        hasWork = true;
-    }
-
-    if (hasWork)
-    {
-        g_renderer.GetQueueHandler().SubmitCommandBufferThisFrame(cmdBufferRequest);
-    }
-}
-TextureVulkan* VkTextureManager::GetTexture(TextureHandle handle)
-{
-    SimpleScopedGuard<tracy::Lockable<CustomMutex>> lock(m_sharedDataMutex);
-
-    auto it = m_textures.find(handle);
-    if (it != m_textures.end())
-        return it->second.get();
-
-    auto itPersistent = m_persistentTextures.find(handle);
-    if (itPersistent != m_persistentTextures.end())
-        return itPersistent->second.get();
-
-    return nullptr;
-}
-
-bool VkTextureManager::IsReady(TextureHandle handle)
-{
-    auto* pTex = GetTexture(handle);
-    return pTex && pTex->GetStatus() == TextureStatus::Ready;
-}
-
-void VkTextureManager::WaitFor(TextureHandle handle)
-{
-    while (!IsReady(handle))
-    {
-        g_renderer.GetQueueHandler().DispatchAllRequests();
-        threadstl::ThreadSleep(1);
-    }
-}
-
-BindlessTextureHandle VkTextureManager::MakeTextureBindless(TextureHandle handle, bool isPersistent)
-{
-    SimpleScopedGuard<tracy::Lockable<CustomMutex>> lock(m_sharedDataMutex);
-    if (const auto it = m_bindlessTextureHandleMap.find(handle); it != m_bindlessTextureHandleMap.end())
-    {
-        auto existing = it->second;
-        return existing;
-    }
-
-    BindlessTextureHandle bindlessHandle = 0;
-    if (isPersistent)
-    {
-        DEBUG_ASSERT(m_lastPersistentBindlessTextureWriteIdx < g_renderer.GetBindlessCapacity(Bindless::BindlessType::GlobalTextures));
-        bindlessHandle = m_lastPersistentBindlessTextureWriteIdx++;
-        m_persistentTexturesToMakeBindless.push_back(handle);
-    }
-    else
-    {
-        DEBUG_ASSERT(m_lastBindlessTextureWriteIdx < PERSISTENT_BINDLESS_REGION_START);
-        bindlessHandle = m_lastBindlessTextureWriteIdx++;
-        m_texturesToMakeBindless.push_back(handle);
-    }
-    m_bindlessTextureHandleMap[handle] = bindlessHandle;
-    return bindlessHandle;
-}
-
-BindlessTextureHandle VkTextureManager::MakeTextureBindless(TextureVulkan* pTex, bool isPersistent)
-{
-    if (!pTex) return 0;
-
-    TextureHandle handle = 0;
-    {
-        SimpleScopedGuard<tracy::Lockable<CustomMutex>> lock(m_sharedDataMutex);
-        for (const auto& [h, texPtr] : m_persistentTextures)
-        {
-            if (texPtr.get() == pTex)
-            {
-                handle = h;
-                break;
-            }
-        }
-        if (handle == 0)
-        {
-            for (const auto& [h, texPtr] : m_textures)
-            {
-                if (texPtr.get() == pTex)
-                {
-                    handle = h;
-                    break;
-                }
-            }
-        }
-    }
-
-    if (handle != 0)
-    {
-        return MakeTextureBindless(handle, isPersistent);
-    }
-
-    return 0;
-}
-
 VkTextureManager::~VkTextureManager()
 {
-    ThreadBase::ShutdownThread();
-
     for (auto& tex : m_swapChainTextures)
         tex.CleanUp();
     for (auto& pair : m_textures)
@@ -786,197 +338,6 @@ VkTextureManager::~VkTextureManager()
         if (sampler != VK_NULL_HANDLE)
             vkDestroySampler(VkBackend::Device(), sampler, VulkanAllocator());
     }
-}
-
-void VkTextureManager::EnqueueAsyncTextureTransfer(StagingBufferVulkan* pStagingBuffer,
-                                                   Texture* pTex,
-                                                   const VkImageAspectFlagBits flagBit,
-                                                   const stltype::vector<u32>& mips,
-                                                   const stltype::vector<u64>& offsets)
-{
-    ScopedZone("VkTextureManager::Enqueue Async Texture Transfer");
-
-
-    m_sharedDataMutex.lock();
-    pStagingBuffer->Grab();
-
-    stltype::vector<u32> levels = mips;
-    if (levels.empty())
-    {
-        levels.push_back(0);
-    }
-
-    auto callback = [this, pStagingBuffer]()
-    {
-        ScopedZone("VkTextureManager::Async Transfer Callback");
-        m_sharedDataMutex.lock();
-        pStagingBuffer->CleanUp();
-        auto it = stltype::find_if(m_stagingBufferInUse.begin(),
-                                   m_stagingBufferInUse.end(),
-                                   [pStagingBuffer](const auto& cb) { return &cb == pStagingBuffer; });
-        if (it == m_stagingBufferInUse.end())
-        {
-            m_stagingBufferInUse.clear();
-        }
-        m_sharedDataMutex.unlock();
-    };
-
-    for (u32 i = 0; i < levels.size(); ++i)
-    {
-        u32 mip = levels[i];
-        ImageBufferCopyCmd cmd{pStagingBuffer, pTex};
-        cmd.aspectFlagBits = (u32)flagBit;
-        cmd.mipLevel = mip;
-
-        u32 width = pTex->m_info.extents.x >> mip;
-        if (width < 1u) width = 1u;
-        u32 height = pTex->m_info.extents.y >> mip;
-        if (height < 1u) height = 1u;
-
-        cmd.imageExtent.x = width;
-        cmd.imageExtent.y = height;
-        cmd.imageExtent.z = 1;
-
-        if (i < offsets.size())
-        {
-            cmd.srcOffset = offsets[i];
-        }
-
-        if (i == levels.size() - 1)
-        {
-            cmd.optionalCallback = [this, callback, pTex]()
-            {
-                callback();
-                SimpleScopedGuard<tracy::Lockable<CustomMutex>> lock(m_sharedDataMutex);
-                m_pendingGraphicsShaderReadTransitions.push_back(pTex);
-            };
-        }
-
-        CreateTransferCommandBuffer();
-        m_transferCommandBuffer->RecordCommand(cmd);
-    }
-    m_sharedDataMutex.unlock();
-}
-
-void VkTextureManager::EnqueueAsyncTextureTransfer(StagingBufferVulkan* pStagingBuffer,
-                                                   const TextureHandle handle,
-                                                   const VkImageAspectFlagBits flagBit)
-{
-    EnqueueAsyncTextureTransfer(pStagingBuffer, static_cast<Texture*>(GetTexture(handle)), flagBit);
-}
-
-void VkTextureManager::CancelAllRequests()
-{
-    m_sharedDataMutex.lock();
-    while (!m_requests.empty())
-        m_requests.pop();
-    m_sharedDataMutex.unlock();
-}
-
-void VkTextureManager::FinishAllRequests()
-{
-    while (true)
-    {
-        bool hasRequests = false;
-        bool processing = false;
-        {
-            SimpleScopedGuard<tracy::Lockable<CustomMutex>> lock(m_sharedDataMutex);
-            hasRequests = !m_requests.empty();
-            processing = m_processingRequest;
-        }
-
-        if (!hasRequests && !processing)
-            break;
-
-        g_renderer.GetQueueHandler().DispatchAllRequests();
-        threadstl::ThreadSleep(1);
-    }
-}
-
-void VkTextureManager::Flush()
-{
-    DEBUG_LOGF("[VkTextureManager] Flushing scene textures, keeping persistent ones");
-
-    CancelAllRequests();
-    FinishAllRequests();
-
-    DispatchAsyncOps();
-    g_renderer.GetQueueHandler().DispatchAllRequests();
-    SimpleScopedGuard<tracy::Lockable<CustomMutex>> lock(m_sharedDataMutex);
-
-    for (auto it = m_textures.begin(); it != m_textures.end();)
-    {
-        it->second->CleanUp();
-        it = m_textures.erase(it);
-    }
-
-    m_texturesToMakeBindless.clear();
-    m_loadedTextureCache.clear();
-    m_bindlessTextureHandleMap.clear();
-    // Keep slot 0 reserved as invalid/placeholder for material paths that treat 0 specially.
-    m_lastBindlessTextureWriteIdx = 1;
-    m_lastPersistentBindlessTextureWriteIdx = PERSISTENT_BINDLESS_REGION_START;
-}
-
-void VkTextureManager::FreeTexture(TextureHandle handle)
-{
-    m_sharedDataMutex.lock();
-    auto it = m_textures.find(handle);
-    auto itPersistent = m_persistentTextures.find(handle);
-
-    DEBUG_ASSERT(!(it != m_textures.end() && itPersistent != m_persistentTextures.end())); // Should not be in both!
-
-    if (it != m_textures.end())
-    {
-        DEBUG_LOGF("[VkTextureManager] Freeing scene texture \"{}\" handle {}", it->second->GetName().c_str(), handle);
-        it->second->CleanUp();
-        m_textures.erase(it);
-    }
-    else if (itPersistent != m_persistentTextures.end())
-    {
-        DEBUG_LOGF("[VkTextureManager] Freeing persistent texture \"{}\" handle {}",
-                   itPersistent->second->GetName().c_str(),
-                   handle);
-        itPersistent->second->CleanUp();
-        m_persistentTextures.erase(itPersistent);
-    }
-    else
-    {
-        DEBUG_LOGF("[VkTextureManager] Tried to free invalid texture handle {}", handle);
-    }
-
-    m_bindlessTextureHandleMap.erase(handle);
-    for (auto pendingIt = m_texturesToMakeBindless.begin(); pendingIt != m_texturesToMakeBindless.end();)
-    {
-        if (*pendingIt == handle)
-            pendingIt = m_texturesToMakeBindless.erase(pendingIt);
-        else
-            ++pendingIt;
-    }
-    for (auto pendingIt = m_persistentTexturesToMakeBindless.begin();
-         pendingIt != m_persistentTexturesToMakeBindless.end();)
-    {
-        if (*pendingIt == handle)
-            pendingIt = m_persistentTexturesToMakeBindless.erase(pendingIt);
-        else
-            ++pendingIt;
-    }
-
-    m_sharedDataMutex.unlock();
-}
-
-TextureHandle VkTextureManager::GenerateHandle()
-{
-    TextureHandle handle = m_baseHandle.fetch_add(1, stltype::memory_order_relaxed);
-    return handle;
-}
-
-bool VkTextureManager::ShouldFlipNormalMap(const stltype::string& path) const
-{
-    stltype::string pathLower = path;
-    for (auto& c : pathLower)
-        c = (char)tolower(c);
-    return pathLower.find(".dds") != stltype::string::npos || pathLower.find(".dd") != stltype::string::npos;
 }
 
 VkImageViewCreateInfo VkTextureManager::GenerateImageViewInfo(VkFormat format, VkImage image, bool isArray, u32 mips)
@@ -1139,27 +500,6 @@ void VkTextureManager::SetLayoutBarrierMasks(ImageLayoutTransitionCmd& transitio
         transitionCmd.srcStage = SyncStages::TOP_OF_PIPE;
         transitionCmd.dstStage = SyncStages::FRAGMENT_SHADER | SyncStages::COMPUTE_SHADER;
     }
-    else if (oldLayout == ImageLayout::UNDEFINED && newLayout == ImageLayout::TRANSFER_DST_OPTIMAL)
-    {
-        transitionCmd.srcAccessMask = AccessFlags::NONE;
-        transitionCmd.dstAccessMask = AccessFlags::TRANSFER_WRITE;
-        transitionCmd.srcStage = SyncStages::TOP_OF_PIPE;
-        transitionCmd.dstStage = SyncStages::TRANSFER;
-    }
-    else if (oldLayout == ImageLayout::UNDEFINED && newLayout == ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-    {
-        transitionCmd.srcAccessMask = AccessFlags::NONE;
-        transitionCmd.dstAccessMask = AccessFlags::COLOR_ATTACHMENT_READ | AccessFlags::COLOR_ATTACHMENT_WRITE;
-        transitionCmd.srcStage = SyncStages::TOP_OF_PIPE;
-        transitionCmd.dstStage = SyncStages::COLOR_ATTACHMENT_OUTPUT;
-    }
-    else if (oldLayout == ImageLayout::TRANSFER_DST_OPTIMAL && newLayout == ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-    {
-        transitionCmd.srcAccessMask = AccessFlags::TRANSFER_WRITE;
-        transitionCmd.dstAccessMask = AccessFlags::SHADER_READ;
-        transitionCmd.srcStage = SyncStages::TRANSFER;
-        transitionCmd.dstStage = SyncStages::FRAGMENT_SHADER | SyncStages::COMPUTE_SHADER;
-    }
     else if (oldLayout == ImageLayout::UNDEFINED && newLayout == ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL)
     {
         transitionCmd.srcAccessMask = AccessFlags::NONE;
@@ -1263,13 +603,6 @@ void VkTextureManager::SetLayoutBarrierMasks(ImageLayoutTransitionCmd& transitio
         transitionCmd.srcStage = SyncStages::COMPUTE_SHADER;
         transitionCmd.dstStage = SyncStages::TRANSFER;
     }
-    else if (oldLayout == ImageLayout::TRANSFER_DST_OPTIMAL && newLayout == ImageLayout::GENERAL)
-    {
-        transitionCmd.srcAccessMask = AccessFlags::TRANSFER_WRITE;
-        transitionCmd.dstAccessMask = AccessFlags::SHADER_STORAGE_WRITE | AccessFlags::SHADER_STORAGE_READ;
-        transitionCmd.srcStage = SyncStages::TRANSFER;
-        transitionCmd.dstStage = SyncStages::COMPUTE_SHADER;
-    }
     else if (oldLayout == ImageLayout::GENERAL && newLayout == ImageLayout::GENERAL)
     {
         transitionCmd.srcAccessMask = AccessFlags::SHADER_STORAGE_WRITE | AccessFlags::SHADER_STORAGE_READ;
@@ -1311,68 +644,9 @@ VkImageCreateInfo VkTextureManager::FillImageCreateInfoFlat2D(const DynamicTextu
     imageInfo.usage = Conv(info.usage);
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
 
-    const auto& indices = VkBackend::QueueFamilies();
-    static u32 families[3];
-    u32 count = 0;
-
-    auto addFamily = [&](stltype::optional<u32> family)
-    {
-        if (family.has_value())
-        {
-            for (u32 i = 0; i < count; ++i)
-                if (families[i] == family.value())
-                    return;
-            families[count++] = family.value();
-        }
-    };
-
-    addFamily(indices.graphicsFamily);
-    addFamily(indices.computeFamily);
-    addFamily(indices.transferFamily);
-
-    if (count > 1)
-    {
-        imageInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
-        imageInfo.queueFamilyIndexCount = count;
-        imageInfo.pQueueFamilyIndices = families;
-    }
-    else
-    {
-        imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        imageInfo.queueFamilyIndexCount = 0;
-        imageInfo.pQueueFamilyIndices = nullptr;
-    }
+    VkBackend::SetSharedQueueFamilies(imageInfo);
 
     return imageInfo;
-}
-
-void VkTextureManager::CreateTransferCommandPool()
-{
-    m_transferCommandPool = CommandPoolVulkan::Create(VkBackend::QueueFamilies().transferFamily.value());
-    m_transferCommandPool.SetName("TextureManager Transfer Command Pool");
-}
-
-void VkTextureManager::CreateTransferCommandBuffer()
-{
-    if (m_transferCommandPool.IsValid() == false)
-    {
-        CreateTransferCommandPool();
-        m_availableCommandBuffers =
-            m_transferCommandPool.CreateCommandBuffers(CommandBufferCreateInfo{}, FRAMES_IN_FLIGHT * 512);
-    }
-    if (m_transferCommandBuffer == nullptr)
-    {
-        if (m_availableCommandBuffers.empty() == false)
-        {
-            m_transferCommandBuffer = m_availableCommandBuffers[m_availableCommandBuffers.size() - 1];
-            m_availableCommandBuffers.pop_back();
-        }
-        else
-        {
-            DEBUG_ASSERT(false);
-            m_transferCommandBuffer = m_transferCommandPool.CreateCommandBuffer(CommandBufferCreateInfo{});
-        }
-    }
 }
 
 void VkTextureManager::CreateBindlessDescriptorSet()
@@ -1439,29 +713,6 @@ void VkTextureManager::CreateGlobalSamplers()
     };
     m_globalSamplers[SAMPLER_LINEAR_CLAMP] = createSampler(VK_FILTER_LINEAR);
     m_globalSamplers[SAMPLER_POINT_CLAMP] = createSampler(VK_FILTER_NEAREST);
-}
-
-const VkTextureManager::LoadedTexInfo* VkTextureManager::IsAlreadyRequested(const stltype::string& filePath,
-                                                                            TextureSemantic semantic) const
-{
-    SimpleScopedGuard<tracy::Lockable<CustomMutex>> lock(m_sharedDataMutex);
-    if (const auto it = stltype::find_if(m_loadedTextureCache.cbegin(),
-                                         m_loadedTextureCache.cend(),
-                                         [&filePath, semantic](const LoadedTexInfo& info)
-                                         { return info.filePath == filePath && info.semantic == semantic; });
-        it != m_loadedTextureCache.cend())
-    {
-        return &(*it);
-    }
-    if (const auto it = stltype::find_if(m_persistentLoadedTextureCache.cbegin(),
-                                         m_persistentLoadedTextureCache.cend(),
-                                         [&filePath, semantic](const LoadedTexInfo& info)
-                                         { return info.filePath == filePath && info.semantic == semantic; });
-        it != m_persistentLoadedTextureCache.cend())
-    {
-        return &(*it);
-    }
-    return nullptr;
 }
 
 TextureViewHandle VkTextureManager::CreateDepthLayerView(const Texture& texture, TexFormat format, u32 layer)

@@ -1,6 +1,7 @@
 #pragma once
 #include "Controls/SceneGraphWindow.h"
 #include "Controls/SelectedEntitiesWindow.h"
+#include "DebugWindows/EngineSettingsWindow.h"
 #include "DebugWindows/InfoWindow.h"
 #include "DebugWindows/RenderSettingsWindow.h"
 #include "DebugWindows/PerformanceDiagnosticsWindow.h"
@@ -27,6 +28,7 @@ private:
     UpdateEventData m_lastUpdateState;
     SceneGraphWindow m_sceneGraphWindow;
     RenderSettingsWindow m_renderSettingsWindow;
+    EngineSettingsWindow m_engineSettingsWindow;
     PerformanceDiagnosticsWindow m_performanceDiagnosticsWindow;
     RenderGraphInspectorWindow m_renderGraphInspectorWindow;
     TextureViewerWindow m_textureViewerWindow;

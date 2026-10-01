@@ -1,40 +1,37 @@
 #pragma once
 #include "../Synchronization.h"
-#include "Core/Global/ThreadBase.h"
 #include "Core/Rendering/Passes/PassManagerDefines.h"
 #include "Core/SceneGraph/Mesh.h"
-#include <eathread/eathread.h>
-#include "Core/Global/ThreadPool.h"
-#include "TransferDefines.h"
+#include "Core/Rendering/Core/Buffer.h"
+#include "Core/Rendering/Core/CommandPool.h"
+#include "Core/Rendering/Core/RenderDefinitions.h"
+#include "Core/Rendering/Core/RenderingData.h"
+#include <EASTL/array.h>
+#include <EASTL/deque.h>
 
-struct Mesh;
 
-
-// Used to submit commandbuffers to various queues asynchronously or build simple commandbuffers
-class AsyncQueueHandler : public ThreadBase
+// Records every upload of a frame into one graphics command buffer and submits command buffers, owner thread only
+class AsyncQueueHandler
 {
 public:
     struct MeshTransfer
     {
-        stltype::vector<CompleteVertex> vertices;
-        stltype::vector<u32> indices;
+        const CompleteVertex* pVertices;
+        u32 vertexCount;
+        const u32* pIndices;
+        u32 indexCount;
         BufferData* pBuffersToFill;
+        // Byte offsets into the destination buffers
         u64 vertexOffset{0};
         u64 indexOffset{0};
-        u32 frameIdx;
-        stltype::function<void()> onComplete;
     };
 
     struct SSBOTransfer
     {
-        void* pData;
+        const void* pData;
         u32 size;
         StorageBuffer* pSSBO;
         u32 offset{0};
-        u32 dstBinding{0};
-        DescriptorSet::Ptr pDescriptor;
-        u32 frameIdx;
-        stltype::function<void()> onComplete;
     };
 
     using TransferCommand = stltype::variant<MeshTransfer, SSBOTransfer>;
@@ -54,98 +51,77 @@ public:
         SyncStages signalStage{SyncStages::NONE};
         bool isLastInBatch{false};
         const char* name{"Unnamed CommandBuffer Batch"};
-        stltype::vector<u32> requiredStagingBuffers;
-        u32 contextIdx{~0u};
     };
 
     struct InFlightBatch
     {
-        QueueType queue;
+        CommandBufferRequest req;
         u64 signalValue;
-        stltype::vector<CommandBufferRequest> requests;
-        stltype::vector<u32> stagingIndices;
-        u32 frameIdx;
     };
 
     AsyncQueueHandler() = default;
     ~AsyncQueueHandler();
 
     void Init();
-    void Shutdown();
 
-    // Submission API
+    // Recorded by SubmitUploads of the same frame, so the data must stay valid until then
     void SubmitTransferCommandAsync(const TransferCommand& request);
-    void SubmitTransferCommandAsync(const Mesh* pMesh, BufferData& renderDataToFill, u32 frameIdx, stltype::function<void()>&& callback = nullptr);
-    
-    void SubmitCommandBufferAsync(const CommandBufferRequest& request);
     void SubmitCommandBufferThisFrame(const CommandBufferRequest& request);
     void SubmitSwapchainPresentRequestForThisFrame(const PresentRequest& request);
 
-    // Sync API
+    // Upload command buffer and staging memory of a frame slot, for recording uploads as they arrive
+    CommandBuffer* GetUploadCommandBuffer(u32 frameIdx);
+    StagingBuffer& AllocateStaging(u32 frameIdx, u64 size, u64& outOffset);
+    // Records the queued transfers and submits the slot's upload buffer ahead of the frame's other graphics work
+    void SubmitUploads(u32 frameIdx);
+    // Graphics timeline value of the last upload submit, 0 if the frame had nothing to upload
+    u64 GetLastUploadSignalValue() const
+    {
+        return m_lastUploadSignalValue;
+    }
+
+    // Waits for the batches of a frame slot (all slots for ~0u) and releases their staging memory
     void WaitForFences(u32 frameIdx);
-    u64 GetCompletedValue(QueueType queue) const;
-    
+
     void DispatchAllRequests();
-    void FlushAllTransferCommands();
     void FlushGraphicsComputeBuffers();
 
-    TimelineSemaphore* GetTimelineSemaphore(QueueType type) { return &m_queueTimelines[type].timeline; }
-    u64 GetLastSubmittedValue(QueueType type);
-
-    struct SynchronizableCommand
+    TimelineSemaphore* GetTimelineSemaphore(QueueType type)
     {
-        const char* name;
-        SyncStages waitStage;
-        SyncStages signalStage;
-    };
-
-    StagingBuffer& AcquireStagingBuffer(u64 requiredSize, u32& outIdx);
-    void ReleaseStagingBuffers(const stltype::vector<u32>& indices);
+        return &m_queueTimelines[type].timeline;
+    }
 
 private:
-    void CheckRequests();
-    void ReclaimCompletedResources(u32 frameIdx);
-    void BuildTransferCommandBuffer(const stltype::vector<TransferCommand>& transferCommands);
-    
-    void BuildTransferCommand(const MeshTransfer& request, CommandBuffer* pCmdBuffer, stltype::vector<u32>& stagingIndices, stltype::vector<PendingMeshResult>& meshResults);
-    void BuildTransferCommand(const SSBOTransfer& request, CommandBuffer* pCmdBuffer, stltype::vector<u32>& stagingIndices, stltype::vector<PendingMeshResult>& meshResults);
-
-    StagingBuffer& AcquireStagingBufferLocked(u64 requiredSize, u32& outIdx);
-
-    void SubmitCommandBuffers(stltype::vector<CommandBufferRequest>& requests);
-    void SubmitToSwapchainForPresentation(const stltype::vector<PresentRequest>& requests);
-
     struct QueueTimeline
     {
         TimelineSemaphore timeline;
         u64 lastSubmittedValue{0};
-        u64 lastCompletedValue{0};
     };
 
+    struct FrameUpload
+    {
+        CommandBuffer* pCmdBuffer{nullptr};
+        // Deque so chunk addresses stay valid while commands still point at them
+        stltype::deque<StagingBuffer> stagingChunks;
+        u32 chunkIdx{0};
+        u64 chunkOffset{0};
+        u64 bytesThisFrame{0};
+    };
+
+    void RecordTransfer(const MeshTransfer& transfer, u32 frameIdx);
+    void RecordTransfer(const SSBOTransfer& transfer, u32 frameIdx);
+    void ResetStaging(u32 frameIdx);
+    void ReclaimCompletedResources();
+    void SubmitCommandBuffers(stltype::vector<CommandBufferRequest>& requests);
+    void SubmitToSwapchainForPresentation(const stltype::vector<PresentRequest>& requests);
+
     stltype::hash_map<QueueType, QueueTimeline> m_queueTimelines;
-    stltype::hash_map<QueueType, CommandPool> m_commandPools{};
-
-    stltype::vector<stltype::unique_ptr<RecorderContext>> m_recorderContexts;
-    stltype::vector<u32> m_freeRecorderContextIndices;
-    ProfiledLockable(CustomMutex, m_recorderContextMutex);
-    ThreadPool m_recordingPool;
-
-    stltype::deque<StagingBuffer> m_stagingBufferPool;
-    stltype::vector<u32> m_freeStagingBufferIndices;
-    stltype::vector<u32> m_currentBatchStagingIndices;
-    ProfiledLockable(CustomMutex, m_stagingBufferMutex);
+    CommandPool m_uploadCommandPool;
+    stltype::array<FrameUpload, FRAMES_IN_FLIGHT> m_frameUploads;
 
     stltype::deque<TransferCommand> m_transferCommands;
-    stltype::vector<CommandBufferRequest> m_commandBufferRequests;
     stltype::vector<CommandBufferRequest> m_thisFrameCommandBufferRequests;
     stltype::vector<PresentRequest> m_swapchainPresentRequestsThisFrame;
     stltype::vector<InFlightBatch> m_inFlightBatches;
-    stltype::hash_map<QueueType, stltype::hash_map<u64, stltype::vector<stltype::function<void()>>>> m_timelineCallbacks;
-
-    u32 m_maxTransferCommandsPerFrame{256};
-    std::atomic<u64> m_pendingTransferSignalValue{1};
-    bool m_keepRunning{false};
-
-    void InitStagingBufferPool(u32 initialCount, u64 initialSize);
+    u64 m_lastUploadSignalValue{0};
 };
-

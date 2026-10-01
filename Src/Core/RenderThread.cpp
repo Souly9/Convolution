@@ -9,6 +9,7 @@
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
 #include "Core/Rendering/Core/Utils/DeleteQueue.h"
 #include "Core/Global/GlobalVariables.h"
+#include "Core/SceneGraph/SceneStreamer.h"
 
 RenderThread::RenderThread(ImGuiManager* pImGuiManager) : m_pImGuiManager(pImGuiManager)
 {
@@ -62,11 +63,9 @@ bool RenderThread::HandleSceneSwitchAtFrameStart()
     if (!g_engine.TryGetApplicationState() || !g_engine.GetApplicationState().HasPendingSceneSwitch())
         return true;
 
-    g_renderer.GetQueueHandler().DispatchAllRequests();
-    g_renderer.GetQueueHandler().WaitForFences(~0u);
-    SRF::WaitForDeviceIdle<RenderAPI>();
-
-    g_engine.GetApplicationState().ExecuteSceneSwitchOnRenderThread();
+    // The switch left the device idle, the old scene's entities and meshes are gone
+    if (g_engine.GetApplicationState().ExecuteSceneSwitchOnRenderThread())
+        m_passManager->ResetSceneState();
     return true;
 }
 
@@ -90,6 +89,7 @@ void RenderThread::RenderLoop()
             lastFrame = currentFrame;
             currentFrame = g_engine.GetFrameNumber();
             currentJitterFrameNumber = jitterFrameNumber++;
+            g_renderer.SetRecordingFrameIndex(lastFrame);
         }
         // First sync game data with renderthread
 
@@ -112,6 +112,10 @@ void RenderThread::RenderLoop()
         const bool acquiredFrame = m_passManager->BlockUntilPassesFinished(lastFrame);
         // All previous frame's command buffers have finished executing, safe to process deferred deletes
         g_renderer.GetDeleteQueue().ProcessDeleteQueue();
+        // The game thread is parked until the Post below, so load callbacks and streaming may touch the ECS and the GPU
+        const auto& streaming = g_engine.GetApplicationState().GetCurrentApplicationState().engineState.streaming;
+        g_engine.GetFileReader().DeliverCompleted(streaming.texturesPerFrame);
+        g_engine.GetSceneStreamer().Tick();
 
         // Sync ended, signal gamethread
         g_engine.GetFrameSync().renderThreadRead.Post();
@@ -123,6 +127,8 @@ void RenderThread::RenderLoop()
 
         if (!acquiredFrame)
         {
+            // Uploads recorded this iteration must not sit around until the slot comes back
+            g_renderer.GetQueueHandler().SubmitUploads(lastFrame);
             continue;
         }
         {
@@ -138,7 +144,6 @@ void RenderThread::RenderLoop()
 
         {
             g_engine.GetEventSystem().OnPostFrame({lastFrame});
-            g_renderer.GetTextureManager().PostRender();
         }
     }
 }

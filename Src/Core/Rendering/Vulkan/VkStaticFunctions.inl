@@ -162,9 +162,7 @@ inline void SubmitCommandBufferToQueue(const stltype::vector<CommandBuffer*>& co
     }
 
     VkQueue submitQueue = VK_NULL_HANDLE;
-    if (queue == QueueType::Transfer)
-        submitQueue = VkBackend::Queues().transfer;
-    else if (queue == QueueType::Compute)
+    if (queue == QueueType::Compute)
         submitQueue = VkBackend::Queues().compute;
     else if (queue == QueueType::Graphics)
         submitQueue = VkBackend::Queues().graphics;

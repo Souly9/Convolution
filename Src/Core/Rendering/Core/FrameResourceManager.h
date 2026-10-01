@@ -133,10 +133,9 @@ public:
                                const DirectionalRenderLight& dirLight, u32 frameIdx);
     void SetSharedData(RenderView&& mainView, u32 frameIdx);
 
-    void UpdateLightClusterSSBO(const UBO::LightClusterSSBO& data, u32 numLights, u32 frameIdx);
+    void UpdateLightClusterSSBO(const UBO::LightClusterSSBO& data, u32 numLights);
 
-    void DispatchSSBOTransfer(
-        void* data, DescriptorSet::Ptr pDescriptor, u32 size, StorageBuffer* pSSBO, u32 offset = 0, u32 dstBinding = 0, u32 frameIdx = ~0u);
+    void DispatchSSBOTransfer(const void* data, u32 size, StorageBuffer* pSSBO, u32 offset = 0);
 
     FrameRendererContext& GetFrameRendererContext(u32 idx) { return m_frameRendererContexts[idx]; }
     const FrameRendererContext& GetFrameRendererContext(u32 idx) const { return m_frameRendererContexts[idx]; }
@@ -192,6 +191,7 @@ private:
     UBO::SharedDataUBO m_currentSharedDataUBO{};
     PassGeometryData m_currentPassGeometryState{};
     stltype::hash_map<ECS::EntityID, u32> m_entityToTransformUBOIdx{};
+    u32 m_firstNewTransformSlot{0};
     stltype::hash_map<ECS::EntityID, u32> m_entityToObjectDataIdx{};
     DirLightVector m_cachedDirLights{};
     stltype::vector<DirectX::XMFLOAT4X4> m_cachedTransformSSBO{};
