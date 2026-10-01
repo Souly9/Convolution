@@ -72,11 +72,16 @@ void LightGridComputePass::Setup(::RenderGraphBuilder& builder, const MainPassDa
         PassCtx::ClusterGrid,
         PassCtx::ViewSpaceLights>();
 
-    auto viewSpaceLights = builder.DeclareStorageBuffer(RGResourceID::Custom, UBO::ViewSpaceLightsSSBOSize, "ViewSpaceLightsSSBO");
-    builder.ReadStorageBuffer(viewSpaceLights, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ);
-
-    auto tileBuffer = builder.DeclareStorageBuffer(RGResourceID::TileAssignmentBuffer, UBO::LightClusterSSBOSize);
-    builder.ReadStorageBuffer(tileBuffer, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ);
+    // Reads the tiles, adds to the cluster light total and copies that total out for the stats UI
+    auto viewSpaceLights = builder.DeclareStorageBuffer(RGResourceID::ViewSpaceLightsBuffer, UBO::ViewSpaceLightsSSBOSize);
+    builder.WriteStorageBuffer(viewSpaceLights,
+                               SyncStages::COMPUTE_SHADER | SyncStages::TRANSFER,
+                               AccessFlags::SHADER_READ | AccessFlags::SHADER_WRITE | AccessFlags::TRANSFER_READ);
+    auto clusterGrid = builder.DeclareStorageBuffer(RGResourceID::ClusterGridBuffer, UBO::ClusterAABBSetSize);
+    builder.ReadStorageBuffer(clusterGrid, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ);
+    // Writes the per-cluster offsets and light lists
+    auto lightCluster = builder.DeclareStorageBuffer(RGResourceID::LightClusterBuffer, UBO::LightClusterSSBOSize);
+    builder.WriteStorageBuffer(lightCluster, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_WRITE);
     builder.SetHasSideEffects();
 }
 
@@ -107,6 +112,18 @@ void LightGridComputePass::RenderWithGraph(const MainPassData& data, const Frame
     cmd.descriptorSets = execCtx.GetDescriptors();
     cmd.SetPushConstants(0, m_pushConstants);
     execCtx.pCmdBuffer->RecordCommand(cmd);
+
+    // The CPU reads this slot's copy after the slot's fence, so the stats never stall the frame
+    execCtx.pCmdBuffer->RecordCommand(GlobalBarrierCmd(
+        SyncStages::COMPUTE_SHADER, SyncStages::TRANSFER, AccessFlags::SHADER_WRITE, AccessFlags::TRANSFER_READ));
+    SimpleBufferCopyCmd statsCopy{&data.pResourceManager->GetViewSpaceLightsSSBO(),
+                                  &data.pResourceManager->GetClusterStatsReadback(execCtx.GetFrameIndex())};
+    statsCopy.srcOffset = UBO::ViewSpaceLights_ClusterLightTotalOffset;
+    statsCopy.size = sizeof(u32);
+    execCtx.pCmdBuffer->RecordCommand(statsCopy);
+    // A fence wait alone doesn't make device writes visible to the host
+    execCtx.pCmdBuffer->RecordCommand(
+        GlobalBarrierCmd(SyncStages::TRANSFER, SyncStages::HOST, AccessFlags::TRANSFER_WRITE, AccessFlags::HOST_READ));
     EndRenderPassProfilingScope(execCtx.pCmdBuffer);
 }
 

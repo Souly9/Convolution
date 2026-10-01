@@ -23,6 +23,9 @@ void GenBufferVulkan::Create(BufferCreateInfo& info)
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufferInfo.size = size;
     bufferInfo.usage = Conv(info.usage);
+    // The build-input bit needs VK_KHR_acceleration_structure, which devices without ray tracing (MoltenVK) lack
+    if (!g_renderer.SupportsRayTracing())
+        bufferInfo.usage &= ~VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
     VkBackend::SetSharedQueueFamilies(bufferInfo);
     m_allocatedMemory = g_renderer.GetGPUMemoryManager().AllocateBuffer(info.usage, bufferInfo, m_buffer);
     m_info.size = size;
@@ -137,11 +140,11 @@ void GenBufferVulkan::CheckCopyArgs(const void* data, u64 size, u64 offset)
     DEBUG_ASSERT(m_info.size <= size);
 }
 
-VertexBufferVulkan::VertexBufferVulkan(u64 size)
+VertexBufferVulkan::VertexBufferVulkan(u64 size, bool hostVisible)
 {
     BufferCreateInfo info{};
     info.size = size;
-    info.usage = BufferUsage::Vertex;
+    info.usage = hostVisible ? BufferUsage::VertexHost : BufferUsage::Vertex;
     Create(info);
 }
 
@@ -184,11 +187,11 @@ void StagingBufferVulkan::EnsureCapacity(u64 size)
     CreatePersistentlyMapped(size);
 }
 
-IndexBufferVulkan::IndexBufferVulkan(u64 size)
+IndexBufferVulkan::IndexBufferVulkan(u64 size, bool hostVisible)
 {
     BufferCreateInfo info{};
     info.size = size;
-    info.usage = BufferUsage::Index;
+    info.usage = hostVisible ? BufferUsage::IndexHost : BufferUsage::Index;
     Create(info);
 }
 

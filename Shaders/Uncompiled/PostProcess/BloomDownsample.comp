@@ -27,7 +27,8 @@ vec3 Prefilter(vec3 c, float threshold)
     float brightness = max(c.r, max(c.g, c.b));
     float soft = brightness - threshold + 0.5;
     soft = clamp(soft, 0.0, 1.0);
-    soft = soft * soft;
+    // Quadratic knee of width 0.5: soft^2 / (4 * knee), joins the linear part at threshold + 0.5
+    soft = soft * soft * 0.5;
     float contribution = max(brightness - threshold, soft) / max(brightness, 0.00001);
     return c * contribution;
 }
@@ -52,22 +53,22 @@ void main()
 
     // Call of Duty: Advanced Warfare (Jorge Jimenez 2014) 13-Tap Downsample Filter
     // 5 bilinear sample boxes covering 13 texels in a 6x6 footprint
-    vec3 A = texture(GlobalBindlessTextures[nonuniformEXT(push.inputTexIdx)], uv + vec2(-1.0, -1.0) * texelSize).rgb;
-    vec3 B = texture(GlobalBindlessTextures[nonuniformEXT(push.inputTexIdx)], uv + vec2( 1.0, -1.0) * texelSize).rgb;
-    vec3 C = texture(GlobalBindlessTextures[nonuniformEXT(push.inputTexIdx)], uv + vec2(-1.0,  1.0) * texelSize).rgb;
-    vec3 D = texture(GlobalBindlessTextures[nonuniformEXT(push.inputTexIdx)], uv + vec2( 1.0,  1.0) * texelSize).rgb;
+    vec3 A = SampleLinearClamp(push.inputTexIdx, uv + vec2(-1.0, -1.0) * texelSize).rgb;
+    vec3 B = SampleLinearClamp(push.inputTexIdx, uv + vec2( 1.0, -1.0) * texelSize).rgb;
+    vec3 C = SampleLinearClamp(push.inputTexIdx, uv + vec2(-1.0,  1.0) * texelSize).rgb;
+    vec3 D = SampleLinearClamp(push.inputTexIdx, uv + vec2( 1.0,  1.0) * texelSize).rgb;
 
-    vec3 E = texture(GlobalBindlessTextures[nonuniformEXT(push.inputTexIdx)], uv + vec2(-2.0, -2.0) * texelSize).rgb;
-    vec3 F = texture(GlobalBindlessTextures[nonuniformEXT(push.inputTexIdx)], uv + vec2( 2.0, -2.0) * texelSize).rgb;
-    vec3 G = texture(GlobalBindlessTextures[nonuniformEXT(push.inputTexIdx)], uv + vec2(-2.0,  2.0) * texelSize).rgb;
-    vec3 H = texture(GlobalBindlessTextures[nonuniformEXT(push.inputTexIdx)], uv + vec2( 2.0,  2.0) * texelSize).rgb;
+    vec3 E = SampleLinearClamp(push.inputTexIdx, uv + vec2(-2.0, -2.0) * texelSize).rgb;
+    vec3 F = SampleLinearClamp(push.inputTexIdx, uv + vec2( 2.0, -2.0) * texelSize).rgb;
+    vec3 G = SampleLinearClamp(push.inputTexIdx, uv + vec2(-2.0,  2.0) * texelSize).rgb;
+    vec3 H = SampleLinearClamp(push.inputTexIdx, uv + vec2( 2.0,  2.0) * texelSize).rgb;
 
-    vec3 I = texture(GlobalBindlessTextures[nonuniformEXT(push.inputTexIdx)], uv + vec2( 0.0, -2.0) * texelSize).rgb;
-    vec3 J = texture(GlobalBindlessTextures[nonuniformEXT(push.inputTexIdx)], uv + vec2(-2.0,  0.0) * texelSize).rgb;
-    vec3 K = texture(GlobalBindlessTextures[nonuniformEXT(push.inputTexIdx)], uv + vec2( 2.0,  0.0) * texelSize).rgb;
-    vec3 L = texture(GlobalBindlessTextures[nonuniformEXT(push.inputTexIdx)], uv + vec2( 0.0,  2.0) * texelSize).rgb;
+    vec3 I = SampleLinearClamp(push.inputTexIdx, uv + vec2( 0.0, -2.0) * texelSize).rgb;
+    vec3 J = SampleLinearClamp(push.inputTexIdx, uv + vec2(-2.0,  0.0) * texelSize).rgb;
+    vec3 K = SampleLinearClamp(push.inputTexIdx, uv + vec2( 2.0,  0.0) * texelSize).rgb;
+    vec3 L = SampleLinearClamp(push.inputTexIdx, uv + vec2( 0.0,  2.0) * texelSize).rgb;
 
-    vec3 M = texture(GlobalBindlessTextures[nonuniformEXT(push.inputTexIdx)], uv).rgb;
+    vec3 M = SampleLinearClamp(push.inputTexIdx, uv).rgb;
 
     vec3 downsampledColor = vec3(0.0);
 

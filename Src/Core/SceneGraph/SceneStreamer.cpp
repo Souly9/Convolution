@@ -62,7 +62,9 @@ void SceneStreamer::Start()
     if (scene.camera.present)
     {
         camera = entityManager.CreateEntity(scene.camera.position);
-        entityManager.GetComponentUnsafe<ECS::Components::Transform>(camera)->rotation.y = scene.camera.yawDegrees;
+        auto* pCameraTransform = entityManager.GetComponentUnsafe<ECS::Components::Transform>(camera);
+        pCameraTransform->rotation.x = scene.camera.pitchDegrees;
+        pCameraTransform->rotation.y = scene.camera.yawDegrees;
     }
     else
     {

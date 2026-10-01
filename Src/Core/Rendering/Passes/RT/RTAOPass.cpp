@@ -105,7 +105,8 @@ void RTAOPass::RenderWithGraph(const MainPassData& data, const FrameRendererCont
     const auto& rtState = g_engine.GetApplicationState().GetCurrentApplicationState().renderState.rt;
     m_pushConstants.rtaoTexIdx = execCtx.GetBindless(RGResourceID::RTAOOutput);
     m_pushConstants.hasReadyTLAS = 1u;
-    m_pushConstants.frameIndex = execCtx.GetFrameIndex();
+    // Noise seed, the frame slot alone would only give two patterns
+    m_pushConstants.frameIndex = static_cast<u32>(execCtx.GetFrameCounter());
     m_pushConstants.raysPerPixel = rtState.aoRaysPerPixel;
     m_pushConstants.aoRadius = rtState.aoRadius;
     m_pushConstants.aoIntensity = rtState.aoIntensity;

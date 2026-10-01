@@ -93,6 +93,7 @@ static constexpr u64 ViewSpaceLights_TileCountersSize =
 static constexpr u64 ViewSpaceLights_TileIndicesSize =
     sizeof(ViewSpaceLightsBuffer) - offsetof(ViewSpaceLightsBuffer, tileLightIndices);
 static constexpr u64 ViewSpaceLightsSSBOSize = sizeof(ViewSpaceLightsBuffer);
+static constexpr u64 ViewSpaceLights_ClusterLightTotalOffset = offsetof(ViewSpaceLightsBuffer, clusterLightTotal);
 
 // SSBO containing the indices for objects rendered by a specific pass to access the global transforms, materials etc.
 struct PerPassObjectDataSSBO

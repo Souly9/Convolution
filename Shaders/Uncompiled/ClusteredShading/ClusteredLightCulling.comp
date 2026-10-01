@@ -58,6 +58,7 @@ void main()
                 StoreClusterLightIndex(baseIndex, i, i);
             }
             StoreClusterLightOffsetAndCount(clusterIdx, baseIndex, totalLights);
+            atomicAdd(viewSpaceLights.clusterLightTotal, totalLights);
         }
         return;
     }
@@ -132,5 +133,6 @@ void main()
             StoreClusterLightIndex(baseIndex, i, localLightIndices[i]);
         }
         StoreClusterLightOffsetAndCount(clusterIdx, baseIndex, visibleCount);
+        atomicAdd(viewSpaceLights.clusterLightTotal, visibleCount);
     }
 }

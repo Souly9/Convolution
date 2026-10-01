@@ -51,7 +51,7 @@ void StaticMainMeshPass::BuildPipelines()
     info.attachmentInfos.colorAttachments = {
         TexFormat::R16G16B16A16_FLOAT, // GBufferAlbedo
         TexFormat::R16G16B16A16_FLOAT, // GBufferNormal
-        TexFormat::R16G16B16A16_FLOAT, // GBufferUVMat
+        TexFormat::R16G16B16A16_FLOAT, // GBufferMaterial
         TexFormat::R32G32_FLOAT,       // GBufferVelocity
         TexFormat::R8_UNORM,           // GBufferRoughness
         TexFormat::R32_UINT            // GBufferEntityID
@@ -87,7 +87,7 @@ void StaticMainMeshPass::RebuildInternalData(const stltype::vector<PassMeshData>
         instanceDataIndices.emplace_back(mesh.meshData.instanceDataIdx);
         ++instanceOffset;
     }
-    RebuildPerObjectBuffer(instanceDataIndices);
+    RebuildPerObjectBuffer(instanceDataIndices, thisFrameNum);
     cmdBuf.FillCmds();
 }
 
@@ -100,7 +100,7 @@ void StaticMainMeshPass::Setup(::RenderGraphBuilder& builder, const MainPassData
 
     builder.WriteGBuffer(RGResourceID::GBufferAlbedo);
     builder.WriteGBuffer(RGResourceID::GBufferNormal);
-    builder.WriteGBuffer(RGResourceID::GBufferUVMat);
+    builder.WriteGBuffer(RGResourceID::GBufferMaterial);
     builder.WriteGBuffer(RGResourceID::GBufferVelocity);
     builder.WriteGBuffer(RGResourceID::GBufferRoughness);
     builder.WriteGBuffer(RGResourceID::GBufferEntityID);
@@ -113,13 +113,12 @@ void StaticMainMeshPass::RenderWithGraph(const MainPassData& data, const FrameRe
     ScopedZone("StaticMeshPass::Render");
 
     const auto currentFrame = execCtx.GetFrameIndex();
-    UpdateContextForFrame(currentFrame);
     const auto& passCtx = m_perObjectFrameContexts[currentFrame];
 
     stltype::vector<RenderAttachmentInfo> colorAttachments = {
         execCtx.GetColorAttachment(RGResourceID::GBufferAlbedo),
         execCtx.GetColorAttachment(RGResourceID::GBufferNormal),
-        execCtx.GetColorAttachment(RGResourceID::GBufferUVMat),
+        execCtx.GetColorAttachment(RGResourceID::GBufferMaterial),
         execCtx.GetColorAttachment(RGResourceID::GBufferVelocity),
         execCtx.GetColorAttachment(RGResourceID::GBufferRoughness),
         execCtx.GetColorAttachment(RGResourceID::GBufferEntityID)

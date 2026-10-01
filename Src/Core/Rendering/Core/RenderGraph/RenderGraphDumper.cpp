@@ -120,6 +120,23 @@ void RenderGraphDumper::DumpToFile(const RenderGraph& graph, u32 frameIdx)
     }
     file << "  ],\n";
 
+    const auto& memoryBarriers = graph.GetMemoryBarriersByNode();
+    file << "  \"memoryBarriers\": [\n";
+    bool firstMemoryBarrier = true;
+    for (size_t n = 0; n < memoryBarriers.size(); ++n)
+    {
+        const auto& mb = memoryBarriers[n];
+        if (mb.srcStage == SyncStages::NONE)
+            continue;
+        file << (firstMemoryBarrier ? "" : ",\n");
+        file << "    {\"targetNodeName\": \"" << (n < nodes.size() ? nodes[n].name.c_str() : "Unknown")
+             << "\", \"srcStage\": " << static_cast<u32>(mb.srcStage) << ", \"dstStage\": " << static_cast<u32>(mb.dstStage)
+             << ", \"srcAccess\": " << static_cast<u64>(mb.srcAccess) << ", \"dstAccess\": " << static_cast<u64>(mb.dstAccess)
+             << "}";
+        firstMemoryBarrier = false;
+    }
+    file << "\n  ],\n";
+
     file << "  \"batches\": [\n";
     for (size_t b = 0; b < batches.size(); ++b)
     {

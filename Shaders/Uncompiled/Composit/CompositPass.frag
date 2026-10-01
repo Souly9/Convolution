@@ -28,7 +28,7 @@ void main()
     if (ubo.debugViewMode == DEBUG_VIEW_MODE_MOTION_VECTORS)
     {
         // Current -> previous offset in render pixels, 0.5 gray is static
-        vec2 velocityNdc = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.gbufferVelocityIdx)], texCoords).rg;
+        vec2 velocityNdc = SamplePointClamp(gbufferUBO.gbufferVelocityIdx, texCoords).rg;
         vec2 toPrevPixels = velocityNdc * vec2(-0.5, 0.5) * ubo.renderResolution;
         outColor = vec4(0.5 + 0.5 * clamp(toPrevPixels / 16.0, vec2(-1.0), vec2(1.0)), 0.5, 1.0);
         return;
@@ -37,16 +37,16 @@ void main()
     vec3 finalHDRColor = vec3(0.0);
     if ((ubo.debugFlags & DEBUG_FLAG_RT_DEBUG_ENABLED) != 0u)
     {
-        finalHDRColor = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.rtDebugViewIdx)], texCoords).xyz;
+        finalHDRColor = SamplePointClamp(gbufferUBO.rtDebugViewIdx, texCoords).xyz;
     }
     else
     {
-        finalHDRColor = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.compositeInputIdx)], texCoords).xyz;
+        finalHDRColor = SamplePointClamp(gbufferUBO.compositeInputIdx, texCoords).xyz;
     }
 
     if (gbufferUBO.bloomResultIdx != 0u)
     {
-        vec3 bloomColor = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.bloomResultIdx)], texCoords).rgb;
+        vec3 bloomColor = SampleLinearClamp(gbufferUBO.bloomResultIdx, texCoords).rgb;
         finalHDRColor += bloomColor * 0.1;
     }
 
@@ -60,8 +60,10 @@ void main()
         finalLDRColor = AcesTMO(finalHDRColor);
     else if (toneMapperType == TONE_MAPPER_UNCHARTED)
         finalLDRColor = Uncharted2TMO(finalHDRColor);
-    else
+    else if (toneMapperType == TONE_MAPPER_GT7)
         finalLDRColor = GT7TMO(finalHDRColor);
+    else
+        finalLDRColor = clamp(finalHDRColor, 0.0, 1.0);
 
 
     vec3 finalSceneColor = pow(finalLDRColor, vec3(1.0 / 2.2));

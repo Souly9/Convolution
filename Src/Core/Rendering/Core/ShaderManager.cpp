@@ -42,7 +42,8 @@ bool ShaderManager::ReadAllSourceShaders()
             const stltype::string extension = entry.path().extension().string().c_str();
             stltype::string filename = entry.path().filename().string().c_str();
 
-            path = path.replace(path.find("\\"), 1, "/");
+            // Windows directory iterators yield backslashes
+            stltype::replace(path.begin(), path.end(), '\\', '/');
             
             ShaderTypeBits shaderType;
             if (extension == ".vert")

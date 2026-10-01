@@ -10,7 +10,7 @@ RGResourceRegistry::~RGResourceRegistry()
     FreeAll();
 }
 
-static TexFormat GetDefaultFormatForRGResourceID(RGResourceID id)
+TexFormat GetDefaultFormatForRGResourceID(RGResourceID id)
 {
     switch (id)
     {
@@ -20,7 +20,7 @@ static TexFormat GetDefaultFormatForRGResourceID(RGResourceID id)
             return TexFormat::R16G16B16A16_FLOAT;
         case RGResourceID::GBufferNormal:
             return TexFormat::R16G16B16A16_FLOAT;
-        case RGResourceID::GBufferUVMat:
+        case RGResourceID::GBufferMaterial:
             return TexFormat::R16G16B16A16_FLOAT;
         case RGResourceID::GBufferDebug:
             return TexFormat::R16G16B16A16_FLOAT;
@@ -304,6 +304,9 @@ void RGResourceRegistry::AllocatePending()
 
         res.allocatedExtents = extents;
         res.SetAllocated(true);
+        // New images start undefined; the old layout belonged to the textures that were just replaced
+        res.currentLayout = ImageLayout::UNDEFINED;
+        res.historyLayout = ImageLayout::UNDEFINED;
 
         DEBUG_LOGF("[RGResourceRegistry] Allocated '{}' (extents: {:.0f}x{:.0f}, handle: {}, bindless: {}, pingPong: {})",
                    res.spec.GetName(),
@@ -649,7 +652,7 @@ void RGResourceRegistry::DeclareEngineResources()
     Declare(RGResourceID::GBufferNormal,
             RGSizeClass::RenderResolution,
             Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
-    Declare(RGResourceID::GBufferUVMat,
+    Declare(RGResourceID::GBufferMaterial,
             RGSizeClass::RenderResolution,
             Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
     Declare(RGResourceID::GBufferVelocity,
@@ -678,15 +681,8 @@ void RGResourceRegistry::DeclareEngineResources()
             RGSizeClass::OutputResolution,
             Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
 
+    // The chain starts at half resolution; the composite upsamples mip 0 bilinearly
     Declare(RGResourceID::BloomMip0,
-            RGSizeClass::RenderResolution,
-            Usage::ColorAttachment | Usage::Sampled | Usage::Storage,
-            false,
-            {0.0f, 0.0f},
-            {1.0f, 1.0f},
-            TextureFilter::LINEAR,
-            TextureFilter::LINEAR);
-    Declare(RGResourceID::BloomMip1,
             RGSizeClass::RenderResolution,
             Usage::ColorAttachment | Usage::Sampled | Usage::Storage,
             false,
@@ -694,7 +690,7 @@ void RGResourceRegistry::DeclareEngineResources()
             {0.5f, 0.5f},
             TextureFilter::LINEAR,
             TextureFilter::LINEAR);
-    Declare(RGResourceID::BloomMip2,
+    Declare(RGResourceID::BloomMip1,
             RGSizeClass::RenderResolution,
             Usage::ColorAttachment | Usage::Sampled | Usage::Storage,
             false,
@@ -702,7 +698,7 @@ void RGResourceRegistry::DeclareEngineResources()
             {0.25f, 0.25f},
             TextureFilter::LINEAR,
             TextureFilter::LINEAR);
-    Declare(RGResourceID::BloomMip3,
+    Declare(RGResourceID::BloomMip2,
             RGSizeClass::RenderResolution,
             Usage::ColorAttachment | Usage::Sampled | Usage::Storage,
             false,
@@ -710,12 +706,20 @@ void RGResourceRegistry::DeclareEngineResources()
             {0.125f, 0.125f},
             TextureFilter::LINEAR,
             TextureFilter::LINEAR);
-    Declare(RGResourceID::BloomMip4,
+    Declare(RGResourceID::BloomMip3,
             RGSizeClass::RenderResolution,
             Usage::ColorAttachment | Usage::Sampled | Usage::Storage,
             false,
             {0.0f, 0.0f},
             {0.0625f, 0.0625f},
+            TextureFilter::LINEAR,
+            TextureFilter::LINEAR);
+    Declare(RGResourceID::BloomMip4,
+            RGSizeClass::RenderResolution,
+            Usage::ColorAttachment | Usage::Sampled | Usage::Storage,
+            false,
+            {0.0f, 0.0f},
+            {0.03125f, 0.03125f},
             TextureFilter::LINEAR,
             TextureFilter::LINEAR);
 
@@ -754,7 +758,9 @@ void RGResourceRegistry::RecreateShadowMap(u32 cascades, const mathstl::Vector2&
     req.AddName("Directional Light CSM");
     req.isPersistent = true;
     m_shadowMap.handle = req.handle = g_renderer.GetTextureManager().GenerateHandle();
-    req.extents = DirectX::XMUINT3(static_cast<u32>(extents.x), static_cast<u32>(extents.y), cascades);
+    // A single layer would get a 2D view, but the shaders always read the array binding
+    const u32 layers = stltype::max(cascades, 2u);
+    req.extents = DirectX::XMUINT3(static_cast<u32>(extents.x), static_cast<u32>(extents.y), layers);
     req.format = m_shadowMap.format;
     req.usage = Usage::ShadowMap;
     req.samplerInfo.wrapU = req.samplerInfo.wrapV = req.samplerInfo.wrapW = TextureWrapMode::CLAMP_TO_BORDER;

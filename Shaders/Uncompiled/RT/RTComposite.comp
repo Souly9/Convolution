@@ -9,6 +9,7 @@
 #include "../../Globals/Bindless.h"
 #include "../../Globals/GBuffer/GBufferSampling.h"
 #include "../../Globals/PushConstants.h"
+#include "../../Globals/Scene.h"
 
 layout(push_constant) uniform RTCompositePushConstantsBlock
 {
@@ -16,6 +17,12 @@ layout(push_constant) uniform RTCompositePushConstantsBlock
 };
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+// View distance from reversed-Z depth (projection built with near and far swapped)
+float ReversedDepthToViewDistance(float depth)
+{
+    return ubo.zNear * ubo.zFar / (depth * (ubo.zFar - ubo.zNear) + ubo.zNear);
+}
 
 void main()
 {
@@ -32,16 +39,16 @@ void main()
     // 2. Sample RT outputs via push-constant indices
     float currentAO = 1.0;
     if (pc.rtaoTexIdx != 0u)
-        currentAO = texture(GlobalBindlessTextures[nonuniformEXT(pc.rtaoTexIdx)], uv).r;
+        currentAO = SamplePointClamp(pc.rtaoTexIdx, uv).r;
 
     vec3 currentReflections = vec3(0.0);
     if (pc.rtReflectionsTexIdx != 0u)
-        currentReflections = texture(GlobalBindlessTextures[nonuniformEXT(pc.rtReflectionsTexIdx)], uv).rgb;
+        currentReflections = SamplePointClamp(pc.rtReflectionsTexIdx, uv).rgb;
 
     // 3. Temporal Reprojection and Accumulation (Reflections in RGB, RTAO in A)
     vec4 accumulated;
 
-    vec2 velocity = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.gbufferVelocityIdx)], uv).rg;
+    vec2 velocity = SamplePointClamp(gbufferUBO.gbufferVelocityIdx, uv).rg;
     vec2 velocity_uv = velocity * vec2(0.5, -0.5);
     vec2 uv_prev = uv - velocity_uv;
 
@@ -54,10 +61,14 @@ void main()
         uint historyTexIdx = pc.historyAccumTexIdx != 0u ? pc.historyAccumTexIdx : pc.accumTexIdx;
         history = imageLoad(GlobalBindlessImages[nonuniformEXT(historyTexIdx)], prevCoord);
 
-        // Depth rejection to prevent ghosting on dynamic objects/camera motion
-        float centerDepth = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.depthBufferIdx)], uv).r;
-        float prevDepth = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.lastFrameDepthIdx)], uv_prev).r;
-        if (abs(centerDepth - prevDepth) > 0.01)
+        // Compare view distances with the reprojected depth; raw reversed-Z hides disocclusions past a few meters
+        float centerDepth = SamplePointClamp(gbufferUBO.depthBufferIdx, uv).r;
+        float prevDepth = SamplePointClamp(gbufferUBO.lastFrameDepthIdx, uv_prev).r;
+        vec2 ndc = vec2(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0) - FrameJitterNdc();
+        vec4 prevClip = ubo.clipToPrevClip * vec4(ndc, centerDepth, 1.0);
+        float expectedDistance = ReversedDepthToViewDistance(prevClip.z / prevClip.w);
+        float prevDistance = ReversedDepthToViewDistance(prevDepth);
+        if (prevClip.w <= 0.0 || abs(expectedDistance - prevDistance) > 0.05 * expectedDistance)
         {
             history = vec4(currentReflections, currentAO);
         }

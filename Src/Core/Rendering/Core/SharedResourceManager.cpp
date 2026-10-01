@@ -66,6 +66,13 @@ void SharedResourceManager::Init()
     m_prevTransformBuffer.SetName("Prev Transform SSBO");
     m_sceneAABBBuffer.SetName("Scene AABB SSBO");
     m_viewSpaceLightsSSBO.SetName("View Space Lights SSBO");
+    for (u32 i = 0; i < FRAMES_IN_FLIGHT; ++i)
+    {
+        m_clusterStatsReadback[i] = StorageBuffer(sizeof(u32), false);
+        m_clusterStatsReadback[i].SetName("Cluster Stats Readback " + stltype::to_string(i));
+        m_pClusterStatsMapped[i] = static_cast<u32*>(m_clusterStatsReadback[i].MapMemory());
+        *m_pClusterStatsMapped[i] = 0;
+    }
 
     m_sceneInstanceSSBOLayout = DescriptorLayoutUtils::CreateOneDescriptorSetForAll(
         {PipelineDescriptorLayout(UBO::BufferType::TransformSSBO),

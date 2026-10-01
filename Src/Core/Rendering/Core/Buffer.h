@@ -10,6 +10,9 @@ enum class BufferUsage
 {
     Vertex,
     Index,
+    // Small buffers written through a mapping instead of the upload queue
+    VertexHost,
+    IndexHost,
     Staging,
     Uniform,
     SSBOHost,

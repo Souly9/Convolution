@@ -3,6 +3,7 @@
 #include "Core/Global/Profiling.h"
 #include "Core/IO/FileReader.h"
 #include "Core/Rendering/Core/BindlessTexturesDefines.h"
+#include "Core/Rendering/Core/Utils/DeleteQueue.h"
 
 TextureManagerBase::TextureManagerBase()
 {
@@ -127,7 +128,12 @@ BindlessTextureHandle TextureManagerBase::MakeTextureBindless(TextureHandle hand
         return it->second;
 
     BindlessTextureHandle slot = 0;
-    if (isPersistent)
+    if (isPersistent && !m_freePersistentSlots->empty())
+    {
+        slot = m_freePersistentSlots->back();
+        m_freePersistentSlots->pop_back();
+    }
+    else if (isPersistent)
     {
         DEBUG_ASSERT(m_lastPersistentBindlessTextureWriteIdx <
                      g_renderer.GetBindlessCapacity(Bindless::BindlessType::GlobalTextures));
@@ -189,8 +195,15 @@ void TextureManagerBase::FreeTexture(TextureHandle handle)
     // Frames in flight may still sample the slot, so the placeholder takes over before the texture goes away
     if (const auto slotIt = m_bindlessTextureHandleMap.find(handle); slotIt != m_bindlessTextureHandleMap.end())
     {
-        WriteBindlessTexture(m_pPlaceholderTexture, slotIt->second);
+        const BindlessTextureHandle slot = slotIt->second;
+        WriteBindlessTexture(m_pPlaceholderTexture, slot);
         m_bindlessTextureHandleMap.erase(slotIt);
+        // Resizes reallocate the persistent targets, so their slots have to be reused or the region runs out
+        if (slot >= PERSISTENT_BINDLESS_REGION_START)
+        {
+            g_renderer.GetDeleteQueue().RegisterDeleteForNextFrame([freeSlots = m_freePersistentSlots, slot]()
+                                                                   { freeSlots->push_back(slot); });
+        }
     }
 
     stltype::unique_ptr<Texture> pTexture;

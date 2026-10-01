@@ -220,7 +220,30 @@ void DecodeMaterial(const aiMaterial* pMaterial, DecodedMaterial& out)
     }
 }
 
-void DecodeLight(const aiLight* pLight, DecodedNode& out)
+// aiMatrix4x4 is row-major for column vectors, SimpleMath wants the transpose
+mathstl::Matrix ToMatrix(const aiMatrix4x4& m)
+{
+    return mathstl::Matrix(
+        m.a1, m.b1, m.c1, m.d1, m.a2, m.b2, m.c2, m.d2, m.a3, m.b3, m.c3, m.d3, m.a4, m.b4, m.c4, m.d4);
+}
+
+mathstl::Matrix NodeWorldMatrix(const aiNode* pNode)
+{
+    mathstl::Matrix world = mathstl::Matrix::Identity;
+    for (const aiNode* pCurrent = pNode; pCurrent != nullptr; pCurrent = pCurrent->mParent)
+        world = world * ToMatrix(pCurrent->mTransformation);
+    return world;
+}
+
+// Assimp light directions are relative to the light's node
+mathstl::Vector3 LightDirectionToWorld(const aiLight* pLight, const aiNode* pNode)
+{
+    mathstl::Vector3 direction = mathstl::Vector3::TransformNormal(ToVector3(pLight->mDirection), NodeWorldMatrix(pNode));
+    direction.Normalize();
+    return direction;
+}
+
+void DecodeLight(const aiLight* pLight, const aiNode* pNode, DecodedNode& out)
 {
     ECS::Components::Light& light = out.light;
     light.color = mathstl::Vector4(pLight->mColorDiffuse.r, pLight->mColorDiffuse.g, pLight->mColorDiffuse.b, 1.0f);
@@ -231,12 +254,12 @@ void DecodeLight(const aiLight* pLight, DecodedNode& out)
     else if (pLight->mType == aiLightSource_DIRECTIONAL)
     {
         light.type = ECS::Components::LightType::Directional;
-        light.direction = ToVector3(pLight->mDirection);
+        light.direction = LightDirectionToWorld(pLight, pNode);
     }
     else if (pLight->mType == aiLightSource_SPOT)
     {
         light.type = ECS::Components::LightType::Spot;
-        light.direction = ToVector3(pLight->mDirection);
+        light.direction = LightDirectionToWorld(pLight, pNode);
         light.cutoff = pLight->mAngleInnerCone;
         light.outerCutoff = pLight->mAngleOuterCone;
     }
@@ -249,9 +272,7 @@ void DecodeLight(const aiLight* pLight, DecodedNode& out)
 
 void DecodeNode(const aiScene* pScene, const aiNode* pNode, s32 parentIndex, DecodedScene& out)
 {
-    const aiMatrix4x4& m = pNode->mTransformation;
-    mathstl::Matrix nodeMat(
-        m.a1, m.b1, m.c1, m.d1, m.a2, m.b2, m.c2, m.d2, m.a3, m.b3, m.c3, m.d3, m.a4, m.b4, m.c4, m.d4);
+    mathstl::Matrix nodeMat = ToMatrix(pNode->mTransformation);
 
     mathstl::Vector3 scaling, position;
     mathstl::Quaternion q;
@@ -272,7 +293,7 @@ void DecodeNode(const aiScene* pScene, const aiNode* pNode, s32 parentIndex, Dec
         {
             if (pScene->mLights[i]->mName == pNode->mName)
             {
-                DecodeLight(pScene->mLights[i], node);
+                DecodeLight(pScene->mLights[i], pNode, node);
                 break;
             }
         }
@@ -308,9 +329,15 @@ DecodedScene Decode(const aiScene* pScene)
     if (pScene->HasCameras())
     {
         const auto& aiCam = pScene->mCameras[0];
+        // Position and look direction are relative to the camera's node
+        const mathstl::Matrix camWorld = NodeWorldMatrix(pScene->mRootNode->FindNode(aiCam->mName));
+        mathstl::Vector3 lookDir = mathstl::Vector3::TransformNormal(ToVector3(aiCam->mLookAt), camWorld);
+        lookDir.Normalize();
         out.camera.present = true;
-        out.camera.position = ToVector3(aiCam->mPosition);
-        out.camera.yawDegrees = DirectX::XMConvertToDegrees(atan2f(aiCam->mLookAt.z, aiCam->mLookAt.x));
+        out.camera.position = mathstl::Vector3::Transform(ToVector3(aiCam->mPosition), camWorld);
+        // The engine camera looks along -(yaw/pitch rotated +Z), so look = (-cos p sin y, sin p, -cos p cos y)
+        out.camera.yawDegrees = DirectX::XMConvertToDegrees(atan2f(-lookDir.x, -lookDir.z));
+        out.camera.pitchDegrees = DirectX::XMConvertToDegrees(asinf(stltype::clamp(lookDir.y, -1.0f, 1.0f)));
     }
 
     out.materials.resize(pScene->mNumMaterials);

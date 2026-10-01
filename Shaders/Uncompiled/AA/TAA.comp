@@ -103,7 +103,7 @@ float BlackmanHarris(vec2 d)
 
 vec3 LoadSceneColor(ivec2 pixel)
 {
-    vec3 c = texelFetch(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.sceneColorIdx)], pixel, 0).rgb;
+    vec3 c = texelFetch(BindlessTexture2D(gbufferUBO.sceneColorIdx, SAMPLER_POINT_CLAMP), pixel, 0).rgb;
     return any(isnan(c)) ? vec3(0.0f) : max(c, vec3(0.0f));
 }
 
@@ -151,7 +151,7 @@ void main()
             }
 
             // Reversed Z, larger is closer
-            float z = texelFetch(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.depthBufferIdx)], tap, 0).r;
+            float z = texelFetch(BindlessTexture2D(gbufferUBO.depthBufferIdx, SAMPLER_POINT_CLAMP), tap, 0).r;
             if (z > closestDepth)
             {
                 closestDepth = z;
@@ -161,11 +161,11 @@ void main()
     }
 
     vec3 current = filtered / filteredWeight;
-    float alpha = texelFetch(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.sceneColorIdx)], pixel, 0).a;
+    float alpha = texelFetch(BindlessTexture2D(gbufferUBO.sceneColorIdx, SAMPLER_POINT_CLAMP), pixel, 0).a;
 
     // Velocity is current minus previous NDC (+y up), dilated to the closest surface
     vec2 velocityNdc =
-        texelFetch(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.gbufferVelocityIdx)], closestPixel, 0).rg;
+        texelFetch(BindlessTexture2D(gbufferUBO.gbufferVelocityIdx, SAMPLER_POINT_CLAMP), closestPixel, 0).rg;
     vec2 velocityUV = velocityNdc * vec2(0.5f, -0.5f);
     vec2 prevUV = uv - velocityUV;
 

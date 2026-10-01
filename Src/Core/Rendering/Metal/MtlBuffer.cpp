@@ -53,11 +53,11 @@ void GenBufferMetal::NamingCallBack(const stltype::string& name)
 {
 }
 
-VertexBufferMetal::VertexBufferMetal(u64 size)
+VertexBufferMetal::VertexBufferMetal(u64 size, bool hostVisible)
 {
 }
 
-IndexBufferMetal::IndexBufferMetal(u64 size)
+IndexBufferMetal::IndexBufferMetal(u64 size, bool hostVisible)
 {
 }
 

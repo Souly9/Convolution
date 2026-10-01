@@ -83,7 +83,7 @@ void RTReflectionsPass::Setup(::RenderGraphBuilder& builder, const MainPassData&
     builder.ReadTexture(RGResourceID::MainDepth, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
     builder.ReadTexture(RGResourceID::GBufferAlbedo, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
     builder.ReadTexture(RGResourceID::GBufferNormal, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-    builder.ReadTexture(RGResourceID::GBufferUVMat, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    builder.ReadTexture(RGResourceID::GBufferMaterial, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
     builder.ReadTexture(RGResourceID::GBufferRoughness, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
     auto reflections = builder.DeclareStorageTexture(RGResourceID::RTReflections, TexFormat::R16G16B16A16_FLOAT, RGSizeClass::RenderResolution);
@@ -123,7 +123,8 @@ void RTReflectionsPass::RenderWithGraph(const MainPassData& data, const FrameRen
     m_pushConstants.maxRayDistance = execCtx.GetZFar();
     m_pushConstants.reflectionIntensity = 1.0f;
     m_pushConstants.hasReadyTLAS = 1u;
-    m_pushConstants.frameIndex = execCtx.GetFrameIndex();
+    // Noise seed, the frame slot alone would only give two patterns
+    m_pushConstants.frameIndex = static_cast<u32>(execCtx.GetFrameCounter());
     m_pushConstants.raysPerPixel = rtState.reflectionsRaysPerPixel;
 
     const u32 groupCountX = (static_cast<u32>(renderRes.x) + 7) / 8;

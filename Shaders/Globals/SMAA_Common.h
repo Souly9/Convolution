@@ -40,15 +40,15 @@
 #define SMAATexture2DMS(tex) uint tex
 #define SMAATexture2DMS2(tex) uint tex
 #define SMAATexturePass2D(tex) tex
-#define SMAALinear(tex) sampler2D(GlobalBindlessSampledTextures[nonuniformEXT(tex)], GlobalSamplers[SAMPLER_LINEAR_CLAMP])
-#define SMAAPoint(tex) sampler2D(GlobalBindlessSampledTextures[nonuniformEXT(tex)], GlobalSamplers[SAMPLER_POINT_CLAMP])
+#define SMAALinear(tex) BindlessTexture2D(tex, SAMPLER_LINEAR_CLAMP)
+#define SMAAPoint(tex) BindlessTexture2D(tex, SAMPLER_POINT_CLAMP)
 #define SMAASampleLevelZero(tex, coord) textureLod(SMAALinear(tex), coord, 0.0)
 #define SMAASampleLevelZeroPoint(tex, coord) textureLod(SMAAPoint(tex), coord, 0.0)
 #define SMAASampleLevelZeroOffset(tex, coord, offset) textureLodOffset(SMAALinear(tex), coord, 0.0, offset)
 #define SMAASample(tex, coord) texture(SMAALinear(tex), coord)
 #define SMAASamplePoint(tex, coord) texture(SMAAPoint(tex), coord)
 #define SMAAGather(tex, coord) textureGather(SMAALinear(tex), coord)
-#define SMAALoad(tex, pos, sample) texelFetch(GlobalBindlessTextures[nonuniformEXT(tex)], pos, sample)
+#define SMAALoad(tex, pos, sample) texelFetch(BindlessTexture2D(tex, SAMPLER_POINT_CLAMP), pos, sample)
 
 #define SMAA_AREATEX_SELECT(sample) sample.rg
 #define SMAA_SEARCHTEX_SELECT(sample) sample.r

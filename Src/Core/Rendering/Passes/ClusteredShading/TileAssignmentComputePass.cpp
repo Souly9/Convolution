@@ -67,11 +67,11 @@ void TileAssignmentComputePass::Setup(::RenderGraphBuilder& builder, const MainP
         PassCtx::ClusterGrid,
         PassCtx::ViewSpaceLights>();
 
-    auto viewSpaceLights = builder.DeclareStorageBuffer(RGResourceID::Custom, UBO::ViewSpaceLightsSSBOSize, "ViewSpaceLightsSSBO");
-    builder.ReadStorageBuffer(viewSpaceLights, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ);
-
-    auto tileBuffer = builder.DeclareStorageBuffer(RGResourceID::TileAssignmentBuffer, UBO::LightClusterSSBOSize);
-    builder.WriteStorageBuffer(tileBuffer, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_WRITE);
+    // Reads the view-space lights, clears the tile counters with a transfer and appends to the tiles with atomics
+    auto viewSpaceLights = builder.DeclareStorageBuffer(RGResourceID::ViewSpaceLightsBuffer, UBO::ViewSpaceLightsSSBOSize);
+    builder.WriteStorageBuffer(viewSpaceLights,
+                               SyncStages::COMPUTE_SHADER | SyncStages::TRANSFER,
+                               AccessFlags::SHADER_READ | AccessFlags::SHADER_WRITE | AccessFlags::TRANSFER_WRITE);
     builder.SetHasSideEffects();
 }
 
@@ -88,6 +88,15 @@ void TileAssignmentComputePass::RenderWithGraph(const MainPassData& data, const 
     u32 numLights = execCtx.GetNumLights();
     u32 workgroupCount = (numLights + 127) / 128;
     workgroupCount = workgroupCount > 0 ? workgroupCount : 1;
+
+    // The shader only appends, so the counters restart every frame
+    execCtx.pCmdBuffer->RecordCommand(BufferFillCmd(&data.pResourceManager->GetViewSpaceLightsSSBO(),
+                                                    UBO::ViewSpaceLights_LightsSize,
+                                                    UBO::ViewSpaceLights_TileCountersSize));
+    execCtx.pCmdBuffer->RecordCommand(GlobalBarrierCmd(SyncStages::TRANSFER,
+                                                       SyncStages::COMPUTE_SHADER,
+                                                       AccessFlags::TRANSFER_WRITE,
+                                                       AccessFlags::SHADER_READ | AccessFlags::SHADER_WRITE));
 
     GenericComputeDispatchCmd cmd(&m_pipeline, workgroupCount, 1, 1);
     cmd.descriptorSets = execCtx.GetDescriptors();

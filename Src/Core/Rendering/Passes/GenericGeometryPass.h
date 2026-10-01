@@ -17,9 +17,7 @@ class GenericGeometryPass : public ConvolutionRenderPass
 {
 public:
     GenericGeometryPass(const stltype::string& name);
-    void RebuildPerObjectBuffer(const stltype::vector<u32>& data);
-
-    void UpdateContextForFrame(u32 frameIdx);
+    void RebuildPerObjectBuffer(const stltype::vector<u32>& data, u32 frameIdx);
 
     void NameResources(const stltype::string& name);
 
@@ -32,8 +30,6 @@ public:
 
 protected:
     DescriptorPool m_descPool;
-    StorageBuffer m_perObjectSSBO;
-    GPUMappedMemoryHandle m_mappedPerObjectSSBO;
     DescriptorSetLayout m_perObjectLayout;
     BufferData m_mainRenderingData;
 
@@ -42,11 +38,11 @@ protected:
         DescriptorSet::Ptr m_perObjectDescriptor;
     };
     stltype::fixed_vector<PerObjectFrameContext, SWAPCHAIN_IMAGES> m_perObjectFrameContexts{};
+    stltype::fixed_vector<StorageBuffer, SWAPCHAIN_IMAGES> m_perObjectSSBOs;
+    stltype::fixed_vector<GPUMappedMemoryHandle, SWAPCHAIN_IMAGES> m_mappedPerObjectSSBOs;
     stltype::fixed_vector<IndirectDrawCmdBuf, SWAPCHAIN_IMAGES> m_indirectCmdBuffers;
     stltype::fixed_vector<IndirectDrawCountBuffer, SWAPCHAIN_IMAGES> m_indirectCountBuffers;
 
-    stltype::vector<u32> m_dirtyFrames;
-    bool m_needsBufferSync{false};
 };
 
 } // namespace RenderPasses

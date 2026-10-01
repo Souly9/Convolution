@@ -288,17 +288,17 @@ void PassManager::SetupRenderGraph(const MainPassData& mainPassData, FrameRender
     m_renderGraph.BeginFrame(
         ctx.currentFrame, mainPassData.renderState.renderResolution, mainPassData.renderState.swapchainResolution);
     m_renderGraph.SetRTSceneAvailable(mainPassData.pRTSceneManager != nullptr &&
-                                      mainPassData.pRTSceneManager->HasReadyTLAS(m_currentSwapChainIdx));
+                                      mainPassData.pRTSceneManager->HasReadyTLAS(ctx.currentFrame));
 
+    // The graph's first batch moves the swapchain image to color attachment before any pass runs
     if (ctx.pCurrentSwapchainTexture)
         m_renderGraph.GetRegistry().ImportTexture(
-            RGResourceID::Swapchain, ctx.pCurrentSwapchainTexture, ImageLayout::UNDEFINED);
+            RGResourceID::Swapchain, ctx.pCurrentSwapchainTexture, ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
 
-    if (m_renderGraph.GetRegistry().GetShadowMap().pTexture)
+    if (Texture* pShadowMap = m_renderGraph.GetRegistry().GetShadowMap().pTexture)
     {
-        m_renderGraph.GetRegistry().ImportTexture(RGResourceID::CSMShadowMap,
-                                                  m_renderGraph.GetRegistry().GetShadowMap().pTexture,
-                                                  ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+        // Recorded transitions keep the texture's layout current; a freshly recreated map is still undefined
+        m_renderGraph.GetRegistry().ImportTexture(RGResourceID::CSMShadowMap, pShadowMap, pShadowMap->GetInfo().layout);
     }
 
     for (auto& pPass : m_passes)
@@ -398,12 +398,12 @@ CommandBuffer* PassManager::GetComputeCommandBuffer(u32 frameIdx, u32 batchIdx)
     return pBuf;
 }
 
-void PassManager::UpdateAAFrameConfig()
+void PassManager::UpdateAAFrameConfig(u32 frameIdx)
 {
     const auto& renderState = g_engine.GetApplicationState().GetCurrentApplicationState().renderState;
     const bool rtReflectionsActive = mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTEnabled) &&
                                      mathstl::isFlagSet(renderState.debugFlags, (u32)DebugFlags::RTReflectionsEnabled) &&
-                                     m_rtSceneManager.HasReadyTLAS(m_currentSwapChainIdx);
+                                     m_rtSceneManager.HasReadyTLAS(frameIdx);
 
     AA::FrameConfig config = AA::Resolve(renderState, GetAASupport(), rtReflectionsActive);
     // Any technique switch (incl. RR on/off), resize, scene change or UI request invalidates history
@@ -422,7 +422,8 @@ void PassManager::UpdateGBufferUBO(u32 frameIdx)
     UBO::GBufferPostProcessUBO gbufferUBO{};
     gbufferUBO.gbufferAlbedoIdx = reg.ResolveBindlessByID(RGResourceID::GBufferAlbedo);
     gbufferUBO.gbufferNormalIdx = reg.ResolveBindlessByID(RGResourceID::GBufferNormal);
-    gbufferUBO.gbufferTexCoordMatIdx = reg.ResolveBindlessByID(RGResourceID::GBufferUVMat);
+    gbufferUBO.gbufferMaterialIdx = reg.ResolveBindlessByID(RGResourceID::GBufferMaterial);
+    gbufferUBO.gbufferRoughnessIdx = reg.ResolveBindlessByID(RGResourceID::GBufferRoughness);
     gbufferUBO.gbufferVelocityIdx = reg.ResolveBindlessByID(RGResourceID::GBufferVelocity);
     gbufferUBO.depthBufferIdx = reg.ResolveBindlessByID(RGResourceID::MainDepth);
     gbufferUBO.lastFrameDepthIdx = reg.ResolveHistoryBindlessByID(RGResourceID::MainDepth);
@@ -465,7 +466,9 @@ void PassManager::ExecutePasses(u32 frameIdx)
     ctx.pCurrentSwapchainTexture = Texture::Cast(&g_renderer.GetTextureManager().GetSwapChainTextures().at(m_currentSwapChainIdx));
 
     g_renderer.GetQueueHandler().SubmitUploads(frameIdx);
-    m_rtSceneManager.Update(frameIdx, m_currentSwapChainIdx, m_frameResourceManager);
+    RebuildMeshDataForSlot(frameIdx, ctx);
+    // TLAS slots follow the frame slot, the same index the RT passes read them with
+    m_rtSceneManager.Update(frameIdx, m_frameResourceManager);
     PrepareMainPassDataForFrame(mainPassData, ctx, frameIdx);
     SetupRenderGraph(mainPassData, ctx);
     CompileAndExecuteRenderGraph(mainPassData, ctx, imageAvailableSemaphore);
@@ -556,31 +559,14 @@ void PassManager::SetSharedData(RenderView&& mainView, u32 frameIdx)
 void PassManager::PreProcessDataForCurrentFrame(u32 frameIdx, u64 jitterFrameNumber)
 {
     ScopedZone("PassManager::PreProcessDataForCurrentFrame");
-    // Calculate average lights per cluster by reading final counts from the GPU buffer of the completed frame
+    m_frameResourceManager.GetFrameRendererContext(m_currentSwapChainIdx).frameCounter = jitterFrameNumber;
+    // The light grid pass sums the cluster lists on the GPU; this slot's previous frame has finished
     {
         const auto& renderState = g_engine.GetApplicationState().GetCurrentApplicationState().renderState;
         u32 totalClusters = renderState.clusterCount.x * renderState.clusterCount.y * renderState.clusterCount.z;
         if (totalClusters > 0)
         {
-            u32 totalLightsInClusters = 0;
-            void* pMapped = m_frameResourceManager.GetLightClusterSSBO().MapMemory();
-            if (pMapped)
-            {
-                char* pBase = static_cast<char*>(pMapped);
-                u32* pOffsets = reinterpret_cast<u32*>(pBase + UBO::LightClusterOffsetsOffset);
-                u32* pIndices = reinterpret_cast<u32*>(pBase + UBO::LightClusterIndicesOffset);
-
-                for (u32 i = 0; i < totalClusters; ++i)
-                {
-                    u32 baseIdx = pOffsets[i];
-                    if (baseIdx < MAX_LIGHT_INDICES)
-                    {
-                        totalLightsInClusters += pIndices[baseIdx];
-                    }
-                }
-                m_frameResourceManager.GetLightClusterSSBO().UnmapMemory();
-            }
-
+            const u32 totalLightsInClusters = m_resourceManager.ReadClusterLightTotal(frameIdx);
             f32 avgLights = static_cast<f32>(totalLightsInClusters) / static_cast<f32>(totalClusters);
             g_engine.GetApplicationState().RegisterUpdateFunction([avgLights](ApplicationState& state)
                                                         { state.renderState.avgLightsPerCluster = avgLights; });
@@ -589,7 +575,7 @@ void PassManager::PreProcessDataForCurrentFrame(u32 frameIdx, u64 jitterFrameNum
 
     m_renderGraph.GetRegistry().RotateHistory(frameIdx);
     m_imguiRegistry.PublishGBufferTextureState(m_renderGraph.GetRegistry());
-    UpdateAAFrameConfig();
+    UpdateAAFrameConfig(frameIdx);
 
     m_frameResourceManager.PreProcessDataForCurrentFrame(frameIdx, jitterFrameNumber, m_currentSwapChainIdx, this);
 }
@@ -606,7 +592,7 @@ void PassManager::ResetSceneState()
     m_imguiRegistry.ReleaseMaterialTextures();
     ResetSceneGeometry();
     // Passes keep drawing the old scene's indirect commands until they are rebuilt empty
-    PreProcessMeshData({}, 0, 0);
+    PreProcessMeshData({});
 
     g_engine.GetApplicationState().RegisterUpdateFunction(
         [](ApplicationState& state)
@@ -653,18 +639,29 @@ void PassManager::RebuildPipelinesForAllPasses()
     }
 }
 
-void PassManager::PreProcessMeshData(const stltype::vector<PassMeshData>& meshes, u32 lastFrame, u32 curFrame)
+void PassManager::PreProcessMeshData(const stltype::vector<PassMeshData>& meshes)
 {
-    auto& lastFrameCtx = m_frameResourceManager.GetFrameRendererContext(lastFrame);
-    lastFrameCtx.pResourceManager = &m_resourceManager;
+    // Each slot rebuilds right before it records again; the other slot may still be on the GPU
+    m_pendingMeshData = meshes;
+    m_meshRebuildSlotMask = (1u << FRAMES_IN_FLIGHT) - 1u;
+}
+
+void PassManager::RebuildMeshDataForSlot(u32 frameIdx, FrameRendererContext& ctx)
+{
+    const u32 slotBit = 1u << frameIdx;
+    if ((m_meshRebuildSlotMask & slotBit) == 0)
+        return;
+
+    ScopedZone("PassManager::RebuildMeshDataForSlot");
+    ctx.pResourceManager = &m_resourceManager;
     for (auto& pass : m_passes)
     {
-        for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
-        {
-            pass->RebuildInternalData(meshes, lastFrameCtx, i);
-        }
+        pass->RebuildInternalData(m_pendingMeshData, ctx, frameIdx);
         pass->NameResources(pass->GetName());
     }
+    m_meshRebuildSlotMask &= ~slotBit;
+    if (m_meshRebuildSlotMask == 0)
+        m_pendingMeshData.clear();
 }
 
 void PassManager::RecreateShadowMaps(u32 cascades, const mathstl::Vector2& extents)

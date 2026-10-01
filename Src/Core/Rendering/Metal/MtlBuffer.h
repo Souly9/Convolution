@@ -67,7 +67,7 @@ protected:
 class VertexBufferMetal : public GenBufferMetal
 {
 public:
-    VertexBufferMetal(u64 size);
+    VertexBufferMetal(u64 size, bool hostVisible = false);
     VertexBufferMetal()
     {
     }
@@ -76,7 +76,7 @@ public:
 class IndexBufferMetal : public GenBufferMetal
 {
 public:
-    IndexBufferMetal(u64 size);
+    IndexBufferMetal(u64 size, bool hostVisible = false);
     IndexBufferMetal()
     {
     }

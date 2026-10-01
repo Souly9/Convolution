@@ -96,7 +96,7 @@ public:
     RenderGraph& GetRenderGraph() { return m_renderGraph; }
     const RenderGraph& GetRenderGraph() const { return m_renderGraph; }
     void RegisterImGuiTexturesPublic() { m_imguiRegistry.RegisterShadowMapTextures(m_renderGraph.GetRegistry().GetShadowMap()); }
-    void PreProcessMeshDataPublic(const stltype::vector<PassMeshData>& meshes, u32 lastFrame, u32 curFrame) { PreProcessMeshData(meshes, lastFrame, curFrame); }
+    void PreProcessMeshDataPublic(const stltype::vector<PassMeshData>& meshes) { PreProcessMeshData(meshes); }
     void TransferPassDataPublic(PassGeometryData&& passData, u32 frameIdx) { TransferPassData(std::move(passData), frameIdx); }
     void RecreateShadowMapsPublic(u32 cascades, const mathstl::Vector2& extents) { RecreateShadowMaps(cascades, extents); }
 
@@ -113,7 +113,8 @@ public:
     static inline stltype::atomic<u64> s_globalTimelineCounter{1};
 
 protected:
-    void PreProcessMeshData(const stltype::vector<PassMeshData>& meshes, u32 lastFrame, u32 curFrame);
+    void PreProcessMeshData(const stltype::vector<PassMeshData>& meshes);
+    void RebuildMeshDataForSlot(u32 frameIdx, FrameRendererContext& ctx);
     // Back to the primitives only, they stay resident because fullscreen passes draw them from the scene buffers
     void ResetSceneGeometry();
 
@@ -136,7 +137,7 @@ protected:
                              FrameRendererContext& ctx,
                              Semaphore& imageAvailableSemaphore);
     void InitFrameContexts();
-    void UpdateAAFrameConfig();
+    void UpdateAAFrameConfig(u32 frameIdx);
     void UpdateGBufferUBO(u32 frameIdx);
 
     CommandBuffer* GetGraphicsCommandBuffer(u32 frameIdx, u32 batchIdx);
@@ -166,6 +167,8 @@ private:
     ComputeFrameContext m_computeFrameCtx;
 
     u32 m_currentSwapChainIdx{0};
+    stltype::vector<PassMeshData> m_pendingMeshData;
+    u32 m_meshRebuildSlotMask{0};
 
     u32 m_currentFrame{0};
     bool m_needsToPropagateMainDataUpdate{false};

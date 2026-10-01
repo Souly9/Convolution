@@ -177,9 +177,11 @@ vec4 ApplyFrameJitter(vec4 clipPos)
 #ifndef __cplusplus
 mat3 AdjugateFromWorldMat(mat4 m)
 {
-    return mat3(cross(m[1].xyz, m[2].xyz),
+    mat3 adj = mat3(cross(m[1].xyz, m[2].xyz),
         cross(m[2].xyz, m[0].xyz),
         cross(m[0].xyz, m[1].xyz));
+    // adj = det * inverse-transpose, flip it back so mirrored (det < 0) instances keep outward normals
+    return dot(m[0].xyz, adj[0]) < 0.0 ? -adj : adj;
 }
 #endif
 #endif // SHADERS_SCENE_H

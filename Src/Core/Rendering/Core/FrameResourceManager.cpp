@@ -88,7 +88,8 @@ void FrameResourceManager::Init()
 
     m_lightCluster = stltype::make_unique<UBO::LightClusterSSBO>();
     m_lightCluster->lights.resize(MAX_SCENE_LIGHTS);
-    m_lightClusterSSBO = StorageBuffer(UBO::LightClusterSSBOSize, false);
+    // The GPU writes the cluster lists and reads them per pixel; the CPU only uploads lights through staging
+    m_lightClusterSSBO = StorageBuffer(UBO::LightClusterSSBOSize, true);
     m_clusterGridSSBO = StorageBuffer(UBO::ClusterAABBSetSize, true);
 
     m_sharedDataUBO.Create(sharedDataUBOSize, "Shared Data UBO");
@@ -323,6 +324,7 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
 
         ctx.zNear = mainView.zNear;
         ctx.zFar = mainView.zFar;
+        ctx.fovY = mainView.fov;
 
         // Contexts follow the swapchain image, the UBO copies follow the frame slot
         ctx.sharedDataUBODescriptor->WriteBufferUpdate(m_sharedDataUBO.GetBuffer(frameIdx), s_sharedDataBindingSlot);
@@ -442,10 +444,7 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
             {
                 pPassManager->GetResourceManager().UpdateInstanceDataSSBO(passData.staticMeshPassData,
                                                                           currentSwapChainIdx);
-                const u32 previousImageIdx =
-                    (currentSwapChainIdx == 0) ? (SWAPCHAIN_IMAGES - 1) : (currentSwapChainIdx - 1);
-                pPassManager->PreProcessMeshDataPublic(
-                    passData.staticMeshPassData, previousImageIdx, currentSwapChainIdx);
+                pPassManager->PreProcessMeshDataPublic(passData.staticMeshPassData);
                 m_currentPassGeometryState = passData;
             }
             pPassManager->TransferPassDataPublic(std::move(passData), m_dataToBePreProcessed.frameIdx);
@@ -690,7 +689,6 @@ void FrameResourceManager::SetSharedData(RenderView&& mainView, u32 frameIdx)
 
 void FrameResourceManager::UpdateLightClusterSSBO(const UBO::LightClusterSSBO& data, u32 numLights)
 {
-    // Memory mapping is handled at Init
     // Transfer header
     DispatchSSBOTransfer(&data, (u32)UBO::LightClusterHeaderSize, &m_lightClusterSSBO);
 

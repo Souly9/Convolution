@@ -20,7 +20,6 @@ public:
     void Init(SharedResourceManager* pResourceManager, u32 graphicsQueueFamilyIdx);
     void Reset();
     bool Update(u32 frameIdx,
-                u32 frameSlot,
                 const RenderPasses::FrameResourceManager& frameResourceManager,
                 TimelineSemaphore* pSignalTimeline = nullptr,
                 u64 signalValue = 0);
@@ -32,8 +31,7 @@ public:
 private:
     void BuildCurrentInstanceList(const RenderPasses::FrameResourceManager& frameResourceManager);
     bool BuildTLASForFrame(TLASFrameData& frameData,
-                           u32 frameSubmitIdx,
-                           u32 frameSlot,
+                           u32 frameIdx,
                            TimelineSemaphore* pSignalTimeline = nullptr,
                            u64 signalValue = 0);
     void PublishDebugState() const;
@@ -45,6 +43,8 @@ private:
     stltype::fixed_vector<TLASFrameData, SWAPCHAIN_IMAGES> m_tlasFrameData{SWAPCHAIN_IMAGES};
     stltype::vector<RTInstanceRecord> m_previousSortedInstances{};
     stltype::vector<RTInstanceRecord> m_currentSortedInstances{};
+    // Slots that still hold a TLAS built before the last instance change
+    u32 m_tlasRebuildSlotMask{0};
     u32 m_residentInstanceCount{0};
 
     DescriptorPool m_descriptorPool{};

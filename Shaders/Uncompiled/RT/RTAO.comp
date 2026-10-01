@@ -77,13 +77,13 @@ void main()
         return;
 
     vec2 uv = (vec2(pixelCoord) + 0.5) / vec2(ubo.renderResolution);
-    float fragmentDepth = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.depthBufferIdx)], uv).r;
+    float fragmentDepth = SamplePointClamp(gbufferUBO.depthBufferIdx, uv).r;
 
     float ao = 1.0;
 
     if (pc.hasReadyTLAS != 0u && fragmentDepth > 0.0)
     {
-        vec4 normalData = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.gbufferNormalIdx)], uv);
+        vec4 normalData = SamplePointClamp(gbufferUBO.gbufferNormalIdx, uv);
         vec3 normal = normalize(normalData.xyz);
         vec3 worldPos = DepthToWorldSpace(uv, fragmentDepth, ubo.viewProjectionInverse).xyz;
 

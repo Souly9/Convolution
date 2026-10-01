@@ -26,13 +26,14 @@ void DescriptorPoolVulkan::Create(const DescriptorPoolCreateInfo& createInfo)
     if (createInfo.enableBindlessTextureDescriptors)
     {
         const u32 bindlessTextureCount = g_renderer.GetBindlessCapacity(Bindless::BindlessType::GlobalTextures);
-        const u32 samplerCount = stltype::max(maxSets * 4, bindlessTextureCount * 8);
         const u32 storageImageCount = stltype::max(maxSets * 2, bindlessTextureCount * 4);
-        poolSizes.push_back(
-            CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, samplerCount));
-        poolSizes.push_back(
-            CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, storageImageCount));
-        poolSizes.push_back(CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, storageImageCount));
+        // Two bindless sets, each with a 2D and a 2D array texture array
+        const u32 sampledImageCount =
+            2 * (bindlessTextureCount + g_renderer.GetBindlessCapacity(Bindless::BindlessType::GlobalArrayTextures));
+        // Only ImGui still uses combined image samplers
+        poolSizes.push_back(CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, maxSets * 4));
+        poolSizes.push_back(CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, storageImageCount));
+        poolSizes.push_back(CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, sampledImageCount));
         poolSizes.push_back(CreateNewPoolSizeForType(VK_DESCRIPTOR_TYPE_SAMPLER, maxSets));
     }
     if (createInfo.enableStorageBufferDescriptors)
@@ -233,35 +234,9 @@ void DescriptorSetVulkan::WriteAccelerationStructureUpdate(const AccelerationStr
 static VkImageLayout GetSampledImageLayout(const TextureVulkan* pTex)
 {
     const auto usage = (u32)pTex->GetInfo().usage;
-    const bool isDepthStencil = (usage & (u32)Usage::DepthAttachment) || (usage & (u32)Usage::StencilAttachment);
+    const bool isDepthStencil = (usage & (u32)Usage::DepthAttachment) || (usage & (u32)Usage::StencilAttachment) ||
+                                (usage & (u32)Usage::ShadowMap);
     return isDepthStencil ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-}
-
-void DescriptorSetVulkan::WriteBindlessTextureUpdate(const TextureVulkan* pTex, u32 idx, u32 bindingSlot)
-{
-    if (GetRef() == VK_NULL_HANDLE)
-    {
-        DEBUG_LOG_ERR("DescriptorSetVulkan: Attempted WriteBindlessTextureUpdate on VK_NULL_HANDLE descriptor set");
-        return;
-    }
-
-    VkDescriptorImageInfo imageInfo{};
-    imageInfo.imageLayout = GetSampledImageLayout(pTex);
-    imageInfo.imageView = pTex->GetImageView();
-    imageInfo.sampler = pTex->GetSampler();
-
-    VkWriteDescriptorSet descriptorWrite{};
-    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrite.dstSet = GetRef();
-    descriptorWrite.dstBinding = bindingSlot == 0 ? m_bindingSlot : bindingSlot;
-    descriptorWrite.dstArrayElement = idx;
-    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    descriptorWrite.descriptorCount = 1;
-    descriptorWrite.pImageInfo = &imageInfo;
-    descriptorWrite.pBufferInfo = nullptr;
-    descriptorWrite.pTexelBufferView = nullptr;
-
-    vkUpdateDescriptorSets(VkBackend::Device(), 1, &descriptorWrite, 0, nullptr);
 }
 
 void DescriptorSetVulkan::WriteBindlessSampledImageUpdate(const TextureVulkan* pTex, u32 idx, u32 bindingSlot)

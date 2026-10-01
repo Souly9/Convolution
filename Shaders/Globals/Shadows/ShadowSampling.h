@@ -60,7 +60,7 @@ float sampleShadowCascade(int cascadeIndex, vec4 fragWorldPos, vec3 normal, vec3
     vec3 lightToSurfaceDir = normalize(-lightDir);
     float cosTheta = clamp(dot(normalize(normal), lightToSurfaceDir), 0.0, 1.0);
 
-    ivec3 shadowMapSize = textureSize(GlobalBindlessArrayTextures[shadowmapUBO.directionalShadowMapIdx], 0);
+    ivec3 shadowMapSize = textureSize(BindlessTextureArray(shadowmapUBO.directionalShadowMapIdx, SAMPLER_SHADOW), 0);
     float shadowMapWidth = float(max(shadowMapSize.x, 1));
     // CSM projections use a 2r-wide XY extent and a 9r depth extent, so this converts texels to normalized depth.
     float normalizedDepthPerTexel = 2.0 / (9.0 * shadowMapWidth);
@@ -76,7 +76,7 @@ float sampleShadowCascade(int cascadeIndex, vec4 fragWorldPos, vec3 normal, vec3
     int samples = 16;
     for (int i = 0; i < samples; i++)
     {
-        float pcfDepth = texture(GlobalBindlessArrayTextures[shadowmapUBO.directionalShadowMapIdx],
+        float pcfDepth = texture(BindlessTextureArray(shadowmapUBO.directionalShadowMapIdx, SAMPLER_SHADOW),
                                  vec3(projCoords.xy + poissonDisk[i] * diskRadius, cascadeIndex))
                              .x;
         shadow += (currentDepth < pcfDepth ? 0.0 : 1.0);

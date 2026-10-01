@@ -109,7 +109,7 @@ void DebugShapePass::RebuildInternalData(const stltype::vector<PassMeshData>& me
         instanceDataIndices.emplace_back(mesh.meshData.instanceDataIdx);
         ++instanceOffset;
     }
-    RebuildPerObjectBuffer(instanceDataIndices);
+    RebuildPerObjectBuffer(instanceDataIndices, m_currentFrameIdx);
     m_indirectCmdBuffers[m_currentFrameIdx].FillCmds();
     m_indirectCmdBuffersWireframe[m_currentFrameIdx].FillCmds();
 }
@@ -142,7 +142,6 @@ void DebugShapePass::RenderWithGraph(const MainPassData& data,
                                      const RGExecutionContext& execCtx)
 {
     const auto currentFrame = execCtx.GetFrameIndex();
-    UpdateContextForFrame(currentFrame);
     const auto& passCtx = m_perObjectFrameContexts[currentFrame];
 
     RenderAttachmentInfo colorAttachment = execCtx.GetColorAttachment(RGResourceID::GBufferDebug, LoadOp::LOAD);
@@ -162,8 +161,8 @@ void DebugShapePass::RenderWithGraph(const MainPassData& data,
     auto descriptorSets = execCtx.GetDescriptors();
     descriptorSets.push_back(passCtx.m_perObjectDescriptor);
 
-    auto& opaqueBuffer = m_indirectCmdBuffers[m_currentFrameIdx];
-    auto& wireframeBuffer = m_indirectCmdBuffersWireframe[m_currentFrameIdx];
+    auto& opaqueBuffer = m_indirectCmdBuffers[currentFrame];
+    auto& wireframeBuffer = m_indirectCmdBuffersWireframe[currentFrame];
 
     if (opaqueBuffer.GetDrawCmdNum() > 0)
     {

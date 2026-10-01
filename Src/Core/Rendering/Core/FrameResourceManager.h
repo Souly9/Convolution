@@ -59,11 +59,15 @@ struct FrameRendererContext
 
     u32 imageIdx{0};
     u32 currentFrame{0};
+    // Monotonic, unlike currentFrame which only cycles through the frame slots
+    u64 frameCounter{0};
 
     ::SharedResourceManager* pResourceManager{nullptr};
 
     f32 zNear{0.1f};
     f32 zFar{300.0f};
+    // Vertical field of view in degrees
+    f32 fovY{0.0f};
     u32 numLights{0};
 };
 

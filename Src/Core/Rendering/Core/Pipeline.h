@@ -47,7 +47,8 @@ struct RasterizerInfo
     PolygonMode polyMode = PolygonMode::Fill; // GPU Feature required except for fill
     f32 lineWidth = 1.0;
     CullMode cullmode = CullMode::NONE;
-    FrontFace frontMode = FrontFace::CLOCKWISE;
+    // Assimp and the cube primitive are CCW; RH projection plus the flipped viewport keeps that winding on screen
+    FrontFace frontMode = FrontFace::COUNTER_CLOCKWISE;
     f32 depthBiasConstantFactor = 0.0;
     f32 depthBiasClamp = 0.0;
     f32 depthBiasSlopeFactor = 0.0;

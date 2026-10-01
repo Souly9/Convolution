@@ -78,6 +78,15 @@ public:
     {
         return m_viewSpaceLightsSSBO;
     }
+    // Per frame slot, valid once the slot's previous frame has finished
+    StorageBuffer& GetClusterStatsReadback(u32 frameIdx)
+    {
+        return m_clusterStatsReadback[frameIdx];
+    }
+    u32 ReadClusterLightTotal(u32 frameIdx) const
+    {
+        return *m_pClusterStatsMapped[frameIdx];
+    }
 
 
     const BufferData& GetSceneGeometryBuffers() const
@@ -123,6 +132,8 @@ private:
     StorageBuffer m_sceneAABBBuffer;
     StorageBuffer m_materialBuffer;
     StorageBuffer m_viewSpaceLightsSSBO;
+    stltype::array<StorageBuffer, FRAMES_IN_FLIGHT> m_clusterStatsReadback;
+    stltype::array<u32*, FRAMES_IN_FLIGHT> m_pClusterStatsMapped{};
 
     DescriptorSetLayout m_sceneInstanceSSBOLayout;
     DescriptorSetLayout m_sceneAABBLayout;

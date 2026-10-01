@@ -150,12 +150,13 @@ inline VkFormat GetVkFormatFromDXGI(u32 dxgiFormat)
 {
     switch (dxgiFormat)
     {
+        case 10: return VK_FORMAT_R16G16B16A16_SFLOAT; // DXGI_FORMAT_R16G16B16A16_FLOAT, decoded .hdr files
         case 61: return VK_FORMAT_R8_UNORM; // DXGI_FORMAT_R8_UNORM
         case 49: return VK_FORMAT_R8G8_UNORM; // DXGI_FORMAT_R8G8_UNORM
         case 28: return VK_FORMAT_R8G8B8A8_UNORM; // DXGI_FORMAT_R8G8B8A8_UNORM
         case 87: return VK_FORMAT_B8G8R8A8_UNORM; // DXGI_FORMAT_B8G8R8A8_UNORM
-        case 71: return VK_FORMAT_BC1_RGB_UNORM_BLOCK; // DXGI_FORMAT_BC1_UNORM
-        case 72: return VK_FORMAT_BC1_RGB_SRGB_BLOCK; // DXGI_FORMAT_BC1_UNORM_SRGB
+        case 71: return VK_FORMAT_BC1_RGBA_UNORM_BLOCK; // DXGI_FORMAT_BC1_UNORM, keeps 1-bit alpha
+        case 72: return VK_FORMAT_BC1_RGBA_SRGB_BLOCK; // DXGI_FORMAT_BC1_UNORM_SRGB
         case 74: return VK_FORMAT_BC2_UNORM_BLOCK; // DXGI_FORMAT_BC2_UNORM
         case 75: return VK_FORMAT_BC2_SRGB_BLOCK; // DXGI_FORMAT_BC2_UNORM_SRGB
         case 77: return VK_FORMAT_BC3_UNORM_BLOCK; // DXGI_FORMAT_BC3_UNORM
@@ -625,6 +626,10 @@ inline VkBufferUsageFlags Conv(const BufferUsage& m)
                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
                    VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
                    VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
+        case BufferUsage::VertexHost:
+            return VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+        case BufferUsage::IndexHost:
+            return VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
         case BufferUsage::Texture:
             return VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT;
         case BufferUsage::Staging:
@@ -666,6 +671,8 @@ inline VkMemoryPropertyFlags Conv2MemFlags(const BufferUsage& m)
         case BufferUsage::Texture:
             return VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
         case BufferUsage::Staging:
+        case BufferUsage::VertexHost:
+        case BufferUsage::IndexHost:
             return VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
         case BufferUsage::Uniform:
         case BufferUsage::SSBOHost:
@@ -689,10 +696,13 @@ inline VmaMemoryUsage Conv2VmaMemFlags(const BufferUsage& m)
 {
     switch (m)
     {
+        // Scene geometry is filled through staging copies, so it can live in device memory
         case BufferUsage::Vertex:
-            return VMA_MEMORY_USAGE_CPU_TO_GPU;
         case BufferUsage::Index:
-            return VMA_MEMORY_USAGE_CPU_TO_GPU;
+            return VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+        case BufferUsage::VertexHost:
+        case BufferUsage::IndexHost:
+            return VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
         case BufferUsage::Texture:
             return VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
         case BufferUsage::Staging:
@@ -770,6 +780,8 @@ static inline u32 Conv(SyncStages stage)
         vkStage = (vkStage | VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
     if ((u32)stage & (u32)SyncStages::ALL_COMMANDS)
         vkStage = (vkStage | VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT);
+    if ((u32)stage & (u32)SyncStages::HOST)
+        vkStage = (vkStage | VK_PIPELINE_STAGE_2_HOST_BIT);
             
     return vkStage;
 }
@@ -939,12 +951,13 @@ static inline VkBorderColor Conv(TextureBorderColor color)
 {
     switch (color)
     {
+        // Float variants, every sampled format here is float, unorm or depth
         case TextureBorderColor::TransparentBlack:
-            return VK_BORDER_COLOR_INT_TRANSPARENT_BLACK;
+            return VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
         case TextureBorderColor::OpaqueBlack:
-            return VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+            return VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
         case TextureBorderColor::OpaqueWhite:
         default:
-            return VK_BORDER_COLOR_INT_OPAQUE_WHITE;
+            return VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
     }
 }

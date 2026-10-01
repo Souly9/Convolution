@@ -41,11 +41,12 @@ void ClusterDebugPass::BuildBuffers()
     // 0-4, 1-5, 2-6, 3-7 (Sides)
     stltype::vector<u32> indices = {0, 1, 1, 2, 2, 3, 3, 0, 4, 5, 5, 6, 6, 7, 7, 4, 0, 4, 1, 5, 2, 6, 3, 7};
 
-    m_indexBuffer = IndexBuffer(indices.size() * sizeof(u32));
+    // Filled through a mapping below
+    m_indexBuffer = IndexBuffer(indices.size() * sizeof(u32), true);
     m_indexBuffer.FillImmediate(indices.data());
 
     // Create dummy vertex buffer
-    m_dummyVertexBuffer = VertexBuffer(4); // 4 bytes, just to be valid
+    m_dummyVertexBuffer = VertexBuffer(4, true); // 4 bytes, just to be valid
     u32 dummyData = 0;
     m_dummyVertexBuffer.FillImmediate(&dummyData);
 
@@ -103,6 +104,8 @@ void ClusterDebugPass::Setup(::RenderGraphBuilder& builder, const MainPassData& 
 
     builder.WriteGBuffer(RGResourceID::GBufferDebug, LoadOp::LOAD);
     builder.ReadDepth(RGResourceID::MainDepth);
+    auto clusterGrid = builder.DeclareStorageBuffer(RGResourceID::ClusterGridBuffer, UBO::ClusterAABBSetSize);
+    builder.ReadStorageBuffer(clusterGrid, SyncStages::VERTEX_SHADER, AccessFlags::SHADER_READ);
     builder.SetHasSideEffects();
 }
 

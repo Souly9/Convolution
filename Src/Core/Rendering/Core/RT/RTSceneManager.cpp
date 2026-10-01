@@ -146,7 +146,6 @@ void RTSceneManager::UpdateTLASDescriptorSet(u32 frameSlot, const TLASFrameData&
 }
 
 bool RTSceneManager::Update(u32 frameIdx,
-                            u32 frameSlot,
                             const RenderPasses::FrameResourceManager& frameResourceManager,
                             TimelineSemaphore* pSignalTimeline,
                             u64 signalValue)
@@ -157,16 +156,21 @@ bool RTSceneManager::Update(u32 frameIdx,
     m_blasBuilder.ProcessBuildQueue(*m_pResourceManager, frameIdx);
     BuildCurrentInstanceList(frameResourceManager);
 
-    TLASFrameData& frameData = m_tlasFrameData[frameSlot % SWAPCHAIN_IMAGES];
-    const bool instancesChanged = HasInstanceDataChanged(m_previousSortedInstances, m_currentSortedInstances);
+    TLASFrameData& frameData = m_tlasFrameData[frameIdx];
+    // A change only reaches the current slot this frame, the other slot rebuilds when it records next
+    if (HasInstanceDataChanged(m_previousSortedInstances, m_currentSortedInstances))
+        m_tlasRebuildSlotMask = (1u << FRAMES_IN_FLIGHT) - 1u;
+    const u32 slotBit = 1u << frameIdx;
     const bool needsBuild = !m_currentSortedInstances.empty() &&
-                            (instancesChanged || frameData.state == TLASState::Uninitialized ||
+                            ((m_tlasRebuildSlotMask & slotBit) != 0 || frameData.state == TLASState::Uninitialized ||
                              frameData.lastBuiltInstanceCount != m_currentSortedInstances.size());
 
     bool builtThisFrame = false;
     if (needsBuild)
     {
-        builtThisFrame = BuildTLASForFrame(frameData, frameIdx, frameSlot, pSignalTimeline, signalValue);
+        builtThisFrame = BuildTLASForFrame(frameData, frameIdx, pSignalTimeline, signalValue);
+        if (builtThisFrame)
+            m_tlasRebuildSlotMask &= ~slotBit;
     }
     else if (m_currentSortedInstances.empty())
     {
@@ -175,7 +179,7 @@ bool RTSceneManager::Update(u32 frameIdx,
 
     if (HasReadyTLAS(frameIdx))
     {
-        UpdateTLASDescriptorSet(frameSlot, frameData);
+        UpdateTLASDescriptorSet(frameIdx, frameData);
     }
 
     m_previousSortedInstances = m_currentSortedInstances;
@@ -257,8 +261,7 @@ void RTSceneManager::BuildCurrentInstanceList(const RenderPasses::FrameResourceM
 }
 
 bool RTSceneManager::BuildTLASForFrame(TLASFrameData& frameData,
-                                      u32 frameSubmitIdx,
-                                      u32 frameSlot,
+                                      u32 frameIdx,
                                       TimelineSemaphore* pSignalTimeline,
                                       u64 signalValue)
 {
@@ -298,7 +301,7 @@ bool RTSceneManager::BuildTLASForFrame(TLASFrameData& frameData,
     instanceBufferInfo.size = sizeof(AccelerationStructureInstanceData) * instanceCount;
     instanceBufferInfo.usage = BufferUsage::AccelerationStructureInstances;
     frameData.instanceBuffer.Create(instanceBufferInfo);
-    frameData.instanceBuffer.SetName("TLAS Instance Buffer " + stltype::to_string(frameSlot));
+    frameData.instanceBuffer.SetName("TLAS Instance Buffer " + stltype::to_string(frameIdx));
     stltype::vector<AccelerationStructureInstanceData> instanceData{};
     instanceData.reserve(instanceCount);
     for (const RTInstanceRecord& instanceRecord : m_currentSortedInstances)
@@ -313,7 +316,7 @@ bool RTSceneManager::BuildTLASForFrame(TLASFrameData& frameData,
     hitDataBufferInfo.size = sizeof(RTInstanceHitData) * instanceCount;
     hitDataBufferInfo.usage = BufferUsage::SSBOHost;
     frameData.hitDataBuffer.Create(hitDataBufferInfo);
-    frameData.hitDataBuffer.SetName("TLAS Hit Data Buffer " + stltype::to_string(frameSlot));
+    frameData.hitDataBuffer.SetName("TLAS Hit Data Buffer " + stltype::to_string(frameIdx));
     stltype::vector<RTInstanceHitData> hitData{};
     hitData.reserve(instanceCount);
     for (const RTInstanceRecord& instanceRecord : m_currentSortedInstances)
@@ -331,33 +334,33 @@ bool RTSceneManager::BuildTLASForFrame(TLASFrameData& frameData,
     storageInfo.size = buildSizes.accelerationStructureSize;
     storageInfo.usage = BufferUsage::AccelerationStructureStorage;
     frameData.storageBuffer = GenericBuffer(storageInfo);
-    frameData.storageBuffer.SetName("TLAS Storage Buffer " + stltype::to_string(frameSlot));
+    frameData.storageBuffer.SetName("TLAS Storage Buffer " + stltype::to_string(frameIdx));
 
     BufferCreateInfo scratchInfo{};
     scratchInfo.size = buildSizes.buildScratchSize;
     scratchInfo.usage = BufferUsage::AccelerationStructureScratch;
     frameData.scratchBuffer = GenericBuffer(scratchInfo);
-    frameData.scratchBuffer.SetName("TLAS Scratch Buffer " + stltype::to_string(frameSlot));
+    frameData.scratchBuffer.SetName("TLAS Scratch Buffer " + stltype::to_string(frameIdx));
 
     if ((frameData.scratchBuffer.GetDeviceAddress() % rtCaps.minScratchAlignment) != 0)
     {
         frameData.accelerationStructure.CleanUp();
         frameData.state = TLASState::Failed;
-        DEBUG_LOG_WARNF("RTSceneManager rejected TLAS build {} due to scratch-address alignment", frameSlot);
+        DEBUG_LOG_WARNF("RTSceneManager rejected TLAS build {} due to scratch-address alignment", frameIdx);
         return false;
     }
 
     frameData.accelerationStructure.Create({.type = AccelerationStructureType::TopLevel,
                                             .pStorageBuffer = &frameData.storageBuffer,
                                             .size = buildSizes.accelerationStructureSize});
-    frameData.accelerationStructure.SetName("TLAS " + stltype::to_string(frameSlot));
+    frameData.accelerationStructure.SetName("TLAS " + stltype::to_string(frameIdx));
     frameData.scratchSize = buildSizes.buildScratchSize;
     frameData.lastBuiltInstanceCount = instanceCount;
     frameData.state = TLASState::Building;
 
     CommandBuffer* pBuildCmdBuffer = m_tlasBuildCommandPool.CreateCommandBuffer(CommandBufferCreateInfo{});
-    pBuildCmdBuffer->SetName("TLAS Build Cmd " + stltype::to_string(frameSlot));
-    pBuildCmdBuffer->SetFrameIdx(frameSubmitIdx);
+    pBuildCmdBuffer->SetName("TLAS Build Cmd " + stltype::to_string(frameIdx));
+    pBuildCmdBuffer->SetFrameIdx(frameIdx);
 
     BuildAccelerationStructureCmd buildCmd{};
     buildCmd.buildDesc = buildDesc;
@@ -377,9 +380,9 @@ bool RTSceneManager::BuildTLASForFrame(TLASFrameData& frameData,
     }
 
     pBuildCmdBuffer->AddExecutionFinishedCallback(
-        [this, pBuildCmdBuffer, frameSlot = frameSlot % SWAPCHAIN_IMAGES, instanceCount]()
+        [this, pBuildCmdBuffer, frameIdx, instanceCount]()
         {
-            TLASFrameData& finishedFrameData = m_tlasFrameData[frameSlot];
+            TLASFrameData& finishedFrameData = m_tlasFrameData[frameIdx];
             if (finishedFrameData.lastBuiltInstanceCount == instanceCount)
             {
                 finishedFrameData.state = TLASState::Ready;
@@ -389,7 +392,7 @@ bool RTSceneManager::BuildTLASForFrame(TLASFrameData& frameData,
         });
 
     pBuildCmdBuffer->Bake();
-    g_renderer.GetQueueHandler().SubmitCommandBufferThisFrame({pBuildCmdBuffer, QueueType::Graphics, frameSubmitIdx});
+    g_renderer.GetQueueHandler().SubmitCommandBufferThisFrame({pBuildCmdBuffer, QueueType::Graphics, frameIdx});
     return true;
 }
 

@@ -77,4 +77,7 @@ protected:
     u32 m_baseHandle{1};
     u32 m_lastBindlessTextureWriteIdx{FIRST_SCENE_BINDLESS_SLOT};
     u32 m_lastPersistentBindlessTextureWriteIdx{PERSISTENT_BINDLESS_REGION_START};
+    // Freed persistent slots return after the frames in flight retire; shared because queued deletes outlive the manager
+    stltype::shared_ptr<stltype::vector<BindlessTextureHandle>> m_freePersistentSlots{
+        stltype::make_shared<stltype::vector<BindlessTextureHandle>>()};
 };

@@ -96,7 +96,7 @@ vec3 SampleSkybox(vec3 d)
     if (ubo.skyboxTextureIdx != 0u)
     {
         vec2 uv = SampleEquirectangular(normalize(d));
-        vec3 rawColor = texture(GlobalBindlessTextures[nonuniformEXT(ubo.skyboxTextureIdx)], uv).rgb;
+        vec3 rawColor = texture(BindlessTexture2D(ubo.skyboxTextureIdx, SAMPLER_LINEAR_REPEAT), uv).rgb;
         
         // Calibrate raw HDR values (e.g. from 4k skybox) to engine lighting space
         vec3 scaledColor = rawColor * 0.05;
@@ -185,16 +185,17 @@ void main()
     vec2 uv = (vec2(pixelCoord) + 0.5) / vec2(ubo.renderResolution);
     vec4 reflectionContribution = vec4(0.0, 0.0, 0.0, 1.0);
 
-    float fragmentDepth = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.depthBufferIdx)], uv).r;
+    float fragmentDepth = SamplePointClamp(gbufferUBO.depthBufferIdx, uv).r;
     if (pc.hasReadyTLAS != 0u && fragmentDepth > 0.0)
     {
-        vec4 normalData = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.gbufferNormalIdx)], uv);
-        vec4 uvMatData = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.gbufferTexCoordMatIdx)], uv);
-        vec3 albedo = texture(GlobalBindlessTextures[nonuniformEXT(gbufferUBO.gbufferAlbedoIdx)], uv).rgb;
+        vec4 normalData = SamplePointClamp(gbufferUBO.gbufferNormalIdx, uv);
+        float metallic = SamplePointClamp(gbufferUBO.gbufferMaterialIdx, uv).a;
+        float roughness = SamplePointClamp(gbufferUBO.gbufferRoughnessIdx, uv).r;
+        vec3 albedo = SamplePointClamp(gbufferUBO.gbufferAlbedoIdx, uv).rgb;
 
         uint materialIdx = uint(normalData.w);
         Material mat = globalObjectDataSSBO.materials[materialIdx];
-        SurfaceParameters surface = BuildMaterialSurface(mat, uvMatData.xy, albedo * mat.baseColor.rgb);
+        SurfaceParameters surface = BuildResolvedMaterialSurface(mat, albedo * mat.baseColor.rgb, roughness, metallic);
 
         vec3 worldPos = DepthToWorldSpace(uv, fragmentDepth, ubo.viewProjectionInverse).xyz;
         vec3 normal = normalize(normalData.xyz);

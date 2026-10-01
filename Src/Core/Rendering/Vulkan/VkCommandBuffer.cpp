@@ -328,7 +328,8 @@ static inline VkPipelineStageFlags2 ConvStageForQueue(SyncStages stage, QueueTyp
             VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT |
             VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR |
             VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR |
-            VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+            VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT |
+            VK_PIPELINE_STAGE_2_HOST_BIT;
 
         vkStage &= VALID_COMPUTE_STAGES;
         if (vkStage == 0)

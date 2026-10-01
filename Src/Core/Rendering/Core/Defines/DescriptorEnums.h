@@ -21,7 +21,6 @@ enum class DescriptorType
     StorageBuffer,
     AccelerationStructure,
     CombinedImageSampler,
-    BindlessTextures,
     BindlessImages,
     BindlessSampledImages,
     Samplers

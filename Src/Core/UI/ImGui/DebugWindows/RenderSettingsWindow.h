@@ -254,19 +254,20 @@ public:
                     int clusterY = renderState.clusterCount.y;
                     int clusterZ = renderState.clusterCount.z;
 
-                    if (ImGui::SliderInt("Cluster X", &clusterX, 4, 32))
+                    if (ImGui::SliderInt("Cluster X", &clusterX, 4, 32, "%d", ImGuiSliderFlags_AlwaysClamp))
                     {
                         g_engine.GetApplicationState().RegisterUpdateFunction([clusterX](ApplicationState& state)
                                                                     { state.renderState.clusterCount.x = clusterX; });
                         needsUpdate = true;
                     }
-                    if (ImGui::SliderInt("Cluster Y", &clusterY, 4, 32))
+                    if (ImGui::SliderInt("Cluster Y", &clusterY, 4, 32, "%d", ImGuiSliderFlags_AlwaysClamp))
                     {
                         g_engine.GetApplicationState().RegisterUpdateFunction([clusterY](ApplicationState& state)
                                                                     { state.renderState.clusterCount.y = clusterY; });
                         needsUpdate = true;
                     }
-                    if (ImGui::SliderInt("Cluster Z", &clusterZ, 8, 64))
+                    // Light culling runs one thread per Z slice in a 32-wide workgroup, and 32^3 is MAX_CLUSTERS
+                    if (ImGui::SliderInt("Cluster Z", &clusterZ, 8, 32, "%d", ImGuiSliderFlags_AlwaysClamp))
                     {
                         g_engine.GetApplicationState().RegisterUpdateFunction([clusterZ](ApplicationState& state)
                                                                     { state.renderState.clusterCount.z = clusterZ; });

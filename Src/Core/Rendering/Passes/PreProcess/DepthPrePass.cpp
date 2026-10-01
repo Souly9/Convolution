@@ -72,7 +72,7 @@ void DepthPrePass::RebuildInternalData(const stltype::vector<PassMeshData>& mesh
         instanceDataIndices.emplace_back(mesh.meshData.instanceDataIdx);
         ++instanceOffset;
     }
-    RebuildPerObjectBuffer(instanceDataIndices);
+    RebuildPerObjectBuffer(instanceDataIndices, thisFrameNum);
     cmdBuf.FillCmds();
 }
 
@@ -105,7 +105,6 @@ void DepthPrePass::RenderWithGraph(const MainPassData& data, const FrameRenderer
     StartRenderPassProfilingScope(execCtx.pCmdBuffer);
 
     const auto currentFrame = ctx.currentFrame;
-    UpdateContextForFrame(currentFrame);
     const auto& passCtx = m_perObjectFrameContexts[currentFrame];
 
     RenderAttachmentInfo depthAttachment = execCtx.GetDepthAttachment(RGResourceID::MainDepth, LoadOp::CLEAR, StoreOp::STORE);

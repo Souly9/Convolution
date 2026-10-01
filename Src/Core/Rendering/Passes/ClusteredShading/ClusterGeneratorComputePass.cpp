@@ -34,6 +34,8 @@ void ClusterGeneratorComputePass::BuildBuffers()
 void ClusterGeneratorComputePass::BuildPipelines()
 {
     ScopedZone("ClusterGeneratorComputePass::BuildPipelines");
+    // A reloaded shader may build different AABBs
+    m_hasBuiltGrid = false;
 
     auto clusterShader = Shader("Shaders/ClusterGenerator.comp.spv", "main");
 
@@ -68,11 +70,8 @@ void ClusterGeneratorComputePass::Setup(::RenderGraphBuilder& builder, const Mai
         PassCtx::ClusterGrid,
         PassCtx::ViewSpaceLights>();
 
-    auto viewSpaceLights = builder.DeclareStorageBuffer(RGResourceID::Custom, UBO::ViewSpaceLightsSSBOSize, "ViewSpaceLightsSSBO");
-    builder.ReadStorageBuffer(viewSpaceLights, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ);
-
-    auto tileBuffer = builder.DeclareStorageBuffer(RGResourceID::TileAssignmentBuffer, UBO::LightClusterSSBOSize);
-    builder.ReadStorageBuffer(tileBuffer, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_READ);
+    auto clusterGrid = builder.DeclareStorageBuffer(RGResourceID::ClusterGridBuffer, UBO::ClusterAABBSetSize);
+    builder.WriteStorageBuffer(clusterGrid, SyncStages::COMPUTE_SHADER, AccessFlags::SHADER_WRITE);
     builder.SetHasSideEffects();
 }
 
@@ -81,6 +80,22 @@ void ClusterGeneratorComputePass::RenderWithGraph(const MainPassData& data, cons
     ScopedZone("ClusterGeneratorComputePass::RenderWithGraph");
     StartRenderPassProfilingScope(execCtx.pCmdBuffer);
     auto& renderState = g_engine.GetApplicationState().GetCurrentApplicationState().renderState;
+
+    const mathstl::Vector2 renderRes = execCtx.GetRenderResolution();
+    GridKey key{};
+    key.clusterCount = renderState.clusterCount;
+    key.zNear = execCtx.GetZNear();
+    key.zFar = execCtx.GetZFar();
+    key.fovY = ctx.fovY;
+    key.aspect = renderRes.x / renderRes.y;
+    // The grid buffer keeps the last result, so it only needs rebuilding when the projection changes
+    if (m_hasBuiltGrid && key == m_builtGridKey)
+    {
+        EndRenderPassProfilingScope(execCtx.pCmdBuffer);
+        return;
+    }
+    m_builtGridKey = key;
+    m_hasBuiltGrid = true;
 
     m_pushConstants.clusterCount = renderState.clusterCount;
     m_pushConstants.nearFar = mathstl::Vector4(execCtx.GetZNear(), execCtx.GetZFar(), 0.0f, 0.0f);

@@ -35,19 +35,22 @@ void main()
 {
     Material mat = globalObjectDataSSBO.materials[IN.matIdx];
     vec4 fragTexSample = SampleMaterialBaseColorTextureRGBA(mat, IN.fragTexCoord);
+    // Same cutout as the depth prepass; depth writes are off here, so a cutout texel would pass GEQUAL
+    if (fragTexSample.a < 1e-6)
+        discard;
 
     vec3 N = normalize(IN.worldNormal);
     N = ApplyMaterialNormalMap(mat, IN.fragTexCoord, IN.TBN, N);
 
     vec2 velocity = ComputeVelocity(IN.unjitteredClipPos, IN.prevUnjitteredClipPos);
 
-    StoreAlbedoInGBuffer(fragTexSample);
-    StoreNormalAndMaterialInGBuffer(N, IN.matIdx);
-    StoreTexCoordInGBuffer(IN.fragTexCoord);
-    StoreVelocityInGBuffer(velocity);
-    StoreEntityIDInGBuffer(IN.entityID);
-
     vec3 materialAlbedo = mat.baseColor.rgb * fragTexSample.rgb;
     SurfaceParameters surface = BuildMaterialSurface(mat, IN.fragTexCoord, materialAlbedo);
+
+    StoreAlbedoInGBuffer(fragTexSample);
+    StoreNormalAndMaterialInGBuffer(N, IN.matIdx);
+    StoreMaterialInGBuffer(SampleMaterialEmissive(mat, IN.fragTexCoord), surface.metallic);
+    StoreVelocityInGBuffer(velocity);
+    StoreEntityIDInGBuffer(IN.entityID);
     outRoughness = surface.roughness;
 }

@@ -13,13 +13,12 @@ static constexpr u32 kRTSceneSet          = 5;
 
 namespace DescriptorPresets
 {
-// Set 0: GlobalTextures + GlobalArrayTextures + SampledTextures + Samplers [+ GlobalImages]
+// Set 0: GlobalTextures + GlobalArrayTextures + Samplers [+ GlobalImages]
 inline stltype::vector<PipelineDescriptorLayout> Bindless(bool includeImages = false)
 {
     stltype::vector<PipelineDescriptorLayout> out;
     out.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalTextures, kBindlessSet));
     out.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalArrayTextures, kBindlessSet));
-    out.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalSampledTextures, kBindlessSet));
     out.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalSamplers, kBindlessSet));
     if (includeImages)
         out.emplace_back(PipelineDescriptorLayout(Bindless::BindlessType::GlobalImages, kBindlessSet));

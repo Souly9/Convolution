@@ -47,6 +47,7 @@ void main()
 
     vec3 pos = minB + corners[cornerIndex] * size;
 
-    gl_Position = ubo.viewProjection * vec4(pos, 1.0);
+    // Cluster AABBs are built in view space
+    gl_Position = ubo.projection * vec4(pos, 1.0);
     outColor = vec3(0.0, 1.0, 0.0); // Green
 }

@@ -13,52 +13,39 @@ GenericGeometryPass::GenericGeometryPass(const stltype::string& name) : Convolut
     m_descPool.Create(info);
     m_perObjectLayout = DescriptorLayoutUtils::CreateOneDescriptorSetLayout(
         PipelineDescriptorLayout(UBO::BufferType::PerPassObjectSSBO));
-    m_perObjectSSBO = StorageBuffer(UBO::PerPassObjectDataSSBOSize, false);
-    m_mappedPerObjectSSBO = m_perObjectSSBO.MapMemory();
 
-    u32 frameIdx = 0;
     m_perObjectFrameContexts.resize(SWAPCHAIN_IMAGES);
+    m_perObjectSSBOs.resize(SWAPCHAIN_IMAGES);
+    m_mappedPerObjectSSBOs.resize(SWAPCHAIN_IMAGES);
     m_indirectCmdBuffers.resize(SWAPCHAIN_IMAGES);
     m_indirectCountBuffers.resize(SWAPCHAIN_IMAGES);
-    for (auto& ctx : m_perObjectFrameContexts)
-    {
-        ctx.m_perObjectDescriptor = m_descPool.CreateDescriptorSet(m_perObjectLayout);
-        ctx.m_perObjectDescriptor->SetBindingSlot(s_perPassObjectDataBindingSlot);
-        m_dirtyFrames.push_back(frameIdx++);
-    }
-}
-
-void GenericGeometryPass::RebuildPerObjectBuffer(const stltype::vector<u32>& data)
-{
-    m_dirtyFrames.clear();
-    memcpy(m_mappedPerObjectSSBO, data.data(), sizeof(data[0]) * data.size());
-
     for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
     {
-        m_dirtyFrames.push_back(i);
+        // One copy per frame slot, a rebuild must not touch what the in-flight frame reads
+        m_perObjectSSBOs[i] = StorageBuffer(UBO::PerPassObjectDataSSBOSize, false);
+        m_mappedPerObjectSSBOs[i] = m_perObjectSSBOs[i].MapMemory();
+
+        auto& ctx = m_perObjectFrameContexts[i];
+        ctx.m_perObjectDescriptor = m_descPool.CreateDescriptorSet(m_perObjectLayout);
+        ctx.m_perObjectDescriptor->SetBindingSlot(s_perPassObjectDataBindingSlot);
+        ctx.m_perObjectDescriptor->WriteSSBOUpdate(m_perObjectSSBOs[i]);
     }
 }
 
-void GenericGeometryPass::UpdateContextForFrame(u32 frameIdx)
+void GenericGeometryPass::RebuildPerObjectBuffer(const stltype::vector<u32>& data, u32 frameIdx)
 {
-    auto it = stltype::find(m_dirtyFrames.begin(), m_dirtyFrames.end(), frameIdx);
-    if (it != m_dirtyFrames.end())
-    {
-        auto& ctx = m_perObjectFrameContexts[frameIdx];
-        ctx.m_perObjectDescriptor->WriteSSBOUpdate(m_perObjectSSBO);
-        m_dirtyFrames.erase(it);
-    }
+    memcpy(m_mappedPerObjectSSBOs[frameIdx], data.data(), sizeof(data[0]) * data.size());
 }
 
 void GenericGeometryPass::NameResources(const stltype::string& name)
 {
     m_perObjectLayout.SetName(name + "_PerObjectSSBOLayout");
-    m_perObjectSSBO.SetName(name + "_PerObjectSSBO");
     m_descPool.SetName(name + "_DescriptorPool");
     
     for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
     {
         const auto frameStr = stltype::to_string(i);
+        m_perObjectSSBOs[i].SetName(name + "_PerObjectSSBO_" + frameStr);
         if (m_indirectCmdBuffers[i].IsCreated())
         {
             m_indirectCmdBuffers[i].SetName(name + "_IndirectDrawCmdBuffer_" + frameStr);

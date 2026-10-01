@@ -31,5 +31,24 @@ public:
 protected:
     ComputePipeline m_pipeline;
     ClusterPushConstants m_pushConstants;
+
+    // The view-space cluster AABBs only depend on the projection and the cluster counts
+    struct GridKey
+    {
+        DirectX::XMINT3 clusterCount{0, 0, 0};
+        f32 zNear{0.0f};
+        f32 zFar{0.0f};
+        f32 fovY{0.0f};
+        f32 aspect{0.0f};
+
+        bool operator==(const GridKey& o) const
+        {
+            return clusterCount.x == o.clusterCount.x && clusterCount.y == o.clusterCount.y &&
+                   clusterCount.z == o.clusterCount.z && zNear == o.zNear && zFar == o.zFar && fovY == o.fovY &&
+                   aspect == o.aspect;
+        }
+    };
+    GridKey m_builtGridKey{};
+    bool m_hasBuiltGrid{false};
 };
 } // namespace RenderPasses

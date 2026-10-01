@@ -35,7 +35,9 @@ FUNC_QUALIFIER vec3 TransformLocalNormalToWorld(mat4 worldMat, vec3 localNormal)
 FUNC_QUALIFIER mat3 BuildWorldTBN(mat4 worldMat, vec3 worldNormal, vec4 localTangent)
 {
     vec3 worldTangent = normalize(mat3(worldMat) * localTangent.xyz);
-    vec3 worldBitangent = normalize(cross(worldNormal, worldTangent) * localTangent.w);
+    // A mirroring transform flips the cross product, so the bitangent sign flips with it
+    float handedness = determinant(mat3(worldMat)) < 0.0 ? -localTangent.w : localTangent.w;
+    vec3 worldBitangent = normalize(cross(worldNormal, worldTangent) * handedness);
     return mat3(worldTangent, worldBitangent, worldNormal);
 }
 #endif

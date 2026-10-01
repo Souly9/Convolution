@@ -244,14 +244,20 @@ void FileReader::ReadImageFile(const IORequest& request)
                 floatPixels = stbi_loadf(fallbackPath.data(), &info.extents.x, &info.extents.y, &info.texChannels, STBI_rgb_alpha);
             }
             info.pixels = reinterpret_cast<unsigned char*>(floatPixels);
-            info.dataSize = (u64)info.extents.x * info.extents.y * 4 * sizeof(float);
-            info.ddsFormat = 0;
             info.supportsAlpha = true;
             if (!info.pixels)
             {
                 DEBUG_LOG_ERRF("[FileReader] Failed to load HDR image: {}", request.filePath.c_str());
                 return;
             }
+            // Halved in place to RGBA16F, which is always filterable; halves never overtake the floats being read
+            const u64 valueCount = (u64)info.extents.x * info.extents.y * 4;
+            auto* pHalfs = reinterpret_cast<DirectX::PackedVector::HALF*>(floatPixels);
+            for (u64 i = 0; i < valueCount; ++i)
+                // The sun is brighter than fp16 can hold (+Inf turns into NaN in the shader), 65504 is the max finite half
+                pHalfs[i] = DirectX::PackedVector::XMConvertFloatToHalf(stltype::min(floatPixels[i], 65504.0f));
+            info.dataSize = valueCount * sizeof(DirectX::PackedVector::HALF);
+            info.ddsFormat = static_cast<u32>(tinyddsloader::DDSFile::DXGIFormat::R16G16B16A16_Float);
         }
         else
         {

@@ -23,6 +23,8 @@ inline bool NeedsMappableHandle(const BufferUsage& m)
     switch (m)
     {
         case BufferUsage::Staging:
+        case BufferUsage::VertexHost:
+        case BufferUsage::IndexHost:
         case BufferUsage::Uniform:
         case BufferUsage::SSBOHost:
         case BufferUsage::IndirectDrawCmds:

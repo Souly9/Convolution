@@ -16,6 +16,8 @@ STRUCTEND()
 STRUCTDECL(ViewSpaceLightsBuffer)
     STRUCTFIELD_ARRAY(vec4, lights, MAX_SCENE_LIGHTS) // xyz=view-space position, w=radius
     STRUCTFIELD_ARRAY(uint, tileCounters, MAX_TILE_XY)
+    // Lights summed over all clusters for the stats UI; cleared together with the tile counters
+    STRUCTFIELD(uint, clusterLightTotal)
     STRUCTFIELD_ARRAY(uint, tileLightIndices, MAX_TILE_XY * MAX_LIGHTS_PER_TILE)
 STRUCTEND()
 

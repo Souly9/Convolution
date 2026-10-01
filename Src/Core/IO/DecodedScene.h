@@ -55,6 +55,7 @@ struct DecodedCamera
     bool present{false};
     mathstl::Vector3 position;
     f32 yawDegrees{0.f};
+    f32 pitchDegrees{0.f};
 };
 
 struct DecodedScene

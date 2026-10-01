@@ -135,9 +135,9 @@ void RenderTextureImGuiRegistry::RegisterGBufferTextures(RGResourceRegistry& reg
     m_gbufferImGuiIDs.push_back(albedoID);
     m_textureViewerItems.push_back(MakeItem("GBuffer Albedo", "GBuffer", albedoID, pAlbedoTex));
 
-    Texture* pUVMatTex = registry.ResolveByID(RGResourceID::GBufferUVMat);
-    u64 uvMatID = addTexByID(RGResourceID::GBufferUVMat);
-    m_textureViewerItems.push_back(MakeItem("GBuffer UV & Material Data", "GBuffer", uvMatID, pUVMatTex));
+    Texture* pMaterialTex = registry.ResolveByID(RGResourceID::GBufferMaterial);
+    u64 materialID = addTexByID(RGResourceID::GBufferMaterial);
+    m_textureViewerItems.push_back(MakeItem("GBuffer Emissive & Metallic", "GBuffer", materialID, pMaterialTex));
 
     Texture* pRoughnessTex = registry.ResolveByID(RGResourceID::GBufferRoughness);
     u64 roughnessID = addTexByID(RGResourceID::GBufferRoughness);

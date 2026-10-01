@@ -360,8 +360,8 @@ RenderBackendImpl<Vulkan>::DebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT 
     if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
     {
         DEBUG_LOG_ERR(stltype::string(pCallbackData->pMessage));
-        return VK_TRUE;
     }
+    // VK_TRUE would make the layer skip the call, which turns one error into a crash later on
     return VK_FALSE;
 }
 
@@ -1198,15 +1198,11 @@ bool RenderBackendImpl<Vulkan>::CreateSwapChain(VkSwapchainKHR oldSwapchain)
     VkPresentModeKHR presentMode = ChooseSwapPresentMode(swapChainSupport.presentModes);
     DirectX::XMUINT2 extent = ChooseSwapExtent(swapChainSupport.capabilities);
 
-    // requesting one more image than the minimum to avoid stalls
-    u32 imageCount = (swapChainSupport.capabilities.minImageCount <= SWAPCHAIN_IMAGES &&
-                      swapChainSupport.capabilities.maxImageCount >= SWAPCHAIN_IMAGES)
-                         ? SWAPCHAIN_IMAGES
-                         : swapChainSupport.capabilities.maxImageCount;
-    if (swapChainSupport.capabilities.maxImageCount > 0 && imageCount > swapChainSupport.capabilities.maxImageCount)
-    {
-        imageCount = swapChainSupport.capabilities.maxImageCount;
-    }
+    // maxImageCount 0 means no upper limit
+    const auto& surfaceCaps = swapChainSupport.capabilities;
+    u32 imageCount = stltype::max(SWAPCHAIN_IMAGES, surfaceCaps.minImageCount);
+    if (surfaceCaps.maxImageCount > 0)
+        imageCount = stltype::min(imageCount, surfaceCaps.maxImageCount);
     DEBUG_LOGF("Creating swapchain with {} images", imageCount);
     // DEBUG_LOG("Creating swapchain with " + stltype::to_string(imageCount) + " images, width: " +
     // stltype::to_string(extent.x) + ", height: " + stltype::to_string(extent.y));
@@ -1249,6 +1245,8 @@ bool RenderBackendImpl<Vulkan>::CreateSwapChain(VkSwapchainKHR oldSwapchain)
 
     m_swapChain = newSwapchain;
     swapchainFunctions.getSwapchainImages(m_logicalDevice, m_swapChain, &imageCount, nullptr);
+    // Per-image contexts and command buffers are fixed to SWAPCHAIN_IMAGES and indexed by the acquired image
+    DEBUG_ASSERT(imageCount <= SWAPCHAIN_IMAGES);
     m_swapChainImages.resize(imageCount);
     swapchainFunctions.getSwapchainImages(m_logicalDevice, m_swapChain, &imageCount, m_swapChainImages.data());
 

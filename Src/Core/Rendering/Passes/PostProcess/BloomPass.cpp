@@ -105,14 +105,12 @@ void BloomPass::RenderWithGraph(const MainPassData& data, const FrameRendererCon
         u32 width;
         u32 height;
     };
+    // Sizes of the allocated mips, the chain starts at half resolution
     MipDimension mips[5];
-    u32 currW = static_cast<u32>(data.renderState.renderResolution.x);
-    u32 currH = static_cast<u32>(data.renderState.renderResolution.y);
     for (u32 i = 0; i < 5; ++i)
     {
-        mips[i] = {currW, currH};
-        currW = stltype::max(1u, currW / 2u);
-        currH = stltype::max(1u, currH / 2u);
+        const auto& extents = execCtx.GetTexture(bloomResIDs[i])->GetInfo().extents;
+        mips[i] = {extents.x, extents.y};
     }
 
     // ------------------------------------------------------------------------

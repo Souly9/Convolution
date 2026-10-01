@@ -76,6 +76,16 @@ public:
 
     const stltype::vector<stltype::fixed_vector<BarrierCmdDesc, 8>>& GetBarriersByNode() const { return m_barriersByNode; }
 
+    // Execution and memory dependency recorded before a node for hazards that need no layout change (buffers too)
+    struct MemoryBarrierDesc
+    {
+        SyncStages srcStage{SyncStages::NONE};
+        SyncStages dstStage{SyncStages::NONE};
+        AccessFlags srcAccess{AccessFlags::NONE};
+        AccessFlags dstAccess{AccessFlags::NONE};
+    };
+    const stltype::vector<MemoryBarrierDesc>& GetMemoryBarriersByNode() const { return m_memoryBarriersByNode; }
+
 private:
     void BuildAdjacencyGraph();
     bool ValidateSinglePass() const;
@@ -93,12 +103,17 @@ private:
         u32 lastWriterNodeIndex{UINT32_MAX};
         SyncStages lastWriterStage{SyncStages::NONE};
         AccessFlags lastWriterAccess{AccessFlags::NONE};
+        // Access made visible by a read's layout transition
+        AccessFlags transitionAccess{AccessFlags::NONE};
+        // Readers since the last write, per queue (graphics, compute); write-after-read needs them
+        SyncStages readerStages[2]{SyncStages::NONE, SyncStages::NONE};
     };
 
     RGResourceRegistry m_registry;
     stltype::vector<RGNode> m_nodes;
     stltype::vector<u32> m_sortedNodeIndices;
     stltype::vector<stltype::fixed_vector<BarrierCmdDesc, 8>> m_barriersByNode;
+    stltype::vector<MemoryBarrierDesc> m_memoryBarriersByNode;
     stltype::vector<ExecutionBatch> m_batches;
 
     stltype::vector<stltype::vector<u32>> m_adjList;

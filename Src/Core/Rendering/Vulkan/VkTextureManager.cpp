@@ -69,6 +69,12 @@ static TexFormat ApplySemanticColorSpace(TexFormat format, TextureSemantic seman
     }
 }
 
+static f32 MaterialMipLodBias()
+{
+    // The portability subset (MoltenVK) has no sampler LOD bias
+    return g_renderer.IsPortabilityDriver() ? 0.0f : -0.5f;
+}
+
 VkTextureManager::VkTextureManager()
 {
     m_swapChainTextures.reserve(SWAPCHAIN_IMAGES);
@@ -83,21 +89,11 @@ void VkTextureManager::Init()
 
 void VkTextureManager::WriteBindlessTexture(Texture* pTex, u32 idx)
 {
-    if (pTex->GetInfo().extents.z > 1)
-    {
-        m_bindlessDescriptorSet->WriteBindlessTextureUpdate(pTex, idx, s_globalBindlessArrayTextureBufferBindingSlot);
-        m_combinedBindlessDescriptorSet->WriteBindlessTextureUpdate(
-            pTex, idx, s_globalBindlessArrayTextureBufferBindingSlot);
-    }
-    else
-    {
-        m_bindlessDescriptorSet->WriteBindlessTextureUpdate(pTex, idx);
-        m_combinedBindlessDescriptorSet->WriteBindlessTextureUpdate(pTex, idx);
-        // Array views are not valid for the texture2D binding
-        m_bindlessDescriptorSet->WriteBindlessSampledImageUpdate(pTex, idx, s_globalBindlessSampledTextureBindingSlot);
-        m_combinedBindlessDescriptorSet->WriteBindlessSampledImageUpdate(
-            pTex, idx, s_globalBindlessSampledTextureBindingSlot);
-    }
+    // Array views are only valid for the texture2DArray binding; shaders pick a global sampler per use
+    const u32 binding = pTex->GetInfo().extents.z > 1 ? s_globalBindlessArrayTextureBufferBindingSlot
+                                                      : s_globalBindlessTextureBufferBindingSlot;
+    m_bindlessDescriptorSet->WriteBindlessSampledImageUpdate(pTex, idx, binding);
+    m_combinedBindlessDescriptorSet->WriteBindlessSampledImageUpdate(pTex, idx, binding);
 
     if ((pTex->GetInfo().usage & Usage::Storage) != Usage::None)
     {
@@ -271,7 +267,7 @@ void VkTextureManager::CreateSamplerForTexture(TextureVulkan* pTex, bool useMipM
     else
     {
         samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-        samplerInfo.mipLodBias = -0.5f;
+        samplerInfo.mipLodBias = MaterialMipLodBias();
         samplerInfo.minLod = 0.0f;
         samplerInfo.maxLod = VK_LOD_CLAMP_NONE;
     }
@@ -696,23 +692,46 @@ void VkTextureManager::CreateBindlessDescriptorSet()
 
 void VkTextureManager::CreateGlobalSamplers()
 {
-    auto createSampler = [](VkFilter filter)
+    auto createSampler = [](const VkSamplerCreateInfo& info)
     {
-        VkSamplerCreateInfo info{};
-        info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-        info.magFilter = filter;
-        info.minFilter = filter;
-        info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
-        info.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        info.maxLod = VK_LOD_CLAMP_NONE;
         VkSampler sampler = VK_NULL_HANDLE;
         DEBUG_ASSERT(vkCreateSampler(VkBackend::Device(), &info, VulkanAllocator(), &sampler) == VK_SUCCESS);
         return sampler;
     };
-    m_globalSamplers[SAMPLER_LINEAR_CLAMP] = createSampler(VK_FILTER_LINEAR);
-    m_globalSamplers[SAMPLER_POINT_CLAMP] = createSampler(VK_FILTER_NEAREST);
+
+    VkSamplerCreateInfo clampInfo{};
+    clampInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    clampInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    clampInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    clampInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    clampInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    clampInfo.maxLod = VK_LOD_CLAMP_NONE;
+
+    VkSamplerCreateInfo linearClamp = clampInfo;
+    linearClamp.magFilter = linearClamp.minFilter = VK_FILTER_LINEAR;
+    m_globalSamplers[SAMPLER_LINEAR_CLAMP] = createSampler(linearClamp);
+
+    VkSamplerCreateInfo pointClamp = clampInfo;
+    pointClamp.magFilter = pointClamp.minFilter = VK_FILTER_NEAREST;
+    m_globalSamplers[SAMPLER_POINT_CLAMP] = createSampler(pointClamp);
+
+    // Same settings the per-texture material samplers used
+    VkSamplerCreateInfo linearRepeat = clampInfo;
+    linearRepeat.magFilter = linearRepeat.minFilter = VK_FILTER_LINEAR;
+    linearRepeat.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    linearRepeat.addressModeU = linearRepeat.addressModeV = linearRepeat.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    linearRepeat.anisotropyEnable = VK_TRUE;
+    linearRepeat.maxAnisotropy = g_renderer.GetMaxSamplerAnisotropy();
+    linearRepeat.mipLodBias = MaterialMipLodBias();
+    m_globalSamplers[SAMPLER_LINEAR_REPEAT] = createSampler(linearRepeat);
+
+    // Depth 0 is the far plane with reversed Z, so PCF taps past the edge never count as occluders
+    VkSamplerCreateInfo shadow = clampInfo;
+    shadow.magFilter = shadow.minFilter = VK_FILTER_LINEAR;
+    shadow.addressModeU = shadow.addressModeV = shadow.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    shadow.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
+    shadow.maxLod = 0.0f;
+    m_globalSamplers[SAMPLER_SHADOW] = createSampler(shadow);
 }
 
 TextureViewHandle VkTextureManager::CreateDepthLayerView(const Texture& texture, TexFormat format, u32 layer)

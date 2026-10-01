@@ -88,8 +88,8 @@ void main()
         vec2 offset_xy = vec2(x_axis_major ? 0.0 : bias, x_axis_major ? bias : 0.0);
         
         vec2 depths;
-        depths.x = textureLod(GlobalBindlessTextures[pc.depthTexIdx], read_xy * pc.invDepthTextureSize, 0.0).r;
-        depths.y = textureLod(GlobalBindlessTextures[pc.depthTexIdx], (read_xy + offset_xy) * pc.invDepthTextureSize, 0.0).r;
+        depths.x = SamplePointClamp(pc.depthTexIdx, read_xy * pc.invDepthTextureSize).r;
+        depths.y = SamplePointClamp(pc.depthTexIdx, (read_xy + offset_xy) * pc.invDepthTextureSize).r;
         
         depth_thickness_scale[i] = abs(FAR_DEPTH - depths.x);
         

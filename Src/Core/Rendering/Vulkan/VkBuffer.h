@@ -74,7 +74,8 @@ protected:
 class VertexBufferVulkan : public GenBufferVulkan
 {
 public:
-    VertexBufferVulkan(u64 size);
+    // hostVisible for small buffers filled with FillImmediate; scene geometry goes through the upload queue
+    VertexBufferVulkan(u64 size, bool hostVisible = false);
     VertexBufferVulkan()
     {
     }
@@ -83,7 +84,7 @@ public:
 class IndexBufferVulkan : public GenBufferVulkan
 {
 public:
-    IndexBufferVulkan(u64 size);
+    IndexBufferVulkan(u64 size, bool hostVisible = false);
     IndexBufferVulkan()
     {
     }

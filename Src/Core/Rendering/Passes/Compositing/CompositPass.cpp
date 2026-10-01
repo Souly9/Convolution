@@ -45,6 +45,10 @@ void CompositPass::BuildPipelines()
     info.hasDepth = false;
     m_mainPSO = PSO(
         ShaderCollection{&mainVert, &mainFrag}, PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions}, info);
+
+    info.attachmentInfos.colorAttachments = { GetDefaultFormatForRGResourceID(RGResourceID::GBufferPostAAColor) };
+    m_postAAPSO = PSO(
+        ShaderCollection{&mainVert, &mainFrag}, PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions}, info);
 }
 
 void CompositPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
@@ -58,7 +62,7 @@ void CompositPass::RebuildInternalData(const stltype::vector<PassMeshData>& mesh
     const auto meshHandle = previousFrameCtx.pResourceManager->GetMeshHandle(pFullScreenQuadMesh);
     cmdBuf.AddIndexedDrawCmd(
         meshHandle.indexCount, 1, meshHandle.indexBufferOffset, meshHandle.vertBufferOffset, 0);
-    RebuildPerObjectBuffer({0});
+    RebuildPerObjectBuffer({0}, m_currentFrameIdx);
     cmdBuf.FillCmds();
 }
 
@@ -76,7 +80,8 @@ void CompositPass::RenderWithGraph(const MainPassData& data, const FrameRenderer
     const auto ex = swapchainAttachment.pTexture ? swapchainAttachment.pTexture->GetInfo().extents : ctx.pCurrentSwapchainTexture->GetInfo().extents;
     const DirectX::XMINT2 extents(ex.x, ex.y);
 
-    BeginRenderingCmd cmdBegin{&m_mainPSO, {swapchainAttachment}};
+    PSO* pPSO = AA::Current().CompositeTarget() == RGResourceID::GBufferPostAAColor ? &m_postAAPSO : &m_mainPSO;
+    BeginRenderingCmd cmdBegin{pPSO, {swapchainAttachment}};
     cmdBegin.extents = extents;
     cmdBegin.viewport = RenderViewUtils::CreateViewportFromData(data.renderState.swapchainResolution, ctx.zNear, ctx.zFar);
 
@@ -89,7 +94,7 @@ void CompositPass::RenderWithGraph(const MainPassData& data, const FrameRenderer
     BinRenderDataCmd geomBufferCmd(sceneGeometryBuffers.GetVertexBuffer(), sceneGeometryBuffers.GetIndexBuffer());
 
     auto& cmdBuf = m_indirectCmdBuffers[execCtx.GetFrameIndex()];
-    GenericIndirectDrawCmd cmd{&m_mainPSO, cmdBuf};
+    GenericIndirectDrawCmd cmd{pPSO, cmdBuf};
     cmd.drawCount = cmdBuf.GetDrawCmdNum();
     cmd.descriptorSets = execCtx.GetDescriptors();
 

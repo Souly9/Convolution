@@ -30,6 +30,7 @@ void RenderGraph::Reset()
     m_nodes.clear();
     m_sortedNodeIndices.clear();
     m_barriersByNode.clear();
+    m_memoryBarriersByNode.clear();
     m_adjList.clear();
     m_predecessors.clear();
     m_inDegree.clear();
@@ -51,10 +52,13 @@ void RenderGraph::BuildAdjacencyGraph()
     {
         u32 lastWriter{UINT32_MAX};
         stltype::fixed_vector<u32, 16> readers;
+        ImageLayout layout{ImageLayout::UNDEFINED};
     };
 
     const u32 resourceCount = m_registry.GetResourceCount();
     stltype::vector<ResourceAccessTracker> resourceTrackers(resourceCount);
+    for (u32 handle = 0; handle < resourceCount; ++handle)
+        resourceTrackers[handle].layout = m_registry.GetInitialLayout(handle);
 
     auto AddEdge = [&](u32 u, u32 v) {
         if (u == v) return;
@@ -79,6 +83,19 @@ void RenderGraph::BuildAdjacencyGraph()
             if (tracker.lastWriter != UINT32_MAX && tracker.lastWriter != nodeIdx)
             {
                 AddEdge(tracker.lastWriter, nodeIdx);
+            }
+
+            // Changing the layout writes the image, so earlier readers have to finish first
+            if (read.layout != ImageLayout::UNDEFINED && read.layout != tracker.layout)
+            {
+                for (u32 readerIdx : tracker.readers)
+                {
+                    if (readerIdx != nodeIdx)
+                        AddEdge(readerIdx, nodeIdx);
+                }
+                tracker.readers.clear();
+                tracker.lastWriter = nodeIdx;
+                tracker.layout = read.layout;
             }
 
             if (stltype::find(tracker.readers.begin(), tracker.readers.end(), nodeIdx) == tracker.readers.end())
@@ -107,6 +124,14 @@ void RenderGraph::BuildAdjacencyGraph()
 
             tracker.readers.clear();
             tracker.lastWriter = nodeIdx;
+            if (write.layout != ImageLayout::UNDEFINED)
+                tracker.layout = write.layout;
+        }
+
+        for (const auto& overrideLayout : node.layoutOverrides)
+        {
+            if (overrideLayout.handle < resourceTrackers.size())
+                resourceTrackers[overrideLayout.handle].layout = overrideLayout.layout;
         }
     }
 }
@@ -258,17 +283,26 @@ void RenderGraph::TopologicalSort()
     }
 }
 
+namespace
+{
+u32 QueueSlot(QueueType queueType)
+{
+    return queueType == QueueType::Compute ? 1u : 0u;
+}
+} // namespace
+
 void RenderGraph::InsertBarriers()
 {
     ScopedZone("RenderGraph::InsertBarriers");
     m_barriersByNode.clear();
     m_barriersByNode.resize(m_nodes.size());
+    m_memoryBarriersByNode.clear();
+    m_memoryBarriersByNode.resize(m_nodes.size());
 
-    stltype::hash_map<RGResourceHandle, ResourceTrackingState> trackingMap;
-
+    stltype::vector<ResourceTrackingState> tracking(m_registry.GetResourceCount());
     for (u32 handle = 0; handle < m_registry.GetResourceCount(); ++handle)
     {
-        trackingMap[handle].currentLayout = m_registry.GetInitialLayout(handle);
+        tracking[handle].currentLayout = m_registry.GetInitialLayout(handle);
     }
 
     for (u32 nodeIdx : m_sortedNodeIndices)
@@ -276,68 +310,111 @@ void RenderGraph::InsertBarriers()
         auto& node = m_nodes[nodeIdx];
         if (node.IsCulled() || node.IsOpaque()) continue;
 
-        for (const auto& read : node.reads)
-        {
-            auto& state = trackingMap[read.handle];
+        const u32 queueSlot = QueueSlot(node.queueType);
+        MemoryBarrierDesc& memoryBarrier = m_memoryBarriersByNode[nodeIdx];
 
-            if (state.currentLayout != read.layout && read.layout != ImageLayout::UNDEFINED)
+        // Hazards are checked against the state before this node, so a node never waits on itself
+        auto addDependency = [&](const RGResourceAccess& access, bool isWrite)
+        {
+            auto& state = tracking[access.handle];
+            const bool hasWriter = state.lastWriterNodeIndex != UINT32_MAX;
+            const bool writerOnThisQueue = hasWriter && m_nodes[state.lastWriterNodeIndex].queueType == node.queueType;
+            const bool readersOnOtherQueue = state.readerStages[1u - queueSlot] != SyncStages::NONE;
+            const SyncStages dstStage = access.stage != SyncStages::NONE ? access.stage : SyncStages::ALL_COMMANDS;
+            // A second access to a handle in this node joins the transition the first one emitted
+            for (auto& b : m_barriersByNode[nodeIdx])
             {
-                u32 barrierTargetNode = nodeIdx;
-                if (state.lastWriterNodeIndex != UINT32_MAX &&
-                    m_nodes[state.lastWriterNodeIndex].queueType != node.queueType)
-                {
-                    barrierTargetNode = state.lastWriterNodeIndex;
-                }
-
-                BarrierCmdDesc b{};
-                b.nodeIndex = barrierTargetNode;
-                b.resourceHandle = read.handle;
-                b.oldLayout = state.currentLayout;
-                b.newLayout = read.layout;
-                b.srcStage = state.lastWriterStage != SyncStages::NONE ? state.lastWriterStage : SyncStages::TOP_OF_PIPE;
-                b.dstStage = read.stage != SyncStages::NONE ? read.stage : SyncStages::ALL_COMMANDS;
-                b.srcAccess = state.lastWriterAccess;
-                b.dstAccess = read.access;
-
-                m_barriersByNode[barrierTargetNode].push_back(b);
-                state.currentLayout = read.layout;
+                if (b.resourceHandle != access.handle)
+                    continue;
+                b.dstStage |= dstStage;
+                b.dstAccess |= access.access;
+                return;
             }
-        }
+            // A layout transition writes the image, so it waits for earlier readers like a write does
+            const bool needsTransition =
+                access.layout != ImageLayout::UNDEFINED && state.currentLayout != access.layout;
 
-        for (const auto& write : node.writes)
-        {
-            auto& state = trackingMap[write.handle];
+            // Work on other queues is ordered by the graph's semaphores, earlier frames by the frame-start barrier
+            SyncStages srcStage = SyncStages::NONE;
+            AccessFlags srcAccess = AccessFlags::NONE;
+            if (writerOnThisQueue)
+            {
+                srcStage |= state.lastWriterStage;
+                srcAccess |= state.lastWriterAccess;
+            }
+            if (isWrite || needsTransition)
+                srcStage |= state.readerStages[queueSlot];
 
-            if (state.currentLayout != write.layout && write.layout != ImageLayout::UNDEFINED)
+            // A same-queue transition already ordered later reads at the stages it waited for
+            const bool coveredByTransition = !isWrite && writerOnThisQueue &&
+                                             state.lastWriterAccess == AccessFlags::NONE &&
+                                             (dstStage & ~state.lastWriterStage) == SyncStages::NONE &&
+                                             (access.access & ~state.transitionAccess) == AccessFlags::NONE;
+            if (needsTransition)
             {
                 BarrierCmdDesc b{};
                 b.nodeIndex = nodeIdx;
-                b.resourceHandle = write.handle;
+                b.resourceHandle = access.handle;
                 b.oldLayout = state.currentLayout;
-                b.newLayout = write.layout;
-                b.srcStage = state.lastWriterStage != SyncStages::NONE ? state.lastWriterStage : SyncStages::TOP_OF_PIPE;
-                b.dstStage = write.stage != SyncStages::NONE ? write.stage : SyncStages::ALL_COMMANDS;
-                b.srcAccess = state.lastWriterAccess;
-                b.dstAccess = write.access;
-
+                b.newLayout = access.layout;
+                // ALL_COMMANDS chains the transition after semaphore waits and the frame-start barrier
+                const bool onlyThisQueue = writerOnThisQueue && !readersOnOtherQueue;
+                b.srcStage = onlyThisQueue ? srcStage : SyncStages::ALL_COMMANDS;
+                b.srcAccess = srcAccess;
+                b.dstStage = dstStage;
+                b.dstAccess = access.access;
                 m_barriersByNode[nodeIdx].push_back(b);
-                state.currentLayout = write.layout;
+                state.currentLayout = access.layout;
             }
+            else if (srcStage != SyncStages::NONE && !coveredByTransition)
+            {
+                memoryBarrier.srcStage |= srcStage;
+                memoryBarrier.srcAccess |= srcAccess;
+                memoryBarrier.dstStage |= dstStage;
+                memoryBarrier.dstAccess |= access.access;
+            }
+        };
 
+        for (const auto& read : node.reads)
+            addDependency(read, false);
+        for (const auto& write : node.writes)
+            addDependency(write, true);
+
+        // A layout transition acts as the last write; written handles are overwritten below
+        for (const auto& b : m_barriersByNode[nodeIdx])
+        {
+            auto& state = tracking[b.resourceHandle];
             state.lastWriterNodeIndex = nodeIdx;
-            state.lastWriterStage = write.stage;
+            state.lastWriterStage = b.dstStage;
+            state.lastWriterAccess = AccessFlags::NONE;
+            state.transitionAccess = b.dstAccess;
+            state.readerStages[0] = SyncStages::NONE;
+            state.readerStages[1] = SyncStages::NONE;
+        }
+        for (const auto& read : node.reads)
+        {
+            tracking[read.handle].readerStages[queueSlot] |=
+                read.stage != SyncStages::NONE ? read.stage : SyncStages::ALL_COMMANDS;
+        }
+        for (const auto& write : node.writes)
+        {
+            auto& state = tracking[write.handle];
+            state.lastWriterNodeIndex = nodeIdx;
+            state.lastWriterStage = write.stage != SyncStages::NONE ? write.stage : SyncStages::ALL_COMMANDS;
             state.lastWriterAccess = write.access;
+            state.readerStages[0] = SyncStages::NONE;
+            state.readerStages[1] = SyncStages::NONE;
         }
 
         for (const auto& overrideLayout : node.layoutOverrides)
         {
-            trackingMap[overrideLayout.handle].currentLayout = overrideLayout.layout;
+            tracking[overrideLayout.handle].currentLayout = overrideLayout.layout;
         }
     }
 
-    for (const auto& pair : trackingMap)
+    for (u32 handle = 0; handle < static_cast<u32>(tracking.size()); ++handle)
     {
-        m_registry.SetResourceLayout(pair.first, pair.second.currentLayout);
+        m_registry.SetResourceLayout(handle, tracking[handle].currentLayout);
     }
 }
 
@@ -501,6 +578,12 @@ void RenderGraph::ExecuteNode(u32 nodeIdx, CommandBuffer* pCmdBuffer, const Rend
         }
     }
 
+    if (m_memoryBarriersByNode[nodeIdx].srcStage != SyncStages::NONE)
+    {
+        const auto& mb = m_memoryBarriersByNode[nodeIdx];
+        pCmdBuffer->RecordCommand(GlobalBarrierCmd(mb.srcStage, mb.dstStage, mb.srcAccess, mb.dstAccess));
+    }
+
     stltype::vector<DescriptorSet::Ptr> resolvedDescriptors;
     if (node.contextResolver)
     {
@@ -532,10 +615,12 @@ void RenderGraph::EmitSwapchainInit(CommandBuffer* pCmdBuffer, Texture* pSwapcha
         ImageLayoutTransitionCmd swapchainInit(pSwapchainTexture);
         swapchainInit.oldLayout = ImageLayout::UNDEFINED;
         swapchainInit.newLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
-        swapchainInit.srcStage = SyncStages::TOP_OF_PIPE;
+        // Same stage as the acquire semaphore wait, so the transition happens after the image is released
+        swapchainInit.srcStage = SyncStages::COLOR_ATTACHMENT_OUTPUT;
         swapchainInit.dstStage = SyncStages::COLOR_ATTACHMENT_OUTPUT;
         swapchainInit.srcAccessMask = AccessFlags::NONE;
-        swapchainInit.dstAccessMask = AccessFlags::COLOR_ATTACHMENT_WRITE;
+        // Passes that load the swapchain read it too
+        swapchainInit.dstAccessMask = AccessFlags::COLOR_ATTACHMENT_READ | AccessFlags::COLOR_ATTACHMENT_WRITE;
         pCmdBuffer->RecordCommand(swapchainInit);
     }
 }
@@ -725,14 +810,22 @@ void RenderGraph::Execute(const RenderPasses::MainPassData& data,
             }
         }
 
+        // The graph tracks hazards within a frame; this orders the frame after earlier work on the same queue only,
+        // cross-queue reuse from the last frame relies on the semaphore chain through that frame's batches
+        const GlobalBarrierCmd frameStartBarrier(SyncStages::ALL_COMMANDS,
+                                                 SyncStages::ALL_COMMANDS,
+                                                 AccessFlags::MEMORY_WRITE,
+                                                 AccessFlags::MEMORY_READ | AccessFlags::MEMORY_WRITE);
         if (batch.queueType == QueueType::Graphics && isFirstGraphicsBatch)
         {
             isFirstGraphicsBatch = false;
+            pCmdBuffer->RecordCommand(frameStartBarrier);
             EmitSwapchainInit(pCmdBuffer, ctx.pCurrentSwapchainTexture, pImageAvailableSemaphore);
         }
         else if (batch.queueType == QueueType::Compute && isFirstComputeBatch)
         {
             isFirstComputeBatch = false;
+            pCmdBuffer->RecordCommand(frameStartBarrier);
             // Compute runs on another queue, so the frame's uploads are not ordered before it by the barriers
             auto& queueHandler = g_renderer.GetQueueHandler();
             if (queueHandler.GetLastUploadSignalValue() != 0)

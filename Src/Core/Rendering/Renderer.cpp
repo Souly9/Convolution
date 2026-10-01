@@ -61,7 +61,6 @@ u32 Renderer::GetBindlessCapacity(Bindless::BindlessType type) const
         case Bindless::BindlessType::GlobalTextures:
         case Bindless::BindlessType::GlobalArrayTextures:
         case Bindless::BindlessType::GlobalImages:
-        case Bindless::BindlessType::GlobalSampledTextures:
             return MAX_BINDLESS_TEXTURES;
         case Bindless::BindlessType::GlobalSamplers:
             return GLOBAL_SAMPLER_COUNT;
@@ -76,10 +75,10 @@ u32 Renderer::GetBindlessCapacity(Bindless::BindlessType type) const
 void Renderer::ValidateBindlessBudget() const
 {
     using Bindless::BindlessType;
-    // Set 0 holds two combined image sampler arrays (textures, array textures) plus the global samplers
+    // Set 0 holds two texture-only arrays (textures, array textures) plus the small global sampler table
     const u32 textureCount = GetBindlessCapacity(BindlessType::GlobalTextures);
-    const u32 samplersPerStage = 2 * textureCount + GetBindlessCapacity(BindlessType::GlobalSamplers);
-    const u32 sampledImagesPerStage = 3 * textureCount;
+    const u32 samplersPerStage = GetBindlessCapacity(BindlessType::GlobalSamplers);
+    const u32 sampledImagesPerStage = textureCount + GetBindlessCapacity(BindlessType::GlobalArrayTextures);
     const u32 storageImagesPerStage = GetBindlessCapacity(BindlessType::GlobalImages);
 
     // Over-subscription is only reported; clamping would change the shader-visible layout

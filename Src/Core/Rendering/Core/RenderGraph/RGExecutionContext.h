@@ -26,6 +26,11 @@ struct RGExecutionContext
         return pFrameCtx ? pFrameCtx->currentFrame : 0;
     }
 
+    u64 GetFrameCounter() const
+    {
+        return pFrameCtx ? pFrameCtx->frameCounter : 0;
+    }
+
     f32 GetZNear() const
     {
         return pFrameCtx ? pFrameCtx->zNear : 0.1f;

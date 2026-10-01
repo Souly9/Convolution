@@ -29,5 +29,7 @@ public:
 
 protected:
     PSO m_mainPSO;
+    // Same shaders for the HDR target SMAA reads; pipeline and attachment formats must match
+    PSO m_postAAPSO;
 };
 } // namespace RenderPasses

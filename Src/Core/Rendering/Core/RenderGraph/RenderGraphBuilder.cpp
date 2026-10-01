@@ -46,7 +46,9 @@ RGResourceHandle RenderGraphBuilder::WriteColorAttachment(RGResourceHandle handl
     RGResourceAccess w{};
     w.handle = handle;
     w.stage = SyncStages::COLOR_ATTACHMENT_OUTPUT;
-    w.access = AccessFlags::COLOR_ATTACHMENT_WRITE;
+    // A load op reads the previous contents
+    w.access = loadOp == LoadOp::LOAD ? AccessFlags::COLOR_ATTACHMENT_READ | AccessFlags::COLOR_ATTACHMENT_WRITE
+                                      : AccessFlags::COLOR_ATTACHMENT_WRITE;
     w.layout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
     m_node.writes.push_back(w);
     return handle;
@@ -58,7 +60,8 @@ RGResourceHandle RenderGraphBuilder::WriteDepthAttachment(RGResourceHandle handl
     RGResourceAccess w{};
     w.handle = handle;
     w.stage = SyncStages::EARLY_FRAGMENT_TESTS | SyncStages::LATE_FRAGMENT_TESTS;
-    w.access = AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE;
+    // The depth test reads too
+    w.access = AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ | AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE;
     w.layout = ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     m_node.writes.push_back(w);
     return handle;
@@ -163,7 +166,8 @@ RGResourceHandle RenderGraphBuilder::ReadDepth(RGResourceID id, SyncStages stage
     spec.sizeClass = RGSizeClass::RenderResolution;
     spec.usage = Usage::DepthAttachment | Usage::Sampled;
     RGResourceHandle handle = m_registry.DeclareResource(spec);
-    ReadTexture(handle, stage, AccessFlags::SHADER_READ, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+    // Depth testing against a read-only attachment
+    ReadTexture(handle, stage, AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
     return handle;
 }
 

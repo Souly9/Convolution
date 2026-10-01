@@ -13,6 +13,9 @@ struct MainPassData;
 struct FrameRendererContext;
 }
 
+// Format the graph allocates an engine resource with
+TexFormat GetDefaultFormatForRGResourceID(RGResourceID id);
+
 class RGResourceRegistry
 {
 public:

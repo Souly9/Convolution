@@ -7,7 +7,7 @@ enum class RGResourceID : u32
     MainDepth,
     GBufferAlbedo,
     GBufferNormal,
-    GBufferUVMat,
+    GBufferMaterial,
     GBufferDebug,
     GBufferVelocity,
     GBufferThisFrameColor,
@@ -24,7 +24,10 @@ enum class RGResourceID : u32
     SMAABlend,
     DLSSExposure,
     Swapchain,
-    TileAssignmentBuffer,
+    // Clustered lighting buffers: light lists (+ uploaded lights), view-space lights and tiles, cluster AABBs
+    LightClusterBuffer,
+    ViewSpaceLightsBuffer,
+    ClusterGridBuffer,
     BloomMip0,
     BloomMip1,
     BloomMip2,
@@ -41,7 +44,7 @@ inline const char* ToString(RGResourceID id)
         case RGResourceID::MainDepth: return "MainDepth";
         case RGResourceID::GBufferAlbedo: return "GBufferAlbedo";
         case RGResourceID::GBufferNormal: return "GBufferNormal";
-        case RGResourceID::GBufferUVMat: return "GBufferUVMat";
+        case RGResourceID::GBufferMaterial: return "GBufferMaterial";
         case RGResourceID::GBufferDebug: return "GBufferDebug";
         case RGResourceID::GBufferVelocity: return "GBufferVelocity";
         case RGResourceID::GBufferThisFrameColor: return "GBufferThisFrameColor";
@@ -58,7 +61,9 @@ inline const char* ToString(RGResourceID id)
         case RGResourceID::SMAABlend: return "SMAABlend";
         case RGResourceID::DLSSExposure: return "DLSSExposure";
         case RGResourceID::Swapchain: return "Swapchain";
-        case RGResourceID::TileAssignmentBuffer: return "TileAssignmentBuffer";
+        case RGResourceID::LightClusterBuffer: return "LightClusterBuffer";
+        case RGResourceID::ViewSpaceLightsBuffer: return "ViewSpaceLightsBuffer";
+        case RGResourceID::ClusterGridBuffer: return "ClusterGridBuffer";
         case RGResourceID::BloomMip0: return "BloomMip0";
         case RGResourceID::BloomMip1: return "BloomMip1";
         case RGResourceID::BloomMip2: return "BloomMip2";

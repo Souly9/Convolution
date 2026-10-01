@@ -77,7 +77,7 @@ void CSMPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
         instanceDataIndices.emplace_back(mesh.meshData.instanceDataIdx);
         ++instanceOffset;
     }
-    RebuildPerObjectBuffer(instanceDataIndices);
+    RebuildPerObjectBuffer(instanceDataIndices, m_currentFrameIdx);
     cmdBuf.FillCmds();
 }
 
@@ -88,7 +88,6 @@ void CSMPass::RenderWithGraph(const MainPassData& data, const FrameRendererConte
     CommandBuffer* pCmdBuffer = execCtx.pCmdBuffer;
     auto& sceneGeometryBuffers = data.pResourceManager->GetSceneGeometryBuffers();
     const auto currentFrame = execCtx.GetFrameIndex();
-    UpdateContextForFrame(currentFrame);
     const auto& passCtx = m_perObjectFrameContexts[currentFrame];
 
     RenderAttachmentInfo depthAttachment = execCtx.GetDepthAttachment(RGResourceID::CSMShadowMap, LoadOp::CLEAR, StoreOp::STORE);
@@ -228,7 +227,12 @@ void CSMPass::ComputeLightViewProjMatrices(u32 cascades,
             center += frustumCornersWS[j];
         center *= (1.0f / 8.0f);
 
-        const auto radius = (frustumCornersWS[0] - frustumCornersWS[6]).Length() * 0.5f;
+        // Bounding sphere around the centroid; the far corners sit further out than half a diagonal
+        f32 radius = 0.0f;
+        for (u32 j = 0; j < 8; j++)
+            radius = stltype::max(radius, (frustumCornersWS[j] - center).Length());
+        // Quantized so the texel snapping below stays stable while the camera rotates
+        radius = mathstl::ceil(radius * 16.0f) / 16.0f;
         mathstl::Vector3 eye = -(lightDirection);
         mathstl::Matrix lightView = mathstl::Matrix::CreateLookAt(mathstl::Vector3(0, 0, 0), eye, up);
 

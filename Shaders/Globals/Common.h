@@ -17,13 +17,14 @@
 #define GlobalBindlessTextureBufferSlot      1
 #define GlobalBindlessArrayTextureBufferSlot 2
 #define GlobalBindlessImageBufferSlot        3
-#define GlobalBindlessSampledTextureSlot     4
 #define GlobalSamplerSlot                    5
 
-// Fixed samplers in GlobalSamplers, shaders pick filtering instead of the texture
-#define SAMPLER_LINEAR_CLAMP 0
-#define SAMPLER_POINT_CLAMP  1
-#define GLOBAL_SAMPLER_COUNT 2
+// Global sampler table, the bindless arrays hold textures only
+#define SAMPLER_LINEAR_CLAMP  0
+#define SAMPLER_POINT_CLAMP   1
+#define SAMPLER_LINEAR_REPEAT 2 // Trilinear + anisotropic, material textures and the skybox
+#define SAMPLER_SHADOW        3 // Linear, clamp to a black border (the far plane with reversed Z)
+#define GLOBAL_SAMPLER_COUNT  4
 #define GlobalTileArraySSBOSlot              1
 #define GlobalLightDataUBOSlot               2
 #define GlobalViewSpaceLightsSSBOSlot        3

@@ -129,7 +129,7 @@ void SMAAPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
     const auto pFullScreenQuadMesh = g_engine.GetMeshManager().GetPrimitiveMesh(MeshManager::PrimitiveType::Quad);
     const auto meshHandle = previousFrameCtx.pResourceManager->GetMeshHandle(pFullScreenQuadMesh);
     cmdBuf.AddIndexedDrawCmd(meshHandle.indexCount, 1, meshHandle.indexBufferOffset, meshHandle.vertBufferOffset, 0);
-    RebuildPerObjectBuffer({0});
+    RebuildPerObjectBuffer({0}, m_currentFrameIdx);
     cmdBuf.FillCmds();
 }
 
@@ -140,8 +140,20 @@ void SMAAPass::RenderWithGraph(const MainPassData& data,
     ScopedZone("SMAAPass::Render");
     StartRenderPassProfilingScope(execCtx.pCmdBuffer);
 
-    UpdateContextForFrame(ctx.currentFrame);
-    auto& cmdBuf = m_indirectCmdBuffers[m_currentFrameIdx];
+    auto& cmdBuf = m_indirectCmdBuffers[ctx.currentFrame];
+
+    // Edges and blend weights are sampled by the next sub-pass; the graph assumes both end in shader read
+    auto transitionToShaderRead = [&execCtx](Texture* pTexture)
+    {
+        ImageLayoutTransitionCmd cmd(pTexture);
+        cmd.oldLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
+        cmd.newLayout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
+        cmd.srcStage = SyncStages::COLOR_ATTACHMENT_OUTPUT;
+        cmd.dstStage = SyncStages::FRAGMENT_SHADER;
+        cmd.srcAccessMask = AccessFlags::COLOR_ATTACHMENT_WRITE;
+        cmd.dstAccessMask = AccessFlags::SHADER_READ;
+        execCtx.pCmdBuffer->RecordCommand(cmd);
+    };
 
     const auto extentsXY = data.renderState.swapchainResolution;
     const DirectX::XMINT2 extents(extentsXY.x, extentsXY.y);
@@ -149,6 +161,9 @@ void SMAAPass::RenderWithGraph(const MainPassData& data,
     auto& sceneGeometryBuffers = data.pResourceManager->GetSceneGeometryBuffers();
     if (!sceneGeometryBuffers.GetVertexBuffer().IsCreated() || !sceneGeometryBuffers.GetIndexBuffer().IsCreated())
     {
+        transitionToShaderRead(execCtx.GetTexture(RGResourceID::SMAAEdges));
+        transitionToShaderRead(execCtx.GetTexture(RGResourceID::SMAABlend));
+        EndRenderPassProfilingScope(execCtx.pCmdBuffer);
         return;
     }
 
@@ -178,6 +193,7 @@ void SMAAPass::RenderWithGraph(const MainPassData& data,
             execCtx.pCmdBuffer->RecordCommand(geomBufferCmd);
         execCtx.pCmdBuffer->RecordCommand(cmdEdges);
         execCtx.pCmdBuffer->RecordCommand(EndRenderingCmd{});
+        transitionToShaderRead(edgeAttachment.pTexture);
     }
 
     // 2. Blending Weight Calculation
@@ -200,6 +216,7 @@ void SMAAPass::RenderWithGraph(const MainPassData& data,
             execCtx.pCmdBuffer->RecordCommand(geomBufferCmd);
         execCtx.pCmdBuffer->RecordCommand(cmdBlend);
         execCtx.pCmdBuffer->RecordCommand(EndRenderingCmd{});
+        transitionToShaderRead(blendAttachment.pTexture);
     }
 
     // 3. Neighborhood Blending
@@ -251,6 +268,9 @@ void SMAAPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
 
     builder.WriteColorAttachment(smaaEdges, LoadOp::CLEAR, StoreOp::STORE);
     builder.WriteColorAttachment(smaaBlend, LoadOp::CLEAR, StoreOp::STORE);
+    // RenderWithGraph moves both to shader read between its sub-passes
+    builder.AssumeOutputLayout(smaaEdges, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    builder.AssumeOutputLayout(smaaBlend, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
     builder.WriteColorAttachment(RGResourceID::Swapchain, LoadOp::LOAD, StoreOp::STORE);
     builder.SetHasSideEffects();
 }

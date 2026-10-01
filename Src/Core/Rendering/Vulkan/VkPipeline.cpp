@@ -298,7 +298,8 @@ VkPipelineRasterizationStateCreateInfo PipelineVulkanBase::CreateRasterizerInfo(
     rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
     rasterizer.depthClampEnable = info.enableDepthClamp;
     rasterizer.rasterizerDiscardEnable = info.discardEverythingBeforeRasterizer;
-    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    // Line mode relies on fillModeNonSolid, which device creation enables along with every supported feature
+    rasterizer.polygonMode = Conv(info.polyMode);
     rasterizer.lineWidth = info.lineWidth;
     rasterizer.cullMode = Conv(info.cullmode);
     rasterizer.frontFace = Conv(info.frontMode);

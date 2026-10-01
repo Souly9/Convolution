@@ -39,7 +39,12 @@ void FrameTransitionRecorder::RecordTemporalResourceInitialLayouts(CommandBuffer
 
     Texture* pCSM = registry.GetShadowMap().pTexture;
     transitionInitialDepthTexture(pCmdBuffer, pCSM);
+    // Both copies of the ping-pong targets, the history one is sampled before anything writes it
+    transitionInitialDepthTexture(pCmdBuffer, registry.ResolveByID(RGResourceID::MainDepth));
+    transitionInitialDepthTexture(pCmdBuffer, registry.ResolveHistoryByID(RGResourceID::MainDepth));
     setRegistryInitialLayout(RGResourceID::MainDepth, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+    transitionInitialTexture(pCmdBuffer, registry.ResolveByID(RGResourceID::GBufferVelocity));
+    transitionInitialTexture(pCmdBuffer, registry.ResolveHistoryByID(RGResourceID::GBufferVelocity));
     setRegistryInitialLayout(RGResourceID::GBufferVelocity, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
     transitionInitialTexture(pCmdBuffer, registry.ResolveByID(RGResourceID::TemporalResolve));
