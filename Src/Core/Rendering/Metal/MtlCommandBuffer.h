@@ -16,10 +16,6 @@ public:
 
     void Bake();
 
-    CommandBufferStats& GetStats()
-    {
-        return m_stats;
-    }
 
     MTL::CommandBuffer* GetRef() const
     {
@@ -34,7 +30,6 @@ public:
         return m_pool;
     }
 
-    void BeginBuffer();
     void BeginBufferForSingleSubmit();
     void BeginRendering(BeginRenderingCmd& cmd);
     void BeginRendering(BeginRenderingBaseCmd& cmd);
@@ -52,22 +47,6 @@ public:
     const stltype::vector<RawSemaphoreHandle>& GetSignalSemaphores() const
     {
         return m_signalSemaphores;
-    }
-
-    void AddWaitSemaphores(const stltype::vector<Semaphore*>& semaphores)
-    {
-        for (auto sem : semaphores)
-        {
-            AddWaitSemaphore(sem);
-        }
-    }
-
-    void AddSignalSemaphores(const stltype::vector<Semaphore*>& semaphores)
-    {
-        for (auto sem : semaphores)
-        {
-            AddSignalSemaphore(sem);
-        }
     }
 
     // Encoded as encodeWait/encodeSignalEvent on the MTL::CommandBuffer
@@ -112,8 +91,6 @@ public:
     {
         return m_signalStages;
     }
-
-    virtual void NamingCallBack(const stltype::string& name) override;
 
 protected:
     stltype::vector<RawSemaphoreHandle> m_waitSemaphores;

@@ -20,7 +20,7 @@ public:
 
 protected:
     RenderPasses::PassManager* m_pPassManager;
-    bool m_renderDebugMeshes;
+    bool m_renderDebugMeshes{false};
     bool m_stateChanged{false};
     Material* m_pDebugMaterial{nullptr};
 };

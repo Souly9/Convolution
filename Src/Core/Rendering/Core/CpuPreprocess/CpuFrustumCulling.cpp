@@ -15,8 +15,7 @@ void CpuFrustumCulling::Execute(SharedResourceManager& resourceManager,
                                 bool isCullingEnabled,
                                 bool isCullingFrozen,
                                 const stltype::vector<DirectX::XMFLOAT4X4>& transforms,
-                                bool uploadSSBO,
-                                u32 frameIdx)
+                                bool uploadSSBO)
 {
     ScopedZone("CpuFrustumCulling::Execute");
 
@@ -101,7 +100,7 @@ void CpuFrustumCulling::Execute(SharedResourceManager& resourceManager,
 
     if (uploadSSBO)
     {
-        resourceManager.UploadInstanceDataSSBO(frameIdx);
+        resourceManager.UploadInstanceDataSSBO();
     }
 }
 } // namespace RenderingCore

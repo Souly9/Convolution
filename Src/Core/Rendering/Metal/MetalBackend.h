@@ -1,10 +1,10 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
-#include "Core/Rendering/Backend/RenderBackendBase.h"
+#include "Core/Rendering/Backend/BackendForwardDecls.h"
 #include "Core/Rendering/Core/AccelerationStructure.h"
+#include "Core/Rendering/LayerDefines.h"
 #include "Core/Rendering/Metal/MtlBackendAccess.h"
 #include "Core/Rendering/Metal/MtlBackendDefines.h"
-#include "Core/Rendering/LayerDefines.h"
 #include "Core/Rendering/Metal/MtlPipeline.h"
 #include "Core/Rendering/Metal/MtlTexture.h"
 

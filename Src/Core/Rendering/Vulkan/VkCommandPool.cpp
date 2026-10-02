@@ -21,16 +21,11 @@ void CommandPoolVulkan::NamingCallBack(const stltype::string& name)
 
     vkSetDebugUtilsObjectName(VkBackend::Device(), &nameInfo);
 }
-CommandPoolVulkan::CommandPoolVulkan(u32 graphicsFamilyIdx)
-    : CommandPoolVulkan(graphicsFamilyIdx, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT)
-{
-}
-
-CommandPoolVulkan::CommandPoolVulkan(u32 graphicsFamilyIdx, VkCommandPoolCreateFlagBits flags) : CommandPoolVulkan()
+CommandPoolVulkan::CommandPoolVulkan(u32 graphicsFamilyIdx) : CommandPoolVulkan()
 {
     VkCommandPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    poolInfo.flags = flags;
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
     poolInfo.queueFamilyIndex = graphicsFamilyIdx;
     m_queueFamilyIndex = graphicsFamilyIdx;
 

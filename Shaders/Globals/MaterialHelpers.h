@@ -108,6 +108,40 @@ FUNC_QUALIFIER SurfaceParameters BuildResolvedMaterialSurface(Material mat, vec3
     SurfaceParameters surface = GetMaterialFactorSurface(mat, materialAlbedo, roughness, metallic);
     return ApplyReflectanceDebug(surface, ubo.rtUseGlobalMaterialReflectance, ubo.rtGlobalMaterialReflectance);
 }
+
+FUNC_QUALIFIER vec2 SampleEquirectangular(vec3 d)
+{
+    float phi = atan(d.z, d.x);
+    float theta = acos(d.y);
+    vec2 uv = vec2((phi + PI) / (2.0 * PI), theta / PI);
+    return uv;
+}
+
+FUNC_QUALIFIER vec3 hdr_clamp_chroma(vec3 color, float maxValue)
+{
+    float peak = max(color.r, max(color.g, color.b));
+    return (peak > maxValue) ? color * (maxValue / peak) : color;
+}
+
+FUNC_QUALIFIER vec3 SampleSkybox(vec3 d)
+{
+    if (ubo.skyboxTextureIdx != 0u)
+    {
+        vec2 uv = SampleEquirectangular(normalize(d));
+        vec3 rawColor = texture(BindlessTexture2D(ubo.skyboxTextureIdx, SAMPLER_LINEAR_REPEAT), uv).rgb;
+
+        // Calibrate raw HDR values (e.g. from 4k skybox) to engine lighting space
+        vec3 scaledColor = rawColor * 0.05;
+
+        // Preserve color temperature and detail while clipping peak intensity for tonemapping safety
+        return hdr_clamp_chroma(scaledColor, 15.0);
+    }
+    // Fallback analytical sky
+    float dirY = normalize(d).y;
+    vec3 zenithColor = vec3(0.01, 0.05, 0.15);
+    vec3 horizonColor = vec3(0.4, 0.55, 0.7);
+    return mix(horizonColor, zenithColor, max(dirY, 0.0));
+}
 #endif
 
 #endif // SHADERS_MATERIAL_HELPERS_H

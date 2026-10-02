@@ -55,6 +55,56 @@ mathstl::Vector2 CalculateRenderResolution(const mathstl::Vector2& swapchainReso
     return {static_cast<f32>(stltype::max(1u, static_cast<u32>(swapchainResolution.x * scale))),
             static_cast<f32>(stltype::max(1u, static_cast<u32>(swapchainResolution.y * scale)))};
 }
+
+void RecordTemporalResourceInitialLayouts(CommandBuffer* pCmdBuffer, RGResourceRegistry& registry)
+{
+    auto transitionInitial = [pCmdBuffer](Texture* pTex, ImageLayout newLayout)
+    {
+        if (!pTex)
+            return;
+        ImageLayoutTransitionCmd cmd(pTex);
+        cmd.oldLayout = ImageLayout::UNDEFINED;
+        cmd.newLayout = newLayout;
+        TextureManager::SetLayoutBarrierMasks(cmd, ImageLayout::UNDEFINED, newLayout);
+        pCmdBuffer->RecordCommand(cmd);
+    };
+
+    transitionInitial(registry.GetShadowMap().pTexture, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+
+    static const RGResourceID ids[] = {RGResourceID::MainDepth,
+                                       RGResourceID::GBufferVelocity,
+                                       RGResourceID::TemporalResolve,
+                                       RGResourceID::TAAHistory,
+                                       RGResourceID::GBufferPostAAColor,
+                                       RGResourceID::ScreenSpaceShadows,
+                                       RGResourceID::BloomMip0,
+                                       RGResourceID::BloomMip1,
+                                       RGResourceID::BloomMip2,
+                                       RGResourceID::BloomMip3,
+                                       RGResourceID::BloomMip4,
+                                       RGResourceID::RTReflections,
+                                       RGResourceID::RTAOOutput,
+                                       RGResourceID::RTAccumulation,
+                                       RGResourceID::GBufferDebug,
+                                       // DLSSPass reads it even when DLSSExposurePass is off
+                                       RGResourceID::DLSSExposure};
+    for (const RGResourceID id : ids)
+    {
+        const RGResourceHandle h = registry.FindByID(id);
+        if (h == kInvalidRGHandle)
+            continue;
+        const ImageLayout layout = id == RGResourceID::MainDepth ? ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL
+                                                                 : ImageLayout::SHADER_READ_ONLY_OPTIMAL;
+        Texture* pTex = registry.Resolve(h);
+        Texture* pHist = registry.ResolveHistory(h);
+        transitionInitial(pTex, layout);
+        // Ping-pong history is sampled before anything writes it
+        if (pHist != pTex)
+            transitionInitial(pHist, layout);
+        registry.SetResourceLayout(h, layout);
+        registry.SetHistoryResourceLayout(h, layout);
+    }
+}
 } // namespace
 
 // Helper implementations to break up large functions
@@ -74,7 +124,9 @@ void PassManager::InitResourceManagerAndCallbacks()
     AddPass(stltype::make_unique<RenderPasses::CSMPass>());
     AddPass(stltype::make_unique<RenderPasses::DepthPrePass>());
     AddPass(stltype::make_unique<RenderPasses::StaticMainMeshPass>());
-    AddPass(stltype::make_unique<RenderPasses::DebugShapePass>());
+    auto pDebugShapePass = stltype::make_unique<RenderPasses::DebugShapePass>();
+    m_pDebugShapePass = pDebugShapePass.get();
+    AddPass(stltype::move(pDebugShapePass));
     AddPass(stltype::make_unique<RenderPasses::ScreenSpaceShadowPass>());
     AddPass(stltype::make_unique<RenderPasses::ClusterDebugPass>());
     AddPass(stltype::make_unique<RenderPasses::LightingPass>());
@@ -98,13 +150,12 @@ void PassManager::CreateUBOsAndMap()
 {
     m_frameResourceManager.Init();
     m_frameResourceManager.CreatePassObjectsAndLayouts();
-    m_frameResourceManager.CreateFrameRendererContexts(
-        m_imageAvailableSemaphores, m_imageAvailableFences, m_renderFinishedFences);
+    m_frameResourceManager.CreateFrameRendererContexts(m_imageAvailableSemaphores, m_imageAvailableFences);
 }
 
 void PassManager::InitPassesAndImGui()
 {
-    RecreateResizeDependentResources(g_renderer.GetSwapchainExtent(), true);
+    RecreateResizeDependentResources(g_renderer.GetSwapchainExtent());
 }
 
 bool PassManager::NeedsResizeDependentResourceRecreate(const mathstl::Vector2& swapchainResolution) const
@@ -118,23 +169,14 @@ bool PassManager::NeedsResizeDependentResourceRecreate(const mathstl::Vector2& s
            desiredRenderResolution.y != m_renderState.renderResolution.y;
 }
 
-void PassManager::RecreateResizeDependentResources(const mathstl::Vector2& swapchainResolution, bool swapchainRecreated)
+void PassManager::RecreateResizeDependentResources(const mathstl::Vector2& swapchainResolution)
 {
     ScopedZone("PassManager::RecreateResizeDependentResources");
-    (void)swapchainRecreated;
 
     const auto& renderState = g_engine.GetApplicationState().GetCurrentApplicationState().renderState;
     m_renderState.swapchainResolution = swapchainResolution;
     m_renderState.renderResolution = CalculateRenderResolution(swapchainResolution, renderState);
     m_renderState.recreatedThisFrame = true;
-    g_engine.GetApplicationState().RegisterUpdateFunction(
-        [renderResolution = m_renderState.renderResolution,
-         swapchainResolution = m_renderState.swapchainResolution](ApplicationState& state)
-        {
-            state.renderState.renderResolution = renderResolution;
-            state.renderState.swapchainResolution = swapchainResolution;
-            state.renderState.renderTargetsRecreatedThisFrame = true;
-        });
 
     // Recreate Shadow Maps
     {
@@ -156,7 +198,7 @@ void PassManager::RecreateResizeDependentResources(const mathstl::Vector2& swapc
         CommandBuffer* pInitCmdBuffer = m_graphicsFrameCtx.cmdPool.CreateCommandBuffer(CommandBufferCreateInfo{});
         pInitCmdBuffer->SetName("One-time Resize Layout Setup Command Buffer");
 
-        m_transitionRecorder.RecordTemporalResourceInitialLayouts(pInitCmdBuffer, m_renderGraph.GetRegistry());
+        RecordTemporalResourceInitialLayouts(pInitCmdBuffer, m_renderGraph.GetRegistry());
 
         pInitCmdBuffer->Bake();
         g_renderer.GetQueueHandler().SubmitCommandBufferThisFrame({pInitCmdBuffer, QueueType::Graphics, 0});
@@ -203,16 +245,6 @@ void PassManager::RecreateResizeDependentResources(const mathstl::Vector2& swapc
     m_imguiRegistry.RegisterRTTextures(m_renderGraph.GetRegistry());
 }
 
-bool PassManager::AnyPassWantsToRender() const
-{
-    for (const auto& pass : m_passes)
-    {
-        if (pass->WantsToRender())
-            return true;
-    }
-    return false;
-}
-
 void PassManager::PrepareMainPassDataForFrame(MainPassData& mainPassData, FrameRendererContext& ctx, u32 frameIdx)
 {
     ScopedZone("PassManager::PrepareMainPassDataForFrame");
@@ -243,62 +275,31 @@ void PassManager::PrepareMainPassDataForFrame(MainPassData& mainPassData, FrameR
 void PassManager::InitFrameContexts()
 {
     const auto& indices = g_renderer.GetQueueFamilyIndices();
-
-    if (!m_graphicsFrameCtx.initialized)
-    {
-        m_graphicsFrameCtx.cmdPool = CommandPool::Create(indices.graphicsFamily.value());
-        m_graphicsFrameCtx.cmdPool.SetName("Graphics Command Pool");
-        for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
-        {
-            const auto numberString = stltype::to_string(i);
-            m_graphicsFrameCtx.cmdBuffers[i] =
-                m_graphicsFrameCtx.cmdPool.CreateCommandBuffer(CommandBufferCreateInfo{});
-            m_graphicsFrameCtx.cmdBuffers[i]->SetName("Main Graphics Command Buffer " + numberString);
-        }
-        m_graphicsFrameCtx.initialized = true;
-    }
-
-    if (!m_computeFrameCtx.initialized)
-    {
-        m_computeFrameCtx.cmdPool = CommandPool::Create(indices.computeFamily.value());
-        m_computeFrameCtx.cmdPool.SetName("Compute Command Pool");
-        for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
-        {
-            const auto numberString = stltype::to_string(i);
-            m_computeFrameCtx.cmdBuffers[i] = m_computeFrameCtx.cmdPool.CreateCommandBuffer(CommandBufferCreateInfo{});
-            m_computeFrameCtx.cmdBuffers[i]->SetName("Async Compute Command Buffer " + numberString);
-        }
-        m_computeFrameCtx.initialized = true;
-    }
+    m_graphicsFrameCtx.cmdPool = CommandPool::Create(indices.graphicsFamily.value());
+    m_graphicsFrameCtx.cmdPool.SetName("Graphics Command Pool");
+    m_computeFrameCtx.cmdPool = CommandPool::Create(indices.computeFamily.value());
+    m_computeFrameCtx.cmdPool.SetName("Compute Command Pool");
 }
 
 void PassManager::SetupRenderGraph(const MainPassData& mainPassData, FrameRendererContext& ctx)
 {
     ScopedZone("PassManager::SetupRenderGraph");
 
-    CommandBuffer* pMainGraphicsWorkBuffer = m_graphicsFrameCtx.cmdBuffers[ctx.currentFrame];
-    CommandBuffer* pComputeCmdBuffer = m_computeFrameCtx.cmdBuffers[ctx.currentFrame];
-
-    pMainGraphicsWorkBuffer->ResetBuffer();
-    pComputeCmdBuffer->ResetBuffer();
-
-    pMainGraphicsWorkBuffer->SetFrameIdx(ctx.currentFrame);
-    pComputeCmdBuffer->SetFrameIdx(ctx.currentFrame);
-
     m_renderGraph.BeginFrame(
         ctx.currentFrame, mainPassData.renderState.renderResolution, mainPassData.renderState.swapchainResolution);
-    m_renderGraph.SetRTSceneAvailable(mainPassData.pRTSceneManager != nullptr &&
-                                      mainPassData.pRTSceneManager->HasReadyTLAS(ctx.currentFrame));
 
     // The graph's first batch moves the swapchain image to color attachment before any pass runs
     if (ctx.pCurrentSwapchainTexture)
         m_renderGraph.GetRegistry().ImportTexture(
-            RGResourceID::Swapchain, ctx.pCurrentSwapchainTexture, ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+            RGResourceID::Swapchain, ctx.pCurrentSwapchainTexture, 0, ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
 
     if (Texture* pShadowMap = m_renderGraph.GetRegistry().GetShadowMap().pTexture)
     {
         // Recorded transitions keep the texture's layout current; a freshly recreated map is still undefined
-        m_renderGraph.GetRegistry().ImportTexture(RGResourceID::CSMShadowMap, pShadowMap, pShadowMap->GetInfo().layout);
+        m_renderGraph.GetRegistry().ImportTexture(RGResourceID::CSMShadowMap,
+                                                  pShadowMap,
+                                                  m_renderGraph.GetRegistry().GetShadowMap().bindlessHandle,
+                                                  pShadowMap->GetInfo().layout);
     }
 
     for (auto& pPass : m_passes)
@@ -341,14 +342,14 @@ void PassManager::CompileAndExecuteRenderGraph(const MainPassData& mainPassData,
     graphicsCmds.reserve(graphicsBatchCount);
     for (u32 i = 0; i < graphicsBatchCount; ++i)
     {
-        graphicsCmds.push_back(GetGraphicsCommandBuffer(ctx.currentFrame, i));
+        graphicsCmds.push_back(GetBatchCommandBuffer(QueueType::Graphics, ctx.currentFrame, i));
     }
 
     stltype::vector<CommandBuffer*> computeCmds;
     computeCmds.reserve(computeBatchCount);
     for (u32 i = 0; i < computeBatchCount; ++i)
     {
-        computeCmds.push_back(GetComputeCommandBuffer(ctx.currentFrame, i));
+        computeCmds.push_back(GetBatchCommandBuffer(QueueType::Compute, ctx.currentFrame, i));
     }
 
     m_gpuTimingQuery.ClearRunFlags(ctx.currentFrame);
@@ -356,45 +357,22 @@ void PassManager::CompileAndExecuteRenderGraph(const MainPassData& mainPassData,
     g_renderer.GetQueueHandler().FlushGraphicsComputeBuffers();
 }
 
-void PassManager::RenderAllPassGroups(const MainPassData& mainPassData,
-                                      FrameRendererContext& ctx,
-                                      Semaphore& imageAvailableSemaphore)
+CommandBuffer* PassManager::GetBatchCommandBuffer(QueueType queueType, u32 frameIdx, u32 batchIdx)
 {
-    SetupRenderGraph(mainPassData, ctx);
-    CompileAndExecuteRenderGraph(mainPassData, ctx, imageAvailableSemaphore);
-}
-
-CommandBuffer* PassManager::GetGraphicsCommandBuffer(u32 frameIdx, u32 batchIdx)
-{
-    auto& list = m_graphicsFrameCtx.batchCmdBuffers[frameIdx];
+    const bool isGraphics = queueType == QueueType::Graphics;
+    QueueFrameContext& frameCtx = isGraphics ? m_graphicsFrameCtx : m_computeFrameCtx;
+    auto& list = frameCtx.batchCmdBuffers[frameIdx];
     while (list.size() <= batchIdx)
     {
-        CommandBuffer* pCmd = m_graphicsFrameCtx.cmdPool.CreateCommandBuffer(CommandBufferCreateInfo{});
-        pCmd->SetName("Graphics Batch CB " + stltype::to_string(list.size()));
-        pCmd->SetQueueType(QueueType::Graphics);
+        CommandBuffer* pCmd = frameCtx.cmdPool.CreateCommandBuffer(CommandBufferCreateInfo{});
+        pCmd->SetName((isGraphics ? "Graphics Batch CB " : "Async Compute Batch CB ") +
+                      stltype::to_string(list.size()));
+        pCmd->SetQueueType(queueType);
         list.push_back(pCmd);
     }
     CommandBuffer* pBuf = list[batchIdx];
     pBuf->ResetBuffer();
     pBuf->SetFrameIdx(frameIdx);
-    pBuf->SetQueueType(QueueType::Graphics);
-    return pBuf;
-}
-
-CommandBuffer* PassManager::GetComputeCommandBuffer(u32 frameIdx, u32 batchIdx)
-{
-    auto& list = m_computeFrameCtx.batchCmdBuffers[frameIdx];
-    while (list.size() <= batchIdx)
-    {
-        CommandBuffer* pCmd = m_computeFrameCtx.cmdPool.CreateCommandBuffer(CommandBufferCreateInfo{});
-        pCmd->SetName("Async Compute Batch CB " + stltype::to_string(list.size()));
-        pCmd->SetQueueType(QueueType::Compute);
-        list.push_back(pCmd);
-    }
-    CommandBuffer* pBuf = list[batchIdx];
-    pBuf->ResetBuffer();
-    pBuf->SetFrameIdx(frameIdx);
-    pBuf->SetQueueType(QueueType::Compute);
     return pBuf;
 }
 
@@ -433,6 +411,9 @@ void PassManager::UpdateGBufferUBO(u32 frameIdx)
     gbufferUBO.compositeInputIdx = reg.ResolveBindlessByID(AA::CompositeInput(appRenderState, AA::Current()));
     gbufferUBO.rtDebugViewIdx = reg.ResolveBindlessByID(RGResourceID::GBufferDebug);
     gbufferUBO.bloomResultIdx = appRenderState.bloom.enabled ? reg.ResolveBindlessByID(RGResourceID::BloomMip0) : 0;
+    // Same check SetupRenderGraph used to add the pass this frame
+    gbufferUBO.debugOverlayIdx =
+        m_pDebugShapePass->WantsToRender() ? reg.ResolveBindlessByID(RGResourceID::DebugOverlay) : 0;
 
     m_frameResourceManager.GetGBufferPostProcessUBO().Write(frameIdx, gbufferUBO);
 }
@@ -449,8 +430,9 @@ void PassManager::Init()
         pPass->SetTimingQuery(&m_gpuTimingQuery);
     }
 
-    if (auto* pTracy = g_renderer.TryGetTracyGPUManager(); pTracy && !pTracy->IsEnabled())
-        pTracy->Init(m_graphicsFrameCtx.cmdBuffers[0]);
+    // One Tracy context per queue; the setup buffers are reset again before their first frame
+    g_renderer.GetTracyGPUManager().Init(GetBatchCommandBuffer(QueueType::Graphics, 0, 0));
+    g_renderer.GetTracyGPUManager().Init(GetBatchCommandBuffer(QueueType::Compute, 0, 0));
 }
 
 void PassManager::ExecutePasses(u32 frameIdx)
@@ -461,7 +443,6 @@ void PassManager::ExecutePasses(u32 frameIdx)
     auto& mainPassData = m_mainPassData.at(m_currentSwapChainIdx);
     auto& imageAvailableSemaphore = m_imageAvailableSemaphores.at(frameIdx);
 
-    ctx.imageIdx = m_currentSwapChainIdx;
     ctx.currentFrame = frameIdx;
     ctx.pCurrentSwapchainTexture = Texture::Cast(&g_renderer.GetTextureManager().GetSwapChainTextures().at(m_currentSwapChainIdx));
 
@@ -477,12 +458,7 @@ void PassManager::ExecutePasses(u32 frameIdx)
                                                      .swapChainImageIdx = m_currentSwapChainIdx};
 
     g_renderer.GetQueueHandler().SubmitSwapchainPresentRequestForThisFrame(presentRequest);
-    if (m_renderState.recreatedThisFrame)
-    {
-        m_renderState.recreatedThisFrame = false;
-        g_engine.GetApplicationState().RegisterUpdateFunction([](ApplicationState& state)
-                                                    { state.renderState.renderTargetsRecreatedThisFrame = false; });
-    }
+    m_renderState.recreatedThisFrame = false;
 }
 
 void PassManager::ReadAndPublishTimingResults(u32 frameIdx)
@@ -499,25 +475,20 @@ void PassManager::ReadAndPublishTimingResults(u32 frameIdx)
     for (const auto& r : results)
         passTimings.push_back({r.passName, r.gpuTimeMs, r.startMs, r.endMs, r.queueFamilyIndex, r.wasRun});
 
-    u64 totalVram = 0, usedVram = 0;
-    g_renderer.GetGPUMemoryManager().GetVramStats(totalVram, usedVram);
+    const u64 usedVram = g_renderer.GetGPUMemoryManager().GetUsedVram();
 
     g_engine.GetApplicationState().RegisterUpdateFunction(
-        [passTimings = stltype::move(passTimings), totalTime, totalVram, usedVram](ApplicationState& state)
+        [passTimings = stltype::move(passTimings), totalTime, usedVram](ApplicationState& state)
         {
             state.renderState.passTimings = stltype::move(passTimings);
             state.renderState.totalGPUTimeMs = totalTime;
-            state.renderState.totalVramBytes = totalVram;
             state.renderState.usedVramBytes = usedVram;
         });
 }
 
 PassManager::~PassManager()
 {
-    if (g_renderer.TryGetTracyGPUManager())
-    {
-        g_renderer.TryGetTracyGPUManager()->Destroy();
-    }
+    g_renderer.GetTracyGPUManager().Destroy();
 
     m_rtSceneManager.Reset();
 
@@ -527,10 +498,6 @@ PassManager::~PassManager()
 void PassManager::AddPass(stltype::unique_ptr<ConvolutionRenderPass>&& pass)
 {
     m_passes.push_back(stltype::move(pass));
-}
-
-void PassManager::TransferPassData(const PassGeometryData& passData, u32 frameIdx)
-{
 }
 
 void PassManager::SetEntityMeshDataForFrame(EntityMeshDataMap&& data, u32 frameIdx)
@@ -598,7 +565,6 @@ void PassManager::ResetSceneState()
         [](ApplicationState& state)
         {
             ++state.renderState.temporalResetGeneration;
-            state.renderState.renderTargetsRecreatedThisFrame = true;
         });
 }
 
@@ -615,8 +581,7 @@ bool PassManager::BlockUntilPassesFinished(u32 frameIdx)
         SRF::QueryImageForPresentationFromMainSwapchain<RenderAPI>(sem, fence, m_currentSwapChainIdx);
     if (acquireStatus == SRF::SwapchainAcquireStatus::NeedsRecreate)
     {
-        if (g_engine.TryGetEventSystem() != nullptr)
-            g_engine.GetEventSystem().OnSwapchainRecreation({});
+        g_engine.GetEventSystem().OnSwapchainRecreation({});
         return false;
     }
     if (acquireStatus != SRF::SwapchainAcquireStatus::Acquired)
@@ -667,8 +632,6 @@ void PassManager::RebuildMeshDataForSlot(u32 frameIdx, FrameRendererContext& ctx
 void PassManager::RecreateShadowMaps(u32 cascades, const mathstl::Vector2& extents)
 {
     m_renderState.recreatedThisFrame = true;
-    g_engine.GetApplicationState().RegisterUpdateFunction([](ApplicationState& state)
-                                                { state.renderState.renderTargetsRecreatedThisFrame = true; });
     m_imguiRegistry.ReleaseShadowMapIdsForNextFrame();
     m_renderGraph.GetRegistry().RecreateShadowMap(cascades, extents);
 

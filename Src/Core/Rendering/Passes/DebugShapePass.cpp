@@ -1,5 +1,4 @@
 #include "DebugShapePass.h"
-#include "Core/Rendering/Core/GBuffer.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
 #include "Utils/RenderPassUtils.h"
 
@@ -43,17 +42,20 @@ void DebugShapePass::BuildPipelines()
     auto mainFrag = Shader("Shaders/Debug.frag.spv", "main");
     PipelineInfo info{};
     info.descriptorSetLayout.sharedDescriptors = m_sharedDescriptors;
-    info.depthWriteEnable = false;
-    info.attachmentInfos.colorAttachments = { TexFormat::R16G16B16A16_FLOAT };
-    info.attachmentInfos.depthAttachmentFormat = TexFormat::D32_SFLOAT;
+    info.attachmentInfos.colorAttachments = {TexFormat::R8G8B8A8_UNORM};
+    info.attachmentInfos.depthAttachmentFormat = DEPTH_BUFFER_FORMAT;
+    // Debug shapes aren't in the depth prepass, so they test instead of matching it
+    info.depthCompareOp = kDepthWriteCompareOp;
     m_solidDebugObjectsPSO = PSO(
         ShaderCollection{&mainVert, &mainFrag}, PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions}, info);
 
-    auto wireFrameInfo = info;
-    wireFrameInfo.topology = Topology::Lines;
+    // Selection outlines stay visible through whatever covers the selected mesh
+    auto wireframeInfo = info;
+    wireframeInfo.rasterizerInfo.polyMode = PolygonMode::Line;
+    wireframeInfo.depthCompareOp = DepthCompareOp::ALWAYS;
     m_wireframeDebugObjectsPSO = PSO(ShaderCollection{&mainVert, &mainFrag},
                                      PipeVertInfo{m_vertexInputDescription, m_attributeDescriptions},
-                                     wireFrameInfo);
+                                     wireframeInfo);
 }
 
 void DebugShapePass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
@@ -61,57 +63,33 @@ void DebugShapePass::RebuildInternalData(const stltype::vector<PassMeshData>& me
                                          u32 thisFrameNum)
 {
     ScopedZone("DebugShapePass::Rebuild");
-    m_currentFrameIdx = thisFrameNum % SWAPCHAIN_IMAGES;
-    m_instancedMeshInfoMap.clear();
-    bool areAnyDebug = false;
-    m_indirectCmdBuffers[m_currentFrameIdx].EmptyCmds();
-    m_indirectCmdBuffersWireframe[m_currentFrameIdx].EmptyCmds();
-    for (const auto& meshData : meshes)
-    {
-        if (meshData.meshData.IsDebugMesh())
-        {
-            areAnyDebug = true;
-            break;
-        }
-    }
-    if (areAnyDebug == false)
-    {
-        return;
-    }
+    auto& solidCmds = m_indirectCmdBuffers[thisFrameNum];
+    auto& wireframeCmds = m_indirectCmdBuffersWireframe[thisFrameNum];
+    solidCmds.EmptyCmds();
+    wireframeCmds.EmptyCmds();
 
-    m_indirectCmdBuffers[m_currentFrameIdx].EmptyCmds();
-    m_indirectCmdBuffersWireframe[m_currentFrameIdx].EmptyCmds();
-    u32 instanceOffset = 0;
+    // Debug meshes are drawn solid from the debug geometry, selected scene meshes as wireframe from the scene geometry
     stltype::vector<u32> instanceDataIndices;
-    instanceDataIndices.reserve(meshes.size());
     for (const auto& mesh : meshes)
     {
-        if (!mesh.meshData.IsDebugMesh())
+        const bool isDebug = mesh.meshData.IsDebugMesh();
+        if (!isDebug && !mesh.meshData.IsDebugWireframeMesh())
             continue;
         const auto& meshHandle = mesh.meshData.meshResourceHandle;
-
-        if (mesh.meshData.IsDebugWireframeMesh())
-        {
-            m_indirectCmdBuffersWireframe[m_currentFrameIdx].AddIndexedDrawCmd(meshHandle.indexCount,
-                                                                              1, // TODO: instanced rendering
-                                                                              meshHandle.indexBufferOffset,
-                                                                              meshHandle.vertBufferOffset,
-                                                                              instanceOffset);
-        }
-        else
-        {
-            m_indirectCmdBuffers[m_currentFrameIdx].AddIndexedDrawCmd(meshHandle.indexCount,
-                                                                     1, // TODO: instanced rendering
-                                                                     meshHandle.indexBufferOffset,
-                                                                     meshHandle.vertBufferOffset,
-                                                                     instanceOffset);
-        }
-        instanceDataIndices.emplace_back(mesh.meshData.instanceDataIdx);
-        ++instanceOffset;
+        auto& cmds = isDebug ? solidCmds : wireframeCmds;
+        cmds.AddIndexedDrawCmd(meshHandle.indexCount,
+                               1,
+                               meshHandle.indexBufferOffset,
+                               meshHandle.vertBufferOffset,
+                               static_cast<u32>(instanceDataIndices.size()));
+        instanceDataIndices.push_back(mesh.meshData.instanceDataIdx);
     }
-    RebuildPerObjectBuffer(instanceDataIndices, m_currentFrameIdx);
-    m_indirectCmdBuffers[m_currentFrameIdx].FillCmds();
-    m_indirectCmdBuffersWireframe[m_currentFrameIdx].FillCmds();
+    if (instanceDataIndices.empty())
+        return;
+
+    RebuildPerObjectBuffer(instanceDataIndices, thisFrameNum);
+    solidCmds.FillCmds();
+    wireframeCmds.FillCmds();
 }
 
 void DebugShapePass::CreateSharedDescriptorLayout()
@@ -127,73 +105,67 @@ void DebugShapePass::CreateSharedDescriptorLayout()
 
 void DebugShapePass::Setup(::RenderGraphBuilder& builder, const MainPassData& data)
 {
-    builder.DeclareContexts<
-        PassCtx::Bindless,
-        PassCtx::View,
-        PassCtx::GlobalInstance>();
+    builder.DeclareContexts<PassCtx::Bindless, PassCtx::View, PassCtx::GlobalInstance>();
 
-    builder.WriteGBuffer(RGResourceID::GBufferDebug, LoadOp::LOAD);
+    builder.WriteGBuffer(RGResourceID::DebugOverlay, LoadOp::CLEAR);
     builder.ReadDepth(RGResourceID::MainDepth);
-    builder.SetHasSideEffects();
 }
 
 void DebugShapePass::RenderWithGraph(const MainPassData& data,
                                      const FrameRendererContext& ctx,
                                      const RGExecutionContext& execCtx)
 {
-    const auto currentFrame = execCtx.GetFrameIndex();
-    const auto& passCtx = m_perObjectFrameContexts[currentFrame];
-
-    RenderAttachmentInfo colorAttachment = execCtx.GetColorAttachment(RGResourceID::GBufferDebug, LoadOp::LOAD);
-    RenderAttachmentInfo depthAttachment = execCtx.GetReadOnlyDepthAttachment(RGResourceID::MainDepth);
-
+    const u32 frameIdx = execCtx.GetFrameIndex();
+    const auto& solidCmds = m_indirectCmdBuffers[frameIdx];
+    const auto& wireframeCmds = m_indirectCmdBuffersWireframe[frameIdx];
+    const RenderAttachmentInfo depthAttachment = execCtx.GetReadOnlyDepthAttachment(RGResourceID::MainDepth);
     const DirectX::XMINT2 extents(execCtx.GetRenderResolution().x, execCtx.GetRenderResolution().y);
 
-    auto& sceneGeometryBuffers = data.pResourceManager->GetDebugGeometryBuffers();
-    if (!sceneGeometryBuffers.GetVertexBuffer().IsCreated() || !sceneGeometryBuffers.GetIndexBuffer().IsCreated())
-    {
-        return;
-    }
-    BinRenderDataCmd geomBufferCmd(sceneGeometryBuffers.GetVertexBuffer(), sceneGeometryBuffers.GetIndexBuffer());
+    auto descriptorSets = execCtx.GetDescriptors();
+    descriptorSets.push_back(m_perObjectFrameContexts[frameIdx].m_perObjectDescriptor);
 
     StartRenderPassProfilingScope(execCtx.pCmdBuffer);
 
-    auto descriptorSets = execCtx.GetDescriptors();
-    descriptorSets.push_back(passCtx.m_perObjectDescriptor);
-
-    auto& opaqueBuffer = m_indirectCmdBuffers[currentFrame];
-    auto& wireframeBuffer = m_indirectCmdBuffersWireframe[currentFrame];
-
-    if (opaqueBuffer.GetDrawCmdNum() > 0)
+    // Begins even without solid draws so the overlay is cleared every frame the composite reads it
+    BeginRenderingCmd solidBegin{&m_solidDebugObjectsPSO,
+                                 {execCtx.GetColorAttachment(RGResourceID::DebugOverlay, LoadOp::CLEAR)},
+                                 depthAttachment};
+    solidBegin.extents = extents;
+    solidBegin.viewport = data.mainView.viewport;
+    execCtx.pCmdBuffer->RecordCommand(solidBegin);
+    if (solidCmds.GetDrawCmdNum() > 0)
     {
-        GenericIndirectDrawCmd cmd{&m_solidDebugObjectsPSO, opaqueBuffer};
+        auto& debugGeometry = data.pResourceManager->GetDebugGeometryBuffers();
+        const BinRenderDataCmd geometryCmd(debugGeometry.GetVertexBuffer(), debugGeometry.GetIndexBuffer());
+        GenericIndirectDrawCmd cmd{&m_solidDebugObjectsPSO, solidCmds};
         cmd.descriptorSets = descriptorSets;
-        cmd.drawCount = opaqueBuffer.GetDrawCmdNum();
-
-        BeginRenderingCmd cmdBegin{&m_solidDebugObjectsPSO,
-                                   {colorAttachment},
-                                   depthAttachment};
-        cmdBegin.extents = extents;
-        cmdBegin.viewport = data.mainView.viewport;
-        execCtx.pCmdBuffer->RecordCommand(cmdBegin);
-        execCtx.pCmdBuffer->RecordCommand(geomBufferCmd);
+        cmd.drawCount = solidCmds.GetDrawCmdNum();
+        execCtx.pCmdBuffer->RecordCommand(geometryCmd);
         execCtx.pCmdBuffer->RecordCommand(cmd);
-        execCtx.pCmdBuffer->RecordCommand(EndRenderingCmd{});
     }
-    if (wireframeBuffer.GetDrawCmdNum() > 0)
+    execCtx.pCmdBuffer->RecordCommand(EndRenderingCmd{});
+
+    if (wireframeCmds.GetDrawCmdNum() > 0)
     {
-        GenericIndirectDrawCmd cmd{&m_wireframeDebugObjectsPSO, wireframeBuffer};
+        auto& sceneGeometry = data.pResourceManager->GetSceneGeometryBuffers();
+        const BinRenderDataCmd geometryCmd(sceneGeometry.GetVertexBuffer(), sceneGeometry.GetIndexBuffer());
+        GenericIndirectDrawCmd cmd{&m_wireframeDebugObjectsPSO, wireframeCmds};
         cmd.descriptorSets = descriptorSets;
-        cmd.drawCount = wireframeBuffer.GetDrawCmdNum();
+        cmd.drawCount = wireframeCmds.GetDrawCmdNum();
 
-        BeginRenderingCmd cmdBegin{&m_wireframeDebugObjectsPSO,
-                                   {colorAttachment},
-                                   depthAttachment};
-        cmdBegin.extents = extents;
-        cmdBegin.viewport = data.mainView.viewport;
-
-        execCtx.pCmdBuffer->RecordCommand(cmdBegin);
-        execCtx.pCmdBuffer->RecordCommand(geomBufferCmd);
+        BeginRenderingCmd wireframeBegin{&m_wireframeDebugObjectsPSO,
+                                         {execCtx.GetColorAttachment(RGResourceID::DebugOverlay, LoadOp::LOAD)},
+                                         depthAttachment};
+        wireframeBegin.extents = extents;
+        wireframeBegin.viewport = data.mainView.viewport;
+        // Separate rendering instances aren't ordered, the graph only orders across nodes
+        execCtx.pCmdBuffer->RecordCommand(
+            GlobalBarrierCmd(SyncStages::COLOR_ATTACHMENT_OUTPUT,
+                             SyncStages::COLOR_ATTACHMENT_OUTPUT,
+                             AccessFlags::COLOR_ATTACHMENT_WRITE,
+                             AccessFlags::COLOR_ATTACHMENT_READ | AccessFlags::COLOR_ATTACHMENT_WRITE));
+        execCtx.pCmdBuffer->RecordCommand(wireframeBegin);
+        execCtx.pCmdBuffer->RecordCommand(geometryCmd);
         execCtx.pCmdBuffer->RecordCommand(cmd);
         execCtx.pCmdBuffer->RecordCommand(EndRenderingCmd{});
     }
@@ -202,6 +174,10 @@ void DebugShapePass::RenderWithGraph(const MainPassData& data,
 
 bool DebugShapePass::WantsToRender() const
 {
-    return false; // NeedToRender(m_indirectCmdBuffers[m_currentFrameIdx]) ||
-                  // NeedToRender(m_indirectCmdBuffersWireframe[m_currentFrameIdx]);
+    for (u32 i = 0; i < SWAPCHAIN_IMAGES; ++i)
+    {
+        if (NeedToRender(m_indirectCmdBuffers[i]) || NeedToRender(m_indirectCmdBuffersWireframe[i]))
+            return true;
+    }
+    return false;
 }

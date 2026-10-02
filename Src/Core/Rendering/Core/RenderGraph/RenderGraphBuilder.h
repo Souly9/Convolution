@@ -1,6 +1,5 @@
 #pragma once
 #include "Core/Global/Typedefs.h"
-#include "Core/Rendering/Core/Attachment.h"
 #include "Core/Rendering/Core/FrameResourceManager.h"
 #include "Core/Rendering/Core/RenderDefinitions.h"
 #include "PassContext.h"
@@ -48,40 +47,14 @@ public:
     RGResourceHandle WriteColorAttachment(RGResourceID id,
                                            LoadOp loadOp = LoadOp::CLEAR,
                                            StoreOp storeOp = StoreOp::STORE);
-    RGResourceHandle WriteStorageBuffer(RGResourceID id, SyncStages stage, AccessFlags access);
-    RGResourceHandle ReadStorageBuffer(RGResourceID id, SyncStages stage, AccessFlags access);
 
-    RGResourceHandle ReadGBuffer(RGResourceID id,
-                                 SyncStages stage = SyncStages::FRAGMENT_SHADER,
-                                 AccessFlags access = AccessFlags::SHADER_READ);
     RGResourceHandle WriteGBuffer(RGResourceID id, LoadOp loadOp = LoadOp::CLEAR);
     RGResourceHandle ReadDepth(RGResourceID id = RGResourceID::MainDepth,
                                SyncStages stage = SyncStages::EARLY_FRAGMENT_TESTS | SyncStages::LATE_FRAGMENT_TESTS);
-    RGResourceHandle WriteDepth(RGResourceID id = RGResourceID::MainDepth, LoadOp loadOp = LoadOp::CLEAR);
 
-    void SetCustomResourceName(RGResourceHandle handle, const stltype::string& name);
-
-    RGResourceHandle GetHistory(RGResourceHandle handle) const;
-
-    void SetExclusionGroup(ExclusionGroup group)
-    {
-        m_node.exclusionGroup = group;
-    }
-    void SetViewMask(u32 mask)
-    {
-        m_node.viewMask = mask > 0 ? mask : 1;
-    }
-    void SetRequiresRT(bool requiresRT)
-    {
-        m_node.SetRequiresRT(requiresRT);
-    }
     void SetHasSideEffects()
     {
         m_node.SetHasSideEffects(true);
-    }
-    void SetOpaque()
-    {
-        m_node.SetIsOpaque(true);
     }
     void AssumeOutputLayout(RGResourceHandle handle, ImageLayout layout);
 

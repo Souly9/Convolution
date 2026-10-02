@@ -1,7 +1,6 @@
 #pragma once
 #include "Core/Rendering/Core/RenderingForwardDecls.h"
 #include "Buffer.h"
-#include "Attachment.h"
 
 // Just a simple struct to hold rendering data and make it less annoying to pass around
 struct BufferData

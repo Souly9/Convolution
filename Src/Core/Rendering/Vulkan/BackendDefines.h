@@ -2,7 +2,6 @@
 #include "Core/WindowManager.h"
 #include <vulkan/vulkan_core.h>
 
-static inline constexpr u64 MAX_TEXTURES = 4096;
 static inline constexpr u32 CONV_MIN_VULKAN_VERSION = VK_API_VERSION_1_4;
 
 inline VkAllocationCallbacks* VulkanAllocator()

@@ -21,9 +21,10 @@ using namespace threadstl;
 
 void FileReader::FreeTextureInfo(const ReadTextureInfo& info)
 {
-    FileReader::FreeImageData(info.pixels);
+    // stbi_image_free usually just calls free, and we use malloc for DDS
+    free((void*)info.pixels);
     for (const auto& mip : info.mipmapPixels)
-        FileReader::FreeImageData(mip.pData);
+        free((void*)mip.pData);
 }
 
 FileReader::FileReader() : m_threadPool(CORE_COUNT_AVAILABLE)
@@ -32,16 +33,9 @@ FileReader::FileReader() : m_threadPool(CORE_COUNT_AVAILABLE)
 
 FileReader::~FileReader()
 {
-    Stop();
-}
-
-void FileReader::Stop()
-{
     m_threadPool.WaitAll();
     for (const auto& done : m_completedImages)
         FreeTextureInfo(done.info);
-    m_completedImages.clear();
-    m_completedMeshes.clear();
 }
 
 void FileReader::FinishAllRequests()
@@ -288,12 +282,6 @@ u32 FileReader::GetPendingImageCount()
 {
     SimpleScopedGuard<CustomMutex> lock(m_completedMutex);
     return (u32)m_completedImages.size();
-}
-
-void FileReader::FreeImageData(const unsigned char* pixels)
-{
-    // stbi_image_free usually just calls free, and we use malloc for DDS
-    free((void*)pixels);
 }
 
 void FileReader::ReadMeshFile(const IORequest& request)

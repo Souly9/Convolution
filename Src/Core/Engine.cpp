@@ -1,5 +1,4 @@
 #include "Engine.h"
-#include "Core/ConsoleLogger.h"
 #include "Core/ECS/EntityManager.h"
 #include "Core/Events/EventSystem.h"
 #include "Core/Global/State/ApplicationState.h"
@@ -13,9 +12,8 @@ Engine::~Engine() = default;
 
 void Engine::Init()
 {
-    // EventSystem before the EntityManager, whose constructor registers callbacks on it
-    m_pConsoleLogger = stltype::make_unique<ConsoleLogger>();
     m_pFileReader = stltype::make_unique<FileReader>();
+    // EventSystem before the EntityManager, whose constructor registers callbacks on it
     m_pEventSystem = stltype::make_unique<EventSystem>();
     m_pApplicationState = stltype::make_unique<ApplicationStateManager>();
     m_pEntityManager = stltype::make_unique<ECS::EntityManager>();
@@ -31,11 +29,7 @@ void Engine::CreateMainWindow(u32 width, u32 height, stltype::string_view title)
 void Engine::StopIO()
 {
     // Undelivered results are freed here, their callbacks would create entities, meshes and textures
-    if (m_pFileReader)
-    {
-        m_pFileReader->Stop();
-        m_pFileReader.reset();
-    }
+    m_pFileReader.reset();
 }
 
 void Engine::DestroyApplicationState()
@@ -55,5 +49,4 @@ void Engine::Shutdown()
     m_pEventSystem.reset();
     m_pWindowManager.reset();
     glfwTerminate();
-    m_pConsoleLogger.reset();
 }

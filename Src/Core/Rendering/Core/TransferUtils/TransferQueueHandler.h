@@ -16,10 +16,7 @@ class AsyncQueueHandler
 public:
     struct MeshTransfer
     {
-        const CompleteVertex* pVertices;
-        u32 vertexCount;
-        const u32* pIndices;
-        u32 indexCount;
+        const Mesh* pMesh;
         BufferData* pBuffersToFill;
         // Byte offsets into the destination buffers
         u64 vertexOffset{0};
@@ -47,10 +44,6 @@ public:
         CommandBuffer* pBuffer;
         QueueType queueType;
         u32 frameIdx;
-        SyncStages waitStage{SyncStages::NONE};
-        SyncStages signalStage{SyncStages::NONE};
-        bool isLastInBatch{false};
-        const char* name{"Unnamed CommandBuffer Batch"};
     };
 
     struct InFlightBatch

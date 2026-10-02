@@ -1,6 +1,5 @@
 #include "BloomPass.h"
 #include "Core/Global/GlobalVariables.h"
-#include "Core/Global/GlobalVariables.h"
 #include "Core/Global/State/States.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
 #include "Core/Rendering/Core/SharedResourceManager.h"
@@ -69,10 +68,6 @@ void BloomPass::CreateSharedDescriptorLayout()
     AppendLayoutPreset(DescriptorPresets::Bindless(true));
     AppendLayoutPreset(DescriptorPresets::View());
     AppendLayoutPreset(DescriptorPresets::GBuffer());
-}
-
-void BloomPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
-{
 }
 
 #include "Core/Rendering/Core/RenderGraph/RGExecutionContext.h"
@@ -191,7 +186,8 @@ void BloomPass::RenderWithGraph(const MainPassData& data, const FrameRendererCon
             auto* pLensTex = g_renderer.GetTextureManager().GetTexture(targetLensHandle);
             if (pLensTex)
             {
-                BindlessTextureHandle bindlessIdx = g_renderer.GetTextureManager().MakeTextureBindless(pLensTex, true);
+                BindlessTextureHandle bindlessIdx =
+                    g_renderer.GetTextureManager().MakeTextureBindless(targetLensHandle, true);
                 m_pushConstants.useLensTexture = 1u;
                 m_pushConstants.lensTextureIdx = bindlessIdx;
             }

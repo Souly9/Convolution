@@ -28,8 +28,7 @@ GPUMappedMemoryHandle GPUMemManager<Metal>::MapMemory(MTL::Buffer* pBuffer)
     return nullptr;
 }
 
-void GPUMemManager<Metal>::GetVramStats(u64& total, u64& used)
+u64 GPUMemManager<Metal>::GetUsedVram()
 {
-    total = 0;
-    used = 0;
+    return 0;
 }

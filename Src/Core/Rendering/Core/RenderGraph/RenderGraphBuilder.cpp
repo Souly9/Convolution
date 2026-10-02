@@ -126,32 +126,6 @@ RGResourceHandle RenderGraphBuilder::WriteColorAttachment(RGResourceID id, LoadO
     return WriteColorAttachment(handle, loadOp, storeOp);
 }
 
-RGResourceHandle RenderGraphBuilder::WriteStorageBuffer(RGResourceID id, SyncStages stage, AccessFlags access)
-{
-    RGResourceSpec spec{};
-    spec.id = id;
-    spec.SetIsBuffer(true);
-    RGResourceHandle handle = m_registry.DeclareResource(spec);
-    return WriteStorageBuffer(handle, stage, access);
-}
-
-RGResourceHandle RenderGraphBuilder::ReadStorageBuffer(RGResourceID id, SyncStages stage, AccessFlags access)
-{
-    RGResourceSpec spec{};
-    spec.id = id;
-    spec.SetIsBuffer(true);
-    RGResourceHandle handle = m_registry.DeclareResource(spec);
-    return ReadStorageBuffer(handle, stage, access);
-}
-
-RGResourceHandle RenderGraphBuilder::ReadGBuffer(RGResourceID id, SyncStages stage, AccessFlags access)
-{
-    RGResourceSpec spec{};
-    spec.id = id;
-    RGResourceHandle handle = m_registry.DeclareResource(spec);
-    return ReadTexture(handle, stage, access, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-}
-
 RGResourceHandle RenderGraphBuilder::WriteGBuffer(RGResourceID id, LoadOp loadOp)
 {
     return WriteColorAttachment(id, loadOp, StoreOp::STORE);
@@ -169,21 +143,6 @@ RGResourceHandle RenderGraphBuilder::ReadDepth(RGResourceID id, SyncStages stage
     // Depth testing against a read-only attachment
     ReadTexture(handle, stage, AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
     return handle;
-}
-
-RGResourceHandle RenderGraphBuilder::WriteDepth(RGResourceID id, LoadOp loadOp)
-{
-    return WriteDepthAttachment(id, loadOp, StoreOp::STORE);
-}
-
-void RenderGraphBuilder::SetCustomResourceName(RGResourceHandle handle, const stltype::string& name)
-{
-    m_registry.SetCustomResourceName(handle, name);
-}
-
-RGResourceHandle RenderGraphBuilder::GetHistory(RGResourceHandle handle) const
-{
-    return m_registry.GetHistoryHandle(handle);
 }
 
 void RenderGraphBuilder::AssumeOutputLayout(RGResourceHandle handle, ImageLayout layout)

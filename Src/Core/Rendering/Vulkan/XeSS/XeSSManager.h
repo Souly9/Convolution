@@ -21,16 +21,8 @@ public:
                                  u32 outputHeight,
                                  xess_quality_settings_t qualitySetting);
 
-    static xess_context_handle_t GetContext();
-    static bool GetOptimalResolution(u32 outputWidth,
-                                     u32 outputHeight,
-                                     xess_quality_settings_t qualitySetting,
-                                     u32& outRenderWidth,
-                                     u32& outRenderHeight);
-
     static bool Execute(VkCommandBuffer cmdBuf, const xess_vk_execute_params_t& execParams);
 
-    static void ResetHistory();
     static bool ConsumeResetFlag();
 
 private:

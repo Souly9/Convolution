@@ -76,8 +76,7 @@ void AsyncQueueHandler::SubmitToSwapchainForPresentation(const stltype::vector<P
             SRF::SubmitForPresentationToMainSwapchain<RenderAPI>(request.pWaitSemaphore, request.swapChainImageIdx);
         if (status == SRF::SwapchainPresentStatus::NeedsRecreate)
         {
-            if (g_engine.TryGetEventSystem() != nullptr)
-                g_engine.GetEventSystem().OnSwapchainRecreation({});
+            g_engine.GetEventSystem().OnSwapchainRecreation({});
         }
         else if (status == SRF::SwapchainPresentStatus::Failed)
         {
@@ -172,20 +171,20 @@ void AsyncQueueHandler::RecordTransfer(const MeshTransfer& transfer, u32 frameId
     ScopedZone("AsyncQueueHandler::Recording MeshTransfer");
     CommandBuffer* pCmdBuffer = GetUploadCommandBuffer(frameIdx);
 
-    const u64 vertSize = transfer.vertexCount * sizeof(CompleteVertex);
+    const u64 vertSize = transfer.pMesh->vertices.size() * sizeof(CompleteVertex);
     u64 vertStagingOffset = 0;
     StagingBuffer& vertStaging = AllocateStaging(frameIdx, vertSize, vertStagingOffset);
-    vertStaging.CopyToMapped(transfer.pVertices, vertSize, vertStagingOffset);
+    vertStaging.CopyToMapped(transfer.pMesh->vertices.data(), vertSize, vertStagingOffset);
     SimpleBufferCopyCmd vertCopy{&vertStaging, &transfer.pBuffersToFill->GetVertexBuffer()};
     vertCopy.srcOffset = vertStagingOffset;
     vertCopy.dstOffset = transfer.vertexOffset;
     vertCopy.size = vertSize;
     pCmdBuffer->RecordCommand(vertCopy);
 
-    const u64 idxSize = transfer.indexCount * sizeof(u32);
+    const u64 idxSize = transfer.pMesh->indices.size() * sizeof(u32);
     u64 idxStagingOffset = 0;
     StagingBuffer& idxStaging = AllocateStaging(frameIdx, idxSize, idxStagingOffset);
-    idxStaging.CopyToMapped(transfer.pIndices, idxSize, idxStagingOffset);
+    idxStaging.CopyToMapped(transfer.pMesh->indices.data(), idxSize, idxStagingOffset);
     SimpleBufferCopyCmd idxCopy{&idxStaging, &transfer.pBuffersToFill->GetIndexBuffer()};
     idxCopy.srcOffset = idxStagingOffset;
     idxCopy.dstOffset = transfer.indexOffset;
@@ -305,11 +304,7 @@ void AsyncQueueHandler::SubmitCommandBuffers(stltype::vector<CommandBufferReques
         auto& timelineData = m_queueTimelines[req.queueType];
         const u64 signalValue = ++timelineData.lastSubmittedValue;
 
-        if (req.waitStage != SyncStages::NONE)
-            req.pBuffer->SetWaitStages(req.waitStage);
-        if (req.signalStage != SyncStages::NONE)
-            req.pBuffer->SetSignalStages(req.signalStage);
-        else if (req.pBuffer->GetSignalStages() == 0)
+        if (req.pBuffer->GetSignalStages() == 0)
             req.pBuffer->SetSignalStages(SyncStages::BOTTOM_OF_PIPE);
 
         // Every buffer gets its own tracking timeline signal

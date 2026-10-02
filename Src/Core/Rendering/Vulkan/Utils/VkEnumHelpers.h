@@ -592,22 +592,9 @@ inline VkImageUsageFlags Conv(Usage usage)
         flags |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     if ((usage & Usage::DepthAttachment) != Usage::None)
         flags |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    if ((usage & Usage::StencilAttachment) != Usage::None)
-        flags |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    if ((usage & Usage::TransientAttachment) != Usage::None)
-        flags |= VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
-    if ((usage & Usage::InputAttachment) != Usage::None)
-        flags |= VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
-
-    if ((usage & Usage::GBuffer) != Usage::None)
-        flags |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                 VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     if ((usage & Usage::ShadowMap) != Usage::None)
         flags |=
             VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    if ((usage & Usage::AttachmentReadWrite) != Usage::None)
-        flags |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
-                 VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 
     return flags;
 }
@@ -662,36 +649,6 @@ inline VkBufferUsageFlags Conv(const BufferUsage& m)
     return VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
 }
 
-inline VkMemoryPropertyFlags Conv2MemFlags(const BufferUsage& m)
-{
-    switch (m)
-    {
-        case BufferUsage::Vertex:
-        case BufferUsage::Index:
-        case BufferUsage::Texture:
-            return VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-        case BufferUsage::Staging:
-        case BufferUsage::VertexHost:
-        case BufferUsage::IndexHost:
-            return VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-        case BufferUsage::Uniform:
-        case BufferUsage::SSBOHost:
-        case BufferUsage::AccelerationStructureInstances:
-            return VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-        case BufferUsage::SSBODevice:
-            return VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-        case BufferUsage::GenericDeviceVisible:
-            return VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-        case BufferUsage::AccelerationStructureStorage:
-        case BufferUsage::AccelerationStructureScratch:
-            return VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-        case BufferUsage::IndirectDrawCmds:
-            return VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-        default:
-            DEBUG_ASSERT(false);
-    }
-    return VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
-}
 inline VmaMemoryUsage Conv2VmaMemFlags(const BufferUsage& m)
 {
     switch (m)
@@ -837,24 +794,6 @@ static inline VkAccessFlags2 Conv(AccessFlags access)
     return flags;
 }
 
-static inline VkSamplerAddressMode Conv(TextureWrapMode mode)
-{
-    switch (mode)
-    {
-        case TextureWrapMode::REPEAT:
-            return VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        case TextureWrapMode::MIRRORED_REPEAT:
-            return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
-        case TextureWrapMode::CLAMP_TO_EDGE:
-            return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        case TextureWrapMode::CLAMP_TO_BORDER:
-            return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
-        default:
-            DEBUG_ASSERT(false);
-            return VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    }
-}
-
 static inline VkBuildAccelerationStructureFlagsKHR Conv(AccelerationStructureBuildFlags flags)
 {
     VkBuildAccelerationStructureFlagsKHR vkFlags = 0;
@@ -947,17 +886,3 @@ static inline VkAccessFlags2 Conv(RayTracingAccess access)
     return vkAccess;
 }
 
-static inline VkBorderColor Conv(TextureBorderColor color)
-{
-    switch (color)
-    {
-        // Float variants, every sampled format here is float, unorm or depth
-        case TextureBorderColor::TransparentBlack:
-            return VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
-        case TextureBorderColor::OpaqueBlack:
-            return VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
-        case TextureBorderColor::OpaqueWhite:
-        default:
-            return VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
-    }
-}

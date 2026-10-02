@@ -11,8 +11,6 @@ public:
 
     void Create();
 
-    virtual void CleanUp() override;
-
     void Reset();
 
     MTL::Event* GetRef() const;
@@ -20,8 +18,6 @@ public:
     {
         return m_value;
     }
-
-    virtual void NamingCallBack(const stltype::string& name) override;
 
 private:
     MTL::Event* m_event{nullptr};
@@ -36,16 +32,12 @@ public:
 
     void Create(bool signaled = true);
 
-    virtual void CleanUp() override;
-
     void WaitFor(const u64& timeout = UINT64_MAX) const;
     bool IsSignaled() const;
 
     void Reset();
 
     MTL::SharedEvent* GetRef() const;
-
-    virtual void NamingCallBack(const stltype::string& name) override;
 
 private:
     MTL::SharedEvent* m_event{nullptr};
@@ -60,8 +52,6 @@ public:
 
     void Create(u64 initialValue = 0);
 
-    virtual void CleanUp() override;
-
     MTL::SharedEvent* GetRef() const;
 
     u64 GetValue() const;
@@ -69,8 +59,6 @@ public:
     void HostSignal(u64 value);
 
     void Wait(u64 value, u64 timeout = UINT64_MAX) const;
-
-    virtual void NamingCallBack(const stltype::string& name) override;
 
 private:
     MTL::SharedEvent* m_event{nullptr};

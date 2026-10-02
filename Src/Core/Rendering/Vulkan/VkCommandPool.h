@@ -44,7 +44,6 @@ public:
 
 protected:
     CommandPoolVulkan(u32 graphicsFamilyIdx);
-    CommandPoolVulkan(u32 graphicsFamilyIdx, VkCommandPoolCreateFlagBits flags);
 
     VkCommandPool m_commandPool{VK_NULL_HANDLE};
     stltype::deque<CommandBuffer> m_commandBuffers{};

@@ -18,8 +18,6 @@ using MeshHandle = MeshResourceData;
 #include <vulkan/vulkan.h>
 
 // Forward declarations - Vulkan implementations
-class ColorAttachmentVulkan;
-class DepthBufferAttachmentVulkan;
 class GraphicsPipelineVulkan;
 class ComputePipelineVulkan;
 class ShaderVulkan;
@@ -72,12 +70,6 @@ class DescriptorSetT;
 template <typename API>
 class DescriptorSetLayoutT;
 template <typename API>
-class AttachmentT;
-template <typename API>
-class ColorAttachmentT;
-template <typename API>
-class DepthAttachmentT;
-template <typename API>
 class GPUTimingQueryT;
 template <typename API>
 class ShaderT;
@@ -95,9 +87,6 @@ using CommandBuffer = CommandBufferT<CurrentAPI>;
 using DescriptorPool = DescriptorPoolT<CurrentAPI>;
 using DescriptorSet = DescriptorSetT<CurrentAPI>;
 using DescriptorSetLayout = DescriptorSetLayoutT<CurrentAPI>;
-using Attachment = AttachmentT<CurrentAPI>;
-using ColorAttachment = ColorAttachmentT<CurrentAPI>;
-using DepthAttachment = DepthAttachmentT<CurrentAPI>;
 using GPUTimingQuery = GPUTimingQueryT<CurrentAPI>;
 using Shader = ShaderT<CurrentAPI>;
 using AccelerationStructure = AccelerationStructureT<CurrentAPI>;

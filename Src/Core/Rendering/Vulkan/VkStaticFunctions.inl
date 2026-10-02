@@ -225,7 +225,7 @@ inline SwapchainPresentStatus SubmitForPresentationToMainSwapchain<Vulkan>(Semap
     presentInfo.pResults = nullptr;
 
     const VkResult result =
-        Nvidia::StreamlineManager::GetSwapchainFunctions().queuePresent(VkBackend::PresentQueue(), &presentInfo);
+        Nvidia::StreamlineManager::GetSwapchainFunctions().queuePresent(VkBackend::Queues().present, &presentInfo);
     if (result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR)
         return SwapchainPresentStatus::Presented;
     if (result == VK_ERROR_OUT_OF_DATE_KHR)

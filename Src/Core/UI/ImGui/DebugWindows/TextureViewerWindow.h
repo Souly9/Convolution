@@ -19,13 +19,10 @@ public:
     void DrawWindow(f32 dt)
     {
         ScopedZone("TextureViewerWindow");
-        if (g_engine.TryGetApplicationState() != nullptr)
+        const auto& state = g_engine.GetApplicationState().GetCurrentApplicationState();
+        if (state.renderState.textureViewerState.requestOpenWindow)
         {
-            const auto& state = g_engine.GetApplicationState().GetCurrentApplicationState();
-            if (state.renderState.textureViewerState.requestOpenWindow)
-            {
-                m_isOpen = true;
-            }
+            m_isOpen = true;
         }
 
         if (!m_isOpen)
@@ -38,15 +35,7 @@ public:
             return;
         }
 
-        if (!g_engine.TryGetApplicationState())
-        {
-            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "ApplicationState unavailable.");
-            ImGui::End();
-            return;
-        }
-
-        const auto& appState = g_engine.GetApplicationState().GetCurrentApplicationState();
-        const auto& tvState = appState.renderState.textureViewerState;
+        const auto& tvState = state.renderState.textureViewerState;
         const auto& items = tvState.items;
 
         if (tvState.requestOpenWindow || tvState.requestedFocusHandle >= 0)

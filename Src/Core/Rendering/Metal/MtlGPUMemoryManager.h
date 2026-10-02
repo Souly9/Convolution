@@ -19,7 +19,7 @@ public:
 
     GPUMappedMemoryHandle MapMemory(MTL::Buffer* pBuffer);
 
-    void GetVramStats(u64& total, u64& used);
+    u64 GetUsedVram();
 
 private:
     Allocator m_allocatorMode{Allocator::Default};

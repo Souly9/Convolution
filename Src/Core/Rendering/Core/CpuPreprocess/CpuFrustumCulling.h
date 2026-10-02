@@ -21,8 +21,7 @@ public:
                  bool isCullingEnabled,
                  bool isCullingFrozen,
                  const stltype::vector<DirectX::XMFLOAT4X4>& transforms,
-                 bool uploadSSBO,
-                 u32 frameIdx);
+                 bool uploadSSBO);
 
     const Frustum& GetFrozenFrustum(u32 viewIndex = 0) const
     {

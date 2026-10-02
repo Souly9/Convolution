@@ -19,10 +19,7 @@ class RTSceneManager
 public:
     void Init(SharedResourceManager* pResourceManager, u32 graphicsQueueFamilyIdx);
     void Reset();
-    bool Update(u32 frameIdx,
-                const RenderPasses::FrameResourceManager& frameResourceManager,
-                TimelineSemaphore* pSignalTimeline = nullptr,
-                u64 signalValue = 0);
+    void Update(u32 frameIdx, const RenderPasses::FrameResourceManager& frameResourceManager);
 
     bool HasReadyTLAS(u32 frameIdx) const;
     const TLASFrameData* GetTLASFrameData(u32 frameIdx) const;
@@ -30,10 +27,7 @@ public:
 
 private:
     void BuildCurrentInstanceList(const RenderPasses::FrameResourceManager& frameResourceManager);
-    bool BuildTLASForFrame(TLASFrameData& frameData,
-                           u32 frameIdx,
-                           TimelineSemaphore* pSignalTimeline = nullptr,
-                           u64 signalValue = 0);
+    bool BuildTLASForFrame(TLASFrameData& frameData, u32 frameIdx);
     void PublishDebugState() const;
     void UpdateTLASDescriptorSet(u32 frameSlot, const TLASFrameData& frameData);
 

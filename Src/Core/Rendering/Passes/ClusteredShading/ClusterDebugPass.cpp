@@ -2,7 +2,6 @@
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Global/Utils/MathFunctions.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
-#include "Core/Rendering/Core/GBuffer.h"
 #include "Core/Rendering/Core/Pipeline.h"
 #include "Core/Rendering/Passes/PassManager.h" // For MainPassData definition
 #include "Core/Rendering/Passes/Utils/RenderPassUtils.h"
@@ -123,8 +122,7 @@ void ClusterDebugPass::RenderWithGraph(const MainPassData& data,
     if (totalClusters == 0)
         return;
 
-    m_currentFrameIdx = execCtx.GetFrameIndex();
-    auto& cmdBuf = m_indirectCmdBuffers[m_currentFrameIdx];
+    auto& cmdBuf = m_indirectCmdBuffers[execCtx.GetFrameIndex()];
     cmdBuf.EmptyCmds();
     cmdBuf.AddIndexedDrawCmd(24, totalClusters, 0, 0, 0);
     cmdBuf.FillCmds();

@@ -130,15 +130,11 @@ struct RendererState
     stltype::vector<u64> csmCascadeImGuiIDs{}; // Per-cascade ImGui texture IDs
     stltype::string physicalRenderDeviceName{};
     AntialiasingType aaType{AntialiasingType::DLSS};
-    bool dlssSupported{false};
     // Bump to discard all temporal history (TAA and upscalers) once
     u32 temporalResetGeneration{0};
     f32 taaVelocityRejectionStart{0.5f};
     f32 taaVelocityRejectionEnd{4.0f};
     u32 upscalingPercentage{100};
-    bool renderTargetsRecreatedThisFrame{false};
-    mathstl::Vector2 renderResolution{};
-    mathstl::Vector2 swapchainResolution{};
 
     // Tonemapping
     f32 exposure{1.5f};
@@ -156,10 +152,6 @@ struct RendererState
         s32 lensTextureIndex{2}; // 0 = None, 1 = Starburst & Flare, 2 = Bokeh & Dirt
         f32 lensDirtIntensity{0.4f};
     } bloom;
-
-    // Render info
-    u32 triangleCount{};
-    u32 vertexCount{};
 
     // CSM/Shadow state
     u32 directionalLightCascades{CSM_INITIAL_CASCADES};
@@ -199,16 +191,13 @@ struct RendererState
     } stats;
 
     f32 totalGPUTimeMs{0.f};
-    u64 totalVramBytes{0};
     u64 usedVramBytes{0};
 
     struct RenderGraphDebugNode
     {
         stltype::string name;
         u32 queueType{0};
-        u32 exclusionGroup{0};
         bool isCulled{false};
-        bool isOpaque{false};
         stltype::vector<stltype::string> readResources;
         stltype::vector<stltype::string> writeResources;
     };
@@ -288,7 +277,7 @@ struct ApplicationState
     Scene* pCurrentScene;
 
     ECS::Entity mainCameraEntity{};
-    bool renderDebugMeshes{true};
+    bool renderDebugMeshes{false};
 
     bool ShouldDisplayDebugObjects() const
     {

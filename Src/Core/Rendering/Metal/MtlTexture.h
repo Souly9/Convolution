@@ -16,11 +16,8 @@ public:
 
     ~TextureMetal();
 
-    virtual void CleanUp() override;
-
     // Texture views replace VkImageView
     void SetTextureView2D(MTL::Texture* view2D);
-    void SetSampler(MTL::SamplerState* sampler);
 
     MTL::Texture* GetTexture() const
     {
@@ -30,15 +27,8 @@ public:
     {
         return m_textureView2D != nullptr ? m_textureView2D : m_texture;
     }
-    MTL::SamplerState* GetSampler() const
-    {
-        return m_sampler;
-    }
-
-    virtual void NamingCallBack(const stltype::string& name) override;
 
 protected:
     MTL::Texture* m_texture{nullptr};
     MTL::Texture* m_textureView2D{nullptr};
-    MTL::SamplerState* m_sampler{nullptr};
 };

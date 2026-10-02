@@ -6,7 +6,6 @@
 #include <eathread/eathread_semaphore.h>
 
 class WindowManager;
-class ConsoleLogger;
 class FileReader;
 class EventSystem;
 class ApplicationStateManager;
@@ -44,10 +43,6 @@ public:
     void Shutdown();
 
     // Build facts, valid any time (also during static init)
-    static constexpr Platform GetPlatform()
-    {
-        return kPlatform;
-    }
     static constexpr bool IsWindows()
     {
         return kPlatform == Platform::Windows;
@@ -56,23 +51,11 @@ public:
     {
         return kPlatform == Platform::MacOS;
     }
-    static constexpr bool IsLinux()
-    {
-        return kPlatform == Platform::Linux;
-    }
-    static constexpr Architecture GetArchitecture()
-    {
-        return kArchitecture;
-    }
 
     WindowManager& GetWindowManager()
     {
         DEBUG_ASSERT(m_pWindowManager);
         return *m_pWindowManager;
-    }
-    ConsoleLogger* TryGetConsoleLogger()
-    {
-        return m_pConsoleLogger.get();
     }
     FileReader& GetFileReader()
     {
@@ -84,27 +67,15 @@ public:
         DEBUG_ASSERT(m_pEventSystem);
         return *m_pEventSystem;
     }
-    EventSystem* TryGetEventSystem()
-    {
-        return m_pEventSystem.get();
-    }
     ApplicationStateManager& GetApplicationState()
     {
         DEBUG_ASSERT(m_pApplicationState);
         return *m_pApplicationState;
     }
-    ApplicationStateManager* TryGetApplicationState()
-    {
-        return m_pApplicationState.get();
-    }
     ECS::EntityManager& GetEntityManager()
     {
         DEBUG_ASSERT(m_pEntityManager);
         return *m_pEntityManager;
-    }
-    ECS::EntityManager* TryGetEntityManager()
-    {
-        return m_pEntityManager.get();
     }
     MeshManager& GetMeshManager()
     {
@@ -125,10 +96,6 @@ public:
     {
         return m_time;
     }
-    f32 GetDeltaTime() const
-    {
-        return m_time.GetDeltaTime();
-    }
 
     // Written on the main thread, read on the render thread
     u32 GetFrameNumber() const
@@ -145,7 +112,6 @@ public:
     }
 
 private:
-    stltype::unique_ptr<ConsoleLogger> m_pConsoleLogger;
     stltype::unique_ptr<FileReader> m_pFileReader;
     stltype::unique_ptr<EventSystem> m_pEventSystem;
     stltype::unique_ptr<ApplicationStateManager> m_pApplicationState;

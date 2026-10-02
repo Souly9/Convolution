@@ -35,10 +35,6 @@ struct FeatureState
     sl::DLSSMode mode{sl::DLSSMode::eOff};
     u32 optionsKey{0};
     bool lastConfigureFailed{false};
-    u32 failedWidth{0};
-    u32 failedHeight{0};
-    sl::DLSSMode failedMode{sl::DLSSMode::eOff};
-    u32 failedOptionsKey{0};
     bool evaluateBlocked{false};
     bool needsReset{false};
 };
@@ -48,7 +44,6 @@ bool g_dlssSupported = false;
 bool g_dlssRRSupported = false;
 bool g_imguiPluginRequested = false;
 bool g_imguiPluginAvailable = false;
-bool g_developmentPlugins = false;
 FeatureState g_features[static_cast<u32>(DLSSVariant::Count)]{};
 StreamlineManager::SwapchainFunctions g_swapchainFunctions{};
 bool g_presentRouted = false;
@@ -62,7 +57,7 @@ std::atomic<u8> g_logVerbosity{static_cast<u8>(StreamlineManager::LogVerbosity::
 
 u32 g_slGraphicsQueueStartIndex = 0;
 u32 g_slComputeQueueStartIndex = 0;
-sl::FrameToken* s_frameTokens[8] = {nullptr};
+sl::FrameToken* s_frameTokens[FRAMES_IN_FLIGHT] = {nullptr};
 
 FeatureState& GetState(DLSSVariant variant)
 {
@@ -255,7 +250,7 @@ void QueryVersionInfo()
 {
     StreamlineManager::VersionInfo info{};
     info.sdk = sl::Version(SL_VERSION_MAJOR, SL_VERSION_MINOR, SL_VERSION_PATCH);
-    info.developmentPlugins = g_developmentPlugins;
+    info.developmentPlugins = CONV_SL_DEVELOPMENT_DLLS != 0;
 
     sl::FeatureVersion version{};
     if (slGetFeatureVersion(sl::kFeatureDLSS, version) == sl::Result::eOk)
@@ -272,8 +267,6 @@ void QueryVersionInfo()
     sl::FeatureRequirements requirements{};
     if (slGetFeatureRequirements(sl::kFeatureDLSS, requirements) == sl::Result::eOk)
         info.dlssFlags = requirements.flags;
-    if (g_dlssRRSupported && slGetFeatureRequirements(sl::kFeatureDLSS_RR, requirements) == sl::Result::eOk)
-        info.rrFlags = requirements.flags;
 
     SimpleScopedGuard lock(g_debugMutex);
     g_versionInfo = info;
@@ -296,8 +289,7 @@ bool StreamlineManager::EarlyInit()
     const std::wstring resolvedExtDir = GetAbsolutePath(extDir.c_str());
 
     // Streamline's overlays come from sl.imgui and only exist in the development DLLs
-    g_developmentPlugins = CONV_SL_DEVELOPMENT_DLLS != 0;
-    g_imguiPluginRequested = g_developmentPlugins && IsEnvFlagSet("CONV_SL_OVERLAY");
+    g_imguiPluginRequested = CONV_SL_DEVELOPMENT_DLLS != 0 && IsEnvFlagSet("CONV_SL_OVERLAY");
 
     sl::Preferences pref{};
     sl::Feature features[] = {sl::kFeatureDLSS, sl::kFeatureDLSS_RR, sl::kFeatureImGUI};
@@ -425,10 +417,6 @@ bool StreamlineManager::Init()
 
     auto debugState = GetDLSSDebugState();
     debugState.streamlineInitialized = true;
-    debugState.featureSupported = g_dlssSupported;
-    debugState.rrSupported = g_dlssRRSupported;
-    debugState.imguiPluginAvailable = g_imguiPluginAvailable;
-    debugState.presentRoutedThroughStreamline = g_presentRouted;
     SetDLSSDebugState(debugState);
     return true;
 }
@@ -526,17 +514,16 @@ bool StreamlineManager::EnsureConfigured(DLSSVariant variant,
     FeatureState& state = GetState(variant);
     const DebugSettings settings = GetDebugSettings();
     const u32 optionsKey = MakeOptionsKey(variant, settings);
-    const bool configChanged = !state.configured || state.width != outputWidth || state.height != outputHeight ||
-                               state.mode != mode || state.optionsKey != optionsKey;
-    const bool sameAsLastFailedConfig = state.lastConfigureFailed && state.failedWidth == outputWidth &&
-                                        state.failedHeight == outputHeight && state.failedMode == mode &&
-                                        state.failedOptionsKey == optionsKey;
+    // The stored config is the last one attempted, whether it succeeded or not
+    const bool sameConfig = state.width == outputWidth && state.height == outputHeight && state.mode == mode &&
+                            state.optionsKey == optionsKey;
+    const bool configChanged = !state.configured || !sameConfig;
     const bool isRR = variant == DLSSVariant::RayReconstruction;
 
     // RR carries the camera in its options, so only it re-applies options every frame
     if (!configChanged && !isRR)
-        return true;
-    if (configChanged && sameAsLastFailedConfig)
+        return !state.evaluateBlocked;
+    if (state.lastConfigureFailed && sameConfig)
         return false;
 
     bool ok = false;
@@ -551,14 +538,14 @@ bool StreamlineManager::EnsureConfigured(DLSSVariant variant,
         ok = SetSuperResolutionOptions(outputWidth, outputHeight, mode, settings);
     }
 
+    state.width = outputWidth;
+    state.height = outputHeight;
+    state.mode = mode;
+    state.optionsKey = optionsKey;
     if (!ok)
     {
         state.configured = false;
         state.lastConfigureFailed = true;
-        state.failedWidth = outputWidth;
-        state.failedHeight = outputHeight;
-        state.failedMode = mode;
-        state.failedOptionsKey = optionsKey;
         PublishConfigState(variant, state, outputWidth, outputHeight, mode);
         return false;
     }
@@ -566,16 +553,12 @@ bool StreamlineManager::EnsureConfigured(DLSSVariant variant,
     if (configChanged)
     {
         state.configured = true;
-        state.width = outputWidth;
-        state.height = outputHeight;
-        state.mode = mode;
-        state.optionsKey = optionsKey;
         state.lastConfigureFailed = false;
         state.evaluateBlocked = false;
         state.needsReset = true;
         PublishConfigState(variant, state, outputWidth, outputHeight, mode);
     }
-    return true;
+    return !state.evaluateBlocked;
 }
 
 bool StreamlineManager::ConsumeResetFlag(DLSSVariant variant)
@@ -584,11 +567,6 @@ bool StreamlineManager::ConsumeResetFlag(DLSSVariant variant)
     const bool needsReset = state.needsReset;
     state.needsReset = false;
     return needsReset;
-}
-
-bool StreamlineManager::IsEvaluateBlocked(DLSSVariant variant)
-{
-    return GetState(variant).evaluateBlocked;
 }
 
 sl::Result StreamlineManager::SetTagForFrame(const sl::FrameToken& frame,
@@ -687,11 +665,6 @@ const StreamlineManager::SwapchainFunctions& StreamlineManager::GetSwapchainFunc
     return g_swapchainFunctions;
 }
 
-bool StreamlineManager::IsPresentRoutedThroughStreamline()
-{
-    return g_presentRouted;
-}
-
 bool StreamlineManager::IsDLSSSupported()
 {
     return s_initialized && g_dlssSupported;
@@ -707,68 +680,6 @@ bool StreamlineManager::IsDLSSDebugUIAvailable()
     return s_initialized && g_imguiPluginAvailable && g_presentRouted;
 }
 
-} // namespace Nvidia
-
-#else // CONV_WITH_STREAMLINE == 0
-
-namespace Nvidia
-{
-bool StreamlineManager::s_initialized = false;
-
-namespace
-{
-StreamlineManager::SwapchainFunctions g_swapchainFunctions{};
-}
-
-bool StreamlineManager::EarlyInit() { return false; }
-bool StreamlineManager::Init() { return false; }
-void StreamlineManager::Shutdown() {}
-void StreamlineManager::AcquireNewFrameToken(u32 frameIdx) {}
-bool StreamlineManager::GetFrameToken(u32 frameIdx, sl::FrameToken*& pFrameToken) { return false; }
-bool StreamlineManager::GetDLSSFeatureRequirements(sl::FeatureRequirements& requirements) { return false; }
-bool StreamlineManager::GetDLSSRRFeatureRequirements(sl::FeatureRequirements& requirements) { return false; }
-void StreamlineManager::SetVulkanQueueStartIndices(u32 graphicsQueueIndex, u32 computeQueueIndex) {}
-void StreamlineManager::GetVulkanDeviceQueue(VkDevice device, u32 queueFamilyIndex, u32 queueIndex, VkQueue* pQueue)
-{
-    vkGetDeviceQueue(device, queueFamilyIndex, queueIndex, pQueue);
-}
-bool StreamlineManager::EnsureConfigured(DLSSVariant variant,
-                                         u32 outputWidth,
-                                         u32 outputHeight,
-                                         sl::DLSSMode mode,
-                                         const mathstl::Matrix& worldToView,
-                                         const mathstl::Matrix& viewToWorld)
-{
-    return false;
-}
-bool StreamlineManager::ConsumeResetFlag(DLSSVariant variant) { return false; }
-bool StreamlineManager::IsEvaluateBlocked(DLSSVariant variant) { return true; }
-sl::Result StreamlineManager::SetTagForFrame(const sl::FrameToken& frame,
-                                             const sl::ViewportHandle& viewport,
-                                             const sl::ResourceTag* tags,
-                                             uint32_t numTags,
-                                             sl::CommandBuffer* cmdBuffer)
-{
-    return sl::Result::eErrorNotInitialized;
-}
-sl::Result StreamlineManager::SetConstants(const sl::Constants& values,
-                                           const sl::FrameToken& frame,
-                                           const sl::ViewportHandle& viewport)
-{
-    return sl::Result::eErrorNotInitialized;
-}
-bool StreamlineManager::Evaluate(DLSSVariant variant, VkCommandBuffer cmdBuf, const sl::FrameToken& frameToken) { return false; }
-StreamlineManager::DebugSettings StreamlineManager::GetDebugSettings() { return {}; }
-void StreamlineManager::SetDebugSettings(const DebugSettings& settings) {}
-StreamlineManager::DLSSDebugState StreamlineManager::GetDLSSDebugState() { return {}; }
-void StreamlineManager::SetDLSSDebugState(const DLSSDebugState& state) {}
-StreamlineManager::VersionInfo StreamlineManager::GetVersionInfo() { return {}; }
-const StreamlineManager::SwapchainFunctions& StreamlineManager::GetSwapchainFunctions() { return g_swapchainFunctions; }
-bool StreamlineManager::IsPresentRoutedThroughStreamline() { return false; }
-bool StreamlineManager::IsEarlyInitialized() { return false; }
-bool StreamlineManager::IsDLSSSupported() { return false; }
-bool StreamlineManager::IsDLSSRRSupported() { return false; }
-bool StreamlineManager::IsDLSSDebugUIAvailable() { return false; }
 } // namespace Nvidia
 
 #endif

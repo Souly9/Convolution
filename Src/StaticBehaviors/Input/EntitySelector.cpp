@@ -191,9 +191,8 @@ void EntitySelector::OnLeftMouseClick(const LeftMouseClickEventData& data)
                 state.selectedEntities.clear();
                 state.selectedEntities.push_back(rsltEntity);
                 deslectEntity(rsltEntity, true);
-                g_engine.GetEntityManager().MarkComponentDirty(rsltEntity, ECS::ComponentID<ECS::Components::Transform>::ID);
-                g_engine.GetEntityManager().MarkComponentDirty(rsltEntity,
-                                                     ECS::ComponentID<ECS::Components::RenderComponent>::ID);
+                g_engine.GetEntityManager().MarkComponentDirty(rsltEntity, C_ID(Transform));
+                g_engine.GetEntityManager().MarkComponentDirty(rsltEntity, C_ID(RenderComponent));
             });
     }
     else

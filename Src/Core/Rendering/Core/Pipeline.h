@@ -1,6 +1,6 @@
 #pragma once
-#include "Attachment.h"
 #include "Core/Rendering/Core/Defines/DescriptorLayoutDefines.h"
+#include "Core/Rendering/Core/Defines/VertexDefines.h"
 #include "Core/Rendering/Core/RenderingForwardDecls.h"
 #include "Core/Rendering/Core/Resource.h"
 #include "RenderDefinitions.h"
@@ -97,18 +97,18 @@ struct PipelineInfo
     bool depthWriteEnable{false};
 };
 
-// Function declarations - implementations in Pipeline.cpp
-PipelineAttachmentInfo CreateAttachmentInfo(const stltype::vector<Texture>& colorAttachments,
-                                            const Texture& depthAttachment);
-PipelineAttachmentInfo CreateAttachmentInfo(const stltype::vector<ColorAttachment>& colorAttachments);
-PipelineAttachmentInfo CreateAttachmentInfo(const stltype::vector<ColorAttachment>& colorAttachments,
-                                            const DepthAttachment& depthAttachment);
-
 class PipelineBase : public TrackedResource
 {
 public:
     PipelineBase() = default;
     virtual ~PipelineBase() = default;
+};
+
+struct PipeVertInfo
+{
+    VertexBindingDescription m_vertexInputDescription{};
+    stltype::vector<VertexAttributeDescription> m_attributeDescriptions{};
+    u32 bindingDescriptionCount{1};
 };
 
 #include "Core/Rendering/Core/APITraits.h"

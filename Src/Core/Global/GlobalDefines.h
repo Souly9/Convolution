@@ -56,10 +56,11 @@ constexpr static inline u32 FIRST_SCENE_BINDLESS_SLOT = 1;
 // Bindless texture slots from here up hold persistent (render target) textures
 constexpr static inline u32 PERSISTENT_BINDLESS_REGION_START = 14000;
 constexpr static inline u32 MAX_MESHES = 8192;
+constexpr static inline u64 MAX_TEXTURES = 4096;
 
 #define DEPTH_BUFFER_FORMAT TexFormat::D32_SFLOAT
 
-// Compiled-in graphics API; query it at runtime through Renderer::GetAPI()/IsVulkan()/IsMetal()
+// Compiled-in graphics API
 #include "Core/Rendering/Core/APITraits.h"
 #ifdef USE_VULKAN
 using RenderAPI = Vulkan;
@@ -74,9 +75,6 @@ using CurrentAPI = API_Metal;
 #define IMPLEMENT_GRAPHICS_API                                                                                         \
     template <class BackendAPI>                                                                                        \
         requires stltype::is_base_of_v<AvailableRenderBackends, BackendAPI>
-
-// Logic Macros
-#define COMP_ID(component) ECS::ComponentID<ECS::Components::component>::ID
 
 static inline constexpr f32 FLOAT_TOLERANCE = 0.00001f;
 static inline constexpr f32 AMBIENT_STRENGTH = 0.03f;

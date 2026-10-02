@@ -109,7 +109,6 @@ protected:
     stltype::string m_passName;
     GPUTimingQueryBase* m_pTimingQuery{nullptr};
     u32 m_passTimingIndex{UINT32_MAX};
-    u32 m_currentFrameIdx{0};
 
 #if CONV_DEBUG
     static inline mathstl::Vector4 s_profilingScopeColor{0.2f, 0.4f, 0.6f, 1.0f};

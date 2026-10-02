@@ -15,11 +15,3 @@ AccelerationStructureBuildSizes AccelerationStructureMetal::GetBuildSizes(const 
 void AccelerationStructureMetal::Create(const AccelerationStructureCreateInfo& info)
 {
 }
-
-void AccelerationStructureMetal::CleanUp()
-{
-}
-
-void AccelerationStructureMetal::NamingCallBack(const stltype::string& name)
-{
-}

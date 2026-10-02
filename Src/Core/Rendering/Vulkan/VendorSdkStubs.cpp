@@ -1,8 +1,8 @@
-// Streamline/DLSS and XeSS runtimes only exist on Windows; these stubs report "unsupported" so the
-// Vulkan backend links elsewhere (MoltenVK on macOS). The real sources are excluded from the build there.
-#if defined(USE_VULKAN) && !defined(_WIN32)
+// "Unsupported" stubs for builds without the Streamline SDK (CONV_WITH_STREAMLINE=0) or XeSS (non-Windows)
 #include "Core/Rendering/Core/Nvidia/StreamlineManager.h"
 #include "Core/Rendering/Vulkan/XeSS/XeSSManager.h"
+
+#if !CONV_WITH_STREAMLINE
 
 namespace Nvidia
 {
@@ -35,7 +35,6 @@ bool StreamlineManager::EnsureConfigured(DLSSVariant variant,
     return false;
 }
 bool StreamlineManager::ConsumeResetFlag(DLSSVariant variant) { return false; }
-bool StreamlineManager::IsEvaluateBlocked(DLSSVariant variant) { return true; }
 sl::Result StreamlineManager::SetTagForFrame(const sl::FrameToken& frame,
                                              const sl::ViewportHandle& viewport,
                                              const sl::ResourceTag* tags,
@@ -55,13 +54,14 @@ StreamlineManager::DLSSDebugState StreamlineManager::GetDLSSDebugState() { retur
 void StreamlineManager::SetDLSSDebugState(const DLSSDebugState& state) {}
 StreamlineManager::VersionInfo StreamlineManager::GetVersionInfo() { return {}; }
 const StreamlineManager::SwapchainFunctions& StreamlineManager::GetSwapchainFunctions() { return g_swapchainFunctions; }
-bool StreamlineManager::IsPresentRoutedThroughStreamline() { return false; }
 bool StreamlineManager::IsEarlyInitialized() { return false; }
 bool StreamlineManager::IsDLSSSupported() { return false; }
 bool StreamlineManager::IsDLSSRRSupported() { return false; }
 bool StreamlineManager::IsDLSSDebugUIAvailable() { return false; }
 } // namespace Nvidia
+#endif
 
+#ifndef _WIN32
 namespace VulkanXeSS
 {
 bool XeSSManager::Initialize() { return false; }
@@ -76,10 +76,7 @@ bool XeSSManager::EnsureConfigured(VkInstance instance,
 {
     return false;
 }
-xess_context_handle_t XeSSManager::GetContext() { return nullptr; }
-bool XeSSManager::GetOptimalResolution(u32 outputWidth, u32 outputHeight, xess_quality_settings_t qualitySetting, u32& outRenderWidth, u32& outRenderHeight) { return false; }
 bool XeSSManager::Execute(VkCommandBuffer cmdBuf, const xess_vk_execute_params_t& execParams) { return false; }
-void XeSSManager::ResetHistory() {}
 bool XeSSManager::ConsumeResetFlag() { return false; }
 } // namespace VulkanXeSS
 

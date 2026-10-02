@@ -35,8 +35,8 @@ public:
     // This function is used for non-mesh updates, I assume the scene mesh data
     // itself won't update much Changing a material/scaling a mesh will be way
     // more common hence this separation
-    void UpdateInstanceDataSSBO(stltype::vector<RenderPasses::PassMeshData>& meshes, u32 thisFrameNum);
-    void UploadInstanceDataSSBO(u32 frameIdx);
+    void UpdateInstanceDataSSBO(stltype::vector<RenderPasses::PassMeshData>& meshes);
+    void UploadInstanceDataSSBO();
 
     stltype::vector<UBO::InstanceData>& GetInstanceData() { return m_currentFrameInstanceData; }
     const stltype::vector<UBO::InstanceData>& GetInstanceData() const { return m_currentFrameInstanceData; }
@@ -44,20 +44,10 @@ public:
 
     MeshHandle GetMeshHandle(const Mesh* pMesh) const;
 
-    void WriteInstanceSSBODescriptorUpdate(u32 targetFrame);
-
-    void UpdateTransformBuffer(const stltype::vector<DirectX::XMFLOAT4X4>& transformBuffer, u32 thisFrame, u32 updateCount = 0);
-    void UpdateTransformRange(const stltype::vector<DirectX::XMFLOAT4X4>& transformBuffer,
-                              u32 startIdx,
-                              u32 count,
-                              u32 thisFrame);
-    void UpdatePrevTransformRange(const stltype::vector<DirectX::XMFLOAT4X4>& transformBuffer,
-                                  u32 startIdx,
-                                  u32 count,
-                                  u32 thisFrame);
-    void UpdateSceneAABBBuffer(const stltype::vector<AABB>& aabbBuffer, u32 thisFrame, u32 updateCount = 0);
-    void UpdateSceneAABBRange(const stltype::vector<AABB>& aabbBuffer, u32 startIdx, u32 count, u32 thisFrame);
-    void UpdateGlobalMaterialBuffer(const UBO::MaterialBuffer& materialBuffer, u32 thisFrame);
+    void UpdateTransformRange(const stltype::vector<DirectX::XMFLOAT4X4>& transformBuffer, u32 startIdx, u32 count);
+    void UpdatePrevTransformRange(const stltype::vector<DirectX::XMFLOAT4X4>& transformBuffer, u32 startIdx, u32 count);
+    void UpdateSceneAABBRange(const stltype::vector<AABB>& aabbBuffer, u32 startIdx, u32 count);
+    void UpdateGlobalMaterialBuffer(const UBO::MaterialBuffer& materialBuffer);
 
     DescriptorSet::Ptr GetInstanceSSBODescriptorSet(u32 frameIdx)
     {
@@ -161,6 +151,4 @@ private:
 
     mutable ProfiledLockable(CustomMutex, m_geometryStateMutex);
 
-public:
-    StorageBuffer& GetInstanceBuffer() { return m_sceneInstanceBuffer; }
 };

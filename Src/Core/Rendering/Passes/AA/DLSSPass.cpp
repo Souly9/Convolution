@@ -57,27 +57,28 @@ sl::DLSSMode ResolveDLSSMode(u32 renderScalePercent)
     return sl::DLSSMode::eUltraPerformance;
 }
 
-DLSSPass::TagDesc MakeTag(Texture* pTex, sl::BufferType type)
+sl::Resource MakeResource(Texture* pTex, sl::BufferType type)
 {
-    DLSSPass::TagDesc desc{};
-    desc.type = type;
-    desc.state = GetTaggedLayout(type);
-    desc.nativeFormat = static_cast<uint32_t>(VK_FORMAT_R8G8B8A8_UNORM);
-
     auto* pVkTex = static_cast<TextureVulkan*>(pTex);
-    if (!pVkTex || pVkTex->GetImage() == VK_NULL_HANDLE || pVkTex->GetImageView() == VK_NULL_HANDLE)
-        return desc;
+    const bool valid = pVkTex && pVkTex->GetImage() != VK_NULL_HANDLE && pVkTex->GetImageView() != VK_NULL_HANDLE;
+    sl::Resource res(sl::ResourceType::eTex2d,
+                     valid ? reinterpret_cast<void*>(pVkTex->GetImage()) : nullptr,
+                     nullptr,
+                     valid ? reinterpret_cast<void*>(pVkTex->GetImageView()) : nullptr,
+                     GetTaggedLayout(type));
+    res.nativeFormat = static_cast<uint32_t>(VK_FORMAT_R8G8B8A8_UNORM);
+    if (!valid)
+        return res;
 
     const auto& info = pVkTex->GetInfo();
-    desc.native = reinterpret_cast<uint64_t>(pVkTex->GetImage());
-    desc.view = reinterpret_cast<uint64_t>(pVkTex->GetImageView());
-    desc.width = info.extents.x;
-    desc.height = info.extents.y;
-    desc.nativeFormat = static_cast<uint32_t>(Conv(info.format));
-    desc.usage = Conv(info.usage);
-    desc.mipLevels = info.mipLevels > 0 ? info.mipLevels : 1u;
-    desc.arrayLayers = info.extents.z > 0 ? info.extents.z : 1u;
-    return desc;
+    res.width = info.extents.x;
+    res.height = info.extents.y;
+    res.nativeFormat = static_cast<uint32_t>(Conv(info.format));
+    res.usage = Conv(info.usage);
+    res.mipLevels = info.mipLevels > 0 ? info.mipLevels : 1u;
+    res.arrayLayers = info.extents.z > 0 ? info.extents.z : 1u;
+    res.flags = 0;
+    return res;
 }
 
 sl::Constants BuildConstants(const ::SharedDataUBO& view, bool reset, const SL::DebugSettings& settings)
@@ -116,53 +117,13 @@ sl::Constants BuildConstants(const ::SharedDataUBO& view, bool reset, const SL::
     return constants;
 }
 
-struct StreamlineTagStorage
-{
-    stltype::fixed_vector<sl::Resource, 16, false> resources;
-    stltype::fixed_vector<sl::ResourceTag, 16, false> tags;
-};
-StreamlineTagStorage s_tagStorage[FRAMES_IN_FLIGHT];
-
 void TagAndEvaluate(VkCommandBuffer cmd,
-                    const DLSSPass::TagList& tagDescs,
-                    StreamlineTagStorage& storage,
+                    const stltype::fixed_vector<sl::ResourceTag, 16, false>& tags,
                     const sl::FrameToken& frameToken,
                     Nvidia::DLSSVariant variant)
 {
-    storage.resources.clear();
-    storage.tags.clear();
-    for (const auto& td : tagDescs)
-    {
-        const bool isNull = td.native == 0 && td.view == 0;
-        sl::Resource res(sl::ResourceType::eTex2d,
-                         isNull ? nullptr : reinterpret_cast<void*>(td.native),
-                         nullptr,
-                         isNull ? nullptr : reinterpret_cast<void*>(td.view),
-                         td.state);
-        res.nativeFormat = td.nativeFormat;
-        if (!isNull)
-        {
-            res.width = td.width;
-            res.height = td.height;
-            res.usage = td.usage;
-            res.mipLevels = td.mipLevels;
-            res.arrayLayers = td.arrayLayers;
-            res.flags = 0;
-        }
-        storage.resources.push_back(res);
-    }
-    for (size_t i = 0; i < storage.resources.size(); ++i)
-    {
-        const bool isNull = tagDescs[i].native == 0 && tagDescs[i].view == 0;
-        storage.tags.emplace_back(
-            isNull ? nullptr : &storage.resources[i], tagDescs[i].type, sl::ResourceLifecycle::eValidUntilPresent);
-    }
-
-    const sl::Result tagRes = SL::SetTagForFrame(frameToken,
-                                                 sl::ViewportHandle(0),
-                                                 storage.tags.data(),
-                                                 static_cast<u32>(storage.tags.size()),
-                                                 (sl::CommandBuffer*)cmd);
+    const sl::Result tagRes = SL::SetTagForFrame(
+        frameToken, sl::ViewportHandle(0), tags.data(), static_cast<u32>(tags.size()), (sl::CommandBuffer*)cmd);
     auto debugState = SL::GetDLSSDebugState();
     debugState.lastTagResult = tagRes;
     SL::SetDLSSDebugState(debugState);
@@ -216,22 +177,19 @@ void DLSSPass::RenderWithGraph(const MainPassData& data, const FrameRendererCont
     const auto inputExtents = pColorIn->GetInfo().extents;
     const sl::DLSSMode mode = ResolveDLSSMode(aa.renderScalePercent);
 
+    const u32 frameSlot = ctx.currentFrame;
+    sl::FrameToken* pFrameToken = nullptr;
+    const bool canEvaluate =
+        !settings.bypass && pDepth && pMotion && SL::GetFrameToken(frameSlot, pFrameToken) &&
+        SL::EnsureConfigured(variant, outputExtents.x, outputExtents.y, mode, view.view, view.viewInverse);
+
+    // Snapshot after EnsureConfigured, which publishes the config state
     auto debugState = SL::GetDLSSDebugState();
     debugState.variant = variant;
     debugState.inputWidth = inputExtents.x;
     debugState.inputHeight = inputExtents.y;
     debugState.outputWidth = outputExtents.x;
     debugState.outputHeight = outputExtents.y;
-    debugState.nearPlane = view.zNear;
-    debugState.farPlane = view.zFar;
-    debugState.fovRadians = view.fovY;
-    debugState.aspectRatio = view.aspectRatio;
-
-    const u32 frameSlot = ctx.currentFrame;
-    sl::FrameToken* pFrameToken = nullptr;
-    const bool canEvaluate = !settings.bypass && pDepth && pMotion && SL::GetFrameToken(frameSlot, pFrameToken) &&
-                             SL::EnsureConfigured(variant, outputExtents.x, outputExtents.y, mode, view.view, view.viewInverse) &&
-                             !SL::IsEvaluateBlocked(variant);
 
     sl::Result constRes = sl::Result::eOk;
     Texture* pExposure = nullptr;
@@ -241,28 +199,37 @@ void DLSSPass::RenderWithGraph(const MainPassData& data, const FrameRendererCont
         // Filled by DLSSExposurePass earlier in the graph
         pExposure = settings.useExposureTexture ? execCtx.GetTexture(RGResourceID::DLSSExposure) : nullptr;
 
-        TagList& tags = m_tags[frameSlot];
-        tags.clear();
-        tags.push_back(MakeTag(pColorIn, sl::kBufferTypeScalingInputColor));
-        tags.push_back(MakeTag(pColorOut, sl::kBufferTypeScalingOutputColor));
-        tags.push_back(MakeTag(pDepth, sl::kBufferTypeDepth));
-        tags.push_back(MakeTag(pMotion, sl::kBufferTypeMotionVectors));
+        TagStorage& storage = m_tags[frameSlot];
+        storage.resources.clear();
+        storage.tags.clear();
+        const auto addTag = [&storage](Texture* pTex, sl::BufferType type)
+        {
+            storage.resources.push_back(MakeResource(pTex, type));
+            sl::Resource& res = storage.resources.back();
+            storage.tags.emplace_back(res.native ? &res : nullptr, type, sl::ResourceLifecycle::eValidUntilPresent);
+        };
+        addTag(pColorIn, sl::kBufferTypeScalingInputColor);
+        addTag(pColorOut, sl::kBufferTypeScalingOutputColor);
+        addTag(pDepth, sl::kBufferTypeDepth);
+        addTag(pMotion, sl::kBufferTypeMotionVectors);
         if (pExposure)
-            tags.push_back(MakeTag(pExposure, sl::kBufferTypeExposure));
+            addTag(pExposure, sl::kBufferTypeExposure);
         if (rayReconstruction)
         {
             Texture* pAlbedo = execCtx.GetTexture(RGResourceID::GBufferAlbedo);
             Texture* pNoisyReflections = execCtx.GetTexture(RGResourceID::RTReflections);
-            tags.push_back(MakeTag(pAlbedo, sl::kBufferTypeAlbedo));
-            tags.push_back(MakeTag(pAlbedo, sl::kBufferTypeSpecularAlbedo));
-            tags.push_back(MakeTag(execCtx.GetTexture(RGResourceID::GBufferNormal), sl::kBufferTypeNormals));
-            tags.push_back(MakeTag(execCtx.GetTexture(RGResourceID::GBufferRoughness), sl::kBufferTypeRoughness));
-            tags.push_back(MakeTag(pNoisyReflections, sl::kBufferTypeSpecularHitNoisy));
-            tags.push_back(MakeTag(pNoisyReflections, sl::kBufferTypeDiffuseHitNoisy));
+            addTag(pAlbedo, sl::kBufferTypeAlbedo);
+            addTag(pAlbedo, sl::kBufferTypeSpecularAlbedo);
+            addTag(execCtx.GetTexture(RGResourceID::GBufferNormal), sl::kBufferTypeNormals);
+            addTag(execCtx.GetTexture(RGResourceID::GBufferRoughness), sl::kBufferTypeRoughness);
+            addTag(pNoisyReflections, sl::kBufferTypeSpecularHitNoisy);
+            addTag(pNoisyReflections, sl::kBufferTypeDiffuseHitNoisy);
         }
 
         const bool uiReset = settings.resetGeneration != m_lastResetGeneration;
-        reset = aa.temporalReset || !m_evaluatedLastFrame || uiReset || SL::ConsumeResetFlag(variant);
+        // Always consume; a short-circuit would leave the reset set for the next frame
+        const bool configReset = SL::ConsumeResetFlag(variant);
+        reset = aa.temporalReset || !m_evaluatedLastFrame || uiReset || configReset;
         const sl::Constants constants = BuildConstants(view, reset, settings);
         constRes = SL::SetConstants(constants, *pFrameToken, sl::ViewportHandle(0));
         debugState.jitter = mathstl::Vector2(constants.jitterOffset.x, constants.jitterOffset.y);
@@ -282,9 +249,9 @@ void DLSSPass::RenderWithGraph(const MainPassData& data, const FrameRendererCont
     if (evaluate)
     {
         ExecuteNativeCmd evaluateCmd{};
-        const TagList* pTags = &m_tags[frameSlot];
-        evaluateCmd.callback = [pTags, pFrameToken, frameSlot, variant](void* pNativeCmdBuf)
-        { TagAndEvaluate(reinterpret_cast<VkCommandBuffer>(pNativeCmdBuf), *pTags, s_tagStorage[frameSlot], *pFrameToken, variant); };
+        const auto* pTags = &m_tags[frameSlot].tags;
+        evaluateCmd.callback = [pTags, pFrameToken, variant](void* pNativeCmdBuf)
+        { TagAndEvaluate(reinterpret_cast<VkCommandBuffer>(pNativeCmdBuf), *pTags, *pFrameToken, variant); };
         pCmdBuffer->RecordCommand(evaluateCmd);
     }
     else

@@ -17,8 +17,6 @@ struct APITraits
     using ComputePipelineType = void;
     using IndirectDrawCommandBufferType = void;
     using SynchronizationType = void;
-    using ColorAttachmentType = void;
-    using DepthAttachmentType = void;
     using DescriptorSetLayoutType = void;
     using DescriptorPoolType = void;
     using DescriptorSetType = void;

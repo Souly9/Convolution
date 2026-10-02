@@ -22,8 +22,6 @@ static_assert(sizeof(CommandBufferT<API_Metal>) > 0);
 static_assert(sizeof(DescriptorSetT<API_Metal>) > 0);
 static_assert(sizeof(DescriptorPoolT<API_Metal>) > 0);
 static_assert(sizeof(DescriptorSetLayoutT<API_Metal>) > 0);
-static_assert(sizeof(ColorAttachmentT<API_Metal>) > 0);
-static_assert(sizeof(DepthAttachmentT<API_Metal>) > 0);
 static_assert(sizeof(GraphicsPipelineT<API_Metal>) > 0);
 static_assert(sizeof(ComputePipelineT<API_Metal>) > 0);
 static_assert(sizeof(ShaderT<API_Metal>) > 0);

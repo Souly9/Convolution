@@ -55,14 +55,13 @@ void CompositPass::RebuildInternalData(const stltype::vector<PassMeshData>& mesh
                                                       FrameRendererContext& previousFrameCtx,
                                                       u32 thisFrameNum)
 {
-    m_currentFrameIdx = thisFrameNum % SWAPCHAIN_IMAGES;
-    auto& cmdBuf = m_indirectCmdBuffers.at(m_currentFrameIdx);
+    auto& cmdBuf = m_indirectCmdBuffers.at(thisFrameNum);
     cmdBuf.EmptyCmds();
     const auto pFullScreenQuadMesh = g_engine.GetMeshManager().GetPrimitiveMesh(MeshManager::PrimitiveType::Quad);
     const auto meshHandle = previousFrameCtx.pResourceManager->GetMeshHandle(pFullScreenQuadMesh);
     cmdBuf.AddIndexedDrawCmd(
         meshHandle.indexCount, 1, meshHandle.indexBufferOffset, meshHandle.vertBufferOffset, 0);
-    RebuildPerObjectBuffer({0}, m_currentFrameIdx);
+    RebuildPerObjectBuffer({0}, thisFrameNum);
     cmdBuf.FillCmds();
 }
 
@@ -123,6 +122,7 @@ void CompositPass::Setup(::RenderGraphBuilder& builder, const MainPassData& data
     if (compositeInput != aa.aaOutput)
         builder.ReadTexture(compositeInput, SyncStages::FRAGMENT_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
     builder.ReadTexture(RGResourceID::BloomMip0, SyncStages::FRAGMENT_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    builder.ReadTexture(RGResourceID::DebugOverlay, SyncStages::FRAGMENT_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
     if (appRenderState.debugViewMode == static_cast<s32>(DebugViewMode::MotionVectors))
         builder.ReadTexture(RGResourceID::GBufferVelocity, SyncStages::FRAGMENT_SHADER, AccessFlags::SHADER_READ, ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 

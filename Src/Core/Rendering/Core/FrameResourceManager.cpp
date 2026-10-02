@@ -84,18 +84,16 @@ void FrameResourceManager::BuildSharedDataForView(const RenderView& mainView,
 
 void FrameResourceManager::Init()
 {
-    u64 sharedDataUBOSize = sizeof(UBO::SharedDataUBO);
-
     m_lightCluster = stltype::make_unique<UBO::LightClusterSSBO>();
     m_lightCluster->lights.resize(MAX_SCENE_LIGHTS);
     // The GPU writes the cluster lists and reads them per pixel; the CPU only uploads lights through staging
     m_lightClusterSSBO = StorageBuffer(UBO::LightClusterSSBOSize, true);
     m_clusterGridSSBO = StorageBuffer(UBO::ClusterAABBSetSize, true);
 
-    m_sharedDataUBO.Create(sharedDataUBOSize, "Shared Data UBO");
-    m_lightUniformsUBO.Create(sizeof(LightUniforms), "Light Uniforms UBO");
-    m_gbufferPostProcessUBO.Create(sizeof(UBO::GBufferPostProcessUBO), "GBuffer PostProcess UBO");
-    m_shadowMapUBO.Create(sizeof(UBO::ShadowMapUBO), "Shadow Map UBO");
+    m_sharedDataUBO.Create("Shared Data UBO");
+    m_lightUniformsUBO.Create("Light Uniforms UBO");
+    m_gbufferPostProcessUBO.Create("GBuffer PostProcess UBO");
+    m_shadowMapUBO.Create("Shadow Map UBO");
 
     m_lightClusterSSBO.SetName("Light Cluster SSBO");
     m_clusterGridSSBO.SetName("Cluster AABB SSBO");
@@ -112,9 +110,6 @@ void FrameResourceManager::Init()
 
 void FrameResourceManager::CreatePassObjectsAndLayouts()
 {
-    DescriptorPoolCreateInfo info{};
-    info.enableBindlessTextureDescriptors = false;
-    info.enableStorageBufferDescriptors = true;
     m_descriptorPool.Create(
         {.enableBindlessTextureDescriptors = true, .enableStorageBufferDescriptors = true, .freeDescriptorSet = true});
     m_descriptorPool.SetName("Global Frame Descriptor Pool");
@@ -140,8 +135,7 @@ void FrameResourceManager::CreatePassObjectsAndLayouts()
 
 void FrameResourceManager::CreateFrameRendererContexts(
     stltype::fixed_vector<Semaphore, SWAPCHAIN_IMAGES>& imageAvailableSemaphores,
-    stltype::fixed_vector<Fence, SWAPCHAIN_IMAGES>& imageAvailableFences,
-    stltype::fixed_vector<Fence, SWAPCHAIN_IMAGES>& renderFinishedFences)
+    stltype::fixed_vector<Fence, SWAPCHAIN_IMAGES>& imageAvailableFences)
 {
     m_frameRendererContexts.resize(SWAPCHAIN_IMAGES);
     for (size_t i = 0; i < SWAPCHAIN_IMAGES; i++)
@@ -149,8 +143,6 @@ void FrameResourceManager::CreateFrameRendererContexts(
         auto& frameContext = m_frameRendererContexts[i];
         frameContext.frameTimeline.Create(0);
         frameContext.computeTimeline.Create(0);
-        frameContext.nextTimelineValue = 0;
-        frameContext.nextComputeTimelineValue = 0;
         frameContext.pPresentLayoutTransitionSignalSemaphore.Create();
 
         frameContext.sharedDataUBODescriptor = m_descriptorPool.CreateDescriptorSet(m_sharedDataUBOLayout.GetRef());
@@ -177,9 +169,6 @@ void FrameResourceManager::CreateFrameRendererContexts(
         imageAvailableFences[i].Create(false);
         imageAvailableFences[i].SetName("Image Available Fence " + numberString);
         imageAvailableSemaphores[i].SetName("Image Available Semaphore " + numberString);
-        // Create render finished fence as signaled so first frame doesn't wait
-        renderFinishedFences[i].Create(true);
-        renderFinishedFences[i].SetName("Render Finished Fence " + numberString);
 
         // Tile array data
         frameContext.tileArraySSBODescriptor = m_descriptorPool.CreateDescriptorSet(m_lightClusterSSBOLayout.GetRef());
@@ -218,25 +207,11 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
             m_currentShadowMapState.shadowMapExtents = csmResolution;
         }
     }
-    if (m_needsToPropagateMainDataUpdate && m_dataToBePreProcessed.IsEmpty())
-    {
-        m_needsToPropagateMainDataUpdate = false;
-        // Use currentSwapChainIdx because that's the context we are preparing for
-        auto& ctx = m_frameRendererContexts[currentSwapChainIdx];
-
-        ctx.zNear = m_dataToBePreProcessed.mainView.zNear;
-        ctx.zFar = m_dataToBePreProcessed.mainView.zFar;
-
-        ctx.tileArraySSBODescriptor->WriteSSBOUpdate(m_lightClusterSSBO);
-    }
-
     if (g_renderer.GetMaterialManager().IsBufferDirty())
     {
         g_renderer.GetMaterialManager().RebuildBufferData();
-        pPassManager->GetResourceManager().UpdateGlobalMaterialBuffer(g_renderer.GetMaterialManager().GetMaterialBuffer(),
-                                                                      currentSwapChainIdx);
-        m_needsToPropagateMainDataUpdate = true;
-        m_frameIdxToPropagate = frameIdx;
+        pPassManager->GetResourceManager().UpdateGlobalMaterialBuffer(
+            g_renderer.GetMaterialManager().GetMaterialBuffer());
         g_renderer.GetMaterialManager().MarkBufferUploaded();
     }
 
@@ -389,8 +364,7 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
         }
 
         const u32 prevDirtyCount = prevDirtyMax - prevDirtyMin + 1;
-        resourceManager.UpdatePrevTransformRange(
-            m_cachedPrevTransformSSBO, prevDirtyMin, prevDirtyCount, currentSwapChainIdx);
+        resourceManager.UpdatePrevTransformRange(m_cachedPrevTransformSSBO, prevDirtyMin, prevDirtyCount);
         m_transformsPendingPrevCatchup.clear();
     }
 
@@ -442,12 +416,10 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
             }
             if (needsRebuild)
             {
-                pPassManager->GetResourceManager().UpdateInstanceDataSSBO(passData.staticMeshPassData,
-                                                                          currentSwapChainIdx);
+                pPassManager->GetResourceManager().UpdateInstanceDataSSBO(passData.staticMeshPassData);
                 pPassManager->PreProcessMeshDataPublic(passData.staticMeshPassData);
                 m_currentPassGeometryState = passData;
             }
-            pPassManager->TransferPassDataPublic(std::move(passData), m_dataToBePreProcessed.frameIdx);
         }
 
         u32 dirtyMin = ~0u;
@@ -501,16 +473,15 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
         if (prevDirtyMin <= prevDirtyMax)
         {
             const u32 prevDirtyCount = prevDirtyMax - prevDirtyMin + 1;
-            resourceManager.UpdatePrevTransformRange(
-                m_cachedPrevTransformSSBO, prevDirtyMin, prevDirtyCount, currentSwapChainIdx);
+            resourceManager.UpdatePrevTransformRange(m_cachedPrevTransformSSBO, prevDirtyMin, prevDirtyCount);
         }
         m_transformsToPropagateToPrev.clear();
 
         if (dirtyMin <= dirtyMax)
         {
             const u32 dirtyCount = dirtyMax - dirtyMin + 1;
-            resourceManager.UpdateTransformRange(m_cachedTransformSSBO, dirtyMin, dirtyCount, currentSwapChainIdx);
-            resourceManager.UpdateSceneAABBRange(m_cachedSceneAABBs, dirtyMin, dirtyCount, currentSwapChainIdx);
+            resourceManager.UpdateTransformRange(m_cachedTransformSSBO, dirtyMin, dirtyCount);
+            resourceManager.UpdateSceneAABBRange(m_cachedSceneAABBs, dirtyMin, dirtyCount);
         }
 
         if (m_dataToBePreProcessed.lightVector.empty() == false ||
@@ -536,7 +507,7 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
                 lightClusterHost.dirLight.color =
                     mathstl::Vector4(dirLight.color.x, dirLight.color.y, dirLight.color.z, dirLight.color.w);
             }
-            UpdateLightClusterSSBO(lightClusterHost, lightClusterHost.numLights);
+            UpdateLightClusterSSBO(lightClusterHost);
         }
         else if (!m_dataToBePreProcessed.lightDeltaUpdates.empty() || m_dataToBePreProcessed.dirLightUpdated)
         {
@@ -609,8 +580,7 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
                                     isCullingEnabled,
                                     isCullingFrozen,
                                     m_cachedTransformSSBO,
-                                    cascadeCount == 0,
-                                    currentSwapChainIdx);
+                                    cascadeCount == 0);
 
         for (u32 c = 0; c < cascadeCount; ++c)
         {
@@ -620,13 +590,9 @@ void FrameResourceManager::PreProcessDataForCurrentFrame(u32 frameIdx,
                                         isCullingEnabled,
                                         isCullingFrozen,
                                         m_cachedTransformSSBO,
-                                        c == (cascadeCount - 1),
-                                        currentSwapChainIdx);
+                                        c == (cascadeCount - 1));
         }
 
-        // Clear
-        m_needsToPropagateMainDataUpdate = true;
-        m_frameIdxToPropagate = currentSwapChainIdx;
         m_dataToBePreProcessed.Clear();
     }
 
@@ -687,16 +653,16 @@ void FrameResourceManager::SetSharedData(RenderView&& mainView, u32 frameIdx)
     m_passDataMutex.unlock();
 }
 
-void FrameResourceManager::UpdateLightClusterSSBO(const UBO::LightClusterSSBO& data, u32 numLights)
+void FrameResourceManager::UpdateLightClusterSSBO(const UBO::LightClusterSSBO& data)
 {
     // Transfer header
     DispatchSSBOTransfer(&data, (u32)UBO::LightClusterHeaderSize, &m_lightClusterSSBO);
 
     // Transfer active lights data directly from the vector's data pointer
-    if (numLights > 0)
+    if (data.numLights > 0)
     {
         DispatchSSBOTransfer(data.lights.data(),
-                             (u32)numLights * sizeof(RenderLight),
+                             (u32)data.numLights * sizeof(RenderLight),
                              &m_lightClusterSSBO,
                              (u32)UBO::LightClusterLightsOffset);
     }
@@ -704,12 +670,7 @@ void FrameResourceManager::UpdateLightClusterSSBO(const UBO::LightClusterSSBO& d
 
 void FrameResourceManager::DispatchSSBOTransfer(const void* data, u32 size, StorageBuffer* pSSBO, u32 offset)
 {
-    AsyncQueueHandler::SSBOTransfer transfer;
-    transfer.pData = data;
-    transfer.size = size;
-    transfer.offset = offset;
-    transfer.pSSBO = pSSBO;
-    g_renderer.GetQueueHandler().SubmitTransferCommandAsync(transfer);
+    g_renderer.GetQueueHandler().SubmitTransferCommandAsync(AsyncQueueHandler::SSBOTransfer{data, size, pSSBO, offset});
 }
 
 void FrameResourceManager::ClearGeometryCaches()
@@ -720,7 +681,6 @@ void FrameResourceManager::ClearGeometryCaches()
     m_cachedMainView = RenderView{};
     m_entityToTransformUBOIdx.clear();
     m_firstNewTransformSlot = 0;
-    m_entityToObjectDataIdx.clear();
     // Indexed by SSBO slot, so they must keep MAX_ENTITIES entries
     m_cachedTransformSSBO.assign(MAX_ENTITIES, DirectX::XMFLOAT4X4{});
     m_cachedPrevTransformSSBO.assign(MAX_ENTITIES, DirectX::XMFLOAT4X4{});
@@ -728,8 +688,6 @@ void FrameResourceManager::ClearGeometryCaches()
     m_transformsToPropagateToPrev.clear();
     m_transformsPendingPrevCatchup.clear();
     m_cachedDirLights.clear();
-    m_needsToPropagateMainDataUpdate = false;
-    m_frameIdxToPropagate = 0;
 }
 
 } // namespace RenderPasses

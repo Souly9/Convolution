@@ -8,6 +8,7 @@
 
 float getCascadeSplit(int index)
 {
+    // We have 4 cascades max so just hardcode it but not pretty
     int arrayIdx = index / 4;
     int compIdx = index % 4;
     return ubo.cascadeSplits[arrayIdx][compIdx];
@@ -38,15 +39,17 @@ const vec2 poissonDisk[16] = vec2[](
     vec2(-0.26496911, -0.41893023), vec2(0.79197514, 0.19090188),
     vec2(-0.24188840, 0.99706507), vec2(-0.81409955, 0.91437590),
     vec2(0.19984126, 0.78641367), vec2(0.14383161, -0.14100790)
-);
+    );
 
 float sampleShadowCascade(int cascadeIndex, vec4 fragWorldPos, vec3 normal, vec3 lightDir)
 {
     vec4 fragPosLightSpace = ubo.csmViewMatrices[cascadeIndex] * fragWorldPos;
     vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
 
+    // Transform to [0,1] range
     projCoords.xy = vec2(projCoords.x * 0.5 + 0.5, 0.5 - projCoords.y * 0.5);
 
+    // If the fragment is outside the light frustum, return no shadow
     if (projCoords.z > 1.0 || projCoords.z < 0.0 || projCoords.x < 0.0 || projCoords.x > 1.0 || projCoords.y < 0.0 ||
         projCoords.y > 1.0)
     {
@@ -77,8 +80,8 @@ float sampleShadowCascade(int cascadeIndex, vec4 fragWorldPos, vec3 normal, vec3
     for (int i = 0; i < samples; i++)
     {
         float pcfDepth = texture(BindlessTextureArray(shadowmapUBO.directionalShadowMapIdx, SAMPLER_SHADOW),
-                                 vec3(projCoords.xy + poissonDisk[i] * diskRadius, cascadeIndex))
-                             .x;
+            vec3(projCoords.xy + poissonDisk[i] * diskRadius, cascadeIndex))
+            .x;
         shadow += (currentDepth < pcfDepth ? 0.0 : 1.0);
     }
 
@@ -101,7 +104,6 @@ float computeShadow(vec4 fragWorldPos, float fragViewDepth, vec3 normal, vec3 li
     if (nextCascade < ubo.cascadeCount)
     {
         float currentSplit = getCascadeSplit(cascadeIndex);
-        float nextSplit = getCascadeSplit(nextCascade);
 
         float transitionRange = 0.5;
         float distanceToEdge = currentSplit - fragViewDepth;

@@ -1,11 +1,12 @@
 #include "RenderGraph.h"
-#include "RenderGraphDumper.h"
 #include "Core/Global/LogDefines.h"
 #include "Core/Global/Profiling.h"
 #include "Core/Global/State/ApplicationState.h"
 #include "Core/Rendering/Core/GPUTimingQuery.h"
+#include "Core/Rendering/Core/TracyManager.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
 #include "Core/Rendering/Passes/PassManager.h"
+#include "RenderGraphDumper.h"
 
 void RenderGraph::BeginFrame(u32 frameSlot, const mathstl::Vector2& renderRes, const mathstl::Vector2& outputRes)
 {
@@ -136,38 +137,6 @@ void RenderGraph::BuildAdjacencyGraph()
     }
 }
 
-bool RenderGraph::ValidateSinglePass() const
-{
-    ScopedZone("RenderGraph::ValidateSinglePass");
-    u32 activeExclusionMask = 0;
-    bool isValid = true;
-
-    for (u32 nodeIdx = 0; nodeIdx < static_cast<u32>(m_nodes.size()); ++nodeIdx)
-    {
-        const auto& node = m_nodes[nodeIdx];
-        if (node.IsCulled()) continue;
-
-        if (node.exclusionGroup != ExclusionGroup::None)
-        {
-            const u32 groupBit = 1u << static_cast<u8>(node.exclusionGroup);
-            if (activeExclusionMask & groupBit)
-            {
-                DEBUG_LOG_ERRF("RenderGraph: Node '%s' conflicts with active ExclusionGroup %d",
-                               node.name.c_str(), static_cast<int>(node.exclusionGroup));
-                isValid = false;
-            }
-            activeExclusionMask |= groupBit;
-        }
-
-        if (node.RequiresRT() && !m_hasRTScene)
-        {
-            DEBUG_LOG_WARNF("RenderGraph: Node '%s' requires RT, but TLAS is not ready", node.name.c_str());
-        }
-    }
-
-    return isValid;
-}
-
 void RenderGraph::CullUnreferencedNodes()
 {
     ScopedZone("RenderGraph::CullUnreferencedNodes");
@@ -283,14 +252,6 @@ void RenderGraph::TopologicalSort()
     }
 }
 
-namespace
-{
-u32 QueueSlot(QueueType queueType)
-{
-    return queueType == QueueType::Compute ? 1u : 0u;
-}
-} // namespace
-
 void RenderGraph::InsertBarriers()
 {
     ScopedZone("RenderGraph::InsertBarriers");
@@ -308,10 +269,11 @@ void RenderGraph::InsertBarriers()
     for (u32 nodeIdx : m_sortedNodeIndices)
     {
         auto& node = m_nodes[nodeIdx];
-        if (node.IsCulled() || node.IsOpaque()) continue;
+        if (node.IsCulled())
+            continue;
 
-        const u32 queueSlot = QueueSlot(node.queueType);
-        MemoryBarrierDesc& memoryBarrier = m_memoryBarriersByNode[nodeIdx];
+        const u32 queueSlot = node.queueType == QueueType::Compute ? 1u : 0u;
+        GlobalBarrierCmd& memoryBarrier = m_memoryBarriersByNode[nodeIdx];
 
         // Hazards are checked against the state before this node, so a node never waits on itself
         auto addDependency = [&](const RGResourceAccess& access, bool isWrite)
@@ -353,7 +315,6 @@ void RenderGraph::InsertBarriers()
             if (needsTransition)
             {
                 BarrierCmdDesc b{};
-                b.nodeIndex = nodeIdx;
                 b.resourceHandle = access.handle;
                 b.oldLayout = state.currentLayout;
                 b.newLayout = access.layout;
@@ -369,9 +330,9 @@ void RenderGraph::InsertBarriers()
             else if (srcStage != SyncStages::NONE && !coveredByTransition)
             {
                 memoryBarrier.srcStage |= srcStage;
-                memoryBarrier.srcAccess |= srcAccess;
+                memoryBarrier.srcAccessMask |= srcAccess;
                 memoryBarrier.dstStage |= dstStage;
-                memoryBarrier.dstAccess |= access.access;
+                memoryBarrier.dstAccessMask |= access.access;
             }
         };
 
@@ -422,7 +383,6 @@ void RenderGraph::Compile()
 {
     ScopedZone("RenderGraph::Compile");
     m_registry.AllocatePending();
-    ValidateSinglePass();
     CullUnreferencedNodes();
     BuildAdjacencyGraph();
     TopologicalSort();
@@ -432,8 +392,6 @@ void RenderGraph::Compile()
 
 void RenderGraph::PublishDebugState() const
 {
-    if (!g_engine.TryGetApplicationState()) return;
-
     RendererState::RenderGraphDebugState snapshot{};
     u64 totalVRAM = 0;
 
@@ -442,9 +400,7 @@ void RenderGraph::PublishDebugState() const
         RendererState::RenderGraphDebugNode dNode{};
         dNode.name = node.name;
         dNode.queueType = static_cast<u32>(node.queueType);
-        dNode.exclusionGroup = static_cast<u32>(node.exclusionGroup);
         dNode.isCulled = node.IsCulled();
-        dNode.isOpaque = node.IsOpaque();
 
         for (const auto& r : node.reads)
         {
@@ -579,10 +535,7 @@ void RenderGraph::ExecuteNode(u32 nodeIdx, CommandBuffer* pCmdBuffer, const Rend
     }
 
     if (m_memoryBarriersByNode[nodeIdx].srcStage != SyncStages::NONE)
-    {
-        const auto& mb = m_memoryBarriersByNode[nodeIdx];
-        pCmdBuffer->RecordCommand(GlobalBarrierCmd(mb.srcStage, mb.dstStage, mb.srcAccess, mb.dstAccess));
-    }
+        pCmdBuffer->RecordCommand(m_memoryBarriersByNode[nodeIdx]);
 
     stltype::vector<DescriptorSet::Ptr> resolvedDescriptors;
     if (node.contextResolver)
@@ -702,19 +655,15 @@ void RenderGraph::BuildExecutionBatches(RenderPasses::FrameRendererContext& ctx)
         }
     }
 
-    // Assign strictly monotonic timeline signal values in ASCENDING batch index order
-    for (u32 depIdx = 0; depIdx < static_cast<u32>(crossQueueDeps.size()); ++depIdx)
+    // In batch (submission) order: timelines only grow, and a wait then covers earlier signals on that queue
+    for (const auto& dep : crossQueueDeps)
+        m_batches[dep.producerBatchIdx].signalStages = SyncStages::ALL_COMMANDS;
+    for (auto& batch : m_batches)
     {
-        u32 producerIdx = crossQueueDeps[depIdx].producerBatchIdx;
-        auto& producerBatch = m_batches[producerIdx];
-        if (producerBatch.signalValue == 0)
-        {
-            producerBatch.signalValue = RenderPasses::PassManager::s_globalTimelineCounter.fetch_add(1);
-            producerBatch.signalStages = SyncStages::ALL_COMMANDS;
-            producerBatch.pSignalSemaphore = (producerBatch.queueType == QueueType::Compute)
-                ? &ctx.computeTimeline
-                : &ctx.frameTimeline;
-        }
+        if (batch.signalStages == SyncStages::NONE)
+            continue;
+        batch.signalValue = RenderPasses::PassManager::s_globalTimelineCounter.fetch_add(1);
+        batch.pSignalSemaphore = batch.queueType == QueueType::Compute ? &ctx.computeTimeline : &ctx.frameTimeline;
     }
 
     for (const auto& dep : crossQueueDeps)
@@ -751,7 +700,6 @@ void RenderGraph::Execute(const RenderPasses::MainPassData& data,
                           GPUTimingQueryBase* pTimingQuery)
 {
     ScopedZone("RenderGraph::Execute");
-    BuildExecutionBatches(ctx);
 
 #if CONVOLUTION_DUMP_RENDERGRAPH
     RenderGraphDumper::DumpToFile(*this, ctx.currentFrame);
@@ -795,9 +743,6 @@ void RenderGraph::Execute(const RenderPasses::MainPassData& data,
             continue;
         }
 
-        pCmdBuffer->ResetBuffer();
-        pCmdBuffer->SetFrameIdx(ctx.currentFrame);
-
         if (pTimingQuery && pTimingQuery->IsEnabled())
         {
             if (batch.queueType == QueueType::Graphics && isFirstGraphicsBatch)
@@ -819,12 +764,15 @@ void RenderGraph::Execute(const RenderPasses::MainPassData& data,
         if (batch.queueType == QueueType::Graphics && isFirstGraphicsBatch)
         {
             isFirstGraphicsBatch = false;
+            // Reads back earlier frames' GPU zones before this frame writes new ones
+            g_renderer.GetTracyGPUManager().Collect(pCmdBuffer);
             pCmdBuffer->RecordCommand(frameStartBarrier);
             EmitSwapchainInit(pCmdBuffer, ctx.pCurrentSwapchainTexture, pImageAvailableSemaphore);
         }
         else if (batch.queueType == QueueType::Compute && isFirstComputeBatch)
         {
             isFirstComputeBatch = false;
+            g_renderer.GetTracyGPUManager().Collect(pCmdBuffer);
             pCmdBuffer->RecordCommand(frameStartBarrier);
             // Compute runs on another queue, so the frame's uploads are not ordered before it by the barriers
             auto& queueHandler = g_renderer.GetQueueHandler();

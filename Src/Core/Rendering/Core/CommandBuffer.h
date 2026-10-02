@@ -363,6 +363,7 @@ struct GlobalBarrierCmd : public CommandBase
     AccessFlags srcAccessMask{AccessFlags::NONE};
     AccessFlags dstAccessMask{AccessFlags::NONE};
 
+    GlobalBarrierCmd() = default;
     GlobalBarrierCmd(SyncStages sStage, SyncStages dStage, AccessFlags sAccess, AccessFlags dAccess)
         : srcStage(sStage), dstStage(dStage), srcAccessMask(sAccess), dstAccessMask(dAccess)
     {
@@ -582,6 +583,10 @@ public:
     QueueType GetQueueType() const
     {
         return m_queueType;
+    }
+    CommandBufferStats& GetStats()
+    {
+        return m_stats;
     }
 
 protected:

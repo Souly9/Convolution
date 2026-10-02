@@ -22,7 +22,6 @@ public:
 
     void SetImageView(VkImageView view);
     void SetImageView2D(VkImageView view2D);
-    void SetSampler(VkSampler sampler);
 
     VkImageView GetImageView() const
     {
@@ -36,17 +35,12 @@ public:
     {
         return m_image;
     }
-    VkSampler GetSampler() const
-    {
-        return m_sampler;
-    }
 
     virtual void NamingCallBack(const stltype::string& name) override;
 
 protected:
     VkImage m_image{VK_NULL_HANDLE};
     GPUMemoryHandle m_imageMemory{VK_NULL_HANDLE};
-    VkSampler m_sampler{VK_NULL_HANDLE};
     VkImageView m_imageView{VK_NULL_HANDLE};
     VkImageView m_imageView2D{VK_NULL_HANDLE};
 };

@@ -1,7 +1,6 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
 
-#include "RenderBackendBase.h"
 #include "BackendForwardDecls.h"
 
 #ifdef USE_VULKAN

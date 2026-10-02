@@ -72,8 +72,6 @@ public:
 
     // Blocks until the pool is idle
     void FinishAllRequests();
-    // Joins the pool and frees results nobody picked up
-    void Stop();
 
     void SubmitIORequest(const IORequest& request);
 
@@ -92,7 +90,6 @@ public:
         return m_lastDeliveredImages;
     }
 
-    static void FreeImageData(const unsigned char* pixels);
     // Frees the pixels and every mip
     static void FreeTextureInfo(const ReadTextureInfo& info);
 

@@ -44,6 +44,7 @@ public:
     };
 
     void BuildExecutionBatches(RenderPasses::FrameRendererContext& ctx);
+    // Records and queues the batches from this frame's BuildExecutionBatches
     void Execute(const RenderPasses::MainPassData& data,
                  RenderPasses::FrameRendererContext& ctx,
                  Semaphore* pImageAvailableSemaphore,
@@ -57,14 +58,11 @@ public:
     const RGResourceRegistry& GetRegistry() const { return m_registry; }
 
     const stltype::vector<RGNode>& GetNodes() const { return m_nodes; }
-    bool HasRTSceneAvailable() const { return m_hasRTScene; }
-    void SetRTSceneAvailable(bool available) { m_hasRTScene = available; }
 
     void Reset();
 
     struct BarrierCmdDesc
     {
-        u32 nodeIndex{0};
         RGResourceHandle resourceHandle{kInvalidRGHandle};
         ImageLayout oldLayout{ImageLayout::UNDEFINED};
         ImageLayout newLayout{ImageLayout::UNDEFINED};
@@ -76,19 +74,10 @@ public:
 
     const stltype::vector<stltype::fixed_vector<BarrierCmdDesc, 8>>& GetBarriersByNode() const { return m_barriersByNode; }
 
-    // Execution and memory dependency recorded before a node for hazards that need no layout change (buffers too)
-    struct MemoryBarrierDesc
-    {
-        SyncStages srcStage{SyncStages::NONE};
-        SyncStages dstStage{SyncStages::NONE};
-        AccessFlags srcAccess{AccessFlags::NONE};
-        AccessFlags dstAccess{AccessFlags::NONE};
-    };
-    const stltype::vector<MemoryBarrierDesc>& GetMemoryBarriersByNode() const { return m_memoryBarriersByNode; }
+    const stltype::vector<GlobalBarrierCmd>& GetMemoryBarriersByNode() const { return m_memoryBarriersByNode; }
 
 private:
     void BuildAdjacencyGraph();
-    bool ValidateSinglePass() const;
     void CullUnreferencedNodes();
     void TopologicalSort();
     void InsertBarriers();
@@ -113,12 +102,11 @@ private:
     stltype::vector<RGNode> m_nodes;
     stltype::vector<u32> m_sortedNodeIndices;
     stltype::vector<stltype::fixed_vector<BarrierCmdDesc, 8>> m_barriersByNode;
-    stltype::vector<MemoryBarrierDesc> m_memoryBarriersByNode;
+    // Execution and memory dependency recorded before a node for hazards that need no layout change (buffers too)
+    stltype::vector<GlobalBarrierCmd> m_memoryBarriersByNode;
     stltype::vector<ExecutionBatch> m_batches;
 
     stltype::vector<stltype::vector<u32>> m_adjList;
     stltype::vector<stltype::vector<u32>> m_predecessors;
     stltype::vector<u32> m_inDegree;
-
-    bool m_hasRTScene{false};
 };

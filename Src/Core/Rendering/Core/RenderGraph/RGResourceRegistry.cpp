@@ -24,12 +24,12 @@ TexFormat GetDefaultFormatForRGResourceID(RGResourceID id)
             return TexFormat::R16G16B16A16_FLOAT;
         case RGResourceID::GBufferDebug:
             return TexFormat::R16G16B16A16_FLOAT;
+        case RGResourceID::DebugOverlay:
+            return TexFormat::R8G8B8A8_UNORM;
         case RGResourceID::GBufferVelocity:
             return TexFormat::R32G32_FLOAT;
         case RGResourceID::GBufferThisFrameColor:
             return TexFormat::R16G16B16A16_FLOAT;
-        case RGResourceID::GBufferLastFrameDepth:
-            return TexFormat::D32_SFLOAT;
         case RGResourceID::TemporalResolve:
         case RGResourceID::TAAHistory:
             return TexFormat::R16G16B16A16_FLOAT;
@@ -102,7 +102,7 @@ RGResourceHandle RGResourceRegistry::DeclareResource(const RGResourceSpec& spec)
     {
         finalSpec.format = GetDefaultFormatForRGResourceID(finalSpec.id);
     }
-    if (finalSpec.id == RGResourceID::MainDepth || finalSpec.id == RGResourceID::GBufferLastFrameDepth)
+    if (finalSpec.id == RGResourceID::MainDepth)
     {
         finalSpec.usage |= Usage::DepthAttachment | Usage::Sampled;
     }
@@ -116,7 +116,6 @@ RGResourceHandle RGResourceRegistry::DeclareResource(const RGResourceSpec& spec)
         if (m_resources[i].spec.MatchesIdentity(finalSpec))
         {
             m_resources[i].SetReferencedThisFrame(true);
-            m_resources[i].framesUnreferenced = 0;
             // Update usage flags and properties if newly declared spec is broader
             m_resources[i].spec.usage |= finalSpec.usage;
             if (m_resources[i].spec.format == TexFormat::UNDEFINED && finalSpec.format != TexFormat::UNDEFINED)
@@ -135,14 +134,6 @@ RGResourceHandle RGResourceRegistry::DeclareResource(const RGResourceSpec& spec)
             {
                 m_resources[i].spec.fixedExtents = finalSpec.fixedExtents;
             }
-            if (finalSpec.minFilter != TextureFilter::NEAREST)
-            {
-                m_resources[i].spec.minFilter = finalSpec.minFilter;
-            }
-            if (finalSpec.magFilter != TextureFilter::NEAREST)
-            {
-                m_resources[i].spec.magFilter = finalSpec.magFilter;
-            }
             if (finalSpec.IsPersistent())
             {
                 m_resources[i].SetIsPersistent(true);
@@ -156,23 +147,19 @@ RGResourceHandle RGResourceRegistry::DeclareResource(const RGResourceSpec& spec)
     res.spec = finalSpec;
     res.SetIsPersistent(finalSpec.IsPersistent());
     res.SetReferencedThisFrame(true);
-    res.framesUnreferenced = 0;
     m_resources.push_back(res);
     return static_cast<RGResourceHandle>(m_resources.size() - 1);
 }
 
-RGResourceHandle RGResourceRegistry::ImportTexture(RGResourceID id, Texture* pTexture, ImageLayout currentLayout)
+RGResourceHandle RGResourceRegistry::ImportTexture(RGResourceID id,
+                                                   Texture* pTexture,
+                                                   BindlessTextureHandle bindlessHandle,
+                                                   ImageLayout currentLayout)
 {
     RGResourceSpec spec{};
     spec.id = id;
-    spec.usage = pTexture ? pTexture->GetInfo().usage : Usage::Sampled;
-    spec.format = pTexture ? pTexture->GetInfo().format : TexFormat::UNDEFINED;
-
-    BindlessTextureHandle bindlessHandle = 0;
-    if (pTexture)
-    {
-        bindlessHandle = g_renderer.GetTextureManager().MakeTextureBindless(Texture::Cast(pTexture), true);
-    }
+    spec.usage = pTexture->GetInfo().usage;
+    spec.format = pTexture->GetInfo().format;
 
     for (u32 i = 0; i < static_cast<u32>(m_resources.size()); ++i)
     {
@@ -184,18 +171,14 @@ RGResourceHandle RGResourceRegistry::ImportTexture(RGResourceID id, Texture* pTe
             m_resources[i].SetIsImported(true);
             m_resources[i].SetAllocated(true);
             m_resources[i].SetReferencedThisFrame(true);
-            m_resources[i].framesUnreferenced = 0;
             m_resources[i].spec.usage |= spec.usage;
             if (textureChanged || m_resources[i].currentLayout == ImageLayout::UNDEFINED)
             {
                 m_resources[i].currentLayout = currentLayout;
             }
-            if (pTexture)
-            {
-                m_resources[i].spec.format = pTexture->GetInfo().format;
-                m_resources[i].allocatedExtents = mathstl::Vector2(static_cast<f32>(pTexture->GetInfo().extents.x),
-                                                                   static_cast<f32>(pTexture->GetInfo().extents.y));
-            }
+            m_resources[i].spec.format = pTexture->GetInfo().format;
+            m_resources[i].allocatedExtents = mathstl::Vector2(static_cast<f32>(pTexture->GetInfo().extents.x),
+                                                               static_cast<f32>(pTexture->GetInfo().extents.y));
             return i;
         }
     }
@@ -207,13 +190,9 @@ RGResourceHandle RGResourceRegistry::ImportTexture(RGResourceID id, Texture* pTe
     res.SetIsImported(true);
     res.SetAllocated(true);
     res.SetReferencedThisFrame(true);
-    res.framesUnreferenced = 0;
     res.currentLayout = currentLayout;
-    if (pTexture)
-    {
-        res.allocatedExtents = mathstl::Vector2(static_cast<f32>(pTexture->GetInfo().extents.x),
-                                                static_cast<f32>(pTexture->GetInfo().extents.y));
-    }
+    res.allocatedExtents = mathstl::Vector2(static_cast<f32>(pTexture->GetInfo().extents.x),
+                                            static_cast<f32>(pTexture->GetInfo().extents.y));
     m_resources.push_back(res);
     return static_cast<RGResourceHandle>(m_resources.size() - 1);
 }
@@ -281,9 +260,7 @@ void RGResourceRegistry::AllocatePending()
         req.usage = res.spec.usage;
         req.handle = g_renderer.GetTextureManager().GenerateHandle();
         req.isPersistent = true;
-        req.samplerInfo.minFilter = res.spec.minFilter;
-        req.samplerInfo.magFilter = res.spec.magFilter;
-        req.AddName(res.spec.GetName());
+        req.name = res.spec.GetName();
 
         res.textureHandle = req.handle;
         res.pTexture = static_cast<Texture*>(g_renderer.GetTextureManager().CreateTextureImmediate(req));
@@ -294,7 +271,7 @@ void RGResourceRegistry::AllocatePending()
         {
             DynamicTextureRequest historyReq = req;
             historyReq.handle = g_renderer.GetTextureManager().GenerateHandle();
-            historyReq.AddName(stltype::string(res.spec.GetName()) + " (History)");
+            historyReq.name = stltype::string(res.spec.GetName()) + " (History)";
 
             res.historyTextureHandle = historyReq.handle;
             res.pHistoryTexture = static_cast<Texture*>(g_renderer.GetTextureManager().CreateTextureImmediate(historyReq));
@@ -331,35 +308,6 @@ void RGResourceRegistry::AllocatePending()
     }
 }
 
-void RGResourceRegistry::TickUnreferenced()
-{
-    ScopedZone("RGResourceRegistry::TickUnreferenced");
-    for (auto& res : m_resources)
-    {
-        if (res.IsImported() || res.IsPersistent())
-            continue;
-
-        if (!res.IsReferencedThisFrame())
-        {
-            res.framesUnreferenced++;
-            if (res.framesUnreferenced > kFreeAfterFrames && res.IsAllocated())
-            {
-                if (res.textureHandle != 0)
-                    g_renderer.GetTextureManager().FreeTexture(res.textureHandle);
-                if (res.historyTextureHandle != 0)
-                    g_renderer.GetTextureManager().FreeTexture(res.historyTextureHandle);
-                res.pTexture = nullptr;
-                res.pHistoryTexture = nullptr;
-                res.textureHandle = 0;
-                res.historyTextureHandle = 0;
-                res.bindlessHandle = 0;
-                res.historyBindlessHandle = 0;
-                res.SetAllocated(false);
-            }
-        }
-    }
-}
-
 void RGResourceRegistry::RotateHistory(u32 frameSlot)
 {
     ScopedZone("RGResourceRegistry::RotateHistory");
@@ -376,8 +324,7 @@ void RGResourceRegistry::RotateHistory(u32 frameSlot)
 
             if (res.pHistoryTexture)
             {
-                const bool isDepth =
-                    (res.spec.id == RGResourceID::MainDepth || res.spec.id == RGResourceID::GBufferLastFrameDepth);
+                const bool isDepth = res.spec.id == RGResourceID::MainDepth;
                 res.pHistoryTexture->GetInfo().layout =
                     isDepth ? ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL : ImageLayout::SHADER_READ_ONLY_OPTIMAL;
             }
@@ -415,26 +362,6 @@ BindlessTextureHandle RGResourceRegistry::ResolveHistoryBindless(RGResourceHandl
     return res.spec.IsPingPong() ? res.historyBindlessHandle : res.bindlessHandle;
 }
 
-TextureHandle RGResourceRegistry::ResolveTextureHandle(RGResourceHandle handle) const
-{
-    if (handle >= m_resources.size())
-        return 0;
-    return m_resources[handle].textureHandle;
-}
-
-TextureHandle RGResourceRegistry::ResolveHistoryTextureHandle(RGResourceHandle handle) const
-{
-    if (handle >= m_resources.size())
-        return 0;
-    const auto& res = m_resources[handle];
-    return res.spec.IsPingPong() ? res.historyTextureHandle : res.textureHandle;
-}
-
-RGResourceHandle RGResourceRegistry::GetHistoryHandle(RGResourceHandle handle) const
-{
-    return handle; // Logical handle stays constant; current vs history resolved via ResolveHistory
-}
-
 const RGResourceSpec* RGResourceRegistry::GetSpec(RGResourceHandle handle) const
 {
     if (handle >= m_resources.size())
@@ -465,20 +392,11 @@ void RGResourceRegistry::SetHistoryResourceLayout(RGResourceHandle handle, Image
     }
 }
 
-void RGResourceRegistry::SetCustomResourceName(RGResourceHandle handle, const stltype::string& name)
-{
-    if (handle < m_resources.size())
-    {
-        m_resources[handle].spec.customName = name;
-    }
-}
-
 void RGResourceRegistry::MarkReferenced(RGResourceHandle handle)
 {
     if (handle < m_resources.size())
     {
         m_resources[handle].SetReferencedThisFrame(true);
-        m_resources[handle].framesUnreferenced = 0;
     }
 }
 
@@ -546,16 +464,6 @@ BindlessTextureHandle RGResourceRegistry::ResolveHistoryBindlessByID(RGResourceI
     return ResolveHistoryBindless(FindByID(id));
 }
 
-TextureHandle RGResourceRegistry::ResolveTextureHandleByID(RGResourceID id) const
-{
-    return ResolveTextureHandle(FindByID(id));
-}
-
-TextureHandle RGResourceRegistry::ResolveHistoryTextureHandleByID(RGResourceID id) const
-{
-    return ResolveHistoryTextureHandle(FindByID(id));
-}
-
 RenderAttachmentInfo RGResourceRegistry::GetColorAttachment(RGResourceID id,
                                                             LoadOp loadOp,
                                                             StoreOp storeOp,
@@ -564,19 +472,6 @@ RenderAttachmentInfo RGResourceRegistry::GetColorAttachment(RGResourceID id,
     Texture* pTex = (id == RGResourceID::CSMShadowMap && m_shadowMap.pTexture) ? m_shadowMap.pTexture : ResolveByID(id);
     RenderAttachmentInfo info{};
     info.pTexture = pTex;
-    info.renderingLayout = renderingLayout;
-    info.loadOp = loadOp;
-    info.storeOp = storeOp;
-    return info;
-}
-
-RenderAttachmentInfo RGResourceRegistry::GetColorAttachment(RGResourceHandle handle,
-                                                            LoadOp loadOp,
-                                                            StoreOp storeOp,
-                                                            ImageLayout renderingLayout)
-{
-    RenderAttachmentInfo info{};
-    info.pTexture = Resolve(handle);
     info.renderingLayout = renderingLayout;
     info.loadOp = loadOp;
     info.storeOp = storeOp;
@@ -597,27 +492,11 @@ RenderAttachmentInfo RGResourceRegistry::GetDepthAttachment(RGResourceID id,
     return info;
 }
 
-RenderAttachmentInfo RGResourceRegistry::GetDepthAttachment(RGResourceHandle handle,
-                                                            LoadOp loadOp,
-                                                            StoreOp storeOp,
-                                                            ImageLayout renderingLayout)
-{
-    RenderAttachmentInfo info{};
-    info.pTexture = Resolve(handle);
-    info.renderingLayout = renderingLayout;
-    info.loadOp = loadOp;
-    info.storeOp = storeOp;
-    return info;
-}
-
 RenderAttachmentInfo RGResourceRegistry::GetReadOnlyDepthAttachment(RGResourceID id, LoadOp loadOp)
 {
     return GetDepthAttachment(id, loadOp, StoreOp::NONE, ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
 }
 
-#include "Core/Rendering/Core/Defines/DescriptorLayoutDefines.h"
-#include "Core/Rendering/Core/Defines/GlobalBuffers.h"
-#include <cstring>
 
 void RGResourceRegistry::DeclareEngineResources()
 {
@@ -626,9 +505,7 @@ void RGResourceRegistry::DeclareEngineResources()
                           Usage usage,
                           bool pingPong = false,
                           mathstl::Vector2 fixedExtents = {0.0f, 0.0f},
-                          mathstl::Vector2 scale = {1.0f, 1.0f},
-                          TextureFilter minFilter = TextureFilter::NEAREST,
-                          TextureFilter magFilter = TextureFilter::NEAREST)
+                          mathstl::Vector2 scale = {1.0f, 1.0f})
     {
         RGResourceSpec spec{};
         spec.id = id;
@@ -638,8 +515,6 @@ void RGResourceRegistry::DeclareEngineResources()
         spec.SetIsPingPong(pingPong);
         spec.fixedExtents = fixedExtents;
         spec.scale = scale;
-        spec.minFilter = minFilter;
-        spec.magFilter = magFilter;
         spec.SetNeedsBindless(true);
         spec.SetIsPersistent(true);
         DeclareResource(spec);
@@ -668,6 +543,7 @@ void RGResourceRegistry::DeclareEngineResources()
     Declare(RGResourceID::GBufferDebug,
             RGSizeClass::RenderResolution,
             Usage::ColorAttachment | Usage::Sampled | Usage::Storage);
+    Declare(RGResourceID::DebugOverlay, RGSizeClass::RenderResolution, Usage::ColorAttachment | Usage::Sampled);
     // TransferSrc for the DLSS bypass/fallback copy
     Declare(RGResourceID::GBufferThisFrameColor,
             RGSizeClass::RenderResolution,
@@ -687,41 +563,31 @@ void RGResourceRegistry::DeclareEngineResources()
             Usage::ColorAttachment | Usage::Sampled | Usage::Storage,
             false,
             {0.0f, 0.0f},
-            {0.5f, 0.5f},
-            TextureFilter::LINEAR,
-            TextureFilter::LINEAR);
+            {0.5f, 0.5f});
     Declare(RGResourceID::BloomMip1,
             RGSizeClass::RenderResolution,
             Usage::ColorAttachment | Usage::Sampled | Usage::Storage,
             false,
             {0.0f, 0.0f},
-            {0.25f, 0.25f},
-            TextureFilter::LINEAR,
-            TextureFilter::LINEAR);
+            {0.25f, 0.25f});
     Declare(RGResourceID::BloomMip2,
             RGSizeClass::RenderResolution,
             Usage::ColorAttachment | Usage::Sampled | Usage::Storage,
             false,
             {0.0f, 0.0f},
-            {0.125f, 0.125f},
-            TextureFilter::LINEAR,
-            TextureFilter::LINEAR);
+            {0.125f, 0.125f});
     Declare(RGResourceID::BloomMip3,
             RGSizeClass::RenderResolution,
             Usage::ColorAttachment | Usage::Sampled | Usage::Storage,
             false,
             {0.0f, 0.0f},
-            {0.0625f, 0.0625f},
-            TextureFilter::LINEAR,
-            TextureFilter::LINEAR);
+            {0.0625f, 0.0625f});
     Declare(RGResourceID::BloomMip4,
             RGSizeClass::RenderResolution,
             Usage::ColorAttachment | Usage::Sampled | Usage::Storage,
             false,
             {0.0f, 0.0f},
-            {0.03125f, 0.03125f},
-            TextureFilter::LINEAR,
-            TextureFilter::LINEAR);
+            {0.03125f, 0.03125f});
 
     Declare(RGResourceID::ScreenSpaceShadows, RGSizeClass::RenderResolution, Usage::Storage | Usage::Sampled);
     Declare(RGResourceID::SMAAEdges, RGSizeClass::OutputResolution, Usage::ColorAttachment | Usage::Sampled);
@@ -755,7 +621,7 @@ void RGResourceRegistry::RecreateShadowMap(u32 cascades, const mathstl::Vector2&
     m_shadowMap.format = DEPTH_BUFFER_FORMAT;
 
     DynamicTextureRequest req{};
-    req.AddName("Directional Light CSM");
+    req.name = "Directional Light CSM";
     req.isPersistent = true;
     m_shadowMap.handle = req.handle = g_renderer.GetTextureManager().GenerateHandle();
     // A single layer would get a 2D view, but the shaders always read the array binding
@@ -763,7 +629,6 @@ void RGResourceRegistry::RecreateShadowMap(u32 cascades, const mathstl::Vector2&
     req.extents = DirectX::XMUINT3(static_cast<u32>(extents.x), static_cast<u32>(extents.y), layers);
     req.format = m_shadowMap.format;
     req.usage = Usage::ShadowMap;
-    req.samplerInfo.wrapU = req.samplerInfo.wrapV = req.samplerInfo.wrapW = TextureWrapMode::CLAMP_TO_BORDER;
     m_shadowMap.pTexture = static_cast<Texture*>(g_renderer.GetTextureManager().CreateTextureImmediate(req));
     m_shadowMap.bindlessHandle = g_renderer.GetTextureManager().MakeTextureBindless(req.handle, true);
 

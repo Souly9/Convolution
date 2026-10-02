@@ -16,10 +16,6 @@ CommandPoolMetal::~CommandPoolMetal()
     TRACKED_DESC_IMPL
 }
 
-void CommandPoolMetal::CleanUp()
-{
-}
-
 CommandBuffer* CommandPoolMetal::CreateCommandBuffer(const CommandBufferCreateInfo& createInfo)
 {
     return nullptr;
@@ -33,13 +29,4 @@ stltype::vector<CommandBuffer*> CommandPoolMetal::CreateCommandBuffers(const Com
 
 void CommandPoolMetal::ReturnCommandBuffer(CBufferMetal* commandBuffer)
 {
-}
-
-void CommandPoolMetal::NamingCallBack(const stltype::string& name)
-{
-}
-
-TransferCommandPoolMetal TransferCommandPoolMetal::Create()
-{
-    return TransferCommandPoolMetal(0);
 }

@@ -67,5 +67,10 @@ void main()
 
 
     vec3 finalSceneColor = pow(finalLDRColor, vec3(1.0 / 2.2));
+    if (gbufferUBO.debugOverlayIdx != 0u)
+    {
+        vec4 overlay = SamplePointClamp(gbufferUBO.debugOverlayIdx, texCoords);
+        finalSceneColor = mix(finalSceneColor, overlay.rgb, overlay.a);
+    }
     outColor = vec4(finalSceneColor, 1.0);
 }

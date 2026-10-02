@@ -34,7 +34,6 @@ The pipeline is driven by a compiled, declarative **RenderGraph**:
 * **[`RenderGraph`](Src/Core/Rendering/Core/RenderGraph/RenderGraph.h):** Tracks pass nodes, handles topological sorting, dependency compilation, side-effect culling, and batch generation.
 * **[`RenderGraphBuilder`](Src/Core/Rendering/Core/RenderGraph/RenderGraphBuilder.h):** Used during `Pass::Setup()` to declare resource reads, writes, attachment formats, and view masks.
 * **[`RGResourceRegistry`](Src/Core/Rendering/Core/RenderGraph/RGResourceRegistry.h):** Allocates render targets, manages resolution scaling, ping-pong history rotation, and bindless descriptors.
-* **[`FrameTransitionRecorder`](Src/Core/Rendering/Core/FrameTransitionRecorder.h):** Records Vulkan image layout transitions and synchronization barriers between pass stages.
 
 ---
 

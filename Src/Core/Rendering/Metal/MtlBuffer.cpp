@@ -18,10 +18,6 @@ void GenBufferMetal::Create(BufferCreateInfo& info)
     m_info.usage = info.usage;
 }
 
-void GenBufferMetal::CleanUp()
-{
-}
-
 void GenBufferMetal::FillImmediate(const void* data)
 {
 }
@@ -47,10 +43,6 @@ void GenBufferMetal::UnmapMemory()
 u64 GenBufferMetal::GetDeviceAddress() const
 {
     return 0;
-}
-
-void GenBufferMetal::NamingCallBack(const stltype::string& name)
-{
 }
 
 VertexBufferMetal::VertexBufferMetal(u64 size, bool hostVisible)

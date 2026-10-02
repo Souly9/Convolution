@@ -25,11 +25,12 @@ EntityManager::EntityManager()
     m_entities.reserve(1024);
     m_entityComponentMap.reserve(1024);
 
+    // Before STransform, which picks up the light transforms it marks in the same update
+    m_systems.emplace_back(stltype::make_unique<System::SDebugDisplay>());
     m_systems.emplace_back(stltype::make_unique<System::STransform>());
     m_systems.emplace_back(stltype::make_unique<System::SView>());
     m_systems.emplace_back(stltype::make_unique<System::SRenderComponent>());
     m_systems.emplace_back(stltype::make_unique<System::SLight>());
-    m_systems.emplace_back(stltype::make_unique<System::SDebugDisplay>());
     m_systems.emplace_back(stltype::make_unique<System::SAABB>());
 }
 
@@ -70,7 +71,8 @@ void EntityManager::UnloadAllEntities()
     m_dirtyTransformEntities.clear();
     m_dirtyRenderEntities.clear();
     m_dirtyLightEntities.clear();
-    m_allTransformsDirty = false;
+    // Nothing in the new scene is marked per entity, so the switch update needs the full transform pass
+    m_allTransformsDirty = true;
 
     m_baseEntityID = 1;
     for (auto& dirtyComps : m_dirtyComponents)

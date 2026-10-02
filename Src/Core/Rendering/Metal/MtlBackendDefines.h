@@ -3,7 +3,6 @@
 #include "Core/WindowManager.h"
 #include "MtlForwardDecls.h"
 
-static inline constexpr u64 MAX_TEXTURES = 4096;
 
 
 // Releases a retained metal-cpp object and nulls the pointer

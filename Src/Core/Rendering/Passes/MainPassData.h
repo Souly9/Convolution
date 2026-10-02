@@ -2,7 +2,6 @@
 #include "Core/Global/Typedefs.h"
 #include "Core/Rendering/Core/Defines/UBODefines.h"
 #include "Core/Rendering/Core/DescriptorSetLayout.h"
-#include "Core/Rendering/Core/GBuffer.h"
 #include "Core/Rendering/Core/RenderingForwardDecls.h"
 #include "Core/Rendering/Core/ShadowMaps.h"
 #include "Core/Rendering/Core/View.h"

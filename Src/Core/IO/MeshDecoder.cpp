@@ -39,21 +39,13 @@ void DecodeMesh(const aiMesh* pMesh, DecodedMesh& out)
     {
         auto& vertex = vertices.push_back();
         vertex.position = ToVector3(pMesh->mVertices[i]);
-        if (pMesh->HasNormals() == false)
-        {
-            vertex.normal = mathstl::Vector3(0, 0, 0);
-        }
-        else
+        if (pMesh->HasNormals())
         {
             vertex.normal = ToVector3(pMesh->mNormals[i]);
         }
         if (pMesh->HasTextureCoords(0))
         {
             vertex.texCoord = DirectX::XMFLOAT2(pMesh->mTextureCoords[0][i].x, pMesh->mTextureCoords[0][i].y);
-        }
-        else
-        {
-            vertex.texCoord = DirectX::XMFLOAT2(0, 0);
         }
         // Handedness is saved in the tangent so the shader can flip the bitangent
         if (pMesh->HasTangentsAndBitangents())
@@ -157,31 +149,10 @@ void DecodeMaterial(const aiMaterial* pMaterial, DecodedMaterial& out)
         }
     }
 
-    float metallicFactor = 0.0f;
-    if (AI_SUCCESS == pMaterial->Get(AI_MATKEY_METALLIC_FACTOR, metallicFactor))
-    {
-        mat.pbr1.x = metallicFactor;
-    }
-
-    float roughnessFactor = 1.0f;
-    if (AI_SUCCESS == pMaterial->Get(AI_MATKEY_ROUGHNESS_FACTOR, roughnessFactor))
-    {
-        mat.pbr1.y = roughnessFactor;
-    }
-
-    float anisotropy = 0.0f;
-    if (AI_SUCCESS == pMaterial->Get(AI_MATKEY_ANISOTROPY_FACTOR, anisotropy) ||
-        AI_SUCCESS == pMaterial->Get("$mat.gltf.pbrAnisotropy.anisotropyFactor", 0, 0, anisotropy))
-    {
-        mat.pbr2.x = anisotropy;
-    }
-
-    float specular = 0.5f;
-    if (AI_SUCCESS == pMaterial->Get(AI_MATKEY_SPECULAR_FACTOR, specular) ||
-        AI_SUCCESS == pMaterial->Get("$mat.gltf.pbrSpecular.specularFactor", 0, 0, specular))
-    {
-        mat.pbr1.w = specular;
-    }
+    pMaterial->Get(AI_MATKEY_METALLIC_FACTOR, mat.pbr1.x);
+    pMaterial->Get(AI_MATKEY_ROUGHNESS_FACTOR, mat.pbr1.y);
+    pMaterial->Get(AI_MATKEY_ANISOTROPY_FACTOR, mat.pbr2.x);
+    pMaterial->Get(AI_MATKEY_SPECULAR_FACTOR, mat.pbr1.w);
 
     aiColor3D emission;
     if (AI_SUCCESS == pMaterial->Get(AI_MATKEY_COLOR_EMISSIVE, emission))
@@ -189,35 +160,8 @@ void DecodeMaterial(const aiMaterial* pMaterial, DecodedMaterial& out)
         mat.emissive = mathstl::Vector4(emission.r, emission.g, emission.b, 1.0f);
     }
 
-    float clearcoat = 0.0f;
-    if (AI_SUCCESS == pMaterial->Get("$mat.gltf.pbrClearcoat.clearcoatFactor", 0, 0, clearcoat))
-    {
-        mat.pbr2.z = clearcoat;
-    }
-
-    float ior = 1.5f;
-    if (AI_SUCCESS == pMaterial->Get(AI_MATKEY_REFRACTI, ior))
-    {
-        mat.pbr3.w = ior;
-    }
-
-    float clearcoatRoughness = 1.0f;
-    if (AI_SUCCESS == pMaterial->Get("$mat.gltf.pbrClearcoat.clearcoatRoughnessFactor", 0, 0, clearcoatRoughness))
-    {
-        mat.pbr2.w = 1.0f - clearcoatRoughness;
-    }
-
-    float transmission = 0.0f;
-    if (AI_SUCCESS == pMaterial->Get("$mat.gltf.pbrTransmission.transmissionFactor", 0, 0, transmission))
-    {
-        mat.pbr3.z = transmission;
-    }
-
-    float sheen = 0.0f;
-    if (AI_SUCCESS == pMaterial->Get("$mat.gltf.pbrSheen.sheenColorFactor", 0, 0, sheen))
-    {
-        mat.pbr3.x = sheen;
-    }
+    pMaterial->Get(AI_MATKEY_CLEARCOAT_FACTOR, mat.pbr2.z);
+    pMaterial->Get(AI_MATKEY_REFRACTI, mat.pbr3.w);
 }
 
 // aiMatrix4x4 is row-major for column vectors, SimpleMath wants the transpose

@@ -52,7 +52,6 @@ void DepthPrePass::RebuildInternalData(const stltype::vector<PassMeshData>& mesh
 {
     ScopedZone("DepthPrePass::Rebuild");
 
-    m_currentFrameIdx = thisFrameNum;
     auto& cmdBuf = m_indirectCmdBuffers[thisFrameNum];
     cmdBuf.EmptyCmds();
     u32 instanceOffset = 0;

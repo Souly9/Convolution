@@ -6,7 +6,6 @@
 
 #ifdef USE_VULKAN
 #include "Core/Rendering/Vulkan/VulkanTraits.h"
-#include "Core/Rendering/Vulkan/VkAttachment.h"
 #include "Core/Rendering/Vulkan/VkBuffer.h"
 #include "Core/Rendering/Vulkan/VkCommandBuffer.h"
 #include "Core/Rendering/Vulkan/VkCommandPool.h"
@@ -19,7 +18,6 @@
 #include "RenderingData.h"
 #elif defined(USE_METAL)
 #include "Core/Rendering/Metal/MetalTraits.h"
-#include "Core/Rendering/Metal/MtlAttachment.h"
 #include "Core/Rendering/Metal/MtlBuffer.h"
 #include "Core/Rendering/Metal/MtlCommandBuffer.h"
 #include "Core/Rendering/Metal/MtlCommandPool.h"

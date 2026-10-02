@@ -18,6 +18,17 @@ public:
     virtual ~DescriptorPoolBase() = default;
 };
 
+static inline constexpr u32 MAX_DESCRIPTOR_SETS = 8192;
+
+struct DescriptorPoolCreateInfo
+{
+    u32 maxSets{MAX_DESCRIPTOR_SETS};
+    bool enableBindlessTextureDescriptors{true};
+    bool enableStorageBufferDescriptors{false};
+    bool enableAccelerationStructureDescriptors{false};
+    bool freeDescriptorSet{true};
+};
+
 #ifdef USE_VULKAN
 #include "../Vulkan/VulkanTraits.h"
 #include "../Vulkan/VkDescriptorPool.h"

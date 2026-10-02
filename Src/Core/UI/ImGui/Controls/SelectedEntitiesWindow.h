@@ -87,7 +87,7 @@ public:
                     pTransform->rotation = mathstl::Vector3(rotation[0], rotation[1], rotation[2]);
                     pTransform->scale = mathstl::Vector3(scale[0], scale[1], scale[2]);
 
-                    g_engine.GetEntityManager().MarkComponentDirty(selectedEntity, ECS::ComponentID<ECS::Components::Transform>::ID);
+                    g_engine.GetEntityManager().MarkComponentDirty(selectedEntity, C_ID(Transform));
                 }
             }
 
@@ -101,9 +101,9 @@ public:
             Visualize(pRender);
 
             if (isTransformDirty)
-                g_engine.GetEntityManager().MarkComponentDirty(selectedEntity, ECS::ComponentID<ECS::Components::Transform>::ID);
+                g_engine.GetEntityManager().MarkComponentDirty(selectedEntity, C_ID(Transform));
             if (isLightDirty)
-                g_engine.GetEntityManager().MarkComponentDirty(selectedEntity, ECS::ComponentID<ECS::Components::Light>::ID);
+                g_engine.GetEntityManager().MarkComponentDirty(selectedEntity, C_ID(Light));
         }
         ImGui::End();
     }

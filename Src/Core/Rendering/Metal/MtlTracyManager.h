@@ -27,11 +27,4 @@ public:
     void Collect(CommandBuffer* pCmdBuffer) override
     {
     }
-    bool IsEnabled() const override
-    {
-        return m_initialized;
-    }
-
-private:
-    bool m_initialized{false};
 };

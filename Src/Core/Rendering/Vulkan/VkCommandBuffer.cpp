@@ -33,10 +33,7 @@ static void RecordCommand(StartProfilingScopeCmd& cmd, CBufferVulkan& buffer)
         vkBeginDebugUtilsLabel(buffer.GetRef(), &profilingScopeInfo);
     }
 
-    if (VkBackend::TracyManager())
-    {
-        VkBackend::TracyManager()->StartZone(CommandBuffer::Cast(&buffer), cmd.name, cmd.color);
-    }
+    VkBackend::TracyManager().StartZone(CommandBuffer::Cast(&buffer), cmd.name, cmd.color);
 }
 
 static void RecordCommand(EndProfilingScopeCmd& cmd, CBufferVulkan& buffer)
@@ -46,10 +43,7 @@ static void RecordCommand(EndProfilingScopeCmd& cmd, CBufferVulkan& buffer)
         vkCmdEndDebugUtilsLabel(buffer.GetRef());
     }
 
-    if (VkBackend::TracyManager())
-    {
-        VkBackend::TracyManager()->EndZone(CommandBuffer::Cast(&buffer));
-    }
+    VkBackend::TracyManager().EndZone(CommandBuffer::Cast(&buffer));
 }
 
 static void RecordCommand(ResetQueryPoolCmd& cmd, CBufferVulkan& buffer)
@@ -728,16 +722,6 @@ void CBufferVulkan::SetWaitStages(SyncStages stages)
 void CBufferVulkan::SetSignalStages(SyncStages stages)
 {
     m_signalStages = Conv(stages);
-}
-
-void CBufferVulkan::BeginBuffer()
-{
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
-    beginInfo.pInheritanceInfo = nullptr; // Optional
-    VkResult result = vkBeginCommandBuffer(GetRef(), &beginInfo);
-    DEBUG_ASSERT(result == VK_SUCCESS);
 }
 
 void CBufferVulkan::BeginBufferForSingleSubmit()

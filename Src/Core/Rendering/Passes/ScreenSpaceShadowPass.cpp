@@ -5,8 +5,6 @@
 #include "Core/Rendering/Core/Pipeline.h"
 #include "PassManager.h"
 #include "ScreenSpaceShadowsHelper.h"
-#include "Core/Rendering/Core/FrameTransitionRecorder.h"
-
 
 using namespace RenderPasses;
 
@@ -65,10 +63,6 @@ void ScreenSpaceShadowPass::RebuildInternalData(const stltype::vector<PassMeshDa
 bool ScreenSpaceShadowPass::WantsToRender() const
 {
     return mathstl::isFlagSet(g_engine.GetApplicationState().GetCurrentApplicationState().renderState.debugFlags, (u32)DebugFlags::SSSEnabled);
-}
-
-void ScreenSpaceShadowPass::Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer)
-{
 }
 
 #include "Core/Rendering/Core/RenderGraph/RGExecutionContext.h"

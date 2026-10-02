@@ -138,47 +138,6 @@ bool XeSSManager::EnsureConfigured(VkInstance instance,
     return true;
 }
 
-xess_context_handle_t XeSSManager::GetContext()
-{
-    return s_context;
-}
-
-bool XeSSManager::GetOptimalResolution(u32 outputWidth,
-                                       u32 outputHeight,
-                                       xess_quality_settings_t qualitySetting,
-                                       u32& outRenderWidth,
-                                       u32& outRenderHeight)
-{
-    if (!s_context)
-    {
-        float scale = 1.0f;
-        switch (qualitySetting)
-        {
-            case XESS_QUALITY_SETTING_ULTRA_PERFORMANCE:  scale = 0.50f; break;
-            case XESS_QUALITY_SETTING_PERFORMANCE:        scale = 0.59f; break;
-            case XESS_QUALITY_SETTING_BALANCED:           scale = 0.67f; break;
-            case XESS_QUALITY_SETTING_QUALITY:            scale = 0.77f; break;
-            case XESS_QUALITY_SETTING_ULTRA_QUALITY:      scale = 0.83f; break;
-            case XESS_QUALITY_SETTING_ULTRA_QUALITY_PLUS: scale = 0.91f; break;
-            default: scale = 1.0f; break;
-        }
-        outRenderWidth  = static_cast<u32>(outputWidth  * scale + 0.5f);
-        outRenderHeight = static_cast<u32>(outputHeight * scale + 0.5f);
-        return true;
-    }
-
-    xess_2d_t outRes{};
-    xess_2d_t outResolution{outputWidth, outputHeight};
-    xess_result_t res = xessGetInputResolution(s_context, &outResolution, qualitySetting, &outRes);
-    if (res == XESS_RESULT_SUCCESS)
-    {
-        outRenderWidth  = outRes.x;
-        outRenderHeight = outRes.y;
-        return true;
-    }
-    return false;
-}
-
 bool XeSSManager::Execute(VkCommandBuffer cmdBuf, const xess_vk_execute_params_t& execParams)
 {
     if (!s_context)
@@ -219,11 +178,6 @@ bool XeSSManager::Execute(VkCommandBuffer cmdBuf, const xess_vk_execute_params_t
         return false;
     }
     return true;
-}
-
-void XeSSManager::ResetHistory()
-{
-    s_needsReset = true;
 }
 
 bool XeSSManager::ConsumeResetFlag()

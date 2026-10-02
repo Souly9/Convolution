@@ -13,7 +13,6 @@ public:
     static AccelerationStructureBuildSizes GetBuildSizes(const AccelerationStructureBuildDesc& desc);
 
     virtual void Create(const AccelerationStructureCreateInfo& info) override;
-    virtual void CleanUp() override;
 
     virtual u64 GetNativeHandle() const override
     {
@@ -24,8 +23,6 @@ public:
     {
         return m_gpuResourceID;
     }
-
-    virtual void NamingCallBack(const stltype::string& name) override;
 
 private:
     MTL::AccelerationStructure* m_accelerationStructure{nullptr};

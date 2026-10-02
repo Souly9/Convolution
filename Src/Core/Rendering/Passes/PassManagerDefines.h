@@ -29,8 +29,9 @@ struct EntityMeshData
         flags[s_isDebugMeshFlag] = isDebug;
     }
 
-    bool IsDebugMesh() const { return flags[s_isDebugMeshFlag] || flags[s_isDebugWireframeMesh]; }
+    bool IsDebugMesh() const { return flags[s_isDebugMeshFlag]; }
     bool IsInstanced() const { return flags[s_isInstancedFlag]; }
+    // Selected scene meshes keep rendering normally; DebugShapePass adds a wireframe on top
     bool IsDebugWireframeMesh() const { return flags[s_isDebugWireframeMesh]; }
     bool IncludeInRayTracing() const { return flags[s_includeInRayTracingFlag]; }
     bool SetDebugMesh() { return flags[s_isDebugMeshFlag] = true; }
@@ -38,7 +39,8 @@ struct EntityMeshData
     bool SetDebugWireframeMesh() { return flags[s_isDebugWireframeMesh] = true; }
     bool SetIncludeInRayTracing(bool include) { return flags[s_includeInRayTracingFlag] = include; }
 
-    bool DidGeometryChange(const EntityMeshData& other) const { return pMesh != other.pMesh; }
+    // Flags too, so selecting a mesh rebuilds the pass lists
+    bool DidGeometryChange(const EntityMeshData& other) const { return pMesh != other.pMesh || flags != other.flags; }
 
 protected:
     static inline u8 s_isDebugMeshFlag     = 0;

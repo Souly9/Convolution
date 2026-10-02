@@ -21,17 +21,14 @@ namespace VkBackend
 VkInstance Instance();
 VkPhysicalDevice PhysicalDevice();
 VkDevice Device();
-VkQueue GraphicsQueue();
-VkQueue PresentQueue();
 VulkanQueues Queues();
 VkSwapchainKHR Swapchain();
 QueueFamilyIndices QueueFamilies();
 // Graphics records the uploads, graphics and compute read buffers and images; count is 1 when they share a family
 const uint32_t* SharedQueueFamilies(uint32_t& count);
-const VkPhysicalDeviceProperties& DeviceProperties();
 const VkPhysicalDeviceMemoryProperties& MemoryProperties();
 VkProfiler* Profiler();
-VkTracyGPUManager* TracyManager();
+VkTracyGPUManager& TracyManager();
 
 template <typename CreateInfo>
 inline void SetSharedQueueFamilies(CreateInfo& info)

@@ -84,8 +84,5 @@ void WindowManager::Update() noexcept
     m_screenWidth = m_pendingScreenWidth;
     m_screenHeight = m_pendingScreenHeight;
 
-    if (g_engine.TryGetEventSystem() != nullptr)
-    {
-        g_engine.GetEventSystem().OnSwapchainRecreation({});
-    }
+    g_engine.GetEventSystem().OnSwapchainRecreation({});
 }

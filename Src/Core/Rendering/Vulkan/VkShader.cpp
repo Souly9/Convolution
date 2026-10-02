@@ -11,20 +11,6 @@ ShaderVulkan::ShaderVulkan(const stltype::string_view& filePath, stltype::string
     const auto shaderData = g_renderer.GetShaderManager().GetShader(filePath);
     DEBUG_LOGF("Creating shader for {}", filePath.data());
     CreateShaderModule(shaderData.words);
-    /*IORequest req{};
-    req.filePath = filePath;
-    req.requestType = RequestType::Bytes;
-    req.callback = IOByteReadCallback([this](const ReadBytesInfo& result)
-        {
-            VkShaderModuleCreateInfo createInfo{};
-            createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-            createInfo.codeSize = result.bytes.size();
-            createInfo.pCode = (const u32*)result.bytes.data();
-
-            DEBUG_ASSERT(vkCreateShaderModule(VkBackend::Device(), &createInfo, VulkanAllocator(),
-    &m_shaderModule) == VK_SUCCESS);
-        });
-    g_engine.GetFileReader().SubmitIORequest(req);*/
 }
 
 ShaderVulkan::ShaderVulkan(const char* filePath, const char* name)

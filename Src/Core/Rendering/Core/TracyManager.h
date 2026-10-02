@@ -10,13 +10,13 @@ public:
     TracyManagerBase() = default;
     virtual ~TracyManagerBase() = default;
 
-    // Called once with a recording-ready setup command buffer; backends fetch their own device handles
+    // Called once per queue with an unrecorded command buffer of that queue; backends fetch their own device handles
     virtual void Init(CommandBuffer* pSetupCmd) = 0;
     virtual void Destroy() = 0;
     virtual void StartZone(CommandBuffer* pCmdBuffer, const char* name, const mathstl::Vector4& color = {0.2f, 0.4f, 0.6f, 1.0f}) = 0;
     virtual void EndZone(CommandBuffer* pCmdBuffer) = 0;
+    // Once per frame per queue, at the start of that queue's first command buffer
     virtual void Collect(CommandBuffer* pCmdBuffer) = 0;
-    virtual bool IsEnabled() const = 0;
 };
 
 #include "Core/Rendering/Core/APITraits.h"

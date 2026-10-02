@@ -9,10 +9,6 @@ STRUCTDECL(ClusterPushConstants)
     STRUCTFIELD(vec4, nearFar) // x=near, y=far, zw=unused
 STRUCTEND()
 
-STRUCTDECL(FrustumCullingPushConstants)
-    STRUCTFIELD(uint, objectCount)
-STRUCTEND()
-
 // View data (jitter, resolution, reset) comes from SharedDataUBO
 STRUCTDECL(TAAPushConstants)
     STRUCTFIELD(float, velocityRejectionStart)

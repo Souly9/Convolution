@@ -4,11 +4,6 @@
 #include "Core/Rendering/Core/Buffer.h"
 #include "MtlGPUMemoryManager.h"
 
-struct BufferInfo
-{
-    u64 size{0};
-    BufferUsage usage;
-};
 
 // MTL::Buffer wrapper; storage mode (Shared/Private) replaces VMA memory properties
 class GenBufferMetal : public BufferBase
@@ -18,8 +13,6 @@ public:
     virtual ~GenBufferMetal();
 
     void Create(BufferCreateInfo& info);
-
-    virtual void CleanUp() override;
 
     void FillImmediate(const void* data);
     void FillImmediate(const void* data, u64 size, u64 offset);
@@ -37,7 +30,7 @@ public:
     {
         return m_buffer;
     }
-    BufferInfo GetInfo() const
+    BufferCreateInfo GetInfo() const
     {
         return m_info;
     }
@@ -53,14 +46,12 @@ public:
     // MTL::Buffer::gpuAddress()
     virtual u64 GetDeviceAddress() const override;
 
-    virtual void NamingCallBack(const stltype::string& name) override;
-
 protected:
     GenBufferMetal()
     {
     }
 
-    BufferInfo m_info{};
+    BufferCreateInfo m_info{};
     MTL::Buffer* m_buffer{nullptr};
 };
 

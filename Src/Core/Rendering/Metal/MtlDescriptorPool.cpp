@@ -39,15 +39,7 @@ void DescriptorSetMetal::WriteAccelerationStructureUpdate(const AccelerationStru
 {
 }
 
-void DescriptorSetMetal::WriteBindlessTextureUpdate(const TextureMetal* pTex, u32 idx, u32 bindingSlot)
-{
-}
-
 void DescriptorSetMetal::WriteBindlessImageUpdate(const TextureMetal* pTex, u32 idx, u32 bindingSlot)
-{
-}
-
-void DescriptorSetMetal::NamingCallBack(const stltype::string& name)
 {
 }
 
@@ -66,8 +58,4 @@ void DescriptorPoolMetal::Create(const DescriptorPoolCreateInfo& createInfo)
 DescriptorSetMetal* DescriptorPoolMetal::CreateDescriptorSet(const DescriptorSetLayoutMetal& layout)
 {
     return nullptr;
-}
-
-void DescriptorPoolMetal::NamingCallBack(const stltype::string& name)
-{
 }

@@ -12,10 +12,6 @@ public:
     void Begin(stltype::unique_ptr<DecodedScene> pScene, const IOMeshReadCallback& callback);
     // Drops the rest of the scene, the scene switch cleans up what already reached the GPU
     void Cancel();
-    bool IsStreaming() const
-    {
-        return m_pScene != nullptr;
-    }
 
     // Applies as much of the scene as the frame budgets allow
     void Tick();

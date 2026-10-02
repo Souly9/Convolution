@@ -11,7 +11,6 @@ enum class RGResourceID : u32
     GBufferDebug,
     GBufferVelocity,
     GBufferThisFrameColor,
-    GBufferLastFrameDepth,
     TemporalResolve,
     TAAHistory,
     GBufferPostAAColor,
@@ -34,7 +33,9 @@ enum class RGResourceID : u32
     BloomMip3,
     BloomMip4,
     RTAccumulation,
-    CSMShadowMap
+    CSMShadowMap,
+    // Unlit debug shapes the composite draws over the tonemapped scene
+    DebugOverlay
 };
 
 inline const char* ToString(RGResourceID id)
@@ -48,7 +49,6 @@ inline const char* ToString(RGResourceID id)
         case RGResourceID::GBufferDebug: return "GBufferDebug";
         case RGResourceID::GBufferVelocity: return "GBufferVelocity";
         case RGResourceID::GBufferThisFrameColor: return "GBufferThisFrameColor";
-        case RGResourceID::GBufferLastFrameDepth: return "GBufferLastFrameDepth";
         case RGResourceID::TemporalResolve: return "TemporalResolve";
         case RGResourceID::TAAHistory: return "TAAHistory";
         case RGResourceID::GBufferPostAAColor: return "GBufferPostAAColor";
@@ -70,6 +70,7 @@ inline const char* ToString(RGResourceID id)
         case RGResourceID::BloomMip3: return "BloomMip3";
         case RGResourceID::BloomMip4: return "BloomMip4";
         case RGResourceID::RTAccumulation: return "RTAccumulation";
+        case RGResourceID::DebugOverlay: return "DebugOverlay";
         case RGResourceID::CSMShadowMap: return "CSMShadowMap";
         default: return "Custom";
     }

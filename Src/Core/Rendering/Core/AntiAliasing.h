@@ -1,5 +1,6 @@
 #pragma once
 #include "Core/Global/State/States.h"
+#include "Core/Global/Utils/MathFunctions.h"
 #include "Core/Rendering/Core/RenderGraph/RGResourceID.h"
 #include <EASTL/algorithm.h>
 
@@ -25,7 +26,6 @@ struct Support
 
 struct FrameConfig
 {
-    AntialiasingType mode{AntialiasingType::None};
     Temporal temporal{Temporal::None};
     // Post-tonemap SMAA on the composite output
     bool smaa{false};
@@ -82,7 +82,6 @@ inline u32 ResolveRenderScalePercent(const RendererState& state, const Support& 
 inline FrameConfig Resolve(const RendererState& state, const Support& support, bool rtReflectionsActive)
 {
     FrameConfig cfg{};
-    cfg.mode = state.aaType;
     cfg.temporal = ResolveTemporal(state, support, rtReflectionsActive);
     cfg.smaa = state.aaType == AntialiasingType::SMAA || state.aaType == AntialiasingType::TAA_SMAA;
     cfg.renderScalePercent = ResolveRenderScalePercent(state, support);
@@ -105,22 +104,21 @@ inline FrameConfig Resolve(const RendererState& state, const Support& support, b
 // The ReflectionsOnly debug view bypasses AA
 inline RGResourceID CompositeInput(const RendererState& state, const FrameConfig& cfg)
 {
-    const bool reflectionsOnly = (state.debugFlags & (u32)DebugFlags::RTEnabled) &&
-                                 (state.debugFlags & (u32)DebugFlags::RTReflectionsEnabled) &&
+    const bool reflectionsOnly = mathstl::isFlagSet(state.debugFlags, (u32)DebugFlags::RTEnabled) &&
+                                 mathstl::isFlagSet(state.debugFlags, (u32)DebugFlags::RTReflectionsEnabled) &&
                                  state.rt.reflectionsDebugMode == RTReflectionDebugMode::ReflectionsOnly;
     return reflectionsOnly ? RGResourceID::RTReflections : cfg.aaOutput;
 }
 
-namespace Detail
-{
-inline FrameConfig& CurrentStorage()
-{
-    static FrameConfig s_current{};
-    return s_current;
-}
-} // namespace Detail
+inline FrameConfig s_current{};
 
 // Config of the frame being recorded; written once per frame by PassManager on the render thread
-inline const FrameConfig& Current() { return Detail::CurrentStorage(); }
-inline void SetCurrent(const FrameConfig& config) { Detail::CurrentStorage() = config; }
+inline const FrameConfig& Current()
+{
+    return s_current;
+}
+inline void SetCurrent(const FrameConfig& config)
+{
+    s_current = config;
+}
 } // namespace AA

@@ -25,26 +25,41 @@ void ECS::System::SRenderComponent::SyncData(u32 currentFrame)
     RenderPasses::EntityMeshDataMap dataMap;
     dataMap.reserve(renderComps.size());
 
+    const auto localAABBOf = [&meshAABBs](const Components::RenderComponent& comp)
+    {
+        auto meshIt = meshAABBs.find(comp.pMesh);
+        return meshIt != meshAABBs.end() ? meshIt->second : comp.boundingBox;
+    };
+
     stltype::hash_map<ECS::EntityID, u32> subMeshCounters;
     for (const auto& renderComp : renderComps)
     {
         u32 subIdx = subMeshCounters[renderComp.entity.ID]++;
-        AABB localAABB = renderComp.component.boundingBox;
-        if (renderComp.component.pMesh)
-        {
-            auto meshIt = meshAABBs.find(renderComp.component.pMesh);
-            if (meshIt != meshAABBs.end())
-            {
-                localAABB = meshIt->second;
-            }
-        }
-        RenderPasses::EntityMeshData& data = dataMap[renderComp.entity.ID].emplace_back(
-            renderComp.entity.ID, subIdx, renderComp.component.pMesh, renderComp.component.pMaterial, localAABB, false);
+        auto& entityMeshes = dataMap[renderComp.entity.ID];
+        RenderPasses::EntityMeshData& data = entityMeshes.emplace_back(renderComp.entity.ID,
+                                                                       subIdx,
+                                                                       renderComp.component.pMesh,
+                                                                       renderComp.component.pMaterial,
+                                                                       localAABBOf(renderComp.component),
+                                                                       false);
         data.SetIncludeInRayTracing(renderComp.component.includeInRayTracing);
         if (renderComp.component.isSelected || renderComp.component.isWireframe)
         {
             data.SetDebugWireframeMesh();
         }
+    }
+    // Light proxies and other debug shapes, drawn only by DebugShapePass
+    for (const auto& debugComp : debugRenderComps)
+    {
+        if (!debugComp.component.shouldRender)
+            continue;
+        u32 subIdx = subMeshCounters[debugComp.entity.ID]++;
+        dataMap[debugComp.entity.ID].emplace_back(debugComp.entity.ID,
+                                                  subIdx,
+                                                  debugComp.component.pMesh,
+                                                  debugComp.component.pMaterial,
+                                                  localAABBOf(debugComp.component),
+                                                  true);
     }
 
     m_pPassManager->SetEntityMeshDataForFrame(std::move(dataMap), currentFrame);

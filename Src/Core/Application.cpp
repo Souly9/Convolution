@@ -15,15 +15,6 @@
 
 Application::Application() : m_renderThread(&m_imGuiManager)
 {
-    // Registers ImGui and EventSystem callbacks, so it can only exist once the Engine is up
-    m_pMainMenuBar = stltype::make_unique<MainMenuBar>();
-
-    if (!g_renderer.InitDevice())
-    {
-        DEBUG_LOG_ERR("Render device initialization failed, shutting down");
-        return;
-    }
-
     // Load placeholder first
     auto placeholderHandle = g_renderer.GetTextureManager().SubmitAsyncTextureCreation(
         {"Resources\\Textures\\placeholder.png", false, TextureSemantic::BaseColor, true});
@@ -48,7 +39,6 @@ Application::Application() : m_renderThread(&m_imGuiManager)
     auto pRenderer = m_renderThread.Start();
     g_engine.GetEventSystem().OnAppInit({pRenderer});
     StaticBehaviorCollection::RegisterAllBehaviors();
-    m_initialized = true;
 
     g_engine.GetApplicationState().ProcessStateUpdates();
     // Init-time uploads would otherwise sit unsubmitted until the first frame reuses the slot
@@ -64,9 +54,6 @@ void Application::CreateMainPSO()
 
 Application::~Application()
 {
-    if (!m_initialized)
-        return;
-
     m_renderThread.Stop();
 
     g_engine.GetFrameSync().mainRenderThreadSync.Post();

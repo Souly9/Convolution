@@ -11,10 +11,6 @@ enum class Allocator
     Convolution
 };
 
-// Declared only; backends specialize it
-IMPLEMENT_GRAPHICS_API
-class GPUMemManager;
-
 #include "Core/Rendering/Backend/BackendForwardDecls.h"
 
 #ifdef USE_VULKAN

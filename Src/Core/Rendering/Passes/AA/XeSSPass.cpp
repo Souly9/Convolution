@@ -129,7 +129,9 @@ void XeSSPass::RenderWithGraph(const MainPassData& data, const FrameRendererCont
     execParams.inputResponsiveMaskBase = {0, 0};
     execParams.outputColorBase = {0, 0};
 
-    const bool shouldReset = AA::Current().temporalReset || VulkanXeSS::XeSSManager::ConsumeResetFlag();
+    // Always consume; a short-circuit would leave the reset set for the next frame
+    const bool configReset = VulkanXeSS::XeSSManager::ConsumeResetFlag();
+    const bool shouldReset = AA::Current().temporalReset || configReset;
     execParams.resetHistory = shouldReset ? 1u : 0u;
 
     ExecuteNativeCmd xessCmd{};

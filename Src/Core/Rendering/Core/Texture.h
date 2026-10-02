@@ -20,7 +20,6 @@ struct TextureInfo : TextureInfoBase
     TexFormat format;
 };
 
-
 // Base class for agnostic data and interfaces
 class TextureBase : public TrackedResource
 {
@@ -30,9 +29,6 @@ public:
     {
     }
 
-    virtual void CleanUp() override
-    {
-    }
     const TextureInfo& GetInfo() const
     {
         return m_info;
@@ -45,7 +41,6 @@ public:
 protected:
     TextureInfo m_info;
 };
-
 
 #include "APITraits.h"
 #ifdef USE_VULKAN

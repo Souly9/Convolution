@@ -62,9 +62,9 @@ public:
         g_engine.GetApplicationState().RegisterUpdateFunction(
             [](ApplicationState& state)
             {
-                g_engine.GetEntityManager().MarkComponentDirty({}, ECS::ComponentID<ECS::Components::Transform>::ID);
-                g_engine.GetEntityManager().MarkComponentDirty({}, ECS::ComponentID<ECS::Components::RenderComponent>::ID);
-                g_engine.GetEntityManager().MarkComponentDirty({}, ECS::ComponentID<ECS::Components::Light>::ID);
+                g_engine.GetEntityManager().MarkComponentDirty({}, C_ID(Transform));
+                g_engine.GetEntityManager().MarkComponentDirty({}, C_ID(RenderComponent));
+                g_engine.GetEntityManager().MarkComponentDirty({}, C_ID(Light));
                 g_renderer.GetMaterialManager().MarkMaterialsDirty();
             });
         g_engine.GetApplicationState().RegisterUpdateFunction(

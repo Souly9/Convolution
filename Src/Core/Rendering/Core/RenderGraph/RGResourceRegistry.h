@@ -23,7 +23,10 @@ public:
     ~RGResourceRegistry();
 
     RGResourceHandle DeclareResource(const RGResourceSpec& spec);
-    RGResourceHandle ImportTexture(RGResourceID id, Texture* pTexture, ImageLayout currentLayout = ImageLayout::UNDEFINED);
+    RGResourceHandle ImportTexture(RGResourceID id,
+                                   Texture* pTexture,
+                                   BindlessTextureHandle bindlessHandle,
+                                   ImageLayout currentLayout);
     void DeclareEngineResources();
 
     void RecreateShadowMap(u32 cascades, const mathstl::Vector2& extents);
@@ -32,7 +35,6 @@ public:
 
     void OnResize(const mathstl::Vector2& renderRes, const mathstl::Vector2& outputRes);
     void AllocatePending();
-    void TickUnreferenced();
     void RotateHistory(u32 frameSlot);
 
     Texture* Resolve(RGResourceHandle handle) const;
@@ -41,32 +43,22 @@ public:
     BindlessTextureHandle ResolveBindless(RGResourceHandle handle) const;
     BindlessTextureHandle ResolveHistoryBindless(RGResourceHandle handle) const;
 
-    TextureHandle ResolveTextureHandle(RGResourceHandle handle) const;
-    TextureHandle ResolveHistoryTextureHandle(RGResourceHandle handle) const;
-
     RGResourceHandle FindByID(RGResourceID id) const;
     Texture* ResolveByID(RGResourceID id) const;
     Texture* ResolveHistoryByID(RGResourceID id) const;
     BindlessTextureHandle ResolveBindlessByID(RGResourceID id) const;
     BindlessTextureHandle ResolveHistoryBindlessByID(RGResourceID id) const;
-    TextureHandle ResolveTextureHandleByID(RGResourceID id) const;
-    TextureHandle ResolveHistoryTextureHandleByID(RGResourceID id) const;
 
     RenderAttachmentInfo GetColorAttachment(RGResourceID id, LoadOp loadOp = LoadOp::CLEAR, StoreOp storeOp = StoreOp::STORE, ImageLayout renderingLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
     RenderAttachmentInfo GetDepthAttachment(RGResourceID id, LoadOp loadOp = LoadOp::CLEAR, StoreOp storeOp = StoreOp::STORE, ImageLayout renderingLayout = ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
     RenderAttachmentInfo GetReadOnlyDepthAttachment(RGResourceID id = RGResourceID::MainDepth, LoadOp loadOp = LoadOp::LOAD);
 
-    RenderAttachmentInfo GetColorAttachment(RGResourceHandle handle, LoadOp loadOp = LoadOp::CLEAR, StoreOp storeOp = StoreOp::STORE, ImageLayout renderingLayout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
-    RenderAttachmentInfo GetDepthAttachment(RGResourceHandle handle, LoadOp loadOp = LoadOp::CLEAR, StoreOp storeOp = StoreOp::STORE, ImageLayout renderingLayout = ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
-
-    RGResourceHandle GetHistoryHandle(RGResourceHandle handle) const;
     const RGResourceSpec* GetSpec(RGResourceHandle handle) const;
     TexFormat GetResourceFormat(RGResourceHandle handle) const;
     TexFormat GetResourceFormatByID(RGResourceID id) const;
     ImageLayout GetInitialLayout(RGResourceHandle handle) const;
     void SetResourceLayout(RGResourceHandle handle, ImageLayout layout);
     void SetHistoryResourceLayout(RGResourceHandle handle, ImageLayout layout);
-    void SetCustomResourceName(RGResourceHandle handle, const stltype::string& name);
     void MarkReferenced(RGResourceHandle handle);
 
     u32 GetResourceCount() const { return static_cast<u32>(m_resources.size()); }
@@ -95,7 +87,6 @@ public:
         BindlessTextureHandle bindlessHandle{0};
         BindlessTextureHandle historyBindlessHandle{0};
         mathstl::Vector2 allocatedExtents{0.0f, 0.0f};
-        u32 framesUnreferenced{0};
         ImageLayout currentLayout{ImageLayout::UNDEFINED};
         ImageLayout historyLayout{ImageLayout::UNDEFINED};
 
@@ -122,5 +113,4 @@ private:
     mathstl::Vector2 m_currentRenderRes{0.0f, 0.0f};
     mathstl::Vector2 m_currentOutputRes{0.0f, 0.0f};
     u32 m_currentFrameSlot{0};
-    static constexpr u32 kFreeAfterFrames = 120;
 };

@@ -40,8 +40,9 @@ void ECS::System::SDebugDisplay::Process()
             lightDebugComp.pMesh = g_engine.GetMeshManager().GetPrimitiveMesh(MeshManager::PrimitiveType::Cube);
             lightDebugComp.pMaterial = m_pDebugMaterial;
             g_engine.GetEntityManager().AddComponent(entity, lightDebugComp);
-            g_engine.GetEntityManager().MarkComponentDirty({}, ECS::ComponentID<ECS::Components::RenderComponent>::ID);
-            g_engine.GetEntityManager().MarkComponentDirty({}, ECS::ComponentID<ECS::Components::Transform>::ID);
+            g_engine.GetEntityManager().MarkComponentDirty({}, C_ID(RenderComponent));
+            // A static light's matrix was sent before it had a render slot, so send it again with the proxy
+            g_engine.GetEntityManager().MarkComponentDirty(entity, C_ID(Transform));
         }
         else if (hasDebugComp)
         {
@@ -50,8 +51,8 @@ void ECS::System::SDebugDisplay::Process()
             if (pDebugRenderComponent->shouldRender != shouldRender)
             {
                 pDebugRenderComponent->shouldRender = shouldRender;
-                g_engine.GetEntityManager().MarkComponentDirty({}, ECS::ComponentID<ECS::Components::RenderComponent>::ID);
-                g_engine.GetEntityManager().MarkComponentDirty({}, ECS::ComponentID<ECS::Components::Transform>::ID);
+                g_engine.GetEntityManager().MarkComponentDirty({}, C_ID(RenderComponent));
+                g_engine.GetEntityManager().MarkComponentDirty(entity, C_ID(Transform));
             }
         }
     }

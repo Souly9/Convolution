@@ -114,7 +114,7 @@ Texture* TextureManagerBase::GetTexture(TextureHandle handle)
 void TextureManagerBase::SetPlaceholder(TextureHandle handle)
 {
     m_pPlaceholderTexture = GetTexture(handle);
-    for (u32 i = 0; i < g_renderer.GetBindlessCapacity(Bindless::BindlessType::GlobalTextures); ++i)
+    for (u32 i = 0; i < Bindless::GetCount(Bindless::BindlessType::GlobalTextures); ++i)
     {
         WriteBindlessTexture(m_pPlaceholderTexture, i);
     }
@@ -136,7 +136,7 @@ BindlessTextureHandle TextureManagerBase::MakeTextureBindless(TextureHandle hand
     else if (isPersistent)
     {
         DEBUG_ASSERT(m_lastPersistentBindlessTextureWriteIdx <
-                     g_renderer.GetBindlessCapacity(Bindless::BindlessType::GlobalTextures));
+                     Bindless::GetCount(Bindless::BindlessType::GlobalTextures));
         slot = m_lastPersistentBindlessTextureWriteIdx++;
     }
     else
@@ -150,24 +150,6 @@ BindlessTextureHandle TextureManagerBase::MakeTextureBindless(TextureHandle hand
     if (Texture* pTex = GetTexture(handle))
         WriteBindlessTexture(pTex, slot);
     return slot;
-}
-
-BindlessTextureHandle TextureManagerBase::MakeTextureBindless(Texture* pTex, bool isPersistent)
-{
-    if (!pTex)
-        return 0;
-
-    for (const auto& [handle, texPtr] : m_persistentTextures)
-    {
-        if (texPtr.get() == pTex)
-            return MakeTextureBindless(handle, isPersistent);
-    }
-    for (const auto& [handle, texPtr] : m_textures)
-    {
-        if (texPtr.get() == pTex)
-            return MakeTextureBindless(handle, isPersistent);
-    }
-    return 0;
 }
 
 void TextureManagerBase::Flush()
@@ -206,46 +188,29 @@ void TextureManagerBase::FreeTexture(TextureHandle handle)
         }
     }
 
-    stltype::unique_ptr<Texture> pTexture;
-    if (auto it = m_textures.find(handle); it != m_textures.end())
-    {
-        DEBUG_LOGF("[TextureManager] Freeing scene texture \"{}\" handle {}", it->second->GetName().c_str(), handle);
-        pTexture = stltype::move(it->second);
-        m_textures.erase(it);
-    }
-    else if (auto itPersistent = m_persistentTextures.find(handle); itPersistent != m_persistentTextures.end())
-    {
-        DEBUG_LOGF("[TextureManager] Freeing persistent texture \"{}\" handle {}",
-                   itPersistent->second->GetName().c_str(),
-                   handle);
-        pTexture = stltype::move(itPersistent->second);
-        m_persistentTextures.erase(itPersistent);
-    }
-    else
+    auto& textures = m_textures.count(handle) != 0 ? m_textures : m_persistentTextures;
+    const auto it = textures.find(handle);
+    if (it == textures.end())
     {
         DEBUG_LOGF("[TextureManager] Tried to free invalid texture handle {}", handle);
         return;
     }
-
+    DEBUG_LOGF("[TextureManager] Freeing texture \"{}\" handle {}", it->second->GetName().c_str(), handle);
+    stltype::unique_ptr<Texture> pTexture = stltype::move(it->second);
+    textures.erase(it);
     DestroyTextureDeferred(stltype::move(pTexture));
 }
 
 const TextureManagerBase::LoadedTexInfo* TextureManagerBase::IsAlreadyRequested(const stltype::string& filePath,
                                                                                 TextureSemantic semantic) const
 {
-    auto matches = [&filePath, semantic](const LoadedTexInfo& info)
-    { return info.filePath == filePath && info.semantic == semantic; };
-
-    if (const auto it = stltype::find_if(m_loadedTextureCache.cbegin(), m_loadedTextureCache.cend(), matches);
-        it != m_loadedTextureCache.cend())
+    for (const auto* pCache : {&m_loadedTextureCache, &m_persistentLoadedTextureCache})
     {
-        return &(*it);
-    }
-    if (const auto it =
-            stltype::find_if(m_persistentLoadedTextureCache.cbegin(), m_persistentLoadedTextureCache.cend(), matches);
-        it != m_persistentLoadedTextureCache.cend())
-    {
-        return &(*it);
+        for (const auto& info : *pCache)
+        {
+            if (info.filePath == filePath && info.semantic == semantic)
+                return &info;
+        }
     }
     return nullptr;
 }

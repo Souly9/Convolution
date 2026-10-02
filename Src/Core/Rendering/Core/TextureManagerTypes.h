@@ -8,16 +8,6 @@
 
 // API-agnostic texture manager request types, shared by VkTextureManager and MtlTextureManager
 
-struct TextureSamplerInfo
-{
-    TextureWrapMode wrapU{TextureWrapMode::REPEAT};
-    TextureWrapMode wrapV{TextureWrapMode::REPEAT};
-    TextureWrapMode wrapW{TextureWrapMode::REPEAT};
-    TextureFilter minFilter{TextureFilter::LINEAR};
-    TextureFilter magFilter{TextureFilter::LINEAR};
-    TextureBorderColor borderColor{TextureBorderColor::OpaqueWhite};
-};
-
 enum class TextureSemantic : u8
 {
     Auto,
@@ -36,33 +26,10 @@ struct DynamicTextureRequest
     TextureHandle handle;
     TexFormat format;
     Usage usage;
-    Tiling tiling{Tiling::OPTIMAL};
-    TextureSamplerInfo samplerInfo;
     bool hasMipMaps{false};
-    bool createSampler{true};
     bool isPersistent{false};
     u32 mipLevels;
-
-    void AddName(const stltype::string& name)
-    {
-#ifdef CONV_DEBUG
-        m_debugName = name;
-#endif
-    }
-
-    const stltype::string& GetName() const
-    {
-#ifdef CONV_DEBUG
-        return m_debugName;
-#else
-        return "DynamicTexture";
-#endif
-    }
-
-private:
-#ifdef CONV_DEBUG
-    stltype::string m_debugName;
-#endif
+    stltype::string name;
 };
 
 struct FileTextureRequest
@@ -74,25 +41,6 @@ struct FileTextureRequest
     TextureSemantic semantic{TextureSemantic::Auto};
     TexFormat format{TexFormat::UNDEFINED};
 };
-struct AsyncLayoutTransitionRequest
-{
-    stltype::vector<const Texture*> textures;
-    ImageLayout oldLayout;
-    ImageLayout newLayout;
-    u32 mipLevels;
-    // Optional semaphores to wait on and signal
-    Semaphore* pWaitSemaphore{nullptr};
-    Semaphore* pSignalSemaphore{nullptr};
-
-    // Timeline semaphores
-    TimelineSemaphore* pTimelineWaitSemaphore{nullptr};
-    u64 timelineWaitValue{0};
-    TimelineSemaphore* pTimelineSignalSemaphore{nullptr};
-    u64 timelineSignalValue{0};
-};
-
-using TextureRequest = stltype::variant<FileTextureRequest, DynamicTextureRequest, AsyncLayoutTransitionRequest>;
-
 struct TextureFileCreateInfo
 {
     stltype::string filePath;

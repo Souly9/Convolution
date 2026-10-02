@@ -15,8 +15,8 @@ static inline bool Visualize(ECS::Components::RenderComponent* pRenderComp)
             ImGui::Text(
                 "Materialname: %s",
                 g_renderer.GetMaterialManager().GetMaterialName(pRenderComp->pMaterial).data()); // should always be null terminated
-            
-            if (pRenderComp->pMaterial != nullptr && g_engine.TryGetApplicationState() != nullptr)
+
+            if (pRenderComp->pMaterial != nullptr)
             {
                 if (ImGui::TreeNodeEx("Material Textures", ImGuiTreeNodeFlags_DefaultOpen))
                 {

@@ -1,6 +1,5 @@
 #include "RTAOPass.h"
 #include "Core/Global/GlobalVariables.h"
-#include "Core/Global/GlobalVariables.h"
 #include "Core/Global/Profiling.h"
 #include "Core/Global/Utils/MathFunctions.h"
 #include "Core/Rendering/Core/CommandBuffer.h"

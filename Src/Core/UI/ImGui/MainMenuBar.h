@@ -3,14 +3,14 @@
 #include "Controls/SelectedEntitiesWindow.h"
 #include "DebugWindows/EngineSettingsWindow.h"
 #include "DebugWindows/InfoWindow.h"
-#include "DebugWindows/RenderSettingsWindow.h"
 #include "DebugWindows/PerformanceDiagnosticsWindow.h"
 #include "DebugWindows/RenderGraphInspectorWindow.h"
+#include "DebugWindows/RenderSettingsWindow.h"
 #include "DebugWindows/TextureViewerWindow.h"
-#include "UIElement.h"
+#include "ImGuiManager.h"
 #include <imgui/imgui.h>
 
-class MainMenuBar : public UIElement
+class MainMenuBar
 {
 public:
     MainMenuBar();

@@ -12,10 +12,6 @@ class AsyncQueueHandler;
 class DeleteQueue;
 class Profiler;
 struct RendererState;
-namespace Bindless
-{
-enum class BindlessType : u32;
-}
 namespace RenderPasses
 {
 class PassManager;
@@ -46,34 +42,12 @@ public:
     void ShutdownResources();
     void ShutdownDevice();
 
-    // Compiled-in graphics API
-    static constexpr RenderAPIType GetAPI()
-    {
-        return stltype::is_same_v<CurrentAPI, API_Vulkan> ? RenderAPIType::Vulkan : RenderAPIType::Metal;
-    }
-    static constexpr bool IsVulkan()
-    {
-        return GetAPI() == RenderAPIType::Vulkan;
-    }
-    static constexpr bool IsMetal()
-    {
-        return GetAPI() == RenderAPIType::Metal;
-    }
-
     // Device capabilities, published by the backend right after device creation and read-only afterwards
     void PublishCapabilities(const RenderCapabilities& caps);
-    bool HasCapabilities() const
-    {
-        return m_capsValid;
-    }
     const RenderCapabilities& GetCapabilities() const
     {
         DEBUG_ASSERT(m_capsValid);
         return m_caps;
-    }
-    const GPUDeviceInfo& GetDeviceInfo() const
-    {
-        return GetCapabilities().device;
     }
     bool SupportsRayTracing() const
     {
@@ -87,17 +61,9 @@ public:
     {
         return GetCapabilities().pipelineStatistics;
     }
-    bool SupportsTimestamps() const
-    {
-        return GetCapabilities().timestamps;
-    }
     f64 GetTimestampPeriodNs() const
     {
         return GetCapabilities().timestampPeriodNs;
-    }
-    bool HasUnifiedMemory() const
-    {
-        return GetCapabilities().unifiedMemory;
     }
     u64 GetTotalVram() const
     {
@@ -111,24 +77,6 @@ public:
     {
         return GetCapabilities().maxSamplerAnisotropy;
     }
-    u32 GetMaxSamplerObjects() const
-    {
-        return GetCapabilities().maxSamplerObjects;
-    }
-    u32 GetMaxPerStageSamplers() const
-    {
-        return GetCapabilities().maxPerStageSamplers;
-    }
-    u32 GetMaxBindlessSampledImages() const
-    {
-        return GetCapabilities().maxBindlessSampledImages;
-    }
-    u32 GetMaxBindlessStorageImages() const
-    {
-        return GetCapabilities().maxBindlessStorageImages;
-    }
-    // Descriptor count of each bindless binding; valid before the device exists (layouts are built early)
-    u32 GetBindlessCapacity(Bindless::BindlessType type) const;
 
     // Subsystems
     RenderBackend& GetBackend()
@@ -140,10 +88,6 @@ public:
     {
         DEBUG_ASSERT(m_pTexManager);
         return *m_pTexManager;
-    }
-    TextureManager* TryGetTextureManager()
-    {
-        return m_pTexManager.get();
     }
     ShaderManager& GetShaderManager()
     {
@@ -171,9 +115,10 @@ public:
         DEBUG_ASSERT(m_pGPUMemoryManager);
         return *m_pGPUMemoryManager;
     }
-    TracyGPUManager* TryGetTracyGPUManager()
+    TracyGPUManager& GetTracyGPUManager()
     {
-        return m_pTracyGPUManager.get();
+        DEBUG_ASSERT(m_pTracyGPUManager);
+        return *m_pTracyGPUManager;
     }
     Profiler* TryGetProfiler()
     {

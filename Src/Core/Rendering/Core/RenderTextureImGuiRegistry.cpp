@@ -27,11 +27,8 @@ void ReleaseImGuiIds(stltype::vector<u64>& ids)
             if (ImGui::GetCurrentContext() == nullptr)
                 return;
 
-            auto* pTexManager = g_renderer.TryGetTextureManager();
-            if (pTexManager == nullptr)
-                return;
             for (const auto id : oldIds)
-                pTexManager->UnregisterImGuiTexture(id);
+                g_renderer.GetTextureManager().UnregisterImGuiTexture(id);
         });
     ids.clear();
 }
@@ -73,7 +70,7 @@ void RenderTextureImGuiRegistry::ReleaseGBufferIdsForNextFrame()
     }
     if (m_historyColorIdB != 0 && m_historyColorIdB != m_historyColorIdA)
     {
-        m_gbufferImGuiIDs.push_back(m_historyColorIdA);
+        m_gbufferImGuiIDs.push_back(m_historyColorIdB);
     }
     ReleaseImGuiIds(m_gbufferImGuiIDs);
     ReleaseImGuiIds(m_rtImGuiIDs);
@@ -105,7 +102,7 @@ void RenderTextureImGuiRegistry::RegisterShadowMapTextures(const CascadedShadowM
     {
         if (view == nullptr)
             continue;
-        m_csmCascadeImGuiIDs.push_back(g_renderer.GetTextureManager().RegisterImGuiTextureView(view, *shadowMap.pTexture));
+        m_csmCascadeImGuiIDs.push_back(g_renderer.GetTextureManager().RegisterImGuiTextureView(view));
     }
     g_engine.GetApplicationState().RegisterUpdateFunction([ids = m_csmCascadeImGuiIDs](ApplicationState& state)
                                                  { state.renderState.csmCascadeImGuiIDs = ids; });
@@ -220,9 +217,6 @@ void RenderTextureImGuiRegistry::ReleaseMaterialTextures()
 
 void RenderTextureImGuiRegistry::RegisterMaterialTextures()
 {
-    if (g_renderer.TryGetTextureManager() == nullptr)
-        return;
-
     const auto& bindlessMap = g_renderer.GetTextureManager().GetBindlessTextureHandleMap();
     const auto& loadedCache = g_renderer.GetTextureManager().GetLoadedTextureCache();
     const auto& persistentCache = g_renderer.GetTextureManager().GetPersistentLoadedTextureCache();
@@ -253,9 +247,6 @@ void RenderTextureImGuiRegistry::RegisterMaterialTextures()
         {
             u32 handle = pair.first;
             Texture* pTex = pair.second.get();
-            if (!pTex || !g_renderer.GetTextureManager().CanRegisterImGuiTexture(*pTex))
-                continue;
-
             if ((pTex->GetInfo().usage & Usage::ShadowMap) != Usage::None)
                 continue;
 
@@ -330,15 +321,9 @@ void RenderTextureImGuiRegistry::RegisterRTTextures(const RGResourceRegistry& re
 {
     ReleaseImGuiIds(m_rtImGuiIDs);
 
-    auto addRT = [&](RGResourceID id)
-    {
-        const Texture* pTex = registry.ResolveByID(id);
-        return pTex != nullptr ? g_renderer.GetTextureManager().RegisterImGuiTexture(*pTex) : static_cast<u64>(0);
-    };
-
-    u64 debugViewID = addRT(RGResourceID::GBufferDebug);
-    u64 reflectionsID = addRT(RGResourceID::RTReflections);
-    u64 rtaoID = addRT(RGResourceID::RTAOOutput);
+    u64 debugViewID = AddImGuiTex(registry.ResolveByID(RGResourceID::GBufferDebug));
+    u64 reflectionsID = AddImGuiTex(registry.ResolveByID(RGResourceID::RTReflections));
+    u64 rtaoID = AddImGuiTex(registry.ResolveByID(RGResourceID::RTAOOutput));
 
     m_rtImGuiIDs.push_back(debugViewID);
     m_rtImGuiIDs.push_back(reflectionsID);

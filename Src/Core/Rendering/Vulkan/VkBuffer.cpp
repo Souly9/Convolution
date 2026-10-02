@@ -30,15 +30,6 @@ void GenBufferVulkan::Create(BufferCreateInfo& info)
     m_allocatedMemory = g_renderer.GetGPUMemoryManager().AllocateBuffer(info.usage, bufferInfo, m_buffer);
     m_info.size = size;
     m_info.usage = info.usage;
-
-    // DEBUG_ASSERT(vkCreateBuffer(VkBackend::Device(), &bufferInfo, VulkanAllocator(), &m_buffer) == VK_SUCCESS);
-    // DEBUG_ASSERT(m_buffer != VK_NULL_HANDLE);
-    // VkMemoryRequirements memRequirements;
-    // vkGetBufferMemoryRequirements(VkBackend::Device(), m_buffer, &memRequirements);
-
-    // m_allocatedMemory = g_renderer.GetGPUMemoryManager().AllocateMemory(info.size, mainBufferProperties, memRequirements);
-    //
-    // vkBindBufferMemory(VkBackend::Device(), m_buffer, m_allocatedMemory, 0);
 }
 
 void GenBufferVulkan::CleanUp()

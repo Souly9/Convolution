@@ -27,8 +27,9 @@ STRUCTFIELD(BindlessTextureHandle, compositeInputIdx)
 STRUCTFIELD(BindlessTextureHandle, rtDebugViewIdx)
 STRUCTFIELD(BindlessTextureHandle, bloomResultIdx)
 STRUCTFIELD(BindlessTextureHandle, gbufferRoughnessIdx)
+// 0 when DebugShapePass didn't run this frame
+STRUCTFIELD(BindlessTextureHandle, debugOverlayIdx)
 // std140 rounds the block to 16 bytes, keep the C++ size equal
-STRUCTFIELD(BindlessTextureHandle, pad0)
 STRUCTFIELD(BindlessTextureHandle, pad1)
 STRUCTFIELD(BindlessTextureHandle, pad2)
 STRUCTEND()

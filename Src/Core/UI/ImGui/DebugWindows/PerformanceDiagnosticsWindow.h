@@ -6,7 +6,6 @@
 #include "Core/Global/Profiling.h"
 #include "Core/Global/State/ApplicationState.h"
 #include "Core/Global/Utils/MathFunctions.h"
-#include "Core/Global/GlobalVariables.h"
 #include "InfoWindow.h"
 #include <EASTL/hash_map.h>
 #include <EASTL/sort.h>
@@ -51,7 +50,7 @@ public:
         ImGui::Text("VRAM Usage");
         ImGui::Separator();
         f32 usedMB = static_cast<f32>(m_lastState.usedVramBytes) / (1024.f * 1024.f);
-        f32 totalMB = static_cast<f32>(m_lastState.totalVramBytes) / (1024.f * 1024.f);
+        f32 totalMB = static_cast<f32>(g_renderer.GetTotalVram()) / (1024.f * 1024.f);
         f32 usedGB = usedMB / 1024.f;
         f32 totalGB = totalMB / 1024.f;
         f32 vramPct = (totalGB > 0.001f) ? (usedGB / totalGB) : 0.0f;
@@ -283,11 +282,9 @@ private:
         const auto& state = d.state;
         m_lastState = state.renderState;
 
-        if (g_engine.TryGetEntityManager())
-        {
-            m_entityCount = static_cast<u32>(g_engine.GetEntityManager().GetAllEntities().size());
-            m_lightCount = static_cast<u32>(g_engine.GetEntityManager().GetComponentVector<ECS::Components::Light>().size());
-        }
+        m_entityCount = static_cast<u32>(g_engine.GetEntityManager().GetAllEntities().size());
+        m_lightCount =
+            static_cast<u32>(g_engine.GetEntityManager().GetComponentVector<ECS::Components::Light>().size());
 
         m_frameTimeSamples[m_sampleIndex] = dt;
         m_sampleIndex = (m_sampleIndex + 1) % FRAME_SAMPLE_COUNT;
@@ -298,18 +295,6 @@ private:
         for (u32 i = 0; i < m_sampleCount; ++i)
             totalTime += m_frameTimeSamples[i];
         m_avgFrameTime = totalTime / static_cast<f32>(m_sampleCount);
-
-        for (const auto& timing : m_lastState.passTimings)
-        {
-            auto& avgData = m_avgPassTimings[timing.passName];
-            avgData.wasRunLastFrame = timing.wasRun;
-
-            if (timing.wasRun && timing.gpuTimeMs > 0.0001f)
-            {
-                constexpr f32 alpha = 0.1f;
-                avgData.avgTimeMs = avgData.avgTimeMs * (1.f - alpha) + timing.gpuTimeMs * alpha;
-            }
-        }
 
         if (m_lastState.totalGPUTimeMs > 0.0001f)
         {
@@ -436,14 +421,7 @@ private:
 
     static constexpr u32 FRAME_SAMPLE_COUNT = 60;
 
-    struct PassAvgData
-    {
-        f32 avgTimeMs{0.f};
-        bool wasRunLastFrame{false};
-    };
-
     RendererState m_lastState;
-    stltype::hash_map<stltype::string, PassAvgData> m_avgPassTimings;
     f32 m_avgTotalGPUTime{0.f};
     u32 m_frameCount{0};
     f32 m_totalTime{0.f};
@@ -456,12 +434,6 @@ private:
 
     u32 m_entityCount{0};
     u32 m_lightCount{0};
-
-    static const char* BoolToString(bool value)
-    {
-        return value ? "Yes" : "No";
-    }
-
 
     stltype::hash_map<stltype::string, SmoothedPass> m_smoothed;
     f32 m_totalRangeMs{0.0f};

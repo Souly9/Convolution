@@ -16,10 +16,7 @@ MeshHandle SharedResourceManager::AppendMesh(const Mesh& mesh,
                                              stltype::hash_map<const Mesh*, MeshHandle>& handles)
 {
     AsyncQueueHandler::MeshTransfer transfer{};
-    transfer.pVertices = mesh.vertices.data();
-    transfer.vertexCount = (u32)mesh.vertices.size();
-    transfer.pIndices = mesh.indices.data();
-    transfer.indexCount = (u32)mesh.indices.size();
+    transfer.pMesh = &mesh;
     transfer.pBuffersToFill = &buffers;
     transfer.vertexOffset = offsets.vertBufferOffset * sizeof(CompleteVertex);
     transfer.indexOffset = offsets.indexBufferOffset * sizeof(u32);
@@ -161,8 +158,7 @@ void SharedResourceManager::ClearGeometryCaches()
     m_masterInstanceVisibility.clear();
 }
 
-void SharedResourceManager::UpdateInstanceDataSSBO(stltype::vector<RenderPasses::PassMeshData>& meshes,
-                                                   u32 thisFrameNum)
+void SharedResourceManager::UpdateInstanceDataSSBO(stltype::vector<RenderPasses::PassMeshData>& meshes)
 {
     ScopedZone("SharedResourceManager::UpdateInstanceDataSSBO");
     auto& instanceData = m_currentFrameInstanceData;
@@ -212,14 +208,7 @@ void SharedResourceManager::UpdateInstanceDataSSBO(stltype::vector<RenderPasses:
         data.SetVisible(true);
         m_masterInstanceVisibility.push_back(1u);
     }
-    AsyncQueueHandler::SSBOTransfer transfer;
-    transfer.pData = m_currentFrameInstanceData.data();
-    transfer.size = static_cast<u32>(m_currentFrameInstanceData.size() * sizeof(m_currentFrameInstanceData[0]));
-    transfer.offset = 0;
-    transfer.pSSBO = &m_sceneInstanceBuffer;
-    DEBUG_LOGF("SharedResourceManager: Updating instance data SSBO. Entry count: {}, Size: {} bytes", 
-               (u32)m_currentFrameInstanceData.size(), transfer.size);
-    g_renderer.GetQueueHandler().SubmitTransferCommandAsync(transfer);
+    UploadInstanceDataSSBO();
 }
 
 MeshHandle SharedResourceManager::GetMeshHandle(const Mesh* pMesh) const
@@ -233,126 +222,61 @@ MeshHandle SharedResourceManager::GetMeshHandle(const Mesh* pMesh) const
     return MeshResourceData{};
 }
 
-void SharedResourceManager::WriteInstanceSSBODescriptorUpdate(u32 targetFrame)
-{
-    ScopedZone("SharedResourceManager::WriteInstanceSSBODescriptorUpdate");
-    targetFrame %= m_frameData.size();
-    m_frameData[targetFrame].pSceneInstanceSSBOSet->WriteSSBOUpdate(m_transformBuffer, s_modelSSBOBindingSlot);
-    m_frameData[targetFrame].pSceneInstanceSSBOSet->WriteSSBOUpdate(m_prevTransformBuffer, s_prevModelSSBOBindingSlot);
-    m_frameData[targetFrame].pSceneInstanceSSBOSet->WriteSSBOUpdate(m_sceneInstanceBuffer,
-                                                                    s_globalInstanceDataSSBOSlot);
-    m_frameData[targetFrame].pSceneAABBSet->WriteSSBOUpdate(m_sceneAABBBuffer, s_sceneAABBsSSBOBindingSlot);
-    m_frameData[targetFrame].pSceneInstanceSSBOSet->WriteSSBOUpdate(m_materialBuffer, s_globalMaterialBufferSlot);
-}
-
-void SharedResourceManager::UpdateTransformBuffer(const stltype::vector<DirectX::XMFLOAT4X4>& transformBuffer,
-                                                  u32 thisFrame,
-                                                  u32 updateCount)
-{
-    ScopedZone("SharedResourceManager::UpdateTransformBuffer");
-    u64 transferSize = updateCount > 0 ? updateCount * sizeof(DirectX::XMFLOAT4X4) : transformBuffer.size() * sizeof(DirectX::XMFLOAT4X4);
-    if (transferSize == 0) return;
-    
-    AsyncQueueHandler::SSBOTransfer transfer;
-    transfer.pData = transformBuffer.data();
-    transfer.size = static_cast<u32>(transferSize);
-    transfer.offset = 0;
-    transfer.pSSBO = &m_transformBuffer;
-    g_renderer.GetQueueHandler().SubmitTransferCommandAsync(transfer);
-}
-
 void SharedResourceManager::UpdateTransformRange(const stltype::vector<DirectX::XMFLOAT4X4>& transformBuffer,
                                                  u32 startIdx,
-                                                 u32 count,
-                                                 u32 thisFrame)
+                                                 u32 count)
 {
     ScopedZone("SharedResourceManager::UpdateTransformRange");
     if (count == 0) return;
-    const u64 offset = startIdx * sizeof(DirectX::XMFLOAT4X4);
-    const u64 transferSize = count * sizeof(DirectX::XMFLOAT4X4);
-    AsyncQueueHandler::SSBOTransfer transfer;
-    transfer.pData = &transformBuffer[startIdx];
-    transfer.size = static_cast<u32>(transferSize);
-    transfer.offset = offset;
-    transfer.pSSBO = &m_transformBuffer;
-    g_renderer.GetQueueHandler().SubmitTransferCommandAsync(transfer);
+    g_renderer.GetQueueHandler().SubmitTransferCommandAsync(
+        AsyncQueueHandler::SSBOTransfer{&transformBuffer[startIdx],
+                                        static_cast<u32>(count * sizeof(DirectX::XMFLOAT4X4)),
+                                        &m_transformBuffer,
+                                        static_cast<u32>(startIdx * sizeof(DirectX::XMFLOAT4X4))});
 }
 
 void SharedResourceManager::UpdatePrevTransformRange(const stltype::vector<DirectX::XMFLOAT4X4>& transformBuffer,
                                                      u32 startIdx,
-                                                     u32 count,
-                                                     u32 thisFrame)
+                                                     u32 count)
 {
     ScopedZone("SharedResourceManager::UpdatePrevTransformRange");
     if (count == 0) return;
-    const u64 offset = startIdx * sizeof(DirectX::XMFLOAT4X4);
-    const u64 transferSize = count * sizeof(DirectX::XMFLOAT4X4);
-    AsyncQueueHandler::SSBOTransfer transfer;
-    transfer.pData = &transformBuffer[startIdx];
-    transfer.size = static_cast<u32>(transferSize);
-    transfer.offset = offset;
-    transfer.pSSBO = &m_prevTransformBuffer;
-    g_renderer.GetQueueHandler().SubmitTransferCommandAsync(transfer);
+    g_renderer.GetQueueHandler().SubmitTransferCommandAsync(
+        AsyncQueueHandler::SSBOTransfer{&transformBuffer[startIdx],
+                                        static_cast<u32>(count * sizeof(DirectX::XMFLOAT4X4)),
+                                        &m_prevTransformBuffer,
+                                        static_cast<u32>(startIdx * sizeof(DirectX::XMFLOAT4X4))});
 }
 
-void SharedResourceManager::UpdateSceneAABBBuffer(const stltype::vector<AABB>& aabbBuffer, u32 thisFrame, u32 updateCount)
-{
-    ScopedZone("SharedResourceManager::UpdateSceneAABBBuffer");
-    u64 transferSize = updateCount > 0 ? updateCount * sizeof(AABB) : aabbBuffer.size() * sizeof(AABB);
-    if (transferSize == 0) return;
-
-    AsyncQueueHandler::SSBOTransfer transfer;
-    transfer.pData = aabbBuffer.data();
-    transfer.size = static_cast<u32>(transferSize);
-    transfer.offset = 0;
-    transfer.pSSBO = &m_sceneAABBBuffer;
-    g_renderer.GetQueueHandler().SubmitTransferCommandAsync(transfer);
-}
-
-void SharedResourceManager::UpdateSceneAABBRange(const stltype::vector<AABB>& aabbBuffer,
-                                                 u32 startIdx,
-                                                 u32 count,
-                                                 u32 thisFrame)
+void SharedResourceManager::UpdateSceneAABBRange(const stltype::vector<AABB>& aabbBuffer, u32 startIdx, u32 count)
 {
     ScopedZone("SharedResourceManager::UpdateSceneAABBRange");
     if (count == 0) return;
-    const u64 offset = startIdx * sizeof(AABB);
-    const u64 transferSize = count * sizeof(AABB);
-    AsyncQueueHandler::SSBOTransfer transfer;
-    transfer.pData = &aabbBuffer[startIdx];
-    transfer.size = static_cast<u32>(transferSize);
-    transfer.offset = offset;
-    transfer.pSSBO = &m_sceneAABBBuffer;
-    g_renderer.GetQueueHandler().SubmitTransferCommandAsync(transfer);
+    g_renderer.GetQueueHandler().SubmitTransferCommandAsync(
+        AsyncQueueHandler::SSBOTransfer{&aabbBuffer[startIdx],
+                                        static_cast<u32>(count * sizeof(AABB)),
+                                        &m_sceneAABBBuffer,
+                                        static_cast<u32>(startIdx * sizeof(AABB))});
 }
 
-void SharedResourceManager::UpdateGlobalMaterialBuffer(const UBO::MaterialBuffer& materialBuffer, u32 thisFrame)
+void SharedResourceManager::UpdateGlobalMaterialBuffer(const UBO::MaterialBuffer& materialBuffer)
 {
     ScopedZone("SharedResourceManager::UpdateGlobalMaterialBuffer");
     u32 materialCount = (u32)materialBuffer.size() > 0 ? (u32)materialBuffer.size() : 1;
     u32 byteSize = materialCount * sizeof(Material);
-    
-    AsyncQueueHandler::SSBOTransfer transfer;
-    transfer.pData = materialBuffer.data();
-    transfer.size = byteSize;
-    transfer.offset = 0;
-    transfer.pSSBO = &m_materialBuffer;
-    g_renderer.GetQueueHandler().SubmitTransferCommandAsync(transfer);
+
+    g_renderer.GetQueueHandler().SubmitTransferCommandAsync(
+        AsyncQueueHandler::SSBOTransfer{materialBuffer.data(), byteSize, &m_materialBuffer});
 }
 
-void SharedResourceManager::UploadInstanceDataSSBO(u32 frameIdx)
+void SharedResourceManager::UploadInstanceDataSSBO()
 {
     ScopedZone("SharedResourceManager::UploadInstanceDataSSBO");
 
     if (m_currentFrameInstanceData.empty())
-    {
         return;
-    }
-
-    AsyncQueueHandler::SSBOTransfer transfer;
-    transfer.pData = m_currentFrameInstanceData.data();
-    transfer.size = static_cast<u32>(m_currentFrameInstanceData.size() * sizeof(m_currentFrameInstanceData[0]));
-    transfer.offset = 0;
-    transfer.pSSBO = &m_sceneInstanceBuffer;
-    g_renderer.GetQueueHandler().SubmitTransferCommandAsync(transfer);
+    g_renderer.GetQueueHandler().SubmitTransferCommandAsync(AsyncQueueHandler::SSBOTransfer{
+        m_currentFrameInstanceData.data(),
+        static_cast<u32>(m_currentFrameInstanceData.size() * sizeof(m_currentFrameInstanceData[0])),
+        &m_sceneInstanceBuffer});
 }

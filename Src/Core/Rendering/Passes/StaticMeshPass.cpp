@@ -2,7 +2,6 @@
 #include "Core/Global/GlobalVariables.h"
 #include "Core/Rendering/Core/RenderDefinitions.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
-#include "Core/Rendering/Core/GBuffer.h"
 #include "Core/Rendering/Core/CommandBuffer.h"
 #include "Utils/RenderPassUtils.h"
 
@@ -67,7 +66,6 @@ void StaticMainMeshPass::RebuildInternalData(const stltype::vector<PassMeshData>
 {
     ScopedZone("StaticMeshPass::Rebuild");
 
-    m_currentFrameIdx = thisFrameNum;
     auto& cmdBuf = m_indirectCmdBuffers[thisFrameNum];
     cmdBuf.EmptyCmds();
     u32 instanceOffset = 0;

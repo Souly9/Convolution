@@ -34,8 +34,6 @@ struct RGResourceSpec
     mathstl::Vector2 scale{1.0f, 1.0f};
     mathstl::Vector2 fixedExtents{1.0f, 1.0f};
     Usage usage{Usage::Sampled};
-    TextureFilter minFilter{TextureFilter::NEAREST};
-    TextureFilter magFilter{TextureFilter::NEAREST};
     
     u32 flags{(u32)RGResourceSpecFlags::NeedsBindless};
     u64 bufferSize{0};

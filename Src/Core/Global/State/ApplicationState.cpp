@@ -38,11 +38,6 @@ void ApplicationStateManager::ProcessStateUpdates()
     m_currentState.store(nextState, stltype::memory_order_release);
 }
 
-void ApplicationStateManager::SwitchSceneInternal()
-{
-    ExecuteSceneSwitchOnRenderThread();
-}
-
 void ApplicationStateManager::RegisterUpdateFunction(ApplicationStateUpdateFunction&& updateFunction)
 {
     SimpleScopedGuard<CustomMutex> lock(m_updateStateFutex);
@@ -118,9 +113,4 @@ bool ApplicationStateManager::ExecuteSceneSwitchOnRenderThread()
     m_reloadRequested.store(false, stltype::memory_order_release);
     m_sceneSwitchPending.store(false, stltype::memory_order_release);
     return true;
-}
-
-void ApplicationStateManager::UnloadCurrentScene()
-{
-    ExecuteSceneSwitchOnRenderThread();
 }

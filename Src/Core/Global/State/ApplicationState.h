@@ -13,10 +13,6 @@ using ApplicationStateUpdateFunction = stltype::function<void(ApplicationState& 
 class ApplicationStateManager
 {
 public:
-    ApplicationStateManager()
-    {
-    }
-
     const ApplicationState& GetCurrentApplicationState()
     {
         return m_appStates[m_currentState.load(stltype::memory_order_acquire)];
@@ -30,7 +26,6 @@ public:
         return m_pCurrentScene.get();
     }
     void ReloadCurrentScene();
-    void UnloadCurrentScene();
     
     bool HasPendingSceneSwitch() const
     {
@@ -50,8 +45,6 @@ public:
     void ProcessStateUpdates();
 
 private:
-    void SwitchSceneInternal();
-
     static inline constexpr u32 MAX_STATES = 2;
     CustomMutex m_updateStateFutex;
     // Double buffered application state to make multi threaded access easier

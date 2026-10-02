@@ -205,11 +205,6 @@ bool GraphicsPipelineVulkan::HasDynamicViewScissorState() const
     return m_info.dynamicViewScissor;
 }
 
-bool GraphicsPipelineVulkan::NeedsVertexBuffers() const
-{
-    return m_vertexInfo.bindingDescriptionCount > 0;
-}
-
 VkPipeline GraphicsPipelineVulkan::GetRef() const
 {
     return m_pipeline;
@@ -228,8 +223,6 @@ VkPipelineDynamicStateCreateInfo PipelineVulkanBase::CreateDynamicPipelineInfo(
 
 VkPipelineVertexInputStateCreateInfo PipelineVulkanBase::CreateVertexInputInfo(const PipeVertInfo& vertexInputs)
 {
-    m_vertexInfo = vertexInputs;
-
     m_vkBindingDescription = {};
     m_vkBindingDescription.binding = vertexInputs.m_vertexInputDescription.binding;
     m_vkBindingDescription.stride = vertexInputs.m_vertexInputDescription.stride;
@@ -255,18 +248,6 @@ VkPipelineVertexInputStateCreateInfo PipelineVulkanBase::CreateVertexInputInfo(c
     vertexInputInfo.pVertexBindingDescriptions = &m_vkBindingDescription;
     vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(m_vkAttributeDescriptions.size());
     vertexInputInfo.pVertexAttributeDescriptions = m_vkAttributeDescriptions.data();
-
-    return vertexInputInfo;
-}
-
-VkPipelineVertexInputStateCreateInfo PipelineVulkanBase::CreateEmptyVertexInputInfo()
-{
-    VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
-    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertexInputInfo.vertexBindingDescriptionCount = 0;
-    vertexInputInfo.pVertexBindingDescriptions = nullptr; // Optional
-    vertexInputInfo.vertexAttributeDescriptionCount = 0;
-    vertexInputInfo.pVertexAttributeDescriptions = nullptr; // Optional
 
     return vertexInputInfo;
 }

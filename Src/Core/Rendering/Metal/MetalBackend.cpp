@@ -13,8 +13,7 @@ stltype::unique_ptr<Profiler> RenderBackendImpl<Metal>::CreateProfiler()
     return stltype::make_unique<MtlProfiler>();
 }
 
-// TODO(Metal): supportsRaytracing, maxArgumentBufferSamplerCount, hasUnifiedMemory,
-// recommendedMaxWorkingSetSize, supportsBCTextureCompression, counterSets / supportsCounterSampling
+// TODO(Metal): supportsRaytracing, recommendedMaxWorkingSetSize, counterSets / supportsCounterSampling
 RenderCapabilities RenderBackendImpl<Metal>::QueryCapabilities() const
 {
     return {};

@@ -5,11 +5,6 @@
 #include "Core/Rendering/Core/Buffer.h"
 #include "VkGPUMemoryManager.h"
 
-struct BufferInfo
-{
-    u64 size{0};
-    BufferUsage usage;
-};
 class GenBufferVulkan : public BufferBase
 {
 public:
@@ -42,7 +37,7 @@ public:
     {
         return m_allocatedMemory;
     }
-    BufferInfo GetInfo() const
+    BufferCreateInfo GetInfo() const
     {
         return m_info;
     }
@@ -66,7 +61,7 @@ protected:
 
     void MapAndCopyToMemory(const GPUMemoryHandle& memory, const void* data, u64 size, u64 offset);
     void CheckCopyArgs(const void* data, u64 size, u64 offset);
-    BufferInfo m_info{};
+    BufferCreateInfo m_info{};
     VkBuffer m_buffer{VK_NULL_HANDLE};
     GPUMemoryHandle m_allocatedMemory{VK_NULL_HANDLE};
 };

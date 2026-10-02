@@ -51,20 +51,10 @@ struct RGExecutionContext
         return pMainPassData ? pMainPassData->renderState.renderResolution : mathstl::Vector2{0.0f, 0.0f};
     }
 
-    mathstl::Vector2 GetSwapchainResolution() const
-    {
-        return pMainPassData ? pMainPassData->renderState.swapchainResolution : mathstl::Vector2{0.0f, 0.0f};
-    }
-
     bool HasReadyTLAS() const
     {
         return pMainPassData && pMainPassData->pRTSceneManager && pFrameCtx &&
                pMainPassData->pRTSceneManager->HasReadyTLAS(pFrameCtx->currentFrame);
-    }
-
-    Texture* GetTexture(RGResourceHandle handle) const
-    {
-        return pRegistry ? pRegistry->Resolve(handle) : nullptr;
     }
 
     Texture* GetTexture(RGResourceID id) const
@@ -87,63 +77,13 @@ struct RGExecutionContext
         return pRegistry ? pRegistry->GetReadOnlyDepthAttachment(id, loadOp) : RenderAttachmentInfo{};
     }
 
-    RenderAttachmentInfo GetColorAttachment(RGResourceHandle handle, LoadOp loadOp = LoadOp::CLEAR, StoreOp storeOp = StoreOp::STORE, ImageLayout layout = ImageLayout::COLOR_ATTACHMENT_OPTIMAL) const
-    {
-        return pRegistry ? pRegistry->GetColorAttachment(handle, loadOp, storeOp, layout) : RenderAttachmentInfo{};
-    }
-
-    RenderAttachmentInfo GetDepthAttachment(RGResourceHandle handle, LoadOp loadOp = LoadOp::CLEAR, StoreOp storeOp = StoreOp::STORE, ImageLayout layout = ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL) const
-    {
-        return pRegistry ? pRegistry->GetDepthAttachment(handle, loadOp, storeOp, layout) : RenderAttachmentInfo{};
-    }
-
-    Texture* GetHistoryTexture(RGResourceHandle handle) const
-    {
-        return pRegistry ? pRegistry->ResolveHistory(handle) : nullptr;
-    }
-
-    Texture* GetHistoryTexture(RGResourceID id) const
-    {
-        return pRegistry ? pRegistry->ResolveHistoryByID(id) : nullptr;
-    }
-
-    BindlessTextureHandle GetBindless(RGResourceHandle handle) const
-    {
-        return pRegistry ? pRegistry->ResolveBindless(handle) : 0;
-    }
-
     BindlessTextureHandle GetBindless(RGResourceID id) const
     {
         return pRegistry ? pRegistry->ResolveBindlessByID(id) : 0;
     }
 
-    BindlessTextureHandle GetHistoryBindless(RGResourceHandle handle) const
-    {
-        return pRegistry ? pRegistry->ResolveHistoryBindless(handle) : 0;
-    }
-
     BindlessTextureHandle GetHistoryBindless(RGResourceID id) const
     {
         return pRegistry ? pRegistry->ResolveHistoryBindlessByID(id) : 0;
-    }
-
-    TextureHandle GetTextureHandle(RGResourceHandle handle) const
-    {
-        return pRegistry ? pRegistry->ResolveTextureHandle(handle) : 0;
-    }
-
-    TextureHandle GetTextureHandle(RGResourceID id) const
-    {
-        return pRegistry ? pRegistry->ResolveTextureHandleByID(id) : 0;
-    }
-
-    TextureHandle GetHistoryTextureHandle(RGResourceHandle handle) const
-    {
-        return pRegistry ? pRegistry->ResolveHistoryTextureHandle(handle) : 0;
-    }
-
-    TextureHandle GetHistoryTextureHandle(RGResourceID id) const
-    {
-        return pRegistry ? pRegistry->ResolveHistoryTextureHandleByID(id) : 0;
     }
 };

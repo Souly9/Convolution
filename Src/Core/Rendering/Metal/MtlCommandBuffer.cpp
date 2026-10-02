@@ -10,10 +10,6 @@ void CBufferMetal::Bake()
 {
 }
 
-void CBufferMetal::BeginBuffer()
-{
-}
-
 void CBufferMetal::BeginBufferForSingleSubmit()
 {
 }
@@ -66,8 +62,4 @@ void CBufferMetal::SetWaitStages(SyncStages stages)
 void CBufferMetal::SetSignalStages(SyncStages stages)
 {
     m_signalStages = static_cast<u32>(stages);
-}
-
-void CBufferMetal::NamingCallBack(const stltype::string& name)
-{
 }

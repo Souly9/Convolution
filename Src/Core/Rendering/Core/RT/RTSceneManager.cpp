@@ -145,13 +145,10 @@ void RTSceneManager::UpdateTLASDescriptorSet(u32 frameSlot, const TLASFrameData&
     descSet->WriteSSBOUpdate(sceneGeometryBuffers.GetIndexBuffer(), s_rtSceneIndexBufferBindingSlot);
 }
 
-bool RTSceneManager::Update(u32 frameIdx,
-                            const RenderPasses::FrameResourceManager& frameResourceManager,
-                            TimelineSemaphore* pSignalTimeline,
-                            u64 signalValue)
+void RTSceneManager::Update(u32 frameIdx, const RenderPasses::FrameResourceManager& frameResourceManager)
 {
     if (m_pResourceManager == nullptr)
-        return false;
+        return;
 
     m_blasBuilder.ProcessBuildQueue(*m_pResourceManager, frameIdx);
     BuildCurrentInstanceList(frameResourceManager);
@@ -165,11 +162,9 @@ bool RTSceneManager::Update(u32 frameIdx,
                             ((m_tlasRebuildSlotMask & slotBit) != 0 || frameData.state == TLASState::Uninitialized ||
                              frameData.lastBuiltInstanceCount != m_currentSortedInstances.size());
 
-    bool builtThisFrame = false;
     if (needsBuild)
     {
-        builtThisFrame = BuildTLASForFrame(frameData, frameIdx, pSignalTimeline, signalValue);
-        if (builtThisFrame)
+        if (BuildTLASForFrame(frameData, frameIdx))
             m_tlasRebuildSlotMask &= ~slotBit;
     }
     else if (m_currentSortedInstances.empty())
@@ -184,7 +179,6 @@ bool RTSceneManager::Update(u32 frameIdx,
 
     m_previousSortedInstances = m_currentSortedInstances;
     PublishDebugState();
-    return builtThisFrame;
 }
 
 bool RTSceneManager::HasReadyTLAS(u32 frameIdx) const
@@ -260,10 +254,7 @@ void RTSceneManager::BuildCurrentInstanceList(const RenderPasses::FrameResourceM
     m_residentInstanceCount = static_cast<u32>(m_currentSortedInstances.size());
 }
 
-bool RTSceneManager::BuildTLASForFrame(TLASFrameData& frameData,
-                                      u32 frameIdx,
-                                      TimelineSemaphore* pSignalTimeline,
-                                      u64 signalValue)
+bool RTSceneManager::BuildTLASForFrame(TLASFrameData& frameData, u32 frameIdx)
 {
     const auto& rtCaps = g_renderer.GetRayTracingLimits();
     const u32 instanceCount = static_cast<u32>(m_currentSortedInstances.size());
@@ -373,12 +364,6 @@ bool RTSceneManager::BuildTLASForFrame(TLASFrameData& frameData,
                                                                   RayTracingAccess::AccelerationStructureWrite,
                                                                   RayTracingAccess::AccelerationStructureRead));
 
-    if (pSignalTimeline != nullptr && signalValue > 0)
-    {
-        pBuildCmdBuffer->AddTimelineSignal(pSignalTimeline, signalValue);
-        pBuildCmdBuffer->SetSignalStages(SyncStages::ACCELERATION_STRUCTURE_BUILD);
-    }
-
     pBuildCmdBuffer->AddExecutionFinishedCallback(
         [this, pBuildCmdBuffer, frameIdx, instanceCount]()
         {
@@ -398,9 +383,6 @@ bool RTSceneManager::BuildTLASForFrame(TLASFrameData& frameData,
 
 void RTSceneManager::PublishDebugState() const
 {
-    if (!g_engine.TryGetApplicationState())
-        return;
-
     const u32 pendingBlasCount = m_blasBuilder.GetPendingCount();
     const u32 residentInstanceCount = m_residentInstanceCount;
     g_engine.GetApplicationState().RegisterUpdateFunction(

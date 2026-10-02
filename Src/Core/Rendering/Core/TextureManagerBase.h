@@ -29,7 +29,6 @@ public:
 
     // Scene slots restart on Flush, persistent slots never do
     BindlessTextureHandle MakeTextureBindless(TextureHandle handle, bool isPersistent = false);
-    BindlessTextureHandle MakeTextureBindless(Texture* pTex, bool isPersistent = false);
 
     // Destroys the scene textures right away, the GPU has to be idle
     void Flush();

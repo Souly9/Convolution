@@ -123,13 +123,12 @@ void SMAAPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
                                    FrameRendererContext& previousFrameCtx,
                                    u32 thisFrameNum)
 {
-    m_currentFrameIdx = thisFrameNum % SWAPCHAIN_IMAGES;
-    auto& cmdBuf = m_indirectCmdBuffers.at(m_currentFrameIdx);
+    auto& cmdBuf = m_indirectCmdBuffers.at(thisFrameNum);
     cmdBuf.EmptyCmds();
     const auto pFullScreenQuadMesh = g_engine.GetMeshManager().GetPrimitiveMesh(MeshManager::PrimitiveType::Quad);
     const auto meshHandle = previousFrameCtx.pResourceManager->GetMeshHandle(pFullScreenQuadMesh);
     cmdBuf.AddIndexedDrawCmd(meshHandle.indexCount, 1, meshHandle.indexBufferOffset, meshHandle.vertBufferOffset, 0);
-    RebuildPerObjectBuffer({0}, m_currentFrameIdx);
+    RebuildPerObjectBuffer({0}, thisFrameNum);
     cmdBuf.FillCmds();
 }
 

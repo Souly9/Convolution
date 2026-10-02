@@ -1,67 +1,19 @@
-// Vulkan-only vendor SDK integration (Streamline/DLSS, XeSS): pass registration and debug UI.
-// Shared code reaches it through g_renderer; non-Windows builds link VendorSdkStubs.cpp.
-#include "VkVendorIntegration.h"
+// The Vulkan backend's vendor SDK methods (Streamline/DLSS, XeSS); SDK-less builds link VendorSdkStubs.cpp
 #include "Core/Global/State/States.h"
 #include "Core/Rendering/Core/Nvidia/StreamlineManager.h"
 #include "Core/Rendering/Passes/AA/DLSSPass.h"
 #include "Core/Rendering/Passes/AA/XeSSPass.h"
 #include "Core/Rendering/Passes/PassManager.h"
+#include "Core/Rendering/Vulkan/VulkanBackend.h"
 #include "Core/Rendering/Vulkan/XeSS/XeSSManager.h"
 #include <imgui/imgui.h>
+#include <sl_helpers.h>
 
 namespace
 {
 const char* BoolToString(bool value)
 {
     return value ? "Yes" : "No";
-}
-
-const char* DLSSModeToString(sl::DLSSMode mode)
-{
-    switch (mode)
-    {
-        case sl::DLSSMode::eOff:
-            return "Off";
-        case sl::DLSSMode::eMaxPerformance:
-            return "Max Performance";
-        case sl::DLSSMode::eBalanced:
-            return "Balanced";
-        case sl::DLSSMode::eMaxQuality:
-            return "Max Quality";
-        case sl::DLSSMode::eUltraPerformance:
-            return "Ultra Performance";
-        case sl::DLSSMode::eUltraQuality:
-            return "Ultra Quality";
-        case sl::DLSSMode::eDLAA:
-            return "DLAA";
-        default:
-            return "Unknown";
-    }
-}
-
-const char* ResultToString(sl::Result result)
-{
-    switch (result)
-    {
-        case sl::Result::eOk:
-            return "Ok";
-        case sl::Result::eErrorNGXFailed:
-            return "NGX Failed";
-        case sl::Result::eErrorNotInitialized:
-            return "Not Initialized";
-        case sl::Result::eErrorInvalidParameter:
-            return "Invalid Parameter";
-        case sl::Result::eErrorFeatureNotSupported:
-            return "Feature Not Supported";
-        case sl::Result::eErrorMissingConstants:
-            return "Missing Constants";
-        case sl::Result::eErrorInvalidState:
-            return "Invalid State";
-        case sl::Result::eWarnOutOfVRAM:
-            return "Out Of VRAM";
-        default:
-            return "Other";
-    }
 }
 
 const char* VariantToString(Nvidia::DLSSVariant variant)
@@ -75,29 +27,27 @@ stltype::string VersionToString(const sl::Version& version)
 }
 } // namespace
 
-namespace VkVendor
-{
-bool IsDLSSSupported()
+bool RenderBackendImpl<Vulkan>::IsDLSSSupported() const
 {
     return Nvidia::StreamlineManager::IsDLSSSupported();
 }
 
-bool IsDLSSRRSupported()
+bool RenderBackendImpl<Vulkan>::IsDLSSRRSupported() const
 {
     return Nvidia::StreamlineManager::IsDLSSRRSupported();
 }
 
-bool IsXeSSSupported()
+bool RenderBackendImpl<Vulkan>::IsXeSSSupported() const
 {
     return VulkanXeSS::XeSSManager::IsSupported();
 }
 
-bool IsDLSSDebugUIAvailable()
+bool RenderBackendImpl<Vulkan>::IsDLSSDebugUIAvailable() const
 {
     return Nvidia::StreamlineManager::IsDLSSDebugUIAvailable();
 }
 
-void AddUpscalerPasses(RenderPasses::PassManager& passManager)
+void RenderBackendImpl<Vulkan>::AddVendorUpscalerPasses(RenderPasses::PassManager& passManager)
 {
     if (Nvidia::StreamlineManager::IsDLSSSupported())
     {
@@ -110,20 +60,20 @@ void AddUpscalerPasses(RenderPasses::PassManager& passManager)
     }
 }
 
-void BeginFrame(u32 frameIdx)
+void RenderBackendImpl<Vulkan>::BeginFrame(u32 frameIdx)
 {
     Nvidia::StreamlineManager::AcquireNewFrameToken(frameIdx);
 }
 
-void DrawDiagnosticsUI(const RendererState& state)
+void RenderBackendImpl<Vulkan>::DrawVendorDiagnosticsUI(const RendererState& state)
 {
     // DLSS & Streamline (Condensed)
-    if (state.dlssSupported && ImGui::CollapsingHeader("DLSS & Streamline"))
+    if (IsDLSSSupported() && ImGui::CollapsingHeader("DLSS & Streamline"))
     {
         const auto debugState = Nvidia::StreamlineManager::GetDLSSDebugState();
 
         ImGui::Text("Mode: %s | Streamline: %s | Overlay: %s",
-                    (state.aaType == AntialiasingType::DLSS) ? DLSSModeToString(debugState.configuredMode) : "Off",
+                    (state.aaType == AntialiasingType::DLSS) ? sl::getDLSSModeAsStr(debugState.configuredMode) : "Off",
                     debugState.streamlineInitialized ? "Ready" : "No",
                     Nvidia::StreamlineManager::IsDLSSDebugUIAvailable() ? "Ctrl+Shift+Home" : "Off");
 
@@ -134,13 +84,13 @@ void DrawDiagnosticsUI(const RendererState& state)
 
         ImGui::Text("Calls: %llu eval | Tag: %s | Const: %s | Eval: %s",
                     debugState.evaluateCallCount,
-                    ResultToString(debugState.lastTagResult),
-                    ResultToString(debugState.lastSetConstantsResult),
-                    ResultToString(debugState.lastEvaluateResult));
+                    sl::getResultAsStr(debugState.lastTagResult),
+                    sl::getResultAsStr(debugState.lastSetConstantsResult),
+                    sl::getResultAsStr(debugState.lastEvaluateResult));
     }
 }
 
-void DrawSettingsUI()
+void RenderBackendImpl<Vulkan>::DrawVendorSettingsUI()
 {
     using SL = Nvidia::StreamlineManager;
     if (!ImGui::CollapsingHeader("DLSS / Streamline Debug"))
@@ -163,15 +113,13 @@ void DrawSettingsUI()
                 VersionToString(versions.dlssNGX).c_str(),
                 VersionToString(versions.rrPlugin).c_str(),
                 VersionToString(versions.rrNGX).c_str());
-    const auto requirementSet = [](sl::FeatureRequirementFlags flags, sl::FeatureRequirementFlags bit)
-    { return (static_cast<u32>(flags) & static_cast<u32>(bit)) != 0; };
     ImGui::Text("DLLs: %s | VSync off required: %s | HW scheduling required: %s",
                 versions.developmentPlugins ? "development" : "production",
-                BoolToString(requirementSet(versions.dlssFlags, sl::FeatureRequirementFlags::eVSyncOffRequired)),
-                BoolToString(requirementSet(versions.dlssFlags, sl::FeatureRequirementFlags::eHardwareSchedulingRequired)));
+                BoolToString(versions.dlssFlags & sl::FeatureRequirementFlags::eVSyncOffRequired),
+                BoolToString(versions.dlssFlags & sl::FeatureRequirementFlags::eHardwareSchedulingRequired));
     ImGui::Text("Running: %s | Mode: %s | %u x %u -> %u x %u | VRAM: %.1f MB",
                 VariantToString(state.variant),
-                DLSSModeToString(state.configuredMode),
+                sl::getDLSSModeAsStr(state.configuredMode),
                 state.inputWidth,
                 state.inputHeight,
                 state.outputWidth,
@@ -194,9 +142,9 @@ void DrawSettingsUI()
                 BoolToString(state.exposureTextureTagged),
                 static_cast<unsigned long long>(state.evaluateCallCount));
     ImGui::Text("Constants: %s | Tag: %s | Evaluate: %s",
-                ResultToString(state.lastSetConstantsResult),
-                ResultToString(state.lastTagResult),
-                ResultToString(state.lastEvaluateResult));
+                sl::getResultAsStr(state.lastSetConstantsResult),
+                sl::getResultAsStr(state.lastTagResult),
+                sl::getResultAsStr(state.lastEvaluateResult));
     ImGui::Text("Jitter sent: (%.3f, %.3f) px | MV scale sent: (%.3f, %.3f)",
                 state.jitter.x,
                 state.jitter.y,
@@ -264,4 +212,3 @@ void DrawSettingsUI()
                            "at startup, which routes swapchain and present through sl.interposer.");
     }
 }
-} // namespace VkVendor

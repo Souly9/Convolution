@@ -19,7 +19,6 @@ public:
                                      FrameRendererContext& previousFrameCtx,
                                      u32 thisFrameNum) override;
 
-    void Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer) {}
     virtual void RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const struct RGExecutionContext& execCtx) override;
 
     virtual void CreateSharedDescriptorLayout() override;

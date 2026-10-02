@@ -142,7 +142,6 @@ void VkTextureManager::CreateTexture(const FileTextureRequest& req)
         info.format = ChooseTextureFormatForSemantic(req.semantic);
     }
 
-    info.tiling = Tiling::OPTIMAL;
     info.usage = Usage::Sampled | Usage::TransferDst;
     info.handle = req.handle;
     info.isPersistent = req.isPersistent;
@@ -224,64 +223,11 @@ Texture* VkTextureManager::CreateTextureImmediate(const DynamicTextureRequest& r
     Texture* pTex = mapEntry.get();
     (req.isPersistent ? m_persistentTextures : m_textures).emplace(req.handle, std::move(mapEntry));
 
-    pTex->SetName(req.GetName());
+    pTex->SetName(req.name);
 
     CreateImageViewForTexture(pTex, req.hasMipMaps);
-    if (req.createSampler)
-    {
-        CreateSamplerForTexture(pTex, req.hasMipMaps, req.samplerInfo);
-    }
 
     return pTex;
-}
-
-void VkTextureManager::CreateSamplerForTexture(TextureHandle handle, bool useMipMaps, TextureSamplerInfo samplerInfo)
-{
-    auto* pTex = GetTexture(handle);
-    CreateSamplerForTexture(pTex, useMipMaps, samplerInfo);
-}
-
-void VkTextureManager::CreateSamplerForTexture(TextureVulkan* pTex, bool useMipMaps, TextureSamplerInfo info)
-{
-    VkSamplerCreateInfo samplerInfo{};
-    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    samplerInfo.magFilter = info.magFilter == TextureFilter::LINEAR ? VK_FILTER_LINEAR : VK_FILTER_NEAREST;
-    samplerInfo.minFilter = info.minFilter == TextureFilter::LINEAR ? VK_FILTER_LINEAR : VK_FILTER_NEAREST;
-    samplerInfo.addressModeU = Conv(info.wrapU);
-    samplerInfo.addressModeV = Conv(info.wrapV);
-    samplerInfo.addressModeW = Conv(info.wrapW);
-    samplerInfo.anisotropyEnable = VK_TRUE;
-    samplerInfo.maxAnisotropy = g_renderer.GetMaxSamplerAnisotropy();
-    samplerInfo.borderColor = Conv(info.borderColor);
-    samplerInfo.unnormalizedCoordinates = VK_FALSE;
-    samplerInfo.compareEnable = VK_FALSE;
-    samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
-
-    if (useMipMaps == false)
-    {
-        samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-        samplerInfo.mipLodBias = 0.0f;
-        samplerInfo.minLod = 0.0f;
-        samplerInfo.maxLod = 0.0f;
-    }
-    else
-    {
-        samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-        samplerInfo.mipLodBias = MaterialMipLodBias();
-        samplerInfo.minLod = 0.0f;
-        samplerInfo.maxLod = VK_LOD_CLAMP_NONE;
-    }
-
-    VkSampler sampler = VK_NULL_HANDLE;
-    DEBUG_ASSERT(vkCreateSampler(VkBackend::Device(), &samplerInfo, VulkanAllocator(), &sampler) == VK_SUCCESS);
-
-    pTex->SetSampler(sampler);
-}
-
-void VkTextureManager::CreateImageViewForTexture(TextureHandle handle, bool useMipMaps)
-{
-    auto* pTex = GetTexture(handle);
-    CreateImageViewForTexture(pTex, useMipMaps);
 }
 
 void VkTextureManager::CreateImageViewForTexture(TextureVulkan* pTex, bool useMipMaps)
@@ -371,19 +317,6 @@ void VkTextureManager::SetNoSwizzle(VkImageViewCreateInfo& createInfo)
     createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
     createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
     createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-}
-
-static VkImageTiling ConvTiling(Tiling tiling)
-{
-    switch (tiling)
-    {
-        case Tiling::OPTIMAL:
-            return VK_IMAGE_TILING_OPTIMAL;
-        case Tiling::LINEAR:
-            return VK_IMAGE_TILING_LINEAR;
-        default:
-            return VK_IMAGE_TILING_OPTIMAL;
-    }
 }
 
 void VkTextureManager::SetLayoutBarrierMasks(ImageLayoutTransitionCmd& transitionCmd,
@@ -635,7 +568,7 @@ VkImageCreateInfo VkTextureManager::FillImageCreateInfoFlat2D(const DynamicTextu
     imageInfo.mipLevels = info.hasMipMaps ? info.mipLevels : 1;
     imageInfo.arrayLayers = info.extents.z;
     imageInfo.format = Conv(info.format);
-    imageInfo.tiling = ConvTiling(info.tiling);
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     imageInfo.usage = Conv(info.usage);
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -715,7 +648,6 @@ void VkTextureManager::CreateGlobalSamplers()
     pointClamp.magFilter = pointClamp.minFilter = VK_FILTER_NEAREST;
     m_globalSamplers[SAMPLER_POINT_CLAMP] = createSampler(pointClamp);
 
-    // Same settings the per-texture material samplers used
     VkSamplerCreateInfo linearRepeat = clampInfo;
     linearRepeat.magFilter = linearRepeat.minFilter = VK_FILTER_LINEAR;
     linearRepeat.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
@@ -756,26 +688,17 @@ void VkTextureManager::DestroyTextureView(TextureViewHandle view)
         vkDestroyImageView(VkBackend::Device(), view, nullptr);
 }
 
-bool VkTextureManager::CanRegisterImGuiTexture(const Texture& texture) const
-{
-    return texture.GetImageView() != VK_NULL_HANDLE && texture.GetSampler() != VK_NULL_HANDLE;
-}
-
 u64 VkTextureManager::RegisterImGuiTexture(const Texture& texture)
 {
-    if (!CanRegisterImGuiTexture(texture))
-        return 0;
-    VkDescriptorSet ds =
-        ImGui_ImplVulkan_AddTexture(texture.GetSampler(), texture.GetImageView2D(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    VkDescriptorSet ds = ImGui_ImplVulkan_AddTexture(
+        m_globalSamplers[SAMPLER_POINT_CLAMP], texture.GetImageView2D(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     return reinterpret_cast<u64>(ds);
 }
 
-u64 VkTextureManager::RegisterImGuiTextureView(TextureViewHandle view, const Texture& samplerSource)
+u64 VkTextureManager::RegisterImGuiTextureView(TextureViewHandle view)
 {
-    if (view == VK_NULL_HANDLE)
-        return 0;
-    return reinterpret_cast<u64>(
-        ImGui_ImplVulkan_AddTexture(samplerSource.GetSampler(), view, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL));
+    return reinterpret_cast<u64>(ImGui_ImplVulkan_AddTexture(
+        m_globalSamplers[SAMPLER_POINT_CLAMP], view, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL));
 }
 
 void VkTextureManager::UnregisterImGuiTexture(u64 id)

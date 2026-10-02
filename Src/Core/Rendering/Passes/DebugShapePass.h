@@ -18,7 +18,6 @@ public:
                                      FrameRendererContext& previousFrameCtx,
                                      u32 thisFrameNum) override;
 
-    void Render(const MainPassData& data, FrameRendererContext& ctx, CommandBuffer* pCmdBuffer) {}
     virtual void RenderWithGraph(const MainPassData& data, const FrameRendererContext& ctx, const struct RGExecutionContext& execCtx) override;
 
     virtual void CreateSharedDescriptorLayout() override;
@@ -31,7 +30,6 @@ protected:
     PSO m_solidDebugObjectsPSO;
     PSO m_wireframeDebugObjectsPSO;
 
-    stltype::hash_map<Mesh*, InstancedMeshDataInfo> m_instancedMeshInfoMap;
     stltype::fixed_vector<IndirectDrawCmdBuf, SWAPCHAIN_IMAGES> m_indirectCmdBuffersWireframe;
 };
 } // namespace RenderPasses

@@ -15,14 +15,6 @@ public:
         TRACKED_DESC_IMPL
     }
 
-    virtual void CleanUp() override
-    {
-    }
-
-    virtual void NamingCallBack(const stltype::string& name) override
-    {
-    }
-
     const DescriptorSetLayoutMetal& GetRef() const
     {
         return *this;

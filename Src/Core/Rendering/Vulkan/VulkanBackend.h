@@ -1,10 +1,10 @@
 #pragma once
-#include "Core/Global/GlobalDefines.h"
 #include "Core/Engine.h"
+#include "Core/Global/GlobalDefines.h"
+#include "Core/Rendering/Backend/BackendForwardDecls.h"
 #include "Core/Rendering/Core/AccelerationStructure.h"
-#include "Core/Rendering/Backend/RenderBackendBase.h"
-#include "Core/Rendering/Vulkan/VkBackendAccess.h"
 #include "Core/Rendering/LayerDefines.h"
+#include "Core/Rendering/Vulkan/VkBackendAccess.h"
 #include "Core/Rendering/Vulkan/VkPipeline.h"
 #include "Core/Rendering/Vulkan/VkTexture.h"
 #include <vulkan/vulkan.h>
@@ -84,14 +84,6 @@ public:
     {
         return m_physicalDevice;
     }
-    VkQueue GetGraphicsQueue() const
-    {
-        return m_graphicsQueue;
-    }
-    VkQueue GetPresentQueue() const
-    {
-        return m_presentQueue;
-    }
     VulkanQueues GetQueues() const
     {
         return {m_graphicsQueue, m_presentQueue, m_transferQueue, m_computeQueue};
@@ -100,17 +92,9 @@ public:
     {
         return m_swapChain;
     }
-    const VkPhysicalDeviceProperties& GetDeviceProperties() const
-    {
-        return m_deviceProperties;
-    }
     const VkPhysicalDeviceMemoryProperties& GetMemoryProperties() const
     {
         return m_memoryProperties;
-    }
-    u64 GetTotalVram() const
-    {
-        return m_totalVram;
     }
 
     VKAPI_ATTR VkResult VKAPI_CALL vkCreateDebugUtilsMessengerEXT(VkInstance instance,
@@ -172,8 +156,6 @@ private:
 
     bool CreateGraphicsPipeline();
 
-    void PublishSwapchainState() const;
-
     VkDebugUtilsMessengerEXT m_debugMessenger;
     VkInstance m_instance{VK_NULL_HANDLE};
     VkDevice m_logicalDevice{VK_NULL_HANDLE};
@@ -182,9 +164,7 @@ private:
     VkSurfaceKHR m_surface{VK_NULL_HANDLE}; ///< Surface that establishes
                                             ///< connection to the glfw window.
     VkQueue m_presentQueue{VK_NULL_HANDLE};
-    VkPhysicalDeviceProperties m_deviceProperties{};
     VkPhysicalDeviceMemoryProperties m_memoryProperties{};
-    u64 m_totalVram{0};
     VkQueue m_transferQueue{VK_NULL_HANDLE};
     VkQueue m_computeQueue{VK_NULL_HANDLE};
     QueueFamilyIndices m_indices;
@@ -194,8 +174,6 @@ private:
     bool m_dlssSupportAvailable{false};
     // MoltenVK has no ray tracing; RT is optional there and required elsewhere
     bool m_rayTracingSupported{false};
-    RayTracingCapabilities m_rayTracingCaps{};
-    bool m_validationLayersEnabled{false};
     bool m_hasPortabilitySubset{false};
     VulkanRayTracingProperties m_rayTracingProperties{};
 };

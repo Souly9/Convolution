@@ -11,10 +11,6 @@ void SemaphoreMetal::Create()
 {
 }
 
-void SemaphoreMetal::CleanUp()
-{
-}
-
 void SemaphoreMetal::Reset()
 {
 }
@@ -24,20 +20,12 @@ MTL::Event* SemaphoreMetal::GetRef() const
     return m_event;
 }
 
-void SemaphoreMetal::NamingCallBack(const stltype::string& name)
-{
-}
-
 FenceMetal::~FenceMetal()
 {
     TRACKED_DESC_IMPL
 }
 
 void FenceMetal::Create(bool signaled)
-{
-}
-
-void FenceMetal::CleanUp()
 {
 }
 
@@ -59,20 +47,12 @@ MTL::SharedEvent* FenceMetal::GetRef() const
     return m_event;
 }
 
-void FenceMetal::NamingCallBack(const stltype::string& name)
-{
-}
-
 TimelineSemaphoreMetal::~TimelineSemaphoreMetal()
 {
     TRACKED_DESC_IMPL
 }
 
 void TimelineSemaphoreMetal::Create(u64 initialValue)
-{
-}
-
-void TimelineSemaphoreMetal::CleanUp()
 {
 }
 
@@ -91,9 +71,5 @@ void TimelineSemaphoreMetal::HostSignal(u64 value)
 }
 
 void TimelineSemaphoreMetal::Wait(u64 value, u64 timeout) const
-{
-}
-
-void TimelineSemaphoreMetal::NamingCallBack(const stltype::string& name)
 {
 }

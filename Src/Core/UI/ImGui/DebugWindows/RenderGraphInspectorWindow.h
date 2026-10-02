@@ -28,13 +28,6 @@ public:
             return;
         }
 
-        if (!g_engine.TryGetApplicationState())
-        {
-            ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "ApplicationState unavailable.");
-            ImGui::End();
-            return;
-        }
-
         const auto& appState = g_engine.GetApplicationState().GetCurrentApplicationState();
         const auto& rgDebugState = appState.renderState.rgDebugState;
 
@@ -440,13 +433,12 @@ private:
         const auto& nodes = rgDebugState.nodes;
 
         static ImGuiTableFlags flags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable;
-        if (ImGui::BeginTable("ScheduleTable", 5, flags))
+        if (ImGui::BeginTable("ScheduleTable", 4, flags))
         {
             ImGui::TableSetupColumn("Order");
             ImGui::TableSetupColumn("Pass / Node Name");
             ImGui::TableSetupColumn("Queue");
             ImGui::TableSetupColumn("Status");
-            ImGui::TableSetupColumn("Exclusion Group");
             ImGui::TableHeadersRow();
 
             for (size_t i = 0; i < nodes.size(); ++i)
@@ -471,12 +463,6 @@ private:
                     ImGui::TextColored(ImVec4(0.9f, 0.3f, 0.3f, 1.0f), "Culled / Disabled");
                 else
                     ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.3f, 1.0f), "Executing");
-
-                ImGui::TableSetColumnIndex(4);
-                const char* grpStr = "None";
-                if (node.exclusionGroup == 1) grpStr = "TemporalAA";
-                else if (node.exclusionGroup == 2) grpStr = "RayTracing";
-                ImGui::Text("%s", grpStr);
             }
 
             ImGui::EndTable();

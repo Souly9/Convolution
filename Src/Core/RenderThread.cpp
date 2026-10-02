@@ -2,13 +2,11 @@
 #include "Core/Rendering/Core/Profiler.h"
 #include "Core/ECS/EntityManager.h"
 #include "Core/Global/GlobalVariables.h"
-#include "Core/Global/GlobalVariables.h"
 #include "Core/Global/State/ApplicationState.h"
 #include "Core/Rendering/Core/StaticFunctions.h"
 #include "Core/Rendering/Core/TextureManager.h"
 #include "Core/Rendering/Core/TransferUtils/TransferQueueHandler.h"
 #include "Core/Rendering/Core/Utils/DeleteQueue.h"
-#include "Core/Global/GlobalVariables.h"
 #include "Core/SceneGraph/SceneStreamer.h"
 
 RenderThread::RenderThread(ImGuiManager* pImGuiManager) : m_pImGuiManager(pImGuiManager)
@@ -42,31 +40,25 @@ bool RenderThread::HandleResizeAtFrameStart()
     g_renderer.GetQueueHandler().WaitForFences(~0u);
     SRF::WaitForDeviceIdle<RenderAPI>();
 
-    bool swapchainRecreated = false;
-    if (swapchainResizeRequested)
+    if (swapchainResizeRequested && !g_renderer.RecreateSwapchain())
     {
-        swapchainRecreated = g_renderer.RecreateSwapchain();
-        if (!swapchainRecreated)
-        {
-            m_swapchainRecreationRequested.store(true, std::memory_order_release);
-            return false;
-        }
+        m_swapchainRecreationRequested.store(true, std::memory_order_release);
+        return false;
     }
 
-    m_passManager->RecreateResizeDependentResources(g_renderer.GetSwapchainExtent(), swapchainRecreated);
+    m_passManager->RecreateResizeDependentResources(g_renderer.GetSwapchainExtent());
     return true;
 }
 
-bool RenderThread::HandleSceneSwitchAtFrameStart()
+void RenderThread::HandleSceneSwitchAtFrameStart()
 {
     ScopedZone("Handle Scene Switch");
-    if (!g_engine.TryGetApplicationState() || !g_engine.GetApplicationState().HasPendingSceneSwitch())
-        return true;
+    if (!g_engine.GetApplicationState().HasPendingSceneSwitch())
+        return;
 
     // The switch left the device idle, the old scene's entities and meshes are gone
     if (g_engine.GetApplicationState().ExecuteSceneSwitchOnRenderThread())
         m_passManager->ResetSceneState();
-    return true;
 }
 
 void RenderThread::RenderLoop()
@@ -102,12 +94,7 @@ void RenderThread::RenderLoop()
             continue;
         }
 
-        if (!HandleSceneSwitchAtFrameStart())
-        {
-            g_engine.GetFrameSync().renderThreadRead.Post();
-            g_engine.GetFrameSync().imgui.Wait();
-            continue;
-        }
+        HandleSceneSwitchAtFrameStart();
 
         const bool acquiredFrame = m_passManager->BlockUntilPassesFinished(lastFrame);
         // All previous frame's command buffers have finished executing, safe to process deferred deletes
@@ -151,10 +138,7 @@ void RenderThread::RenderLoop()
 RenderPasses::PassManager* RenderThread::Start()
 {
     m_keepRunning = true;
-    if (g_engine.TryGetApplicationState())
-    {
-        g_engine.GetApplicationState().SetRenderThreadRunning(true);
-    }
+    g_engine.GetApplicationState().SetRenderThreadRunning(true);
     m_thread = threadstl::MakeThread([this]() { RenderLoop(); });
     InitializeThread("Convolution_RenderThread");
     return m_passManager.get();
@@ -162,10 +146,7 @@ RenderPasses::PassManager* RenderThread::Start()
 
 void RenderThread::CleanUp()
 {
-    if (g_engine.TryGetApplicationState())
-    {
-        g_engine.GetApplicationState().SetRenderThreadRunning(false);
-    }
+    g_engine.GetApplicationState().SetRenderThreadRunning(false);
     m_passManager.reset();
     g_renderer.GetDeleteQueue().ForceEmptyQueue();
 }

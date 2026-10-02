@@ -33,24 +33,14 @@ public:
     QueueType GetQueueType() const override { return QueueType::Compute; }
     PassStage GetPassStage() const override { return PassStage::PostProcess; }
 
-    struct TagDesc
-    {
-        sl::BufferType type{};
-        uint64_t native{};
-        uint64_t view{};
-        uint32_t width{};
-        uint32_t height{};
-        uint32_t nativeFormat{};
-        uint32_t usage{};
-        uint32_t state{};
-        uint32_t mipLevels{1};
-        uint32_t arrayLayers{1};
-    };
-    using TagList = stltype::fixed_vector<TagDesc, 16, false>;
-
 private:
-    // Per frame slot so the native callback can outlive this frame's recording
-    stltype::array<TagList, FRAMES_IN_FLIGHT> m_tags{};
+    struct TagStorage
+    {
+        stltype::fixed_vector<sl::Resource, 16, false> resources;
+        stltype::fixed_vector<sl::ResourceTag, 16, false> tags;
+    };
+    // Per frame slot so the native callback can outlive this frame's recording; fixed capacity keeps tag pointers valid
+    stltype::array<TagStorage, FRAMES_IN_FLIGHT> m_tags{};
     bool m_evaluatedLastFrame{false};
     u32 m_lastResetGeneration{0};
 };

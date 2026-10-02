@@ -53,10 +53,6 @@ public:
     struct DLSSDebugState
     {
         bool streamlineInitialized{false};
-        bool featureSupported{false};
-        bool rrSupported{false};
-        bool imguiPluginAvailable{false};
-        bool presentRoutedThroughStreamline{false};
         DLSSVariant variant{DLSSVariant::SuperResolution};
         bool configured{false};
         bool evaluateBlocked{false};
@@ -81,10 +77,6 @@ public:
         u32 renderHeightMax{0};
         mathstl::Vector2 jitter{};
         mathstl::Vector2 motionVectorScale{};
-        f32 nearPlane{0.0f};
-        f32 farPlane{0.0f};
-        f32 fovRadians{0.0f};
-        f32 aspectRatio{1.0f};
         u64 estimatedVRAMUsageInBytes{0};
     };
 
@@ -96,7 +88,6 @@ public:
         sl::Version rrPlugin{};
         sl::Version rrNGX{};
         sl::FeatureRequirementFlags dlssFlags{};
-        sl::FeatureRequirementFlags rrFlags{};
         bool developmentPlugins{false};
     };
 
@@ -123,7 +114,8 @@ public:
     static void SetVulkanQueueStartIndices(u32 graphicsQueueIndex, u32 computeQueueIndex);
     static void GetVulkanDeviceQueue(VkDevice device, u32 queueFamilyIndex, u32 queueIndex, VkQueue* pQueue);
 
-    // Applies options when size, mode or debug options change (RR also needs the camera every frame)
+    // Applies options when size, mode or debug options change (RR also needs the camera every frame).
+    // False when Streamline isn't initialized, the size is zero, configuring failed, or evaluate is blocked.
     static bool EnsureConfigured(DLSSVariant variant,
                                  u32 outputWidth,
                                  u32 outputHeight,
@@ -131,7 +123,6 @@ public:
                                  const mathstl::Matrix& worldToView,
                                  const mathstl::Matrix& viewToWorld);
     static bool ConsumeResetFlag(DLSSVariant variant);
-    static bool IsEvaluateBlocked(DLSSVariant variant);
     static sl::Result SetTagForFrame(const sl::FrameToken& frame,
                                      const sl::ViewportHandle& viewport,
                                      const sl::ResourceTag* tags,
@@ -149,7 +140,6 @@ public:
     static VersionInfo GetVersionInfo();
 
     static const SwapchainFunctions& GetSwapchainFunctions();
-    static bool IsPresentRoutedThroughStreamline();
 
     static bool IsAvailable() { return s_initialized; }
     static bool IsEarlyInitialized();

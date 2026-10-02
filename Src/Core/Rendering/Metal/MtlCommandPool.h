@@ -13,7 +13,6 @@ public:
     static CommandPoolMetal Create(u32 queueFamilyIdx);
 
     ~CommandPoolMetal();
-    virtual void CleanUp() override;
 
     CommandBuffer* CreateCommandBuffer(const CommandBufferCreateInfo& createInfo = CommandBufferCreateInfo{});
     stltype::vector<CommandBuffer*> CreateCommandBuffers(const CommandBufferCreateInfo& createInfo, const u32& count);
@@ -35,8 +34,6 @@ public:
         m_freeCommandBuffers.clear();
     }
 
-    virtual void NamingCallBack(const stltype::string& name) override;
-
 protected:
     CommandPoolMetal(u32 queueFamilyIdx);
 
@@ -46,18 +43,3 @@ protected:
     bool m_isValid{false};
 };
 
-class TransferCommandPoolMetal : public CommandPoolMetal
-{
-public:
-    TransferCommandPoolMetal()
-    {
-    }
-    static TransferCommandPoolMetal Create();
-
-protected:
-    TransferCommandPoolMetal(u32 queueFamilyIdx) : CommandPoolMetal(queueFamilyIdx)
-    {
-    }
-};
-
-using TransferCommandPool = TransferCommandPoolMetal;

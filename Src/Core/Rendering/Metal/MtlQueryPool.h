@@ -12,9 +12,6 @@ public:
         TRACKED_DESC_IMPL
     }
 
-    virtual void CleanUp() override
-    {
-    }
     void Init(u32 count)
     {
         m_count = count;

@@ -20,27 +20,6 @@ enum class PassStage : u32
     UI
 };
 
-enum class TextureWrapMode
-{
-    REPEAT,
-    MIRRORED_REPEAT,
-    CLAMP_TO_EDGE,
-    CLAMP_TO_BORDER
-};
-
-enum class TextureFilter
-{
-    NEAREST,
-    LINEAR
-};
-
-enum class TextureBorderColor
-{
-    TransparentBlack,
-    OpaqueBlack,
-    OpaqueWhite
-};
-
 enum class TexFormat
 {
     UNDEFINED,
@@ -304,27 +283,15 @@ struct ClearDepthStencilValue
 enum class Usage
 {
     None = 0,
-    GBuffer = 1 << 0,
     ColorAttachment = 1 << 1,
     DepthAttachment = 1 << 2,
     TransferSrc = 1 << 3,
     TransferDst = 1 << 4,
     Sampled = 1 << 5,
     Storage = 1 << 6,
-    AttachmentReadWrite = 1 << 7,
-    StencilAttachment = 1 << 8,
-    ShadowMap = 1 << 9,
-    TransientAttachment = 1 << 10,
-    InputAttachment = 1 << 11,
-    DepthStencilAttachment = DepthAttachment | StencilAttachment
+    ShadowMap = 1 << 9
 };
 MAKE_FLAG_ENUM(Usage)
-
-enum class Tiling
-{
-    OPTIMAL,
-    LINEAR
-};
 
 union ClearValue
 {

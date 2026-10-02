@@ -37,27 +37,17 @@ struct LightDeltaUpdate
 struct FrameRendererContext
 {
     TimelineSemaphore frameTimeline{};
-    u64 nextTimelineValue{0};
-
     TimelineSemaphore computeTimeline{};
-    u64 nextComputeTimelineValue{0};
-    u64 nextSSSComputeTimelineValue{0};
-
     Semaphore pPresentLayoutTransitionSignalSemaphore{};
+    Semaphore* renderingFinishedSemaphore{nullptr};
 
     Texture* pCurrentSwapchainTexture{nullptr};
 
     DescriptorSet::Ptr tileArraySSBODescriptor{nullptr};
     DescriptorSet::Ptr sharedDataUBODescriptor{nullptr};
     DescriptorSet::Ptr gbufferPostProcessDescriptor{nullptr};
-
-    StorageBuffer* pClusterGridBuffer{nullptr};
     DescriptorSet::Ptr clusterGridDescriptor{nullptr};
 
-    Semaphore* renderingFinishedSemaphore{nullptr};
-    Fence* renderingFinishedFence{nullptr};
-
-    u32 imageIdx{0};
     u32 currentFrame{0};
     // Monotonic, unlike currentFrame which only cycles through the frame slots
     u64 frameCounter{0};
@@ -120,8 +110,7 @@ public:
     void Init();
     void CreatePassObjectsAndLayouts();
     void CreateFrameRendererContexts(stltype::fixed_vector<Semaphore, SWAPCHAIN_IMAGES>& imageAvailableSemaphores,
-                                     stltype::fixed_vector<Fence, SWAPCHAIN_IMAGES>& imageAvailableFences,
-                                     stltype::fixed_vector<Fence, SWAPCHAIN_IMAGES>& renderFinishedFences);
+                                     stltype::fixed_vector<Fence, SWAPCHAIN_IMAGES>& imageAvailableFences);
 
     void PreProcessDataForCurrentFrame(u32 frameIdx,
                                        u64 jitterFrameNumber,
@@ -137,30 +126,15 @@ public:
                                const DirectionalRenderLight& dirLight, u32 frameIdx);
     void SetSharedData(RenderView&& mainView, u32 frameIdx);
 
-    void UpdateLightClusterSSBO(const UBO::LightClusterSSBO& data, u32 numLights);
+    void UpdateLightClusterSSBO(const UBO::LightClusterSSBO& data);
 
     void DispatchSSBOTransfer(const void* data, u32 size, StorageBuffer* pSSBO, u32 offset = 0);
 
     FrameRendererContext& GetFrameRendererContext(u32 idx) { return m_frameRendererContexts[idx]; }
-    const FrameRendererContext& GetFrameRendererContext(u32 idx) const { return m_frameRendererContexts[idx]; }
 
-    RenderDataForPreProcessing& GetDataToBePreProcessed() { return m_dataToBePreProcessed; }
-    void LockData() { m_passDataMutex.lock(); }
-    void UnlockData() { m_passDataMutex.unlock(); }
-
-    StorageBuffer& GetLightClusterSSBO() { return m_lightClusterSSBO; }
-    MappedUniformBuffer& GetSharedDataUBO() { return m_sharedDataUBO; }
-    MappedUniformBuffer& GetLightUniformsUBO() { return m_lightUniformsUBO; }
-    MappedUniformBuffer& GetGBufferPostProcessUBO() { return m_gbufferPostProcessUBO; }
-    MappedUniformBuffer& GetShadowMapUBO() { return m_shadowMapUBO; }
-    StorageBuffer& GetClusterGridSSBO() { return m_clusterGridSSBO; }
-
-
-    UBO::LightClusterSSBO& GetLightCluster() { return *m_lightCluster; }
+    MappedUniformBuffer<UBO::GBufferPostProcessUBO>& GetGBufferPostProcessUBO() { return m_gbufferPostProcessUBO; }
     ShadowMapState& GetShadowMapState() { return m_currentShadowMapState; }
     const PassGeometryData& GetCurrentPassGeometryState() const { return m_currentPassGeometryState; }
-    // CPU copy of this frame's view UBO
-    const UBO::SharedDataUBO& GetViewData() const { return m_currentSharedDataUBO; }
     const DirectX::XMFLOAT4X4& GetCurrentTransform(u32 idx) const { return m_cachedTransformSSBO[idx]; }
 
 private:
@@ -176,12 +150,11 @@ private:
 
     StorageBuffer m_lightClusterSSBO;
     StorageBuffer m_clusterGridSSBO;
-    MappedUniformBuffer m_sharedDataUBO;
-    MappedUniformBuffer m_lightUniformsUBO;
-    MappedUniformBuffer m_gbufferPostProcessUBO;
-    MappedUniformBuffer m_shadowMapUBO;
+    MappedUniformBuffer<UBO::SharedDataUBO> m_sharedDataUBO;
+    MappedUniformBuffer<LightUniforms> m_lightUniformsUBO;
+    MappedUniformBuffer<UBO::GBufferPostProcessUBO> m_gbufferPostProcessUBO;
+    MappedUniformBuffer<UBO::ShadowMapUBO> m_shadowMapUBO;
     stltype::unique_ptr<UBO::LightClusterSSBO> m_lightCluster;
-
 
     DescriptorPool m_descriptorPool;
     DescriptorSetLayout m_clusterGridSSBOLayout;
@@ -196,7 +169,6 @@ private:
     PassGeometryData m_currentPassGeometryState{};
     stltype::hash_map<ECS::EntityID, u32> m_entityToTransformUBOIdx{};
     u32 m_firstNewTransformSlot{0};
-    stltype::hash_map<ECS::EntityID, u32> m_entityToObjectDataIdx{};
     DirLightVector m_cachedDirLights{};
     stltype::vector<DirectX::XMFLOAT4X4> m_cachedTransformSSBO{};
     stltype::vector<DirectX::XMFLOAT4X4> m_cachedPrevTransformSSBO{};
@@ -205,11 +177,6 @@ private:
     stltype::vector<u32> m_transformsPendingPrevCatchup{};
 
     RenderingCore::CpuFrustumCulling m_cpuFrustumCulling{};
-
-    bool m_needsToPropagateMainDataUpdate{false};
-    u32 m_frameIdxToPropagate{0};
-
-    u32 m_framesToRebuild{0};
 
     ShadowMapState m_currentShadowMapState{};
 

@@ -12,20 +12,13 @@ VkTracyGPUManager::~VkTracyGPUManager()
 
 void VkTracyGPUManager::Init(CommandBuffer* pSetupCmd)
 {
-    Init(VkBackend::PhysicalDevice(), VkBackend::Device(), VkBackend::GraphicsQueue(), pSetupCmd->GetRef());
-}
-
-void VkTracyGPUManager::Init(VkPhysicalDevice physDev, VkDevice device, VkQueue queue, VkCommandBuffer setupCmd)
-{
-    if (m_initialized)
-        return;
-
 #if PROFILING_ENABLED
-    if (physDev != VK_NULL_HANDLE && device != VK_NULL_HANDLE && queue != VK_NULL_HANDLE && setupCmd != VK_NULL_HANDLE)
-    {
-        m_pTracyVkCtx = TracyVkContext(physDev, device, queue, setupCmd);
-        m_initialized = (m_pTracyVkCtx != nullptr);
-    }
+    const bool isCompute = pSetupCmd->GetQueueType() == QueueType::Compute;
+    const VkQueue queue = isCompute ? VkBackend::Queues().compute : VkBackend::Queues().graphics;
+    tracy::VkCtx*& pCtx = m_pContexts[isCompute ? 1 : 0];
+    pCtx = TracyVkContext(VkBackend::PhysicalDevice(), VkBackend::Device(), queue, pSetupCmd->GetRef());
+    const char* name = isCompute ? "Compute Queue" : "Graphics Queue";
+    TracyVkContextName(pCtx, name, static_cast<uint16_t>(strlen(name)));
 #endif
 }
 
@@ -33,73 +26,65 @@ void VkTracyGPUManager::Destroy()
 {
 #if PROFILING_ENABLED
     m_activeScopes.clear();
-    if (m_pTracyVkCtx)
+    for (tracy::VkCtx*& pCtx : m_pContexts)
     {
-        TracyVkDestroy(m_pTracyVkCtx);
-        m_pTracyVkCtx = nullptr;
+        if (pCtx)
+            TracyVkDestroy(pCtx);
+        pCtx = nullptr;
     }
 #endif
-    m_initialized = false;
 }
+
+#if PROFILING_ENABLED
+tracy::VkCtx* VkTracyGPUManager::GetContext(const CommandBuffer* pCmdBuffer) const
+{
+    switch (pCmdBuffer->GetQueueType())
+    {
+        case QueueType::Graphics:
+            return m_pContexts[0];
+        case QueueType::Compute:
+            return m_pContexts[1];
+        default:
+            return nullptr;
+    }
+}
+#endif
 
 void VkTracyGPUManager::StartZone(CommandBuffer* pCmdBuffer, const char* name, const mathstl::Vector4& color)
 {
 #if PROFILING_ENABLED
-    if (!m_initialized || !m_pTracyVkCtx || !pCmdBuffer || !name)
+    tracy::VkCtx* pCtx = GetContext(pCmdBuffer);
+    if (!pCtx)
         return;
-
-    if (!tracy::GetProfiler().IsConnected())
-        return;
-
+    // Runs while the command buffer bakes, so the timestamp lands in recording order
     VkCommandBuffer vkCmd = CommandBuffer::Cast(pCmdBuffer)->GetRef();
-    if (vkCmd != VK_NULL_HANDLE)
-    {
-        const size_t nameLen = strlen(name);
-        auto scope = stltype::make_unique<tracy::VkCtxScope>(
-            m_pTracyVkCtx, 0, "RenderGraph", 11, "RenderNode", 10, name, nameLen, vkCmd, true);
-        m_activeScopes[pCmdBuffer].push_back(stltype::move(scope));
-    }
+    m_activeScopes[pCmdBuffer].push_back(stltype::make_unique<tracy::VkCtxScope>(
+        pCtx, 0, "RenderGraph", 11, "RenderNode", 10, name, strlen(name), vkCmd, true));
 #endif
 }
 
 void VkTracyGPUManager::EndZone(CommandBuffer* pCmdBuffer)
 {
 #if PROFILING_ENABLED
-    if (!m_initialized || !m_pTracyVkCtx || !pCmdBuffer)
-        return;
-
-    if (!tracy::GetProfiler().IsConnected())
-        return;
-
     auto it = m_activeScopes.find(pCmdBuffer);
-    if (it != m_activeScopes.end() && !it->second.empty())
-    {
-        it->second.pop_back();
-        if (it->second.empty())
-        {
-            m_activeScopes.erase(it);
-        }
-    }
+    if (it == m_activeScopes.end())
+        return;
+    // Destroying the scope writes the end timestamp
+    it->second.pop_back();
+    if (it->second.empty())
+        m_activeScopes.erase(it);
 #endif
 }
 
 void VkTracyGPUManager::Collect(CommandBuffer* pCmdBuffer)
 {
 #if PROFILING_ENABLED
-    if (!m_initialized || !m_pTracyVkCtx || !pCmdBuffer)
+    tracy::VkCtx* pCtx = GetContext(pCmdBuffer);
+    if (!pCtx)
         return;
-
-    if (!tracy::GetProfiler().IsConnected())
-        return;
-
     ExecuteNativeCmd collectCmd{};
-    collectCmd.callback = [this](void* pNativeCmdBuf) {
-        VkCommandBuffer vkCmd = reinterpret_cast<VkCommandBuffer>(pNativeCmdBuf);
-        if (vkCmd != VK_NULL_HANDLE)
-        {
-            TracyVkCollect(m_pTracyVkCtx, vkCmd);
-        }
-    };
+    collectCmd.callback = [pCtx](void* pNativeCmdBuf)
+    { TracyVkCollect(pCtx, reinterpret_cast<VkCommandBuffer>(pNativeCmdBuf)); };
     pCmdBuffer->RecordCommand(collectCmd);
 #endif
 }

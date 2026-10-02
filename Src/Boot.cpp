@@ -7,10 +7,14 @@ int main()
     g_renderer.CreateSubsystems();
     Renderer::PreWindowSystemInit();
     g_engine.CreateMainWindow(2560, 1440, "Convolution");
+    if (g_renderer.InitDevice())
     {
         Application app;
-        if (app.IsInitialized())
-            app.Run();
+        app.Run();
+    }
+    else
+    {
+        DEBUG_LOG_ERR("Render device initialization failed, shutting down");
     }
     g_engine.StopIO();
     g_engine.DestroyApplicationState();

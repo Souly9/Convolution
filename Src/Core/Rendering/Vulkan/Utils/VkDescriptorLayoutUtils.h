@@ -29,30 +29,6 @@ static inline VkDescriptorType Conv(const DescriptorType& m)
     return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 }
 
-static inline VkDescriptorBindingFlags ConvFlags(const DescriptorType& m)
-{
-    switch (m)
-    {
-        case DescriptorType::UniformBuffer:
-            return 0;
-        case DescriptorType::StorageBuffer:
-            return 0;
-        case DescriptorType::AccelerationStructure:
-            return 0;
-        case DescriptorType::CombinedImageSampler:
-            return 0;
-        case DescriptorType::BindlessImages:
-        case DescriptorType::BindlessSampledImages:
-            return VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
-        case DescriptorType::Samplers:
-            return 0;
-        default:
-            DEBUG_ASSERT(false);
-    }
-
-    return 0;
-}
-
 namespace DescriptorLayoutUtils
 {
 static inline DescriptorSetLayout CreateOneDescriptorSetForAll(
@@ -75,7 +51,9 @@ static inline DescriptorSetLayout CreateOneDescriptorSetForAll(
         layoutBinding.pImmutableSamplers = nullptr;
 
         bindings.push_back(layoutBinding);
-        flags.push_back(ConvFlags(layout.type));
+        flags.push_back(layout.IsBindless()
+                            ? VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT
+                            : 0);
 
         needsToSupportBindless = needsToSupportBindless || layout.IsBindless();
     }

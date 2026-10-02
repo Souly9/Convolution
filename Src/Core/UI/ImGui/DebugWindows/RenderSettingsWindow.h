@@ -42,17 +42,15 @@ public:
 
                 if (ImGui::CollapsingHeader("General settings", ImGuiTreeNodeFlags_DefaultOpen))
                 {
-                    bool drawDebugMeshes = m_drawDebugMeshes;
+                    const auto& appState = g_engine.GetApplicationState().GetCurrentApplicationState();
+                    bool drawDebugMeshes = appState.renderDebugMeshes;
                     if (ImGui::Checkbox("Draw debug meshes", &drawDebugMeshes))
                     {
-                        m_drawDebugMeshes = drawDebugMeshes;
-                        const bool val = drawDebugMeshes;
                         g_engine.GetApplicationState().RegisterUpdateFunction(
-                            [val](auto& state)
+                            [drawDebugMeshes](auto& state)
                             {
-                                state.renderDebugMeshes = val;
-                                g_engine.GetEntityManager().MarkComponentDirty(
-                                    {}, ECS::ComponentID<ECS::Components::DebugRenderComponent>::ID);
+                                state.renderDebugMeshes = drawDebugMeshes;
+                                g_engine.GetEntityManager().MarkComponentDirty({}, C_ID(DebugRenderComponent));
                             });
                     }
 
@@ -302,8 +300,8 @@ public:
 
                 if (needsUpdate)
                 {
-                    g_engine.GetEntityManager().MarkComponentDirty({}, ECS::ComponentID<ECS::Components::Camera>::ID);
-                    g_engine.GetEntityManager().MarkComponentDirty({}, ECS::ComponentID<ECS::Components::View>::ID);
+                    g_engine.GetEntityManager().MarkComponentDirty({}, C_ID(Camera));
+                    g_engine.GetEntityManager().MarkComponentDirty({}, C_ID(View));
                 }
 
                 ImGui::EndTabItem();
@@ -463,7 +461,7 @@ public:
                     aaTypes.push_back("TAA + SMAA");
                     aaValues.push_back(AntialiasingType::TAA_SMAA);
 
-                    if (renderState.dlssSupported)
+                    if (g_renderer.SupportsDLSS())
                     {
                         aaTypes.push_back("DLSS");
                         aaValues.push_back(AntialiasingType::DLSS);
@@ -557,10 +555,7 @@ public:
                 if (ImGui::CollapsingHeader("Upscaling Settings", ImGuiTreeNodeFlags_DefaultOpen))
                 {
                     const bool upscalerSelected = AA::IsUpscalerMode(renderState.aaType);
-                    if (!upscalerSelected)
-                    {
-                        ImGui::BeginDisabled();
-                    }
+                    ImGui::BeginDisabled(!upscalerSelected);
                     const char* resolutionOptions[] = {"100%", "75%", "50%", "25%"};
                     const u32 resolutionValues[] = {100, 75, 50, 25};
                     u32 currentPercentage = renderState.upscalingPercentage;
@@ -586,9 +581,9 @@ public:
                             needsUpdate = true;
                         }
                     }
+                    ImGui::EndDisabled();
                     if (!upscalerSelected)
                     {
-                        ImGui::EndDisabled();
                         ImGui::SameLine();
                         ImGui::TextDisabled("(DLSS / XeSS only)");
                     }
@@ -598,8 +593,8 @@ public:
 
                 if (needsUpdate)
                 {
-                    g_engine.GetEntityManager().MarkComponentDirty({}, ECS::ComponentID<ECS::Components::Camera>::ID);
-                    g_engine.GetEntityManager().MarkComponentDirty({}, ECS::ComponentID<ECS::Components::View>::ID);
+                    g_engine.GetEntityManager().MarkComponentDirty({}, C_ID(Camera));
+                    g_engine.GetEntityManager().MarkComponentDirty({}, C_ID(View));
                 }
 
                 ImGui::EndTabItem();
@@ -718,11 +713,4 @@ public:
     }
 
 private:
-    static const char* BoolToString(bool value)
-    {
-        return value ? "Yes" : "No";
-    }
-
-
-    bool m_drawDebugMeshes{false};
 };

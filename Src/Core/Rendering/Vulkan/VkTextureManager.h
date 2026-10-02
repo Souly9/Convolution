@@ -41,9 +41,6 @@ public:
     void CreateTexture(const FileTextureRequest& fileReq) override;
     Texture* CreateTextureImmediate(const DynamicTextureRequest& req);
 
-    void CreateSamplerForTexture(TextureHandle handle, bool useMipMaps, TextureSamplerInfo samplerInfo);
-    void CreateSamplerForTexture(TextureVulkan* pTex, bool useMipMaps, TextureSamplerInfo samplerInfo);
-    void CreateImageViewForTexture(TextureHandle handle, bool useMipMaps);
     void CreateImageViewForTexture(TextureVulkan* pTex, bool useMipMaps);
 
     stltype::vector<TextureVulkan>& GetSwapChainTextures()
@@ -66,9 +63,8 @@ public:
     // Texture views and ImGui registration, API-specific so shared code stays agnostic
     TextureViewHandle CreateDepthLayerView(const Texture& texture, TexFormat format, u32 layer);
     void DestroyTextureView(TextureViewHandle view);
-    bool CanRegisterImGuiTexture(const Texture& texture) const;
     u64 RegisterImGuiTexture(const Texture& texture);
-    u64 RegisterImGuiTextureView(TextureViewHandle view, const Texture& samplerSource);
+    u64 RegisterImGuiTextureView(TextureViewHandle view);
     void UnregisterImGuiTexture(u64 id);
 
     static void SetLayoutBarrierMasks(ImageLayoutTransitionCmd& transitionCmd,

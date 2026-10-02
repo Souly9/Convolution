@@ -57,8 +57,7 @@ void CSMPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
 {
     ScopedZone("ShadowPass::Rebuild");
 
-    m_currentFrameIdx = thisFrameNum % SWAPCHAIN_IMAGES;
-    auto& cmdBuf = m_indirectCmdBuffers[m_currentFrameIdx];
+    auto& cmdBuf = m_indirectCmdBuffers[thisFrameNum];
     cmdBuf.EmptyCmds();
     u32 instanceOffset = 0;
     stltype::vector<u32> instanceDataIndices;
@@ -77,7 +76,7 @@ void CSMPass::RebuildInternalData(const stltype::vector<PassMeshData>& meshes,
         instanceDataIndices.emplace_back(mesh.meshData.instanceDataIdx);
         ++instanceOffset;
     }
-    RebuildPerObjectBuffer(instanceDataIndices, m_currentFrameIdx);
+    RebuildPerObjectBuffer(instanceDataIndices, thisFrameNum);
     cmdBuf.FillCmds();
 }
 

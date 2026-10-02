@@ -27,12 +27,6 @@ public:
 
     void WaitForRendererToFinish();
 
-    // False when the render device couldn't be created; Run() must not be called then
-    bool IsInitialized() const
-    {
-        return m_initialized;
-    }
-
 private:
     void CreateMainPSO();
 
@@ -40,7 +34,6 @@ private:
 
     RenderThread m_renderThread;
 
-    stltype::unique_ptr<MainMenuBar> m_pMainMenuBar;
-
-    bool m_initialized{false};
+    // Registers ImGui and EventSystem callbacks, so it can only exist once the Engine is up
+    MainMenuBar m_mainMenuBar;
 };

@@ -6,12 +6,6 @@
 #include "Core/Rendering/Core/Resource.h"
 #include "Core/Rendering/Vulkan/VkDescriptorSetLayout.h"
 
-struct PipeVertInfo
-{
-    VertexBindingDescription m_vertexInputDescription{};
-    stltype::vector<VertexAttributeDescription> m_attributeDescriptions{};
-    u32 bindingDescriptionCount{1};
-};
 
 // Base class that holds shared members and helpers for Vulkan pipelines
 class PipelineVulkanBase : public PipelineBase
@@ -39,7 +33,6 @@ protected:
     VkPipelineDynamicStateCreateInfo CreateDynamicPipelineInfo(const stltype::vector<VkDynamicState>& dynamicStates);
 
     VkPipelineVertexInputStateCreateInfo CreateVertexInputInfo(const PipeVertInfo& vertexInputs);
-    VkPipelineVertexInputStateCreateInfo CreateEmptyVertexInputInfo();
 
     VkPipelineInputAssemblyStateCreateInfo CreateInputAssemblyInfo(const Topology& topology);
 
@@ -69,7 +62,6 @@ protected:
     stltype::vector<VkFormat> m_colorAttachmentFormats{};
 
     PipelineInfo m_info{};
-    PipeVertInfo m_vertexInfo{};
     VkVertexInputBindingDescription m_vkBindingDescription{};
     stltype::vector<VkVertexInputAttributeDescription> m_vkAttributeDescriptions{};
     stltype::vector<VkPipelineColorBlendAttachmentState> m_colorBlendAttachments{};
@@ -114,16 +106,11 @@ public:
     virtual void CleanUp() override;
 
     bool HasDynamicViewScissorState() const;
-    bool NeedsVertexBuffers() const;
 
     VkPipeline GetRef() const;
     VkPipelineLayout GetLayout() const
     {
         return m_pipelineLayout;
-    }
-    const VkDescriptorSetLayout& GetPipelineSpecificLayout() const
-    {
-        return m_descriptorSetLayout.GetRef();
     }
 
     virtual void NamingCallBack(const stltype::string& name) override;

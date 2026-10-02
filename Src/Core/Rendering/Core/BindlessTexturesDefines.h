@@ -24,8 +24,24 @@ static inline stltype::hash_map<BindlessType, u32> s_BindlessTypeToSlot = {
     {BindlessType::GlobalImages, s_globalBindlessImageBufferBindingSlot},
     {BindlessType::GlobalSamplers, s_globalSamplerBindingSlot},
     {BindlessType::GlobalMatrices, s_globalBindlessViewMatricesBufferBindingSlot}};
-// Descriptor count per bindless binding, owned by the Renderer (g_renderer.GetBindlessCapacity)
-u32 GetCount(BindlessType type);
+// Descriptor count per bindless binding; constant, so layouts can be built before the device exists
+static inline u32 GetCount(BindlessType type)
+{
+    switch (type)
+    {
+        case BindlessType::GlobalTextures:
+        case BindlessType::GlobalArrayTextures:
+        case BindlessType::GlobalImages:
+            return MAX_BINDLESS_TEXTURES;
+        case BindlessType::GlobalSamplers:
+            return GLOBAL_SAMPLER_COUNT;
+        case BindlessType::GlobalMatrices:
+            return 1;
+        default:
+            DEBUG_ASSERT(false);
+            return 0;
+    }
+}
 
 static inline DescriptorType ToDescriptorType(BindlessType type)
 {

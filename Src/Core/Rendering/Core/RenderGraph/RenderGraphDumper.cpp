@@ -28,7 +28,7 @@ static const char* ImageLayoutToString(ImageLayout layout)
 void RenderGraphDumper::DumpToFile(const RenderGraph& graph, u32 frameIdx)
 {
     static float s_accumulatedTime = 0.0f;
-    const float dt = g_engine.GetDeltaTime();
+    const float dt = g_engine.GetTime().GetDeltaTime();
     s_accumulatedTime += dt;
 
     if (frameIdx != 0 && s_accumulatedTime < 1.0f)
@@ -110,8 +110,8 @@ void RenderGraphDumper::DumpToFile(const RenderGraph& graph, u32 frameIdx)
         {
             const auto* spec = registry.GetSpec(b.resourceHandle);
             file << "    {\n";
-            file << "      \"targetNodeIndex\": " << b.nodeIndex << ",\n";
-            file << "      \"targetNodeName\": \"" << (b.nodeIndex < nodes.size() ? nodes[b.nodeIndex].name.c_str() : "Unknown") << "\",\n";
+            file << "      \"targetNodeIndex\": " << n << ",\n";
+            file << "      \"targetNodeName\": \"" << (n < nodes.size() ? nodes[n].name.c_str() : "Unknown") << "\",\n";
             file << "      \"resource\": \"" << (spec ? spec->GetName() : "Resource") << "\",\n";
             file << "      \"oldLayout\": \"" << ImageLayoutToString(b.oldLayout) << "\",\n";
             file << "      \"newLayout\": \"" << ImageLayoutToString(b.newLayout) << "\"\n";
@@ -130,9 +130,10 @@ void RenderGraphDumper::DumpToFile(const RenderGraph& graph, u32 frameIdx)
             continue;
         file << (firstMemoryBarrier ? "" : ",\n");
         file << "    {\"targetNodeName\": \"" << (n < nodes.size() ? nodes[n].name.c_str() : "Unknown")
-             << "\", \"srcStage\": " << static_cast<u32>(mb.srcStage) << ", \"dstStage\": " << static_cast<u32>(mb.dstStage)
-             << ", \"srcAccess\": " << static_cast<u64>(mb.srcAccess) << ", \"dstAccess\": " << static_cast<u64>(mb.dstAccess)
-             << "}";
+             << "\", \"srcStage\": " << static_cast<u32>(mb.srcStage)
+             << ", \"dstStage\": " << static_cast<u32>(mb.dstStage)
+             << ", \"srcAccess\": " << static_cast<u64>(mb.srcAccessMask)
+             << ", \"dstAccess\": " << static_cast<u64>(mb.dstAccessMask) << "}";
         firstMemoryBarrier = false;
     }
     file << "\n  ],\n";
