@@ -1,9 +1,9 @@
 #pragma once
 #include "BackendDefines.h"
+#include "ConvAllocatorSimple.h"
 #include "Core/Global/GlobalDefines.h"
 #include "Core/Global/Typedefs.h"
 #include "Core/Rendering/Core/Buffer.h"
-#include "VkGPUMemoryManager.h"
 
 class GenBufferVulkan : public BufferBase
 {
@@ -26,8 +26,11 @@ public:
                          bool freeStagingBuffer = false,
                          u64 offset = 0);
 
-    GPUMappedMemoryHandle MapMemory();
-    void UnmapMemory();
+    // Persistent pointer for host-visible buffers, nullptr for device-local ones
+    void* GetMapped() const
+    {
+        return m_pMapped;
+    }
 
     VkBuffer GetRef() const
     {
@@ -59,11 +62,11 @@ protected:
     {
     }
 
-    void MapAndCopyToMemory(const GPUMemoryHandle& memory, const void* data, u64 size, u64 offset);
     void CheckCopyArgs(const void* data, u64 size, u64 offset);
     BufferCreateInfo m_info{};
     VkBuffer m_buffer{VK_NULL_HANDLE};
     GPUMemoryHandle m_allocatedMemory{VK_NULL_HANDLE};
+    void* m_pMapped{nullptr};
 };
 
 class VertexBufferVulkan : public GenBufferVulkan
@@ -100,15 +103,10 @@ public:
     StagingBufferVulkan() {}
     StagingBufferVulkan(u64 size);
 
-    void CreatePersistentlyMapped(u64 size);
     void CopyToMapped(const void* data, u64 size, u64 offset = 0);
-    GPUMappedMemoryHandle GetPersistentMapping() const { return m_persistentMapping; }
 
     // Recreate if current capacity is too small, reuse otherwise
     void EnsureCapacity(u64 size);
-
-private:
-    GPUMappedMemoryHandle m_persistentMapping{nullptr};
 };
 
 class StorageBufferVulkan : public GenBufferVulkan
@@ -143,7 +141,6 @@ public:
 
 protected:
     stltype::vector<IndexedIndirectDrawCmd> m_indexedIndirectCmds;
-    GPUMappedMemoryHandle m_mappedMemoryHandle;
 };
 
 class IndirectDrawCountBuffer : public GenBufferVulkan

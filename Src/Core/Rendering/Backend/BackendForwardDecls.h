@@ -5,9 +5,13 @@
 #ifdef USE_VULKAN
 class VkTextureManager;
 using TextureManager = VkTextureManager;
+class ConvAllocatorSimple;
+using GPUMemoryManager = ConvAllocatorSimple;
 #elif defined(USE_METAL)
 class MtlTextureManager;
 using TextureManager = MtlTextureManager;
+class MtlGPUMemoryManager;
+using GPUMemoryManager = MtlGPUMemoryManager;
 #else
 #error "No render backend selected (USE_VULKAN / USE_METAL)"
 #endif
@@ -15,7 +19,3 @@ using TextureManager = MtlTextureManager;
 template <typename API>
 class RenderBackendImpl;
 using RenderBackend = RenderBackendImpl<RenderAPI>;
-
-IMPLEMENT_GRAPHICS_API
-class GPUMemManager;
-using GPUMemoryManager = GPUMemManager<RenderAPI>;

@@ -27,7 +27,7 @@ void GenBufferVulkan::Create(BufferCreateInfo& info)
     if (!g_renderer.SupportsRayTracing())
         bufferInfo.usage &= ~VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
     VkBackend::SetSharedQueueFamilies(bufferInfo);
-    m_allocatedMemory = g_renderer.GetGPUMemoryManager().AllocateBuffer(info.usage, bufferInfo, m_buffer);
+    m_allocatedMemory = g_renderer.GetGPUMemoryManager().AllocateBuffer(info.usage, bufferInfo, m_buffer, m_pMapped);
     m_info.size = size;
     m_info.usage = info.usage;
 }
@@ -39,20 +39,22 @@ void GenBufferVulkan::CleanUp()
 
     auto memory = m_allocatedMemory;
     m_buffer = VK_NULL_HANDLE;
+    m_pMapped = nullptr;
 
-    g_renderer.GetDeleteQueue().RegisterDeleteForNextFrame([memory]() mutable { g_renderer.GetGPUMemoryManager().TryFreeMemory(memory); });
+    g_renderer.GetDeleteQueue().RegisterDeleteForNextFrame([memory]()
+                                                           { g_renderer.GetGPUMemoryManager().Free(memory); });
 }
 
 void GenBufferVulkan::FillImmediate(const void* data)
 {
     CheckCopyArgs(data, UINT64_MAX, 0);
-    MapAndCopyToMemory(GetMemoryHandle(), data, GetInfo().size, 0);
+    memcpy(m_pMapped, data, m_info.size);
 }
 
 void GenBufferVulkan::FillImmediate(const void* data, u64 size, u64 offset)
 {
     CheckCopyArgs(data, UINT64_MAX, 0);
-    MapAndCopyToMemory(GetMemoryHandle(), data, size, offset);
+    memcpy(static_cast<u8*>(m_pMapped) + offset, data, size);
 }
 
 void GenBufferVulkan::FillAndTransfer(
@@ -62,7 +64,7 @@ void GenBufferVulkan::FillAndTransfer(
     DEBUG_ASSERT(stgBuffer.GetRef() != VK_NULL_HANDLE);
 
     const auto sizeToTransfer = stgBuffer.GetInfo().size;
-    MapAndCopyToMemory(stgBuffer.GetMemoryHandle(), data, sizeToTransfer, offset);
+    memcpy(static_cast<u8*>(stgBuffer.GetMapped()) + offset, data, sizeToTransfer);
     SimpleBufferCopyCmd copyCmd{&stgBuffer, this};
     copyCmd.srcOffset = 0;
     copyCmd.dstOffset = offset;
@@ -73,9 +75,10 @@ void GenBufferVulkan::FillAndTransfer(
         auto buffer = stgBuffer.GetRef();
         auto memory = stgBuffer.GetMemoryHandle();
         transferBuffer->AddExecutionFinishedCallback(
-            [memory]() {
-                g_renderer.GetDeleteQueue().RegisterDeleteForNextFrame([memory]() mutable
-                                                           { g_renderer.GetGPUMemoryManager().TryFreeMemory(memory); });
+            [memory]()
+            {
+                g_renderer.GetDeleteQueue().RegisterDeleteForNextFrame(
+                    [memory]() { g_renderer.GetGPUMemoryManager().Free(memory); });
             });
 
         // Guarantee it won't get freed until we hit the callback
@@ -83,11 +86,6 @@ void GenBufferVulkan::FillAndTransfer(
     }
 
     transferBuffer->RecordCommand(copyCmd);
-}
-
-GPUMappedMemoryHandle GenBufferVulkan::MapMemory()
-{
-    return g_renderer.GetGPUMemoryManager().MapMemory(m_allocatedMemory, m_info.size);
 }
 
 u64 GenBufferVulkan::GetDeviceAddress() const
@@ -101,11 +99,6 @@ u64 GenBufferVulkan::GetDeviceAddress() const
     return vkGetBufferDeviceAddress(VkBackend::Device(), &addressInfo);
 }
 
-void GenBufferVulkan::UnmapMemory()
-{
-    g_renderer.GetGPUMemoryManager().UnmapMemory(m_allocatedMemory);
-}
-
 void GenBufferVulkan::NamingCallBack(const stltype::string& name)
 {
     VkDebugUtilsObjectNameInfoEXT nameInfo = {};
@@ -115,13 +108,7 @@ void GenBufferVulkan::NamingCallBack(const stltype::string& name)
     nameInfo.pObjectName = name.c_str();
 
     vkSetDebugUtilsObjectName(VkBackend::Device(), &nameInfo);
-}
-
-void GenBufferVulkan::MapAndCopyToMemory(const GPUMemoryHandle& memory, const void* data, u64 size, u64 offset)
-{
-    const auto bufferData = g_renderer.GetGPUMemoryManager().MapMemory(memory, size);
-    memcpy((char*)bufferData + offset, data, (size_t)size);
-    g_renderer.GetGPUMemoryManager().UnmapMemory(memory);
+    g_renderer.GetGPUMemoryManager().SetName(m_allocatedMemory, name);
 }
 
 void GenBufferVulkan::CheckCopyArgs(const void* data, u64 size, u64 offset)
@@ -147,19 +134,9 @@ StagingBufferVulkan::StagingBufferVulkan(u64 size)
     Create(info);
 }
 
-void StagingBufferVulkan::CreatePersistentlyMapped(u64 size)
-{
-    BufferCreateInfo info{};
-    info.size = size;
-    info.usage = BufferUsage::Staging;
-    Create(info);
-    m_persistentMapping = MapMemory();
-}
-
 void StagingBufferVulkan::CopyToMapped(const void* data, u64 size, u64 offset)
 {
-    DEBUG_ASSERT(m_persistentMapping != nullptr);
-    memcpy((char*)m_persistentMapping + offset, data, (size_t)size);
+    memcpy(static_cast<u8*>(m_pMapped) + offset, data, size);
 }
 
 void StagingBufferVulkan::EnsureCapacity(u64 size)
@@ -167,15 +144,11 @@ void StagingBufferVulkan::EnsureCapacity(u64 size)
     if (m_info.size >= size)
         return;
 
-    if (m_persistentMapping)
-    {
-        UnmapMemory();
-        m_persistentMapping = nullptr;
-    }
-    if (m_buffer != VK_NULL_HANDLE)
-        CleanUp();
-
-    CreatePersistentlyMapped(size);
+    CleanUp();
+    BufferCreateInfo info{};
+    info.size = size;
+    info.usage = BufferUsage::Staging;
+    Create(info);
 }
 
 IndexBufferVulkan::IndexBufferVulkan(u64 size, bool hostVisible)
@@ -209,8 +182,6 @@ IndirectDrawCommandBufferVulkan::IndirectDrawCommandBufferVulkan(u64 numOfComman
     info.usage = BufferUsage::IndirectDrawCmds;
     Create(info);
     m_indexedIndirectCmds.reserve(numOfCommands);
-    // Will be reused and filled\mapped every frame so cheaper to just map forever
-    m_mappedMemoryHandle = MapMemory();
 }
 
 void IndirectDrawCommandBufferVulkan::Init(u64 numOfCommands)
@@ -220,8 +191,6 @@ void IndirectDrawCommandBufferVulkan::Init(u64 numOfCommands)
     info.usage = BufferUsage::IndirectDrawCmds;
     Create(info);
     m_indexedIndirectCmds.reserve(numOfCommands);
-    // Will be reused and filled\mapped every frame so cheaper to just map forever
-    m_mappedMemoryHandle = MapMemory();
 }
 
 IndirectDrawCountBuffer::IndirectDrawCountBuffer(u64 numOfCounts)
@@ -250,13 +219,11 @@ void IndirectDrawCommandBufferVulkan::AddIndexedDrawCmd(
 
 void IndirectDrawCommandBufferVulkan::FillCmds()
 {
-    memcpy((char*)m_mappedMemoryHandle,
-           (void*)m_indexedIndirectCmds.data(),
-           m_indexedIndirectCmds.size() * sizeof(IndexedIndirectDrawCmd));
+    memcpy(
+        m_pMapped, (void*)m_indexedIndirectCmds.data(), m_indexedIndirectCmds.size() * sizeof(IndexedIndirectDrawCmd));
 }
 
 void IndirectDrawCommandBufferVulkan::EmptyCmds()
 {
     m_indexedIndirectCmds.clear();
-    // memcpy((char*)m_mappedMemoryHandle, (void*)0, m_info.size);
 }

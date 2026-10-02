@@ -108,6 +108,10 @@ void MainMenuBar::DrawMenuBar(f32 dt, ApplicationInfos& appInfos)
             {
                 m_textureViewerWindow.SetOpen(true);
             }
+            if (ImGui::MenuItem("Memory", ""))
+            {
+                m_memoryWindow.SetOpen(true);
+            }
             ImGui::EndMenu();
         }
         ImGui::EndMainMenuBar();
@@ -143,4 +147,8 @@ void MainMenuBar::DrawMenuBar(f32 dt, ApplicationInfos& appInfos)
         m_renderGraphInspectorWindow.DrawWindow(dt);
     }
     m_textureViewerWindow.DrawWindow(dt);
+    if (m_memoryWindow.IsOpen())
+    {
+        m_memoryWindow.DrawWindow(dt);
+    }
 }

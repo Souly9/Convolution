@@ -31,6 +31,14 @@ constexpr bool HasPadding()
 
 #define HAS_NO_PADDING(T) static_assert(HasPadding<T>() == false);
 
+struct ProcessMemoryStats
+{
+    u64 residentBytes{0};
+    u64 peakResidentBytes{0};
+};
+// Resident set as the OS reports it; CPU allocations themselves stay on new/delete
+ProcessMemoryStats GetProcessMemoryStats();
+
 // Necessary EASTL defines
 // Necessary EASTL defines
 void* __cdecl operator new[](

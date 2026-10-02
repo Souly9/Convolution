@@ -67,7 +67,7 @@ void SharedResourceManager::Init()
     {
         m_clusterStatsReadback[i] = StorageBuffer(sizeof(u32), false);
         m_clusterStatsReadback[i].SetName("Cluster Stats Readback " + stltype::to_string(i));
-        m_pClusterStatsMapped[i] = static_cast<u32*>(m_clusterStatsReadback[i].MapMemory());
+        m_pClusterStatsMapped[i] = static_cast<u32*>(m_clusterStatsReadback[i].GetMapped());
         *m_pClusterStatsMapped[i] = 0;
     }
 

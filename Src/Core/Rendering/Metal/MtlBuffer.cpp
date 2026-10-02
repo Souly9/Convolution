@@ -31,15 +31,6 @@ void GenBufferMetal::FillAndTransfer(
 {
 }
 
-GPUMappedMemoryHandle GenBufferMetal::MapMemory()
-{
-    return nullptr;
-}
-
-void GenBufferMetal::UnmapMemory()
-{
-}
-
 u64 GenBufferMetal::GetDeviceAddress() const
 {
     return 0;
@@ -58,10 +49,6 @@ UniformBufferMetal::UniformBufferMetal(u64 size)
 }
 
 StagingBufferMetal::StagingBufferMetal(u64 size)
-{
-}
-
-void StagingBufferMetal::CreatePersistentlyMapped(u64 size)
 {
 }
 

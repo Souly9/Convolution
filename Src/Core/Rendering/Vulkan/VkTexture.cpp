@@ -4,7 +4,6 @@
 #include <utility>
 #include <type_traits>
 #include "Utils/VkEnumHelpers.h"
-#include "VkGPUMemoryManager.h"
 #include "VkBackendAccess.h"
 
 TextureVulkan::TextureVulkan()
@@ -27,7 +26,7 @@ TextureVulkan::~TextureVulkan()
 
 void TextureVulkan::CleanUp()
 {
-    VK_FREE_IF(m_imageMemory, g_renderer.GetGPUMemoryManager().TryFreeMemory(m_imageMemory));
+    VK_FREE_IF(m_imageMemory, g_renderer.GetGPUMemoryManager().Free(m_imageMemory));
     VK_FREE_IF(m_imageView2D, vkDestroyImageView(VkBackend::Device(), m_imageView2D, VulkanAllocator()));
     VK_FREE_IF(m_imageView, vkDestroyImageView(VkBackend::Device(), m_imageView, VulkanAllocator()));
     m_image = VK_NULL_HANDLE;
@@ -53,6 +52,9 @@ void TextureVulkan::NamingCallBack(const stltype::string& name)
     nameInfo.objectHandle = (uint64_t)GetImage();
     nameInfo.pObjectName = name.c_str();
     vkSetDebugUtilsObjectName(VkBackend::Device(), &nameInfo);
+    // Swapchain and other imported images have no VMA memory
+    if (m_imageMemory != VK_NULL_HANDLE)
+        g_renderer.GetGPUMemoryManager().SetName(m_imageMemory, name);
 
     if (m_imageView != VK_NULL_HANDLE)
     {

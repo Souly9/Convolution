@@ -129,7 +129,7 @@ StagingBuffer& AsyncQueueHandler::AllocateStaging(u32 frameIdx, u64 size, u64& o
         if (hasChunk)
             ++upload.chunkIdx;
         if (upload.chunkIdx >= upload.stagingChunks.size())
-            upload.stagingChunks.emplace_back().CreatePersistentlyMapped(mathstl::max(STAGING_CHUNK_SIZE, size));
+            upload.stagingChunks.emplace_back().EnsureCapacity(mathstl::max(STAGING_CHUNK_SIZE, size));
         else
             upload.stagingChunks[upload.chunkIdx].EnsureCapacity(size);
         upload.chunkOffset = 0;

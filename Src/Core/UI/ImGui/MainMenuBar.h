@@ -3,6 +3,7 @@
 #include "Controls/SelectedEntitiesWindow.h"
 #include "DebugWindows/EngineSettingsWindow.h"
 #include "DebugWindows/InfoWindow.h"
+#include "DebugWindows/MemoryWindow.h"
 #include "DebugWindows/PerformanceDiagnosticsWindow.h"
 #include "DebugWindows/RenderGraphInspectorWindow.h"
 #include "DebugWindows/RenderSettingsWindow.h"
@@ -32,4 +33,5 @@ private:
     PerformanceDiagnosticsWindow m_performanceDiagnosticsWindow;
     RenderGraphInspectorWindow m_renderGraphInspectorWindow;
     TextureViewerWindow m_textureViewerWindow;
+    MemoryWindow m_memoryWindow;
 };

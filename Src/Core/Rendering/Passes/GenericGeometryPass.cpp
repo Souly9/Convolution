@@ -23,7 +23,7 @@ GenericGeometryPass::GenericGeometryPass(const stltype::string& name) : Convolut
     {
         // One copy per frame slot, a rebuild must not touch what the in-flight frame reads
         m_perObjectSSBOs[i] = StorageBuffer(UBO::PerPassObjectDataSSBOSize, false);
-        m_mappedPerObjectSSBOs[i] = m_perObjectSSBOs[i].MapMemory();
+        m_mappedPerObjectSSBOs[i] = m_perObjectSSBOs[i].GetMapped();
 
         auto& ctx = m_perObjectFrameContexts[i];
         ctx.m_perObjectDescriptor = m_descPool.CreateDescriptorSet(m_perObjectLayout);

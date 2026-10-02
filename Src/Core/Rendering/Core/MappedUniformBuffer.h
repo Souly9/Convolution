@@ -22,7 +22,7 @@ public:
         {
             m_buffers[i] = UniformBuffer(sizeof(T));
             m_buffers[i].SetName(name + " " + stltype::to_string(i));
-            m_mapped[i] = m_buffers[i].MapMemory();
+            m_mapped[i] = m_buffers[i].GetMapped();
             std::memset(m_mapped[i], 0, sizeof(T));
         }
     }

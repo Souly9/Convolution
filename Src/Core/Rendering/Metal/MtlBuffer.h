@@ -23,8 +23,11 @@ public:
                          bool freeStagingBuffer = false,
                          u64 offset = 0);
 
-    GPUMappedMemoryHandle MapMemory();
-    void UnmapMemory();
+    // Persistent pointer for host-visible buffers, nullptr for device-local ones
+    void* GetMapped() const
+    {
+        return m_pMapped;
+    }
 
     MTL::Buffer* GetRef() const
     {
@@ -53,6 +56,7 @@ protected:
 
     BufferCreateInfo m_info{};
     MTL::Buffer* m_buffer{nullptr};
+    void* m_pMapped{nullptr}; // TODO(metal): contents() for shared storage
 };
 
 class VertexBufferMetal : public GenBufferMetal
@@ -90,17 +94,9 @@ public:
     }
     StagingBufferMetal(u64 size);
 
-    void CreatePersistentlyMapped(u64 size);
     void CopyToMapped(const void* data, u64 size, u64 offset = 0);
-    GPUMappedMemoryHandle GetPersistentMapping() const
-    {
-        return m_persistentMapping;
-    }
 
     void EnsureCapacity(u64 size);
-
-private:
-    GPUMappedMemoryHandle m_persistentMapping{nullptr};
 };
 
 class StorageBufferMetal : public GenBufferMetal
@@ -135,7 +131,6 @@ public:
 
 protected:
     stltype::vector<IndexedIndirectDrawCmd> m_indexedIndirectCmds;
-    GPUMappedMemoryHandle m_mappedMemoryHandle{nullptr};
 };
 
 class IndirectDrawCountBuffer : public GenBufferMetal

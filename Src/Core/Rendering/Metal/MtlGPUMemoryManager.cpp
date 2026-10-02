@@ -3,32 +3,35 @@
 
 // TODO(Metal): heap-based allocation; recommendedMaxWorkingSetSize/currentAllocatedSize for stats
 
-void GPUMemManager<Metal>::Init(Allocator allocatorMode)
-{
-    m_allocatorMode = allocatorMode;
-    m_isInitialized = true;
-}
-
-GPUMemManager<Metal>::~GPUMemManager()
+void MtlGPUMemoryManager::Init()
 {
 }
 
-MTL::Buffer* GPUMemManager<Metal>::AllocateBuffer(BufferUsage usage, u64 size)
+MtlGPUMemoryManager::~MtlGPUMemoryManager()
+{
+}
+
+MTL::Buffer* MtlGPUMemoryManager::AllocateBuffer(BufferUsage usage, u64 size)
 {
     return nullptr;
 }
 
-MTL::Texture* GPUMemManager<Metal>::AllocateTexture(const TextureInfo& info)
+MTL::Texture* MtlGPUMemoryManager::AllocateTexture(const TextureInfo& info)
 {
     return nullptr;
 }
 
-GPUMappedMemoryHandle GPUMemManager<Metal>::MapMemory(MTL::Buffer* pBuffer)
-{
-    return nullptr;
-}
-
-u64 GPUMemManager<Metal>::GetUsedVram()
+u64 MtlGPUMemoryManager::GetUsedVram()
 {
     return 0;
+}
+
+void MtlGPUMemoryManager::FillStats(GPUMemoryStats& out)
+{
+    // TODO(metal): heap/allocation stats for the memory window
+}
+
+void MtlGPUMemoryManager::DumpStatsJson(const char* pPath)
+{
+    // TODO(metal)
 }
