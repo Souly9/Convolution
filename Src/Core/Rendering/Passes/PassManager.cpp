@@ -269,7 +269,7 @@ void PassManager::PrepareMainPassDataForFrame(MainPassData& mainPassData, FrameR
     mainPassData.pRTSceneManager = &m_rtSceneManager;
 
     m_imguiRegistry.RegisterMaterialTextures();
-    m_imguiRegistry.PublishGBufferTextureState(m_renderGraph.GetRegistry());
+    m_imguiRegistry.PublishTextureViewerState(m_renderGraph.GetRegistry());
 }
 
 void PassManager::InitFrameContexts()
@@ -541,7 +541,7 @@ void PassManager::PreProcessDataForCurrentFrame(u32 frameIdx, u64 jitterFrameNum
     }
 
     m_renderGraph.GetRegistry().RotateHistory(frameIdx);
-    m_imguiRegistry.PublishGBufferTextureState(m_renderGraph.GetRegistry());
+    m_imguiRegistry.PublishTextureViewerState(m_renderGraph.GetRegistry());
     UpdateAAFrameConfig(frameIdx);
 
     m_frameResourceManager.PreProcessDataForCurrentFrame(frameIdx, jitterFrameNumber, m_currentSwapChainIdx, this);

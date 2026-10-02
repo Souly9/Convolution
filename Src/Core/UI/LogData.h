@@ -1,5 +1,6 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
+#include "Core/Global/ThreadBase.h"
 
 struct ApplicationInfos
 {
@@ -13,8 +14,8 @@ class LogData
 public:
     static LogData* Get();
 
-    ApplicationInfos& GetApplicationInfos();
-    void Clear();
+    // Moves everything logged so far into out; workers and the render thread log concurrently
+    void TakeApplicationInfos(ApplicationInfos& out);
 
     void AddError(stltype::string&& error);
     void AddWarning(stltype::string&& warning);
@@ -24,4 +25,5 @@ public:
 
 private:
     ApplicationInfos m_logData{};
+    CustomMutex m_mutex;
 };

@@ -94,7 +94,9 @@ void Application::Run()
         // for multi-threaded access Hence we run the draw on the main thread and
         // just retrieve the data on the renderthread for simplicity
         m_imGuiManager.BeginFrame();
-        m_imGuiManager.RenderElements(0.16f, LogData::Get()->GetApplicationInfos());
+        ApplicationInfos newLogs;
+        LogData::Get()->TakeApplicationInfos(newLogs);
+        m_imGuiManager.RenderElements(0.16f, newLogs);
         g_engine.GetFrameSync().imgui.Post();
 
         // Notify all systems the next frame started, mainly used as pre-update

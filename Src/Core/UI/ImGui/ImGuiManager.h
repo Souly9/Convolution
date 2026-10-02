@@ -17,7 +17,13 @@ public:
 
     static void RegisterRenderFunction(ImGuiRenderFunction&& renderFunction);
 
+    // Rebuilds the default dock layout at the start of the next frame
+    static void RequestLayoutReset();
+
 private:
+    static void BuildDefaultLayout(u32 dockspaceId);
+
     static stltype::vector<ImGuiRenderFunction> s_registeredFunctions;
     static bool s_streamlineOverlayInputMode;
+    static bool s_layoutResetRequested;
 };

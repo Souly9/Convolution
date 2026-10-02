@@ -2,45 +2,45 @@
 #include "Core/ConsoleLogger.h"
 #include "Core/Global/GlobalDefines.h"
 
-static stltype::unique_ptr<LogData> g_Instance;
-
 LogData* LogData::Get()
 {
-    if (!g_Instance)
-        g_Instance = stltype::make_unique<LogData>();
-    return g_Instance.get();
+    static LogData s_instance;
+    return &s_instance;
 }
 
-ApplicationInfos& LogData::GetApplicationInfos()
+void LogData::TakeApplicationInfos(ApplicationInfos& out)
 {
-    return m_logData;
-}
-
-void LogData::Clear()
-{
-    m_logData.errors.clear();
-    m_logData.warnings.clear();
-    m_logData.infos.clear();
+    SimpleScopedGuard<CustomMutex> lock(m_mutex);
+    stltype::swap(out, m_logData);
 }
 
 void LogData::AddError(stltype::string&& error)
 {
     Format(error);
-    m_logData.errors.push_back(error);
+    {
+        SimpleScopedGuard<CustomMutex> lock(m_mutex);
+        m_logData.errors.push_back(error);
+    }
     ConsoleLogger::ShowError(error);
 }
 
 void LogData::AddWarning(stltype::string&& warning)
 {
     Format(warning);
-    m_logData.warnings.push_back(warning);
+    {
+        SimpleScopedGuard<CustomMutex> lock(m_mutex);
+        m_logData.warnings.push_back(warning);
+    }
     ConsoleLogger::ShowWarning(warning);
 }
 
 void LogData::AddInfo(stltype::string&& info)
 {
     Format(info);
-    m_logData.infos.push_back(info);
+    {
+        SimpleScopedGuard<CustomMutex> lock(m_mutex);
+        m_logData.infos.push_back(info);
+    }
     ConsoleLogger::ShowInfo(info);
 }
 

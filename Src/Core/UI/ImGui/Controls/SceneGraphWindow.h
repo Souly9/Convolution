@@ -3,16 +3,25 @@
 #include "Core/Global/CommonGlobals.h"
 #include "Core/Global/Profiling.h"
 
-class SceneGraphWindow : public InfoWindow
+class SceneGraphWindow : public UIWindow
 {
 public:
     void DrawWindow(const UpdateEventData& data)
     {
         ScopedZone("SceneGraphWindow");
-        ImGui::Begin("Scene", &m_isOpen);
-
-        if (data.state.pCurrentScene != nullptr && data.state.pCurrentScene->IsFullyLoaded())
+        if (!ImGui::Begin(UIWindowNames::Scene, &m_isOpen))
         {
+            ImGui::End();
+            return;
+        }
+
+        if (data.state.pCurrentScene == nullptr || !data.state.pCurrentScene->IsFullyLoaded())
+        {
+            ImGui::TextDisabled("Loading scene...");
+        }
+        else
+        {
+            const ECS::Entity selected = data.state.selectedEntities.empty() ? ECS::Entity{} : data.state.selectedEntities[0];
             const auto& transforms = g_engine.GetEntityManager().GetComponentVector<ECS::Components::Transform>();
             auto entityToTransform = g_engine.GetEntityManager().GetComponentPointerArray<ECS::Components::Transform>();
 
@@ -65,7 +74,7 @@ public:
             {
                 for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++)
                 {
-                    DrawSceneNode(*flatTree[i].transform, flatTree[i].entity, flatTree[i].depth);
+                    DrawSceneNode(*flatTree[i].transform, flatTree[i].entity, flatTree[i].depth, flatTree[i].entity == selected);
                 }
             }
         }
@@ -73,7 +82,7 @@ public:
     }
 
 private:
-    static void DrawSceneNode(const ECS::Components::Transform& transform, ECS::Entity ent, int depth)
+    static void DrawSceneNode(const ECS::Components::Transform& transform, ECS::Entity ent, int depth, bool isSelected)
     {
         ImGuiTreeNodeFlags node_flags =
             ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_NoTreePushOnOpen;
@@ -81,6 +90,10 @@ private:
         if (transform.children.empty())
         {
             node_flags |= ImGuiTreeNodeFlags_Leaf;
+        }
+        if (isSelected)
+        {
+            node_flags |= ImGuiTreeNodeFlags_Selected;
         }
 
         if (depth > 0)

@@ -6,6 +6,7 @@
 
 void RenderBackendImpl<Metal>::PreWindowSystemInit()
 {
+    
 }
 
 stltype::unique_ptr<Profiler> RenderBackendImpl<Metal>::CreateProfiler()

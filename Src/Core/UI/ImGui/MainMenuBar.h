@@ -1,7 +1,6 @@
 #pragma once
 #include "Controls/SceneGraphWindow.h"
 #include "Controls/SelectedEntitiesWindow.h"
-#include "DebugWindows/EngineSettingsWindow.h"
 #include "DebugWindows/InfoWindow.h"
 #include "DebugWindows/MemoryWindow.h"
 #include "DebugWindows/PerformanceDiagnosticsWindow.h"
@@ -24,14 +23,22 @@ public:
     }
 
 private:
-    InfoWindow m_debugInfoWindow;
-    SelectedEntityWindow m_selectedEntitiesWindow;
+    void DrawSceneMenu();
+    void DrawWindowMenu();
+    void DrawStatusText();
+    // Matches the default dock layout: editor panels open, big tools closed
+    void ResetOpenStates();
+    void WindowMenuItem(const char* name, UIWindow& window);
+
     UpdateEventData m_lastUpdateState;
+    // Focused one frame later, once the window exists and can select its dock tab
+    const char* m_focusRequest{nullptr};
+    LogWindow m_logWindow;
+    SelectedEntityWindow m_inspectorWindow;
     SceneGraphWindow m_sceneGraphWindow;
-    RenderSettingsWindow m_renderSettingsWindow;
-    EngineSettingsWindow m_engineSettingsWindow;
-    PerformanceDiagnosticsWindow m_performanceDiagnosticsWindow;
-    RenderGraphInspectorWindow m_renderGraphInspectorWindow;
+    RenderSettingsWindow m_settingsWindow;
+    PerformanceDiagnosticsWindow m_performanceWindow;
+    RenderGraphInspectorWindow m_renderGraphWindow;
     TextureViewerWindow m_textureViewerWindow;
     MemoryWindow m_memoryWindow;
 };

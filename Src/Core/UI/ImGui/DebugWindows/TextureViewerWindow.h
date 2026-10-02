@@ -8,14 +8,9 @@
 #include <EASTL/vector.h>
 #include <imgui.h>
 
-class TextureViewerWindow : public ImGuiWindow
+class TextureViewerWindow : public UIWindow
 {
 public:
-    TextureViewerWindow()
-    {
-        m_isOpen = false;
-    }
-
     void DrawWindow(f32 dt)
     {
         ScopedZone("TextureViewerWindow");
@@ -29,7 +24,7 @@ public:
             return;
 
         ImGui::SetNextWindowSize(ImVec2(1150.0f, 720.0f), ImGuiCond_FirstUseEver);
-        if (!ImGui::Begin("Texture Viewer", &m_isOpen, ImGuiWindowFlags_MenuBar))
+        if (!ImGui::Begin(UIWindowNames::TextureViewer, &m_isOpen, ImGuiWindowFlags_MenuBar))
         {
             ImGui::End();
             return;
@@ -274,15 +269,13 @@ private:
 
     void DrawCanvas(const RendererState::TextureViewerItem& item)
     {
-        // Compute active mip and layer selection
-        u32 curMip = stltype::min(m_selectedMip, item.mipLevels > 0 ? item.mipLevels - 1 : 0u);
-        u32 curLayer = stltype::min(m_selectedLayer, item.arrayLayers > 0 ? item.arrayLayers - 1 : 0u);
-        u32 activeWidth = stltype::max(1u, item.width >> curMip);
-        u32 activeHeight = stltype::max(1u, item.height >> curMip);
+        // The ImGui descriptor always shows mip 0 / slice 0
+        const u32 activeWidth = stltype::max(1u, item.width);
+        const u32 activeHeight = stltype::max(1u, item.height);
 
         u64 activeDescriptorId = item.imguiDescriptorId;
 
-        // Canvas Header bar (Zoom controls, Mip summary & Checkerboard toggle)
+        // Canvas header: zoom controls and checkerboard toggle
         ImGui::Text("zoom %.0f%%", m_zoom * 100.0f);
         ImGui::SameLine(0, 10.0f);
 
@@ -293,19 +286,9 @@ private:
         if (ImGui::Button("Reset"))
         {
             ResetCanvasView();
-            m_selectedMip = 0;
-            m_selectedLayer = 0;
             m_channelR = m_channelG = m_channelB = m_channelA = true;
             m_exposure = 1.0f;
-            m_gammaCorrect = false;
-            m_remapSignedRange = false;
-            m_absVal = false;
         }
-        ImGui::SameLine(0, 4.0f);
-        if (ImGui::Button("Fit")) FitToCanvas(activeWidth, activeHeight);
-
-        ImGui::SameLine(0, 15.0f);
-        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "[Mip %u | Layer %u: %ux%u]", curMip, curLayer, activeWidth, activeHeight);
 
         ImGui::SameLine(ImGui::GetWindowWidth() - 160.0f);
         ImGui::Checkbox("Checkerboard", &m_checkerboardBg);
@@ -405,11 +388,7 @@ private:
         else if (!m_channelR && !m_channelG && !m_channelB && m_channelA) chanMode = "Alpha (Grayscale)";
         else if (m_channelR && m_channelG && m_channelB && !m_channelA) chanMode = "RGB (No Alpha)";
 
-        snprintf(badgeBuf, sizeof(badgeBuf), "View: %s | Mip %u (%ux%u) | Boost: %.1fx%s%s%s",
-                 chanMode, curMip, activeWidth, activeHeight, m_exposure,
-                 m_gammaCorrect ? " | Gamma sRGB" : "",
-                 m_remapSignedRange ? " | Remap [-1,1]" : "",
-                 m_absVal ? " | Abs" : "");
+        snprintf(badgeBuf, sizeof(badgeBuf), "View: %s | %ux%u | Boost: %.1fx", chanMode, activeWidth, activeHeight, m_exposure);
 
         drawList->AddRectFilled(badgePos, ImVec2(badgePos.x + ImGui::CalcTextSize(badgeBuf).x + 12.0f, badgePos.y + 22.0f), IM_COL32(0, 0, 0, 180), 4.0f);
         drawList->AddText(ImVec2(badgePos.x + 6.0f, badgePos.y + 3.0f), IM_COL32(100, 220, 255, 255), badgeBuf);
@@ -445,7 +424,7 @@ private:
                 u32 px = static_cast<u32>(u * activeWidth);
                 u32 py = static_cast<u32>(v * activeHeight);
 
-                ImGui::SetTooltip("Pixel: (%u, %u)\nUV: (%.3f, %.3f)\nMip: %u (%ux%u)", px, py, u, v, curMip, activeWidth, activeHeight);
+                ImGui::SetTooltip("Pixel: (%u, %u)\nUV: (%.3f, %.3f)", px, py, u, v);
             }
         }
 
@@ -477,29 +456,6 @@ private:
 
         ImGui::Spacing();
         ImGui::Separator();
-        ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Subresource View");
-
-        // Mip level selector
-        int mipVal = static_cast<int>(m_selectedMip);
-        int maxMip = static_cast<int>(item.mipLevels > 0 ? item.mipLevels - 1 : 0);
-        if (ImGui::SliderInt("Mip", &mipVal, 0, maxMip))
-        {
-            m_selectedMip = static_cast<u32>(mipVal);
-        }
-        u32 curMipWidth = stltype::max(1u, item.width >> m_selectedMip);
-        u32 curMipHeight = stltype::max(1u, item.height >> m_selectedMip);
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Resolution: %ux%u", curMipWidth, curMipHeight);
-
-        // Layer / Slice selector
-        int layerVal = static_cast<int>(m_selectedLayer);
-        int maxLayer = static_cast<int>(item.arrayLayers > 0 ? item.arrayLayers - 1 : 0);
-        if (ImGui::SliderInt("Slice", &layerVal, 0, maxLayer))
-        {
-            m_selectedLayer = static_cast<u32>(layerVal);
-        }
-
-        ImGui::Spacing();
-        ImGui::Separator();
         ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Channels");
 
         ImGui::Checkbox("R", &m_channelR); ImGui::SameLine();
@@ -515,24 +471,10 @@ private:
         ImGui::SameLine();
         if (ImGui::Button("B Only", ImVec2(50, 20))) { m_channelB = true; m_channelR = m_channelG = m_channelA = false; }
 
-        ImGui::Spacing();
-        ImGui::Separator();
-        ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Visualization");
-
-        ImGui::Checkbox("Gamma correct", &m_gammaCorrect);
-        ImGui::Checkbox("Pack -1..1 to 0..1", &m_remapSignedRange);
-        ImGui::Checkbox("Abs", &m_absVal);
         ImGui::SliderFloat("Boost", &m_exposure, 0.1f, 10.0f, "%.1fx");
-        ImGui::Checkbox("Point sampling", &m_pointSampling);
     }
 
     void ResetCanvasView()
-    {
-        m_zoom = 1.0f;
-        m_pan = ImVec2(0.0f, 0.0f);
-    }
-
-    void FitToCanvas(u32 width, u32 height)
     {
         m_zoom = 1.0f;
         m_pan = ImVec2(0.0f, 0.0f);
@@ -548,18 +490,10 @@ private:
     float m_zoom{1.0f};
     ImVec2 m_pan{0.0f, 0.0f};
 
-    // Subresource state
-    u32 m_selectedMip{0};
-    u32 m_selectedLayer{0};
-
     // Channel mask & visualization
     bool m_channelR{true};
     bool m_channelG{true};
     bool m_channelB{true};
     bool m_channelA{true};
-    bool m_gammaCorrect{false};
-    bool m_remapSignedRange{false};
-    bool m_absVal{false};
     float m_exposure{1.0f};
-    bool m_pointSampling{false};
 };

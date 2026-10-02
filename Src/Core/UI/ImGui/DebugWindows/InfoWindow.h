@@ -1,10 +1,11 @@
 #pragma once
 #include "Core/Global/GlobalDefines.h"
 #include "Core/UI/LogData.h"
+#include "Core/UI/ImGui/UIWindowNames.h"
 #include <imgui.h>
 #include "Core/Global/Profiling.h"
 
-class ImGuiWindow
+class UIWindow
 {
 public:
     void SetOpen(bool open)
@@ -14,6 +15,11 @@ public:
     bool IsOpen()
     {
         return m_isOpen;
+    }
+    // For the Window menu's checkmark items
+    bool* OpenFlag()
+    {
+        return &m_isOpen;
     }
 
 protected:
@@ -33,69 +39,68 @@ struct LogEntry
     LogLevel level;
 };
 
-class InfoWindow : public ImGuiWindow
+class LogWindow : public UIWindow
 {
 public:
-    void DrawWindow(f32 dt, ApplicationInfos& appInfos)
+    // Runs every frame, also while closed, so nothing piles up in ApplicationInfos
+    void Consume(ApplicationInfos& appInfos)
     {
-        ScopedZone("LogWindow");
-        ImGui::Begin("Log", &m_isOpen);
-
-        // Consume new logs from appInfos and clear them
         for (auto& str : appInfos.infos)
             m_entries.push_back({std::move(str), LogLevel::Info});
-        appInfos.infos.clear();
-
         for (auto& str : appInfos.warnings)
             m_entries.push_back({std::move(str), LogLevel::Warning});
-        appInfos.warnings.clear();
-
         for (auto& str : appInfos.errors)
+        {
             m_entries.push_back({std::move(str), LogLevel::Error});
+            ++m_unseenErrors;
+        }
+        appInfos.infos.clear();
+        appInfos.warnings.clear();
         appInfos.errors.clear();
 
-        // Toolbar
+        if (m_entries.size() > MAX_ENTRIES)
+            m_entries.erase(m_entries.begin(), m_entries.begin() + (m_entries.size() - MAX_ENTRIES));
+    }
+
+    u32 GetUnseenErrorCount() const
+    {
+        return m_unseenErrors;
+    }
+
+    void DrawWindow()
+    {
+        ScopedZone("LogWindow");
+        if (!ImGui::Begin(UIWindowNames::Log, &m_isOpen))
+        {
+            ImGui::End();
+            return;
+        }
+        m_unseenErrors = 0;
+
         if (ImGui::Button("Clear"))
             Clear();
         ImGui::SameLine();
-
         ImGui::Checkbox("Auto-scroll", &m_autoScroll);
         ImGui::SameLine();
-
-        ImGui::SetNextItemWidth(150.0f);
-        const char* filterNames[] = {"All", "Info", "Warning", "Error"};
+        ImGui::SetNextItemWidth(110.0f);
+        const char* filterNames[] = {"All", "Info", "Warnings", "Errors"};
         ImGui::Combo("##Filter", &m_filterLevel, filterNames, IM_ARRAYSIZE(filterNames));
         ImGui::SameLine();
-
-        m_textFilter.Draw("Search", -1.0f);
+        m_textFilter.Draw("Search", -60.0f);
 
         ImGui::Separator();
 
-        // Log display
         if (ImGui::BeginChild("logScrollRegion", ImVec2(0, 0), ImGuiChildFlags_None, ImGuiWindowFlags_HorizontalScrollbar))
         {
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4, 2));
 
-            for (size_t i = 0; i < m_entries.size(); ++i)
+            for (const LogEntry& entry : m_entries)
             {
-                const LogEntry& entry = m_entries[i];
-
-                // Filter by level
-                if (m_filterLevel > 0)
-                {
-                    if (m_filterLevel == 1 && entry.level != LogLevel::Info)
-                        continue;
-                    if (m_filterLevel == 2 && entry.level != LogLevel::Warning)
-                        continue;
-                    if (m_filterLevel == 3 && entry.level != LogLevel::Error)
-                        continue;
-                }
-
-                // Text filter
+                if (m_filterLevel > 0 && static_cast<int>(entry.level) != m_filterLevel - 1)
+                    continue;
                 if (m_textFilter.IsActive() && !m_textFilter.PassFilter(entry.message.c_str()))
                     continue;
 
-                // Color based on level
                 ImVec4 color;
                 const char* prefix;
                 switch (entry.level)
@@ -134,11 +139,15 @@ public:
     void Clear()
     {
         m_entries.clear();
+        m_unseenErrors = 0;
     }
 
 private:
+    static constexpr size_t MAX_ENTRIES = 5000;
+
     stltype::vector<LogEntry> m_entries;
     ImGuiTextFilter m_textFilter;
+    u32 m_unseenErrors{0};
     bool m_autoScroll{true};
-    int m_filterLevel{0}; // 0=All, 1=Info, 2=Warning, 3=Error
+    int m_filterLevel{0}; // 0 = all, otherwise LogLevel + 1
 };

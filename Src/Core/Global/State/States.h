@@ -124,10 +124,6 @@ struct RendererState
         bool requestOpenWindow{false};
     } textureViewerState;
 
-    stltype::vector<u64> gbufferImGuiIDs{};
-    stltype::vector<u64> rtImGuiIDs{}; // Per-RT-buffer ImGui texture IDs
-    u64 depthbufferImGuiID{};
-    stltype::vector<u64> csmCascadeImGuiIDs{}; // Per-cascade ImGui texture IDs
     stltype::string physicalRenderDeviceName{};
     AntialiasingType aaType{AntialiasingType::DLSS};
     // Bump to discard all temporal history (TAA and upscalers) once

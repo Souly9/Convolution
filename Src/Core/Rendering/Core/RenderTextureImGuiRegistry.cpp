@@ -92,11 +92,7 @@ void RenderTextureImGuiRegistry::RegisterShadowMapTextures(const CascadedShadowM
 {
     ReleaseShadowMapIdsForNextFrame();
     if (!shadowMap.pTexture || shadowMap.cascadeViews.empty())
-    {
-        g_engine.GetApplicationState().RegisterUpdateFunction([](ApplicationState& state)
-                                                     { state.renderState.csmCascadeImGuiIDs.clear(); });
         return;
-    }
 
     for (auto view : shadowMap.cascadeViews)
     {
@@ -104,8 +100,6 @@ void RenderTextureImGuiRegistry::RegisterShadowMapTextures(const CascadedShadowM
             continue;
         m_csmCascadeImGuiIDs.push_back(g_renderer.GetTextureManager().RegisterImGuiTextureView(view));
     }
-    g_engine.GetApplicationState().RegisterUpdateFunction([ids = m_csmCascadeImGuiIDs](ApplicationState& state)
-                                                 { state.renderState.csmCascadeImGuiIDs = ids; });
 }
 
 void RenderTextureImGuiRegistry::RegisterGBufferTextures(RGResourceRegistry& registry)
@@ -196,7 +190,7 @@ void RenderTextureImGuiRegistry::RegisterGBufferTextures(RGResourceRegistry& reg
     }
 
     RegisterMaterialTextures();
-    PublishGBufferTextureState(registry);
+    PublishTextureViewerItems();
 }
 
 void RenderTextureImGuiRegistry::PublishTextureViewerItems()
@@ -296,25 +290,18 @@ void RenderTextureImGuiRegistry::RegisterMaterialTextures()
         PublishTextureViewerItems();
 }
 
-void RenderTextureImGuiRegistry::PublishGBufferTextureState(RGResourceRegistry& registry)
+void RenderTextureImGuiRegistry::PublishTextureViewerState(RGResourceRegistry& registry)
 {
-    auto gbufferIDs = m_gbufferImGuiIDs;
-    if (gbufferIDs.size() >= 7)
+    const bool velocitySwapped = registry.ResolveByID(RGResourceID::GBufferVelocity) != m_pVelocityA;
+    const bool colorSwapped = registry.ResolveHistoryByID(RGResourceID::TAAHistory) != m_pHistoryColorA;
+    for (auto& item : m_textureViewerItems)
     {
-        const bool velocitySwapped = registry.ResolveByID(RGResourceID::GBufferVelocity) != m_pVelocityA;
-        gbufferIDs[3] = velocitySwapped ? m_velocityIdB : m_velocityIdA;
-
-        const bool colorSwapped = registry.ResolveHistoryByID(RGResourceID::TAAHistory) != m_pHistoryColorA;
-        gbufferIDs[5] = colorSwapped ? m_historyColorIdB : m_historyColorIdA;
+        if (m_velocityIdA != 0 && (item.imguiDescriptorId == m_velocityIdA || item.imguiDescriptorId == m_velocityIdB))
+            item.imguiDescriptorId = velocitySwapped ? m_velocityIdB : m_velocityIdA;
+        else if (m_historyColorIdA != 0 && (item.imguiDescriptorId == m_historyColorIdA || item.imguiDescriptorId == m_historyColorIdB))
+            item.imguiDescriptorId = colorSwapped ? m_historyColorIdB : m_historyColorIdA;
     }
-
-    g_engine.GetApplicationState().RegisterUpdateFunction(
-        [csmIDs = m_csmCascadeImGuiIDs, gbufferIDs = stltype::move(gbufferIDs), items = m_textureViewerItems](ApplicationState& state) mutable
-        {
-            state.renderState.csmCascadeImGuiIDs = stltype::move(csmIDs);
-            state.renderState.gbufferImGuiIDs = stltype::move(gbufferIDs);
-            state.renderState.textureViewerState.items = stltype::move(items);
-        });
+    PublishTextureViewerItems();
 }
 
 void RenderTextureImGuiRegistry::RegisterRTTextures(const RGResourceRegistry& registry)
@@ -332,8 +319,4 @@ void RenderTextureImGuiRegistry::RegisterRTTextures(const RGResourceRegistry& re
     if (debugViewID != 0) m_textureViewerItems.push_back(MakeItem("RT Debug View", "Ray Tracing", debugViewID, registry.ResolveByID(RGResourceID::GBufferDebug)));
     if (reflectionsID != 0) m_textureViewerItems.push_back(MakeItem("RT Reflections", "Ray Tracing", reflectionsID, registry.ResolveByID(RGResourceID::RTReflections)));
     if (rtaoID != 0) m_textureViewerItems.push_back(MakeItem("RT AO", "Ray Tracing", rtaoID, registry.ResolveByID(RGResourceID::RTAOOutput)));
-
-    stltype::vector<u64> rtIDs = m_rtImGuiIDs;
-    g_engine.GetApplicationState().RegisterUpdateFunction([rtIDs](ApplicationState& state)
-                                                { state.renderState.rtImGuiIDs = rtIDs; });
 }

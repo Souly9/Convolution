@@ -21,7 +21,7 @@
             "inherits": "mac-base",
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/build-metal",
-            "cacheVariables": { "CONV_RENDER_BACKEND": "METAL", "CMAKE_BUILD_TYPE": "Debug" }
+            "cacheVariables": { "CONV_RENDER_BACKEND": "METAL", "CMAKE_BUILD_TYPE": "Debug", "CONV_OUTPUT_BASE_DIR": "${sourceDir}/build-metal" }
         },
         {
             "name": "vulkan",
@@ -29,7 +29,7 @@
             "inherits": "mac-base",
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/build-vulkan",
-            "cacheVariables": { "CONV_RENDER_BACKEND": "VULKAN", "CMAKE_BUILD_TYPE": "Debug" }
+            "cacheVariables": { "CONV_RENDER_BACKEND": "VULKAN", "CMAKE_BUILD_TYPE": "Debug", "CONV_OUTPUT_BASE_DIR": "${sourceDir}/build-vulkan" }
         },
         {
             "name": "windows-base",

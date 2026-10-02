@@ -564,6 +564,12 @@ if(CONV_USE_METAL)
     )
     add_library(ConvolutionMetal STATIC ${CONV_METAL_SOURCES})
     source_group(TREE "${CMAKE_SOURCE_DIR}/Src" FILES ${CONV_METAL_SOURCES})
+
+    # metal-cpp headers listed as sources so Xcode shows them in the navigator
+    file(GLOB_RECURSE CONV_METAL_CPP_HEADERS "${CONV_METAL_CPP_INCLUDE_DIR}/Foundation/*.hpp" "${CONV_METAL_CPP_INCLUDE_DIR}/Metal/*.hpp"
+        "${CONV_METAL_CPP_INCLUDE_DIR}/MetalFX/*.hpp" "${CONV_METAL_CPP_INCLUDE_DIR}/QuartzCore/*.hpp")
+    target_sources(ConvolutionMetal PRIVATE ${CONV_METAL_CPP_HEADERS})
+    source_group(TREE "${CONV_METAL_CPP_INCLUDE_DIR}" PREFIX "External/metal-cpp" FILES ${CONV_METAL_CPP_HEADERS})
     target_include_directories(ConvolutionMetal SYSTEM PUBLIC "${CONV_METAL_CPP_INCLUDE_DIR}")
     target_link_libraries(ConvolutionMetal PUBLIC ConvolutionConfig ${CONV_METAL_FRAMEWORKS} PRIVATE EASTL EAStdC EAAssert EAThread glfw)
     if(CONV_ENABLE_TRACY_PROFILING)

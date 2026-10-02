@@ -18,7 +18,8 @@ public:
     void RegisterRTTextures(const class RGResourceRegistry& registry);
     void RegisterMaterialTextures();
     void ReleaseMaterialTextures();
-    void PublishGBufferTextureState(RGResourceRegistry& registry);
+    // Per frame after RotateHistory: points the ping-pong viewer entries at this frame's half
+    void PublishTextureViewerState(RGResourceRegistry& registry);
 
 private:
     void PublishTextureViewerItems();

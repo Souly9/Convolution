@@ -12,83 +12,66 @@
 #include <EASTL/vector.h>
 #include <imgui.h>
 
-class PerformanceDiagnosticsWindow : public ImGuiWindow
+class PerformanceDiagnosticsWindow : public UIWindow
 {
 public:
     PerformanceDiagnosticsWindow()
     {
-        m_isOpen = true;
         g_engine.GetEventSystem().AddUpdateEventCallback([this](const UpdateEventData& d) { OnUpdate(d); });
     }
 
     void DrawWindow(f32 dt)
     {
         ScopedZone("PerformanceDiagnosticsWindow");
-        if (!m_isOpen)
+        if (!ImGui::Begin(UIWindowNames::Performance, &m_isOpen))
+        {
+            ImGui::End();
             return;
+        }
 
-        ImGui::SetNextWindowSize(ImVec2(420.0f, 620.0f), ImGuiCond_FirstUseEver);
-        ImGui::Begin("Performance Diagnostics", &m_isOpen);
-
-        // Performance Stats
-        ImGui::Text("Performance Stats");
-        ImGui::Separator();
-        ImGui::Text("Avg FPS: %u", m_frameCount);
-        ImGui::Text("Avg Frame Time: %.3f ms", m_avgFrameTime * 1000.f);
-        ImGui::Text("Avg CPU Time: %.3f ms", m_avgFrameTime * 1000.f);
-        ImGui::Text("Avg Total GPU Time: %.3f ms", m_avgTotalGPUTime);
-        ImGui::Spacing();
-
-        // Hardware Details
-        ImGui::Text("Hardware Details");
-        ImGui::Separator();
-        ImGui::Text("Device: %s", m_lastState.physicalRenderDeviceName.c_str());
-        ImGui::Text("Swapchain: %s", SwapchainFormatToString(g_renderer.GetSwapchainFormat()));
-        ImGui::Spacing();
-
-        // VRAM Usage
-        ImGui::Text("VRAM Usage");
-        ImGui::Separator();
-        f32 usedMB = static_cast<f32>(m_lastState.usedVramBytes) / (1024.f * 1024.f);
-        f32 totalMB = static_cast<f32>(g_renderer.GetTotalVram()) / (1024.f * 1024.f);
-        f32 usedGB = usedMB / 1024.f;
-        f32 totalGB = totalMB / 1024.f;
+        // Summary line, then the timeline; details stay collapsed
+        ImGui::Text("%u FPS | %.2f ms frame | %.2f ms GPU", m_frameCount, m_avgFrameTime * 1000.f, m_avgTotalGPUTime);
+        ImGui::SameLine();
+        f32 usedGB = static_cast<f32>(m_lastState.usedVramBytes) / (1024.f * 1024.f * 1024.f);
+        f32 totalGB = static_cast<f32>(g_renderer.GetTotalVram()) / (1024.f * 1024.f * 1024.f);
         f32 vramPct = (totalGB > 0.001f) ? (usedGB / totalGB) : 0.0f;
         char vramBuf[64];
-        snprintf(vramBuf, sizeof(vramBuf), "%.2f GB / %.2f GB (%.1f%%)", usedGB, totalGB, vramPct * 100.f);
+        snprintf(vramBuf, sizeof(vramBuf), "VRAM %.2f / %.2f GB", usedGB, totalGB);
         ImGui::ProgressBar(vramPct, ImVec2(-FLT_MIN, 0.0f), vramBuf);
-        ImGui::Spacing();
 
-        // Scene Overview
-        if (ImGui::CollapsingHeader("Scene Overview", ImGuiTreeNodeFlags_DefaultOpen))
+        DrawTimeline();
+
+        if (ImGui::CollapsingHeader("Device"))
         {
-            ImGui::Text("Total Entities: %u", m_entityCount);
-            ImGui::Text("Total Lights: %u", m_lightCount);
-            ImGui::Text("Lights Evaluated: %u", m_lastState.numLightsEvaluated);
-            ImGui::Text("Lights in Frustum: %u", m_lastState.numLightsInFrustum);
+            ImGui::Text("Device: %s", m_lastState.physicalRenderDeviceName.c_str());
+            ImGui::Text("Swapchain: %s", SwapchainFormatToString(g_renderer.GetSwapchainFormat()));
+        }
+
+        if (ImGui::CollapsingHeader("Scene & Culling"))
+        {
+            ImGui::Text("Entities: %u, Lights: %u (%u evaluated, %u in frustum)",
+                        m_entityCount,
+                        m_lightCount,
+                        m_lastState.numLightsEvaluated,
+                        m_lastState.numLightsInFrustum);
             const auto& streamingStats =
                 g_engine.GetApplicationState().GetCurrentApplicationState().engineState.streamingStats;
             ImGui::Text("Streaming: %s, %u meshes pending",
                         streamingStats.active ? "active" : "idle",
                         streamingStats.pendingMeshes);
-        }
 
-        // Frustum Culling
-        if (ImGui::CollapsingHeader("Frustum Culling", ImGuiTreeNodeFlags_DefaultOpen))
-        {
             const bool cullingFrozen = mathstl::isFlagSet(m_lastState.debugFlags, (u32)DebugFlags::FreezeFrustumCulling);
             const u32 totalInst = m_lastState.totalInstanceCount;
             const u32 culledInst = m_lastState.culledInstanceCount;
             const u32 visInst = (totalInst > culledInst) ? (totalInst - culledInst) : 0;
             const f32 cullPct = (totalInst > 0) ? (static_cast<f32>(culledInst) / static_cast<f32>(totalInst) * 100.0f) : 0.0f;
-
-            ImGui::Text("Status: %s", cullingFrozen ? "Frozen" : "Active");
-            ImGui::Text("Total Instances: %u", totalInst);
-            ImGui::Text("Visible Instances: %u", visInst);
-            ImGui::Text("Culled Instances: %u (%.1f%%)", culledInst, cullPct);
+            ImGui::Text("Frustum culling%s: %u / %u instances visible (%.1f%% culled)",
+                        cullingFrozen ? " (frozen)" : "",
+                        visInst,
+                        totalInst,
+                        cullPct);
         }
 
-        // Pipeline Statistics
         if (ImGui::CollapsingHeader("Pipeline Statistics"))
         {
             ImGui::Text("Indirect Draw Calls: %u", m_lastState.stats.numDrawIndirectCalls);
@@ -105,27 +88,35 @@ public:
             }
         }
 
-        // Clustered Shading
-        if (ImGui::CollapsingHeader("Clustered Shading Statistics"))
+        if (ImGui::CollapsingHeader("Clustered Shading & Ray Tracing"))
         {
-            ImGui::Text("Total Clusters: %u", m_lastState.totalClusterCount);
-            ImGui::Text("Avg Lights/Cluster: %.2f", m_lastState.avgLightsPerCluster);
-        }
-
-        // Ray Tracing
-        if (ImGui::CollapsingHeader("Ray Tracing Diagnostics"))
-        {
-            ImGui::Text("Pending BLAS builds: %u", m_lastState.rt.pendingBlasCount);
-            ImGui::Text("Resident RT Instances: %u", m_lastState.rt.residentInstanceCount);
+            ImGui::Text("Clusters: %u, avg %.2f lights per cluster", m_lastState.totalClusterCount, m_lastState.avgLightsPerCluster);
+            ImGui::Text("Pending BLAS builds: %u, resident RT instances: %u",
+                        m_lastState.rt.pendingBlasCount,
+                        m_lastState.rt.residentInstanceCount);
         }
 
         g_renderer.DrawVendorDiagnosticsUI(m_lastState);
 
-        ImGui::Spacing();
-        ImGui::Separator();
-        ImGui::Spacing();
+        ImGui::End();
+    }
 
-        // Bottom: GPU Timing Timeline
+    u32 GetFPS() const
+    {
+        return m_frameCount;
+    }
+    f32 GetFrameMs() const
+    {
+        return m_avgFrameTime * 1000.f;
+    }
+    f32 GetGPUMs() const
+    {
+        return m_avgTotalGPUTime;
+    }
+
+private:
+    void DrawTimeline()
+    {
         ImGui::Text("GPU Timeline");
         ImGui::SameLine();
         ImGui::Checkbox("Freeze Timeline", &m_frozen);
@@ -268,14 +259,11 @@ public:
 
                 f32 bottomY = rowsY + queues.size() * ROW_HEIGHT + 4.0f;
                 ImGui::SetCursorScreenPos(ImVec2(origin.x, bottomY));
-                ImGui::Text("0.00 - %.2f ms (%.2f ms visible)", m_totalRangeMs, m_totalRangeMs);
+                ImGui::Text("0.00 - %.2f ms", m_totalRangeMs);
             }
         }
-
-        ImGui::End();
     }
 
-private:
     void OnUpdate(const UpdateEventData& d)
     {
         f32 dt = d.dt;

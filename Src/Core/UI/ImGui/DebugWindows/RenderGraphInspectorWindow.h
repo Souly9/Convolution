@@ -7,22 +7,13 @@
 #include <EASTL/hash_map.h>
 #include <imgui.h>
 
-class RenderGraphInspectorWindow : public ImGuiWindow
+class RenderGraphInspectorWindow : public UIWindow
 {
 public:
-    RenderGraphInspectorWindow()
-    {
-        m_isOpen = false;
-    }
-
     void DrawWindow(f32 dt)
     {
         ScopedZone("RenderGraphInspectorWindow");
-        if (!m_isOpen)
-            return;
-
-        ImGui::SetNextWindowSize(ImVec2(1050.0f, 680.0f), ImGuiCond_FirstUseEver);
-        if (!ImGui::Begin("RenderGraph Inspector", &m_isOpen))
+        if (!ImGui::Begin(UIWindowNames::RenderGraph, &m_isOpen))
         {
             ImGui::End();
             return;
@@ -43,19 +34,19 @@ public:
 
         if (ImGui::BeginTabBar("RenderGraphTabs"))
         {
-            if (ImGui::BeginTabItem("Resources in Flight"))
+            if (ImGui::BeginTabItem("Resources"))
             {
                 DrawResourcesTab(rgDebugState);
                 ImGui::EndTabItem();
             }
 
-            if (ImGui::BeginTabItem("Node Graph Visualizer"))
+            if (ImGui::BeginTabItem("Graph"))
             {
                 DrawNodeGraphTab(rgDebugState);
                 ImGui::EndTabItem();
             }
 
-            if (ImGui::BeginTabItem("Topological Execution Schedule"))
+            if (ImGui::BeginTabItem("Schedule"))
             {
                 DrawScheduleTab(rgDebugState);
                 ImGui::EndTabItem();

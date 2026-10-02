@@ -5,6 +5,7 @@
 #include "Core/WindowManager.h"
 #include <GLFW/glfw3.h>
 #include <imgui/imgui.h>
+#include <ImGuizmo/ImGuizmo.h>
 
 struct KeyInfo
 {
@@ -17,17 +18,12 @@ static stltype::hash_map<s32, KeyInfo> s_keyMap = {{GLFW_KEY_W, {KeyType::Forwar
                                                    {GLFW_KEY_S, {KeyType::BackwardMove}},
                                                    {GLFW_KEY_D, {KeyType::RightMove}}};
 
-static bool IsForImGui()
+static bool IsMouseForImGui()
 {
-    auto& io = ImGui::GetIO();
-    if (io.WantCaptureKeyboard || io.WantCaptureMouse)
-    {
-        return true;
-    }
-    return false;
+    return ImGui::GetIO().WantCaptureMouse;
 }
 
-// Track right mouse state and last cursor pos to generate delta
+// Right mouse held = flying: mouse look plus WASD, even when the cursor crosses a panel
 static bool s_rightButtonDown = false;
 static double s_lastCursorX = 0.0, s_lastCursorY = 0.0;
 
@@ -40,6 +36,8 @@ void InputManager::RegisterInputCallbacks(GLFWwindow* pWindow)
     g_engine.GetEventSystem().AddUpdateEventCallback(
         [](const UpdateEventData& d)
         {
+            if (!s_rightButtonDown)
+                return;
             for (auto& [key, keyInfo] : s_keyMap)
             {
                 if (keyInfo.wasPressedLastFrame)
@@ -52,19 +50,17 @@ void InputManager::RegisterInputCallbacks(GLFWwindow* pWindow)
 
 void InputManager::KeyPressCallback(GLFWwindow* window, s32 key, s32 scancode, s32 action, s32 mods)
 {
-    if (IsForImGui())
-    {
-        return;
-    }
     auto pFoundKeyIterator = s_keyMap.find(key);
     const bool isSupportedKey = pFoundKeyIterator != s_keyMap.end();
     if (!isSupportedKey)
         return;
     auto& keyInfo = pFoundKeyIterator->second;
-    if (action == GLFW_PRESS)
+    // Releases always pass, otherwise a key let go over a text field stays held
+    if (action == GLFW_PRESS && !ImGui::GetIO().WantCaptureKeyboard)
     {
         keyInfo.wasPressedLastFrame = true;
-        g_engine.GetEventSystem().OnKeyPress({keyInfo.key});
+        if (s_rightButtonDown)
+            g_engine.GetEventSystem().OnKeyPress({keyInfo.key});
     }
     else if (action == GLFW_RELEASE)
     {
@@ -74,14 +70,14 @@ void InputManager::KeyPressCallback(GLFWwindow* window, s32 key, s32 scancode, s
 
 void InputManager::MouseButtonCallback(GLFWwindow* window, s32 button, s32 action, s32 mods)
 {
-    if (IsForImGui())
-    {
-        return;
-    }
     double xPos, yPos;
     glfwGetCursorPos(window, &xPos, &yPos);
 
-    if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS)
+    if (action == GLFW_PRESS && IsMouseForImGui())
+        return;
+
+    // Clicking a gizmo handle must not pick whatever is behind it
+    if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS && !ImGuizmo::IsOver() && !ImGuizmo::IsUsing())
     {
         g_engine.GetEventSystem().OnLeftMouseClick({xPos, yPos});
     }
@@ -94,7 +90,7 @@ void InputManager::MouseButtonCallback(GLFWwindow* window, s32 button, s32 actio
             s_lastCursorY = yPos;
             g_engine.GetEventSystem().OnRightMouseClick({xPos, yPos, DirectX::XMFLOAT2(0.0f, 0.0f), true});
         }
-        else if (action == GLFW_RELEASE)
+        else if (action == GLFW_RELEASE && s_rightButtonDown)
         {
             s_rightButtonDown = false;
             g_engine.GetEventSystem().OnRightMouseClick({xPos, yPos, DirectX::XMFLOAT2(0.0f, 0.0f), false});
@@ -104,18 +100,13 @@ void InputManager::MouseButtonCallback(GLFWwindow* window, s32 button, s32 actio
 
 void InputManager::MouseMoveCallback(GLFWwindow* window, f64 xpos, f64 ypos)
 {
-    if (IsForImGui())
-    {
-        return;
-    }
-
-    // compute delta from last cursor
     double dx = xpos - s_lastCursorX;
     double dy = ypos - s_lastCursorY;
-
-    // update last cursor always
     s_lastCursorX = xpos;
     s_lastCursorY = ypos;
+
+    if (!s_rightButtonDown && IsMouseForImGui())
+        return;
 
     // if right button held, send right mouse event with delta
     if (s_rightButtonDown)
@@ -139,7 +130,7 @@ void InputManager::MouseMoveCallback(GLFWwindow* window, f64 xpos, f64 ypos)
 
 void InputManager::ScrollCallback(GLFWwindow* window, f64 xoffset, f64 yoffset)
 {
-    if (IsForImGui())
+    if (IsMouseForImGui())
     {
         return;
     }

@@ -8,17 +8,18 @@
 #include <imgui.h>
 
 // GPU allocations of ConvAllocatorSimple (VMA blocks are the buckets) plus process memory
-class MemoryWindow : public ImGuiWindow
+class MemoryWindow : public UIWindow
 {
 public:
-    MemoryWindow()
-    {
-        m_isOpen = false;
-    }
-
     void DrawWindow(f32 dt)
     {
         ScopedZone("MemoryWindow");
+
+        if (!ImGui::Begin(UIWindowNames::Memory, &m_isOpen))
+        {
+            ImGui::End();
+            return;
+        }
 
         // The snapshot copies every allocation name, so refresh twice a second instead of every frame
         if (ImGui::GetTime() - m_lastRefresh > 0.5)
@@ -29,13 +30,6 @@ public:
                           m_stats.allocations.end(),
                           [](const auto& a, const auto& b) { return a.size > b.size; });
             m_process = GetProcessMemoryStats();
-        }
-
-        ImGui::SetNextWindowSize(ImVec2(760.0f, 820.0f), ImGuiCond_FirstUseEver);
-        if (!ImGui::Begin("Memory", &m_isOpen))
-        {
-            ImGui::End();
-            return;
         }
 
         ImGui::SeparatorText("Heaps");

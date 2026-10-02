@@ -10,105 +10,118 @@
 #include <ImGuizmo/ImGuizmo.h>
 #include "Core/ECS/Components/Transform.h"
 
-class SelectedEntityWindow : public InfoWindow
+class SelectedEntityWindow : public UIWindow
 {
 public:
-    void DrawWindow(const UpdateEventData& data)
+    // Runs every frame, the gizmo stays usable with the inspector closed
+    void DrawGizmo(const UpdateEventData& data)
     {
-        ScopedZone("SelectedEntityWindow");
+        ScopedZone("SelectedEntityGizmo");
+        if (data.state.selectedEntities.empty())
+            return;
 
-        // Handle Gizmo Shortcuts
-        if (!ImGui::IsAnyItemActive())
+        // Right mouse flies the camera with WASD, so the shortcuts only apply without it
+        const ImGuiIO& io = ImGui::GetIO();
+        if (!io.WantCaptureKeyboard && !ImGui::IsMouseDown(ImGuiMouseButton_Right))
         {
-            if (ImGui::IsKeyPressed(ImGuiKey_W)) mCurrentGizmoOperation = ImGuizmo::TRANSLATE;
-            if (ImGui::IsKeyPressed(ImGuiKey_E)) mCurrentGizmoOperation = ImGuizmo::ROTATE;
-            if (ImGui::IsKeyPressed(ImGuiKey_R)) mCurrentGizmoOperation = ImGuizmo::SCALE;
+            if (ImGui::IsKeyPressed(ImGuiKey_W, false))
+                m_operation = ImGuizmo::TRANSLATE;
+            if (ImGui::IsKeyPressed(ImGuiKey_E, false))
+                m_operation = ImGuizmo::ROTATE;
+            if (ImGui::IsKeyPressed(ImGuiKey_R, false))
+                m_operation = ImGuizmo::SCALE;
         }
 
-        ImGui::Begin("Selected Entities", &m_isOpen);
+        const ECS::Entity selectedEntity = data.state.selectedEntities[0];
+        auto* pTransform = g_engine.GetEntityManager().GetComponent<ECS::Components::Transform>(selectedEntity);
+        if (pTransform == nullptr)
+            return;
 
-        if (data.state.selectedEntities.empty() == false)
+        ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
+        const auto& view = data.state.renderState.mainCamViewMatrix;
+        const auto& proj = data.state.renderState.mainCamProjectionMatrix;
+        mathstl::Matrix matrix = pTransform->worldModelMatrix;
+
+        if (ImGuizmo::Manipulate(&view._11, &proj._11, m_operation, m_mode, &matrix._11))
         {
-            const auto& selectedEntity = data.state.selectedEntities[0];
-
-            ECS::Components::Transform* pTransform =
-                g_engine.GetEntityManager().GetComponent<ECS::Components::Transform>(selectedEntity);
-
-            if (pTransform == nullptr)
+            if (pTransform->HasParent())
             {
-                ImGui::End();
-                return;
-            }
-            ImGui::Text("Entity: %s", pTransform->name.c_str());
-
-            // Gizmo Settings
-            if (ImGui::RadioButton("Translate", mCurrentGizmoOperation == ImGuizmo::TRANSLATE)) mCurrentGizmoOperation = ImGuizmo::TRANSLATE;
-            ImGui::SameLine();
-            if (ImGui::RadioButton("Rotate", mCurrentGizmoOperation == ImGuizmo::ROTATE)) mCurrentGizmoOperation = ImGuizmo::ROTATE;
-            ImGui::SameLine();
-            if (ImGui::RadioButton("Scale", mCurrentGizmoOperation == ImGuizmo::SCALE)) mCurrentGizmoOperation = ImGuizmo::SCALE;
-
-            if (mCurrentGizmoOperation != ImGuizmo::SCALE)
-            {
-                if (ImGui::RadioButton("Local", mCurrentGizmoMode == ImGuizmo::LOCAL)) mCurrentGizmoMode = ImGuizmo::LOCAL;
-                ImGui::SameLine();
-                if (ImGui::RadioButton("World", mCurrentGizmoMode == ImGuizmo::WORLD)) mCurrentGizmoMode = ImGuizmo::WORLD;
-            }
-
-            const bool isTransformDirty = Visualize(pTransform);
-
-            // ImGuizmo Manipulation
-            {
-                ImGuiIO& io = ImGui::GetIO();
-                ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
-
-                const auto& view = data.state.renderState.mainCamViewMatrix;
-                const auto& proj = data.state.renderState.mainCamProjectionMatrix;
-                
-                mathstl::Matrix matrix = pTransform->worldModelMatrix;
-
-                if (ImGuizmo::Manipulate(&view._11, &proj._11, mCurrentGizmoOperation, mCurrentGizmoMode, &matrix._11))
+                auto* pParent = g_engine.GetEntityManager().GetComponent<ECS::Components::Transform>(pTransform->parent);
+                if (pParent)
                 {
-                    if (pTransform->HasParent())
-                    {
-                        ECS::Components::Transform* pParent = g_engine.GetEntityManager().GetComponent<ECS::Components::Transform>(pTransform->parent);
-                        if (pParent)
-                        {
-                            mathstl::Matrix parentInv;
-                            pParent->worldModelMatrix.Invert(parentInv);
-                            matrix = matrix * parentInv;
-                        }
-                    }
-
-                    float translation[3], rotation[3], scale[3];
-                    ImGuizmo::DecomposeMatrixToComponents(&matrix._11, translation, rotation, scale);
-
-                    pTransform->position = mathstl::Vector3(translation[0], translation[1], translation[2]);
-                    pTransform->rotation = mathstl::Vector3(rotation[0], rotation[1], rotation[2]);
-                    pTransform->scale = mathstl::Vector3(scale[0], scale[1], scale[2]);
-
-                    g_engine.GetEntityManager().MarkComponentDirty(selectedEntity, C_ID(Transform));
+                    mathstl::Matrix parentInv;
+                    pParent->worldModelMatrix.Invert(parentInv);
+                    matrix = matrix * parentInv;
                 }
             }
 
-            ECS::Components::Camera* pCamera = g_engine.GetEntityManager().GetComponent<ECS::Components::Camera>(selectedEntity);
-            Visualize(pCamera);
-
-            auto* pLight = g_engine.GetEntityManager().GetComponent<ECS::Components::Light>(selectedEntity);
-            const bool isLightDirty = Visualize(pLight);
-
-            auto* pRender = g_engine.GetEntityManager().GetComponent<ECS::Components::RenderComponent>(selectedEntity);
-            Visualize(pRender);
-
-            if (isTransformDirty)
-                g_engine.GetEntityManager().MarkComponentDirty(selectedEntity, C_ID(Transform));
-            if (isLightDirty)
-                g_engine.GetEntityManager().MarkComponentDirty(selectedEntity, C_ID(Light));
+            float translation[3], rotation[3], scale[3];
+            ImGuizmo::DecomposeMatrixToComponents(&matrix._11, translation, rotation, scale);
+            pTransform->position = mathstl::Vector3(translation[0], translation[1], translation[2]);
+            pTransform->rotation = mathstl::Vector3(rotation[0], rotation[1], rotation[2]);
+            pTransform->scale = mathstl::Vector3(scale[0], scale[1], scale[2]);
+            g_engine.GetEntityManager().MarkComponentDirty(selectedEntity, C_ID(Transform));
         }
+    }
+
+    void DrawWindow(const UpdateEventData& data)
+    {
+        ScopedZone("SelectedEntityWindow");
+        if (!ImGui::Begin(UIWindowNames::Inspector, &m_isOpen))
+        {
+            ImGui::End();
+            return;
+        }
+
+        if (data.state.selectedEntities.empty())
+        {
+            ImGui::TextDisabled("Nothing selected.");
+            ImGui::TextDisabled("Click an object in the viewport or in the Scene tree.");
+            ImGui::End();
+            return;
+        }
+
+        const ECS::Entity selectedEntity = data.state.selectedEntities[0];
+        auto& entityManager = g_engine.GetEntityManager();
+        auto* pTransform = entityManager.GetComponent<ECS::Components::Transform>(selectedEntity);
+        if (pTransform == nullptr)
+        {
+            ImGui::End();
+            return;
+        }
+        ImGui::Text("%s", pTransform->name.c_str());
+
+        if (ImGui::RadioButton("Move (W)", m_operation == ImGuizmo::TRANSLATE))
+            m_operation = ImGuizmo::TRANSLATE;
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Rotate (E)", m_operation == ImGuizmo::ROTATE))
+            m_operation = ImGuizmo::ROTATE;
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Scale (R)", m_operation == ImGuizmo::SCALE))
+            m_operation = ImGuizmo::SCALE;
+
+        // ImGuizmo always scales in local space
+        ImGui::BeginDisabled(m_operation == ImGuizmo::SCALE);
+        if (ImGui::RadioButton("Local", m_mode == ImGuizmo::LOCAL))
+            m_mode = ImGuizmo::LOCAL;
+        ImGui::SameLine();
+        if (ImGui::RadioButton("World", m_mode == ImGuizmo::WORLD))
+            m_mode = ImGuizmo::WORLD;
+        ImGui::EndDisabled();
+        ImGui::Separator();
+
+        if (Visualize(pTransform))
+            entityManager.MarkComponentDirty(selectedEntity, C_ID(Transform));
+        if (Visualize(entityManager.GetComponent<ECS::Components::Camera>(selectedEntity)))
+            entityManager.MarkComponentDirty(selectedEntity, C_ID(Camera));
+        if (Visualize(entityManager.GetComponent<ECS::Components::Light>(selectedEntity)))
+            entityManager.MarkComponentDirty(selectedEntity, C_ID(Light));
+        Visualize(entityManager.GetComponent<ECS::Components::RenderComponent>(selectedEntity));
+
         ImGui::End();
     }
 
 private:
-    ImGuizmo::OPERATION mCurrentGizmoOperation = ImGuizmo::TRANSLATE;
-    ImGuizmo::MODE mCurrentGizmoMode = ImGuizmo::WORLD;
+    ImGuizmo::OPERATION m_operation = ImGuizmo::TRANSLATE;
+    ImGuizmo::MODE m_mode = ImGuizmo::WORLD;
 };
