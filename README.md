@@ -96,3 +96,14 @@ The pipeline is driven by a compiled, declarative **RenderGraph**:
 4. Download the `Resources` folder from [MEGA Resource Package](https://mega.nz/file/WAlCRD7T#ffCl3fJWD4FZmf_ta6iiJrSlBGHYgA2KpjFgsajCg84) and place it in the project root directory.
 
 > Dependencies (GLFW, ImGui, EASTL, EAThread, Assimp, Tracy) are configured automatically via CMake.
+
+### macOS (Metal / Xcode)
+1. Install Xcode, then the tools: `brew install cmake ninja glslang`
+2. Metal shader compiler (Xcode 26+ ships it separately): `xcodebuild -downloadComponent MetalToolchain`
+3. Generate and open the Xcode project:
+   ```bash
+   cmake --preset xcode
+   open build-xcode/Convolution.xcodeproj
+   ```
+   The `Convolution` scheme runs from `bin/Debug` with Metal frame capture and API validation enabled.
+4. Command-line builds: `cmake --preset metal && cmake --build --preset metal` (Ninja, also writes `compile_commands.json`), or `vulkan` for MoltenVK.

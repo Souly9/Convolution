@@ -62,6 +62,9 @@ endif()
 project("Convolution")
 set(NAME "Convolution")
 
+# One .xcodeproj instead of one per FetchContent dependency
+set(CMAKE_XCODE_GENERATE_TOP_LEVEL_PROJECT_ONLY ON)
+
 set(USE_CLANG_CL OFF)
 if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     if(CMAKE_CXX_SIMULATE_ID STREQUAL "MSVC" OR CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
@@ -337,6 +340,7 @@ elseif(NOT WIN32)
     list(FILTER CONV_SOURCE_FILES EXCLUDE REGEX ".*/Src/Core/Rendering/(Core/Nvidia|Vulkan/XeSS)/.*\\.cpp$")
 endif()
 target_sources(${NAME} PRIVATE ${CONV_SOURCE_FILES} ${CONV_HEADER_FILES})
+source_group(TREE "${CMAKE_SOURCE_DIR}/Src" FILES ${CONV_SOURCE_FILES} ${CONV_HEADER_FILES})
 
 set(CONV_UTILITY_COMMANDS
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${NAME}>/Resources/Textures"
@@ -473,6 +477,13 @@ set_target_properties(${NAME} PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY "${CONV_OUTPUT_BASE_DIR}"
     VS_DEBUGGER_WORKING_DIRECTORY "${CONV_OUTPUT_BASE_DIR}/$<CONFIG>"
 )
+# Only the app gets a scheme; its working dir must stay two levels below the repo root (../../Shaders etc.)
+set_target_properties(${NAME} PROPERTIES
+    XCODE_GENERATE_SCHEME ON
+    XCODE_SCHEME_WORKING_DIRECTORY "$<TARGET_FILE_DIR:${NAME}>"
+    XCODE_SCHEME_ENABLE_GPU_FRAME_CAPTURE_MODE Metal
+    XCODE_SCHEME_ENABLE_GPU_API_VALIDATION ON
+)
 
 target_include_directories(ConvolutionConfig INTERFACE "${CMAKE_SOURCE_DIR}/Src")
 target_include_directories(ConvolutionConfig SYSTEM INTERFACE
@@ -552,6 +563,7 @@ if(CONV_USE_METAL)
         "${CMAKE_SOURCE_DIR}/Src/Core/Rendering/Metal/*.inl"
     )
     add_library(ConvolutionMetal STATIC ${CONV_METAL_SOURCES})
+    source_group(TREE "${CMAKE_SOURCE_DIR}/Src" FILES ${CONV_METAL_SOURCES})
     target_include_directories(ConvolutionMetal SYSTEM PUBLIC "${CONV_METAL_CPP_INCLUDE_DIR}")
     target_link_libraries(ConvolutionMetal PUBLIC ConvolutionConfig ${CONV_METAL_FRAMEWORKS} PRIVATE EASTL EAStdC EAAssert EAThread glfw)
     if(CONV_ENABLE_TRACY_PROFILING)

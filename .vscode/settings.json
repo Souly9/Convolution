@@ -1,5 +1,4 @@
 {
-  "cmake.cmakePath": "C:/Tools/CMake/bin/cmake.exe",
   "cmake.configureArgs": [
     "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
   ],

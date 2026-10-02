@@ -1,0 +1,69 @@
+{
+    "version": 3,
+    "configurePresets": [
+        {
+            "name": "mac-base",
+            "hidden": true,
+            "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" },
+            "cacheVariables": { "CMAKE_POLICY_VERSION_MINIMUM": "3.5" }
+        },
+        {
+            "name": "xcode",
+            "displayName": "Xcode (Metal)",
+            "inherits": "mac-base",
+            "generator": "Xcode",
+            "binaryDir": "${sourceDir}/build-xcode",
+            "cacheVariables": { "CONV_RENDER_BACKEND": "METAL" }
+        },
+        {
+            "name": "metal",
+            "displayName": "Ninja Debug (Metal)",
+            "inherits": "mac-base",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build-metal",
+            "cacheVariables": { "CONV_RENDER_BACKEND": "METAL", "CMAKE_BUILD_TYPE": "Debug" }
+        },
+        {
+            "name": "vulkan",
+            "displayName": "Ninja Debug (Vulkan via MoltenVK)",
+            "inherits": "mac-base",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build-vulkan",
+            "cacheVariables": { "CONV_RENDER_BACKEND": "VULKAN", "CMAKE_BUILD_TYPE": "Debug" }
+        },
+        {
+            "name": "windows-base",
+            "hidden": true,
+            "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/out/build/${presetName}",
+            "installDir": "${sourceDir}/out/install/${presetName}",
+            "architecture": { "value": "x64", "strategy": "external" },
+            "toolset": { "value": "host=x64", "strategy": "external" },
+            "cacheVariables": { "CMAKE_POLICY_VERSION_MINIMUM": "3.5" }
+        },
+        {
+            "name": "x64-RelWithDebInfo",
+            "inherits": "windows-base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+                "BUILD_TESTING": "OFF",
+                "GLFW_BUILD_DOCS": "OFF"
+            }
+        },
+        {
+            "name": "x64-Release",
+            "inherits": "windows-base",
+            "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+        }
+    ],
+    "buildPresets": [
+        { "name": "mac-build-base", "hidden": true, "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" } },
+        { "name": "windows-build-base", "hidden": true, "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" } },
+        { "name": "xcode-debug", "inherits": "mac-build-base", "configurePreset": "xcode", "configuration": "Debug", "targets": [ "Convolution" ] },
+        { "name": "metal", "inherits": "mac-build-base", "configurePreset": "metal" },
+        { "name": "vulkan", "inherits": "mac-build-base", "configurePreset": "vulkan" },
+        { "name": "x64-RelWithDebInfo", "inherits": "windows-build-base", "configurePreset": "x64-RelWithDebInfo" },
+        { "name": "x64-Release", "inherits": "windows-build-base", "configurePreset": "x64-Release" }
+    ]
+}
